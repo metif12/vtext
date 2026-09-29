@@ -7,29 +7,36 @@ module vtext
 
 // BidiClass is the UAX#9 bidirectional category of a codepoint.
 pub enum BidiClass {
-	l   = 0
-	r   = 1
-	en  = 2
-	es  = 3
-	et  = 4
-	an  = 5
-	cs  = 6
-	b   = 7
-	s   = 8
-	ws  = 9
-	on  = 10
-	bn  = 11
-	nsm = 12
-	al  = 13
-	lro = 14
-	rlo = 15
-	lre = 16
-	rle = 17
-	pdf = 18
-	lri = 19
-	rli = 20
-	fsi = 21
-	pdi = 22
+	l          = 0
+	r          = 1
+	en         = 2
+	es         = 3
+	et         = 4
+	an         = 5
+	cs         = 6
+	b          = 7
+	s          = 8
+	ws         = 9
+	on         = 10
+	bn         = 11
+	nsm        = 12
+	al         = 13
+	lro        = 14
+	rlo        = 15
+	lre        = 16
+	rle        = 17
+	pdf        = 18
+	lri        = 19
+	rli        = 20
+	fsi        = 21
+	pdi        = 22
+	// x9_removed and .class_none are not UCD values. They sit above every real class
+	// so the generated name table, which stops at pdi, reports them as unnamed.
+	//
+	// x9_removed marks a character rule X9 took out of the text, and .class_none is
+	// what a scan returns when it found no class at all.
+	x9_removed = 254
+	class_none = 255
 }
 
 // str returns the UCD name of the class, e.g. 'AL'. It reads the generated name
@@ -125,55 +132,55 @@ pub enum GraphemeClass {
 // LineBreakClass is the UAX#14 line break class. The names follow LineBreak.txt;
 // the ones that would collide with V keywords are spelled out.
 pub enum LineBreakClass {
-	xx   = 0 // unknown
-	cm   = 1 // combining mark
-	ba   = 2 // break after
-	lf   = 3
-	bk   = 4 // mandatory break
-	cr   = 5
-	sp   = 6 // space
-	ex   = 7 // exclamation
-	qu   = 8 // quotation
-	al   = 9 // alphabetic
-	pr   = 10 // prefix numeric
-	po   = 11 // postfix numeric
-	op   = 12 // open punctuation
-	cp   = 13 // close punctuation
-	insp = 14 // inseparable
-	hy   = 15 // hyphen
-	sy   = 16 // symbols allowing a break after
-	nu   = 17 // numeric
-	cl   = 18 // close
-	nl   = 19 // newline
-	gl   = 20 // glue
-	ai   = 21 // ambiguous
-	hh   = 22 // hard hyphen
-	bb   = 23 // break before
-	hl   = 24 // Hebrew letter
-	sa   = 25 // complex context
-	jl   = 26 // Hangul jamo L
-	jv   = 27 // Hangul jamo V
-	jt   = 28 // Hangul jamo T
-	ns   = 29 // nonstarter
-	ak   = 30 // Aksara
-	vi   = 31 // virama final
-	idas = 32 // ideographic
-	idcj = 33 // ideographic close
-	vf   = 34 // virama final, ideographic
-	zw   = 35 // ZW space
-	zwj  = 36 // ZWJ
-	b2   = 37 // break opportunity before and after
+	xx    = 0 // unknown
+	cm    = 1 // combining mark
+	ba    = 2 // break after
+	lf    = 3
+	bk    = 4 // mandatory break
+	cr    = 5
+	sp    = 6 // space
+	ex    = 7 // exclamation
+	qu    = 8 // quotation
+	al    = 9 // alphabetic
+	pr    = 10 // prefix numeric
+	po    = 11 // postfix numeric
+	op    = 12 // open punctuation
+	cp    = 13 // close punctuation
+	insp  = 14 // inseparable
+	hy    = 15 // hyphen
+	sy    = 16 // symbols allowing a break after
+	nu    = 17 // numeric
+	cl    = 18 // close
+	nl    = 19 // newline
+	gl    = 20 // glue
+	ai    = 21 // ambiguous
+	hh    = 22 // hard hyphen
+	bb    = 23 // break before
+	hl    = 24 // Hebrew letter
+	sa    = 25 // complex context
+	jl    = 26 // Hangul jamo L
+	jv    = 27 // Hangul jamo V
+	jt    = 28 // Hangul jamo T
+	ns    = 29 // nonstarter
+	ak    = 30 // Aksara
+	vi    = 31 // virama final
+	idas  = 32 // ideographic
+	idcj  = 33 // ideographic close
+	vf    = 34 // virama final, ideographic
+	zw    = 35 // ZW space
+	zwj   = 36 // ZWJ
+	b2    = 37 // break opportunity before and after
 	wjoin = 38 // word joiner
-	wj   = 39 // WJ
-	eb   = 40 // emoji base
-	cj   = 41 // conditional Japanese starter
-	h2   = 42
-	h3   = 43
-	sg   = 44
-	cb   = 45
-	ap   = 46 // Aksara pre-base
-	ri   = 47 // regional indicator
-	em   = 48 // emoji modifier
+	wj    = 39 // WJ
+	eb    = 40 // emoji base
+	cj    = 41 // conditional Japanese starter
+	h2    = 42
+	h3    = 43
+	sg    = 44
+	cb    = 45
+	ap    = 46 // Aksara pre-base
+	ri    = 47 // regional indicator
+	em    = 48 // emoji modifier
 }
 
 // str returns the UCD name of the class, e.g. 'AL'.

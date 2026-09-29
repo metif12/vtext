@@ -132,18 +132,94 @@ fn dec_u16(s string) u16 {
 // value, but coalesce sorts by codepoint, so the ordinals cannot be taken from
 // file order: they are pinned here, which is also what the hand written enums in
 // properties.v assume.
-const bidi_class_order = ['L', 'R', 'EN', 'ES', 'ET', 'AN', 'CS', 'B', 'S', 'WS', 'ON', 'BN',
-	'NSM', 'AL', 'LRO', 'RLO', 'LRE', 'RLE', 'PDF', 'LRI', 'RLI', 'FSI', 'PDI']
+const bidi_class_order = ['L', 'R', 'EN', 'ES', 'ET', 'AN', 'CS', 'B', 'S', 'WS', 'ON', 'BN', 'NSM',
+	'AL', 'LRO', 'RLO', 'LRE', 'RLE', 'PDF', 'LRI', 'RLI', 'FSI', 'PDI']
 
 const joining_type_order = ['U', 'C', 'D', 'R', 'L', 'T']
 
-const grapheme_class_order = ['Other', 'CR', 'LF', 'Control', 'Extend', 'ZWJ',
-	'Regional_Indicator', 'Prepend', 'SpacingMark', 'L', 'V', 'T', 'LV', 'LVT']
+const grapheme_class_order = ['Other', 'CR', 'LF', 'Control', 'Extend', 'ZWJ', 'Regional_Indicator',
+	'Prepend', 'SpacingMark', 'L', 'V', 'T', 'LV', 'LVT']
 
 const line_break_order = ['XX', 'CM', 'BA', 'LF', 'BK', 'CR', 'SP', 'EX', 'QU', 'AL', 'PR', 'PO',
-	'OP', 'CP', 'IS', 'HY', 'SY', 'NU', 'CL', 'NL', 'GL', 'AI', 'HH', 'BB', 'HL', 'SA', 'JL',
-	'JV', 'JT', 'NS', 'AK', 'VI', 'ID', 'ID_CJ', 'VF', 'ZW', 'ZWJ', 'B2', 'IN', 'WJ', 'EB', 'CJ',
-	'H2', 'H3', 'SG', 'CB', 'AP', 'RI', 'EM']
+	'OP', 'CP', 'IS', 'HY', 'SY', 'NU', 'CL', 'NL', 'GL', 'AI', 'HH', 'BB', 'HL', 'SA', 'JL', 'JV',
+	'JT', 'NS', 'AK', 'VI', 'ID', 'ID_CJ', 'VF', 'ZW', 'ZWJ', 'B2', 'IN', 'WJ', 'EB', 'CJ', 'H2',
+	'H3', 'SG', 'CB', 'AP', 'RI', 'EM']
+
+// BracketPair is one entry of the BidiBrackets table: a codepoint, the
+// codepoint it pairs with, and whether it opens or closes the pair.
+struct BracketPair {
+	cp     u32
+	paired u32
+	kind   u8 // 0 = open, 1 = close
+	// canonical is the codepoint this one canonically decomposes to, or 0 when it has
+	// no canonical decomposition. Rule BD16 pairs brackets through their canonical
+	// equivalents, and U+2329 plus U+232A are the only angle brackets that need it.
+	canonical u32
+}
+
+// parse_brackets reads BidiBrackets.txt into bracket pairs.
+fn parse_brackets(path string) []BracketPair {
+	data := os.read_file(path) or { return []BracketPair{} }
+	mut out := []BracketPair{}
+	for line in data.split_into_lines() {
+		// The value is followed by " # name", so the comment goes first.
+		cut := line.index('#') or { line.len }
+		s := line[..cut].trim_space()
+		if s == '' {
+			continue
+		}
+		fields := s.split(';')
+		if fields.len < 3 {
+			continue
+		}
+		kind := if fields[2].trim_space() == 'o' { u8(0) } else { u8(1) }
+		cp := parse_hex(fields[0])
+		out << BracketPair{
+			cp:        cp
+			paired:    parse_hex(fields[1])
+			kind:      kind
+			canonical: canonical_equivalent(cp)
+		}
+	}
+	// Sorted by codepoint so a lookup is a binary search.
+	out.sort_with_compare(fn (a &BracketPair, b &BracketPair) int {
+		if a.cp < b.cp {
+			return -1
+		}
+		if a.cp > b.cp {
+			return 1
+		}
+		return 0
+	})
+	return out
+}
+
+// canonical_equivalent returns the single codepoint cp canonically decomposes to, or
+// 0 when it has no canonical decomposition, when the decomposition is more than one
+// codepoint, or when it is only a compatibility one such as "<wide> 0028".
+fn canonical_equivalent(cp u32) u32 {
+	data := os.read_file(os.join_path(ucd_dir, 'UnicodeData.txt')) or { return 0 }
+	key := '${cp:04X};'
+	for line in data.split_into_lines() {
+		if !line.starts_with(key) {
+			continue
+		}
+		fields := line.split(';')
+		if fields.len < 6 {
+			return 0
+		}
+		decomp := fields[5].trim_space()
+		if decomp == '' || decomp.starts_with('<') {
+			return 0
+		}
+		parts := decomp.split(' ')
+		if parts.len != 1 {
+			return 0
+		}
+		return parse_hex(parts[0])
+	}
+	return 0
+}
 
 // intern_order reserves ordinals for a known list of values, in order.
 fn intern_order(mut reg Registry, order []string) {
@@ -340,9 +416,26 @@ fn main() {
 	// the overwhelmingly common case then costs no lookup.
 	mut bidi := new_registry()
 	intern_order(mut bidi, bidi_class_order)
-	emit_property('DerivedBidiClass.txt', 'ucd_bidi.v', 'extracted/DerivedBidiClass.txt', 1,
-		'bidi_class_names', 'bidi_class_ranges',
-		'the UAX#9 bidirectional category of every codepoint', bidi)
+	bidi_ranges := coalesce(ucd_ranges(os.join_path(ucd_dir, 'DerivedBidiClass.txt'), 1), bidi)
+	brackets := parse_brackets(os.join_path(ucd_dir, 'BidiBrackets.txt'))
+	mut tb := Text{ parts: []string{} }
+	emit_header(mut tb, 'extracted/DerivedBidiClass.txt, BidiBrackets.txt')
+	emit_values(mut tb, 'bidi_class_names', 'the UAX#9 bidirectional category of every codepoint',
+		bidi)
+	emit_ranges(mut tb, 'bidi_class_ranges', 'the UAX#9 bidirectional category of every codepoint',
+		bidi_ranges)
+	// Rule N0 needs to know which brackets pair up, so the table goes with the
+	// bidi class rather than in a file of its own.
+	tb.w('// bidi_brackets_data lists the bracket pairs rule N0 resolves.\n')
+	tb.w('// Format: one pair per line, "cp paired o|c canonical", sorted by cp.\n')
+	tb.w("// The canonical field is the codepoint's canonical equivalent, or 0.\n")
+	tb.w("pub const bidi_brackets_data = '")
+	for b in brackets {
+		kind := if b.kind == 0 { 'o' } else { 'c' }
+		tb.w('${b.cp:04x} ${b.paired:04x} ${kind} ${b.canonical:04x}\n')
+	}
+	tb.w("'\n\n")
+	emit_writes('ucd_bidi.v', mut tb)
 
 	// Joining_Type and Joining_Group, both needed for Arabic shaping.
 	mut jt := new_registry()
