@@ -85,8 +85,7 @@ fn test_hmtx_advances_are_monotonic_sane() {
 	w := face.glyph_index(`W`)
 	assert w != 0
 	// In a proportional font i must be narrower than W.
-	assert f64(face.glyph_advance_units(i)) < f64(face.glyph_advance_units(w)),
-		'"i" should be narrower than "W"'
+	assert f64(face.glyph_advance_units(i)) < f64(face.glyph_advance_units(w)), '"i" should be narrower than "W"'
 	// Pixel advance must be a sane fraction of the em size.
 	adv := face.glyph_advance(w, 32.0)
 	assert adv > 8.0 && adv < 40.0, 'unexpected advance ${adv} for W at 32px'
@@ -118,6 +117,7 @@ fn test_persian_codepoints_map_in_an_arabic_font() {
 		assert face.glyph_index(cp) != 0, 'U+${cp:04X} unmapped in Dubai'
 	}
 }
+
 fn test_bidi_codepoints_map() {
 	// ZWNJ and ZWJ are the two marks Persian text genuinely needs: ZWNJ breaks a
 	// joining sequence (نیم‌فاصله) and ZWJ forces one. A font that lacks them

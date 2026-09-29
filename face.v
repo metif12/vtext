@@ -8,9 +8,9 @@ module vtext
 // accessors below are the intended read path.
 struct Face {
 mut:
-	sfnt        &Sfnt
-	cmaps       []Cmap
-	glyphs      []GlyphMetrics
+	sfnt         &Sfnt
+	cmaps        []Cmap
+	glyphs       []GlyphMetrics
 	units_per_em int
 	num_glyphs   int
 	// stb_buf is raw storage for stb_truetype's opaque font handle. It must
@@ -45,11 +45,11 @@ mut:
 	weight     int
 	width      int
 	// name table, filled in lazily.
-	family_name   string
-	style_name    string
-	advances      []u16
-	lsbs          []i16
-	stb_ok        bool
+	family_name    string
+	style_name     string
+	advances       []u16
+	lsbs           []i16
+	stb_ok         bool
 	units_per_em_f f64
 }
 

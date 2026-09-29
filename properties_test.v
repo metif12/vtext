@@ -113,7 +113,7 @@ fn test_line_break_of_known_codepoints() {
 fn test_lookup_range_handles_edges() {
 	ranges := [
 		CodeRange{ lo: 0x10, hi: 0x1f, value: 5 }
-		CodeRange{ lo: 0x30, hi: 0x3f, value: 7 }
+		CodeRange{ lo: 0x30, hi: 0x3f, value: 7 },
 	]
 	assert lookup_range(ranges, 0x00, 0) == 0
 	assert lookup_range(ranges, 0x0f, 0) == 0
@@ -276,8 +276,7 @@ fn test_generated_joining_table_matches_the_ucd() {
 		lo := hex_value(codes[0])
 		want := fields[1].trim_space()
 		assert int(p.joining_type_of(rune(lo))) < p.joining_names.len
-		assert p.joining_names[int(p.joining_type_of(rune(lo)))] == want,
-			'joining type of U+${lo:04X}'
+		assert p.joining_names[int(p.joining_type_of(rune(lo)))] == want, 'joining type of U+${lo:04X}'
 		checked++
 	}
 	assert checked > 100, 'expected many ranges, checked ${checked}'

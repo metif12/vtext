@@ -17,10 +17,10 @@ mut:
 	glyph_ids  []u16
 	first_code u16
 	// format 4: segment arrays, parallel with each other.
-	start_code  []u16
-	end_code    []u16
-	id_delta    []i16
-	id_range    []u16
+	start_code []u16
+	end_code   []u16
+	id_delta   []i16
+	id_range   []u16
 	// format 12: sorted coverage groups.
 	groups []CmapGroup
 	// score orders competing subtables. Higher wins; see cmap_preference.
