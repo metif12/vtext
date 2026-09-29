@@ -1,0 +1,22 @@
+# Build output
+*.exe
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+.vtmp/
+vtext_build.*
+
+# Unicode Character Database: fetched by tools/fetch_ucd.ps1, not committed.
+# The generated tables in ucd_*.v are committed, so a build never needs these.
+# The small derived files are kept so the UCD comparison tests can run without a
+# network fetch.
+ucd/*
+!ucd/DerivedBidiClass.txt
+!ucd/DerivedJoiningType.txt
+!ucd/GraphemeBreakProperty.txt
+!ucd/LineBreak.txt
+!ucd/Scripts.txt
+!ucd/PropertyValueAliases.txt
+!ucd/ArabicShaping.txt

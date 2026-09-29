@@ -1,0 +1,408 @@
+module main
+
+// gen_tables reads the Unicode Character Database files in `ucd/` and writes the
+// generated range tables that the shaper looks properties up in.
+//
+// Everything it emits is plain data: a sorted array of CodeRange per property,
+// searched with a binary search at run time. Keeping the tables in Unicode's own
+// order is what lets the lookup be a single bisect instead of a hash map.
+//
+// Usage: v run tools/gen_tables.v
+//
+// The UCD files under ucd/ are pinned to Unicode 18.0.0. Regenerating against a
+// newer UCD means replacing those files; every emitted file records the version
+// so a mismatch shows up in the diff.
+
+import os
+
+const ucd_dir = 'ucd'
+const out_dir = '.'
+
+// unicode_version is written into every generated file.
+const unicode_version = '18.0.0'
+
+// CodeRange mirrors vtext.CodeRange. It is redeclared here because a tool that
+// generates a module's own data cannot import that module.
+struct CodeRange {
+mut:
+	lo    u32
+	hi    u32
+	value u16
+	pad   u16
+}
+
+// PropertyValue is one named value of a property, plus the ordinal used in the
+// emitted tables.
+struct PropertyValue {
+	name string
+	code string
+}
+
+// ParsedRange is a range read from a UCD file, before names are resolved.
+struct ParsedRange {
+	lo    u32
+	hi    u32
+	value string
+}
+
+// Text accumulates generated source. It holds an array rather than a
+// strings.Builder because appending to an array is visible through every copy
+// of the struct, whereas a builder passed by reference loses its writes.
+struct Text {
+mut:
+	parts []string
+}
+
+// w appends a fragment.
+fn (mut t Text) w(s string) {
+	t.parts << s
+}
+
+// text returns the accumulated source.
+fn (t &Text) text() string {
+	mut sb := []u8{}
+	for p in t.parts {
+		sb << p.bytes()
+	}
+	return sb.bytestr()
+}
+
+// ---------------------------------------------------------------- UCD parsing
+
+// parse_hex parses a hexadecimal string with no prefix. UCD files mix upper and
+// lower case freely. It returns u32 because V does not allow casting a string to
+// an integer.
+fn parse_hex(s string) u32 {
+	mut out := u32(0)
+	for i in 0 .. s.len {
+		c := s[i]
+		if c >= `0` && c <= `9` {
+			out = out * 16 + u32(c - `0`)
+		} else if c >= `a` && c <= `f` {
+			out = out * 16 + u32(c - `a`) + 10
+		} else if c >= `A` && c <= `F` {
+			out = out * 16 + u32(c - `A`) + 10
+		}
+	}
+	return out
+}
+
+// coalesce_numeric sorts and merges ranges whose value is already a number. The
+// canonical combining class is such a property, so there is no name registry to
+// intern into.
+fn coalesce_numeric(mut ranges []CodeRange) []CodeRange {
+	ranges.sort_with_compare(fn (a &CodeRange, b &CodeRange) int {
+		if a.lo < b.lo {
+			return -1
+		}
+		if a.lo > b.lo {
+			return 1
+		}
+		return 0
+	})
+	mut out := []CodeRange{}
+	for r in ranges {
+		if out.len > 0 {
+			mut tail := out[out.len - 1]
+			if tail.value == r.value && tail.hi + 1 == r.lo {
+				tail.hi = r.hi
+				out[out.len - 1] = tail
+				continue
+			}
+		}
+		out << r
+	}
+	return out
+}
+
+// dec_u16 parses a decimal number, used where the UCD stores a numeric property
+// directly (the canonical combining class).
+fn dec_u16(s string) u16 {
+	mut out := u16(0)
+	for i in 0 .. s.len {
+		c := s[i]
+		if c >= `0` && c <= `9` {
+			out = out * 10 + u16(c - `0`)
+		}
+	}
+	return out
+}
+
+// canonical orders of the property values. The UCD's derived files are grouped by
+// value, but coalesce sorts by codepoint, so the ordinals cannot be taken from
+// file order: they are pinned here, which is also what the hand written enums in
+// properties.v assume.
+const bidi_class_order = ['L', 'R', 'EN', 'ES', 'ET', 'AN', 'CS', 'B', 'S', 'WS', 'ON', 'BN',
+	'NSM', 'AL', 'LRO', 'RLO', 'LRE', 'RLE', 'PDF', 'LRI', 'RLI', 'FSI', 'PDI']
+
+const joining_type_order = ['U', 'C', 'D', 'R', 'L', 'T']
+
+const grapheme_class_order = ['Other', 'CR', 'LF', 'Control', 'Extend', 'ZWJ',
+	'Regional_Indicator', 'Prepend', 'SpacingMark', 'L', 'V', 'T', 'LV', 'LVT']
+
+const line_break_order = ['XX', 'CM', 'BA', 'LF', 'BK', 'CR', 'SP', 'EX', 'QU', 'AL', 'PR', 'PO',
+	'OP', 'CP', 'IS', 'HY', 'SY', 'NU', 'CL', 'NL', 'GL', 'AI', 'HH', 'BB', 'HL', 'SA', 'JL',
+	'JV', 'JT', 'NS', 'AK', 'VI', 'ID', 'ID_CJ', 'VF', 'ZW', 'ZWJ', 'B2', 'IN', 'WJ', 'EB', 'CJ',
+	'H2', 'H3', 'SG', 'CB', 'AP', 'RI', 'EM']
+
+// intern_order reserves ordinals for a known list of values, in order.
+fn intern_order(mut reg Registry, order []string) {
+	for name in order {
+		reg.intern(name)
+	}
+}
+
+// script_codes maps a Scripts.txt long script name to its ISO 15924 code, read
+// from PropertyValueAliases.txt. Shaping features are keyed on the short code,
+// so the long name is not enough.
+fn script_codes() map[string]string {
+	mut out := map[string]string{}
+	data := os.read_file(os.join_path(ucd_dir, 'PropertyValueAliases.txt')) or { return out }
+	for line in data.split_into_lines() {
+		s := line.trim_space()
+		if s == '' || s[0] == `#` {
+			continue
+		}
+		fields := s.split(';')
+		if fields.len < 3 {
+			continue
+		}
+		prop := fields[0].trim_space()
+		if prop != 'sc' {
+			continue
+		}
+		code := fields[1].trim_space()
+		long := fields[2].trim_space()
+		out[long.replace('_', ' ')] = code
+	}
+	return out
+}
+
+// ucd_ranges reads a UCD data file, skipping comments and blank lines. Lines
+// look like `0621; ARABIC LETTER HAMZA; D; BEH` or `0041..005A; Lu`.
+fn ucd_ranges(path string, value_field int) []ParsedRange {
+	data := os.read_file(path) or { return []ParsedRange{} }
+	mut out := []ParsedRange{}
+	for line in data.split_into_lines() {
+		// A value is followed by " # comment" on the same line, so the comment
+		// has to go before the fields are split.
+		cut := line.index('#') or { line.len }
+		s := line[..cut].trim_space()
+		if s == '' {
+			continue
+		}
+		fields := s.split(';')
+		if fields.len <= value_field {
+			continue
+		}
+		codes := fields[0].split('..')
+		lo_cp := parse_hex(codes[0])
+		hi_cp := if codes.len > 1 {
+			parse_hex(codes[1])
+		} else {
+			lo_cp
+		}
+		name := fields[value_field].trim_space()
+		out << ParsedRange{ lo: lo_cp, hi: hi_cp, value: name }
+	}
+	return out
+}
+
+// ------------------------------------------------------------- value registries
+
+// Registry assigns a stable ordinal to every distinct property value, keeping
+// the ordinals in the order the UCD file lists them so diffs stay readable.
+struct Registry {
+mut:
+	values []PropertyValue
+	index  map[string]int
+}
+
+fn new_registry() &Registry {
+	return &Registry{
+		values: []PropertyValue{}
+		index:  map[string]int{}
+	}
+}
+
+// intern returns the ordinal for name, allocating one on first use. Ordinal 0
+// must already be taken by the property's default so that an absent range means
+// the default.
+fn (mut r Registry) intern(name string) int {
+	if name in r.index {
+		return r.index[name]!
+	}
+	idx := r.values.len
+	r.values << PropertyValue{ name: name, code: name }
+	r.index[name] = idx
+	return idx
+}
+
+// coalesce sorts by codepoint and merges adjacent ranges that share a value.
+// The sort is not optional: the derived UCD files are grouped by property value,
+// not by codepoint, and a binary search needs them in order. The merge then
+// collapses the boundaries the UCD adds purely for readability.
+fn coalesce(ranges []ParsedRange, reg &Registry) []CodeRange {
+	mut sorted := ranges.clone()
+	sorted.sort_with_compare(fn (a &ParsedRange, b &ParsedRange) int {
+		if a.lo < b.lo {
+			return -1
+		}
+		if a.lo > b.lo {
+			return 1
+		}
+		return 0
+	})
+	mut out := []CodeRange{}
+	for r in sorted {
+		v := u16(reg.intern(r.value))
+		if out.len > 0 {
+			mut tail := out[out.len - 1]
+			if tail.value == v && tail.hi + 1 == r.lo {
+				tail.hi = r.hi
+				out[out.len - 1] = tail
+				continue
+			}
+		}
+		out << CodeRange{ lo: r.lo, hi: r.hi, value: v, pad: 0 }
+	}
+	return out
+}
+
+// ------------------------------------------------------------------- emission
+
+// emit_header writes the banner every generated file starts with.
+fn emit_header(mut t Text, source string) {
+	t.w('module vtext\n\n')
+	t.w('// Code generated by tools/gen_tables.v. DO NOT EDIT.\n')
+	t.w('// Source: Unicode Character Database ${unicode_version}, ${source}\n\n')
+}
+
+// emit_values writes the value registry as a name table. A name table rather
+// than an enum, because several UCD value names are V keywords (`in`, `as`) and
+// enum fields would then have to be escaped; the ordinal is the only thing the
+// hot path needs.
+fn emit_values(mut t Text, name string, comment string, reg &Registry) {
+	t.w('// ${name} lists the values of ${comment}, in ordinal order.\n')
+	t.w('// Format: one value per line.\n')
+	t.w("pub const ${name}_data = '")
+	for v in reg.values {
+		t.w('${v.code}\n')
+	}
+	t.w("'\n\n")
+}
+
+// emit_ranges writes a sorted range table as a const string, one range per line:
+//
+//	const bidi_class_data = '
+//		0041 005A 0
+//		0061 007A 0
+//		...'
+//
+// A string rather than an array of structs because a V const array written out
+// element by element silently materialises as empty in this compiler. The text
+// form is also easier to review and to diff than a few thousand struct literals.
+fn emit_ranges(mut t Text, name string, comment string, ranges []CodeRange) {
+	t.w('// ${name} gives the ${comment}.\n')
+	t.w('// Format: one range per line, "lo hi value" in hex and decimal.\n')
+	t.w("pub const ${name}_data = '")
+	for r in ranges {
+		t.w('${r.lo:04x} ${r.hi:04x} ${r.value}\n')
+	}
+	t.w("'\n\n")
+}
+
+// emit_writes writes the accumulated text to out_dir/name.
+fn emit_writes(name string, mut t Text) {
+	path := os.join_path(out_dir, name)
+	body := t.text()
+	os.write_file(path, body) or { panic('cannot write ${path}: ${err}') }
+	println('wrote ${path} (${body.len} bytes)')
+}
+
+// ----------------------------------------------------------------- one per file
+
+// emit_property reads one UCD file and writes one generated module file.
+fn emit_property(name string, out_file string, source string, value_field int,
+	values_name string, range_name_ string, value_comment string, reg &Registry) {
+	ranges := coalesce(ucd_ranges(os.join_path(ucd_dir, name), value_field), reg)
+	mut t := Text{ parts: []string{} }
+	emit_header(mut t, source)
+	emit_values(mut t, values_name, value_comment, reg)
+	emit_ranges(mut t, range_name_, value_comment, ranges)
+	emit_writes(out_file, mut t)
+}
+
+// ------------------------------------------------------------------------ main
+
+fn main() {
+	// Bidi category. Ordinal 0 is L, which is also what an absent range means;
+	// the overwhelmingly common case then costs no lookup.
+	mut bidi := new_registry()
+	intern_order(mut bidi, bidi_class_order)
+	emit_property('DerivedBidiClass.txt', 'ucd_bidi.v', 'extracted/DerivedBidiClass.txt', 1,
+		'bidi_class_names', 'bidi_class_ranges',
+		'the UAX#9 bidirectional category of every codepoint', bidi)
+
+	// Joining_Type and Joining_Group, both needed for Arabic shaping.
+	mut jt := new_registry()
+	intern_order(mut jt, joining_type_order)
+	jt_ranges := coalesce(ucd_ranges(os.join_path(ucd_dir, 'DerivedJoiningType.txt'), 1), jt)
+	mut jg := new_registry()
+	jg.intern('') // no group
+	jg_ranges := coalesce(ucd_ranges(os.join_path(ucd_dir, 'DerivedJoiningGroup.txt'), 1), jg)
+	mut t := Text{ parts: []string{} }
+	emit_header(mut t, 'extracted/DerivedJoiningType.txt, extracted/DerivedJoiningGroup.txt')
+	emit_values(mut t, 'joining_type_names', 'the Joining_Type property', jt)
+	emit_values(mut t, 'joining_group_names', 'the Joining_Group property', jg)
+	emit_ranges(mut t, 'joining_type_ranges', 'the Joining_Type of every codepoint', jt_ranges)
+	emit_ranges(mut t, 'joining_group_ranges', 'the Joining_Group of every codepoint', jg_ranges)
+	emit_writes('ucd_joining.v', mut t)
+
+	// Canonical combining class, needed to order marks around a base. The class
+	// is itself a small number, so it is stored directly in the range table
+	// rather than as an ordinal into a name table; there is nothing to look up.
+	mut cc_ranges := []CodeRange{}
+	for r in ucd_ranges(os.join_path(ucd_dir, 'DerivedCombiningClass.txt'), 1) {
+		cc_ranges << CodeRange{ lo: r.lo, hi: r.hi, value: dec_u16(r.value) }
+	}
+	cc_ranges = coalesce_numeric(mut cc_ranges)
+	mut tcc := Text{ parts: []string{} }
+	emit_header(mut tcc, 'extracted/DerivedCombiningClass.txt')
+	emit_ranges(mut tcc, 'combining_class_ranges',
+		'canonical combining class of every codepoint, as a number', cc_ranges)
+	emit_writes('ucd_combining.v', mut tcc)
+
+	// UAX#29 grapheme cluster break property.
+	mut gb := new_registry()
+	intern_order(mut gb, grapheme_class_order)
+	emit_property('GraphemeBreakProperty.txt', 'ucd_grapheme.v',
+		'auxiliary/GraphemeBreakProperty.txt', 1, 'grapheme_class_names',
+		'grapheme_class_ranges', 'the UAX#29 grapheme break class of every codepoint', gb)
+
+	// UAX#14 line break property.
+	mut lb := new_registry()
+	intern_order(mut lb, line_break_order)
+	emit_property('LineBreak.txt', 'ucd_linebreak.v', 'LineBreak.txt', 1,
+		'line_break_names', 'line_break_ranges',
+		'the UAX#14 line break class of every codepoint', lb)
+
+	// Script, which decides which shaping features and joining rules apply. The
+	// values are ISO 15924 codes, mapped from the long names Scripts.txt uses.
+	codes := script_codes()
+	mut sc := new_registry()
+	sc.intern('Unknown')
+	mut mapped := []ParsedRange{}
+	for r in ucd_ranges(os.join_path(ucd_dir, 'Scripts.txt'), 1) {
+		code := codes[r.value] or { r.value }
+		mapped << ParsedRange{ lo: r.lo, hi: r.hi, value: code }
+	}
+	sc_ranges := coalesce(mapped, sc)
+	mut t2 := Text{ parts: []string{} }
+	emit_header(mut t2, 'Scripts.txt, PropertyValueAliases.txt')
+	emit_values(mut t2, 'script_names', 'the script of every codepoint (ISO 15924 tags)', sc)
+	emit_ranges(mut t2, 'script_ranges', 'the script of every codepoint', sc_ranges)
+	emit_writes('ucd_script.v', mut t2)
+
+	println('done')
+}

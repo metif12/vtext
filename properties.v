@@ -1,0 +1,309 @@
+module vtext
+
+// The property accessors return small enums whose ordinals match the generated
+// value name tables exactly. The enums are hand written rather than generated
+// because several UCD value names are V keywords (`in`, `as`, `is`) and could not
+// be enum fields.
+
+// BidiClass is the UAX#9 bidirectional category of a codepoint.
+pub enum BidiClass {
+	l   = 0
+	r   = 1
+	en  = 2
+	es  = 3
+	et  = 4
+	an  = 5
+	cs  = 6
+	b   = 7
+	s   = 8
+	ws  = 9
+	on  = 10
+	bn  = 11
+	nsm = 12
+	al  = 13
+	lro = 14
+	rlo = 15
+	lre = 16
+	rle = 17
+	pdf = 18
+	lri = 19
+	rli = 20
+	fsi = 21
+	pdi = 22
+}
+
+// str returns the UCD name of the class, e.g. 'AL'. It reads the generated name
+// table, which needs a Properties value, so callers that have one should use
+// Properties.bidi_class_name instead; this exists for logging and test failures.
+pub fn (c BidiClass) str() string {
+	return ucd_name(bidi_class_names_data, int(c))
+}
+
+// ucd_name returns the nth line of a generated value name table.
+fn ucd_name(data string, index int) string {
+	if index < 0 {
+		return ''
+	}
+	mut i := 0
+	mut line_start := 0
+	for pos in 0 .. data.len {
+		if data[pos] == `\n` {
+			if i == index {
+				return data[line_start..pos]
+			}
+			i++
+			line_start = pos + 1
+		}
+	}
+	return ''
+}
+
+// is_rtl reports whether the class has a right-to-base direction.
+pub fn (c BidiClass) is_rtl() bool {
+	return c in [.r, .al]
+}
+
+// is_neutral_or_isolate reports whether the class is a neutral or an isolate,
+// which UAX#9 resolves through rules N1 and N2.
+pub fn (c BidiClass) is_neutral_or_isolate() bool {
+	return c in [.ws, .on, .b, .s, .lri, .rli, .fsi, .pdi]
+}
+
+// is_removed_by_x9 reports whether rule X9 removes the character before any
+// explicit level is applied, i.e. the embedding, override and pop controls plus
+// the format characters.
+pub fn (c BidiClass) is_removed_by_x9() bool {
+	return c in [.rle, .lre, .rlo, .lro, .pdf, .bn]
+}
+
+// JoiningType is the Joining_Type property from ArabicShaping.txt.
+pub enum JoiningType {
+	u = 0 // non-joining
+	c = 1 // join causing
+	d = 2 // dual joining
+	r = 3 // right joining
+	l = 4 // left joining
+	t = 5 // transparent
+}
+
+// joins_to_previous reports whether a letter of this type can connect to the
+// letter before it.
+pub fn (t JoiningType) joins_to_previous() bool {
+	return t in [.d, .l]
+}
+
+// joins_to_next reports whether a letter of this type can connect to the letter
+// after it.
+pub fn (t JoiningType) joins_to_next() bool {
+	return t in [.d, .r]
+}
+
+// is_transparent reports whether the character is a combining mark that is
+// skipped when deciding joins.
+pub fn (t JoiningType) is_transparent() bool {
+	return t == .t
+}
+
+// GraphemeClass is the UAX#29 grapheme cluster break property.
+pub enum GraphemeClass {
+	other              = 0
+	cr                 = 1
+	lf                 = 2
+	control            = 3
+	extend             = 4
+	zwj                = 5
+	regional_indicator = 6
+	prepend            = 7
+	spacing_mark       = 8
+	l                  = 9
+	v                  = 10
+	t                  = 11
+	lv                 = 12
+	lvt                = 13
+}
+
+// LineBreakClass is the UAX#14 line break class. The names follow LineBreak.txt;
+// the ones that would collide with V keywords are spelled out.
+pub enum LineBreakClass {
+	xx   = 0 // unknown
+	cm   = 1 // combining mark
+	ba   = 2 // break after
+	lf   = 3
+	bk   = 4 // mandatory break
+	cr   = 5
+	sp   = 6 // space
+	ex   = 7 // exclamation
+	qu   = 8 // quotation
+	al   = 9 // alphabetic
+	pr   = 10 // prefix numeric
+	po   = 11 // postfix numeric
+	op   = 12 // open punctuation
+	cp   = 13 // close punctuation
+	insp = 14 // inseparable
+	hy   = 15 // hyphen
+	sy   = 16 // symbols allowing a break after
+	nu   = 17 // numeric
+	cl   = 18 // close
+	nl   = 19 // newline
+	gl   = 20 // glue
+	ai   = 21 // ambiguous
+	hh   = 22 // hard hyphen
+	bb   = 23 // break before
+	hl   = 24 // Hebrew letter
+	sa   = 25 // complex context
+	jl   = 26 // Hangul jamo L
+	jv   = 27 // Hangul jamo V
+	jt   = 28 // Hangul jamo T
+	ns   = 29 // nonstarter
+	ak   = 30 // Aksara
+	vi   = 31 // virama final
+	idas = 32 // ideographic
+	idcj = 33 // ideographic close
+	vf   = 34 // virama final, ideographic
+	zw   = 35 // ZW space
+	zwj  = 36 // ZWJ
+	b2   = 37 // break opportunity before and after
+	wjoin = 38 // word joiner
+	wj   = 39 // WJ
+	eb   = 40 // emoji base
+	cj   = 41 // conditional Japanese starter
+	h2   = 42
+	h3   = 43
+	sg   = 44
+	cb   = 45
+	ap   = 46 // Aksara pre-base
+	ri   = 47 // regional indicator
+	em   = 48 // emoji modifier
+}
+
+// str returns the UCD name of the class, e.g. 'AL'.
+pub fn (c LineBreakClass) str() string {
+	return ucd_name(line_break_names_data, int(c))
+}
+
+// lookup_range returns the property value of cp, or default_value when cp is in
+// no listed range. Every property reserves ordinal 0 for its default, so a
+// missing range is indistinguishable from an explicit default - which is exactly
+// what the UCD's @missing lines say.
+fn lookup_range(ranges []CodeRange, cp u32, default_value u16) u16 {
+	mut lo := 0
+	mut hi := ranges.len
+	// Find one past the last range whose lo is <= cp.
+	for lo < hi {
+		mid := (lo + hi) >> 1
+		if ranges[mid].lo <= cp {
+			lo = mid + 1
+		} else {
+			hi = mid
+		}
+	}
+	if lo == 0 {
+		return default_value
+	}
+	r := ranges[lo - 1]
+	if cp > r.hi {
+		return default_value
+	}
+	return r.value
+}
+
+// enum_ordinal bounds-checks a table ordinal before it is cast to an enum. The
+// generated name table and the hand written enum are kept in step by
+// test_value_tables_match_the_enums, so an out-of-range ordinal can only mean a
+// stale generated file; it degrades to the default rather than becoming an
+// out-of-bounds enum value.
+fn enum_ordinal(ordinal u16, name_count int, default_ordinal int) int {
+	return if int(ordinal) < name_count { int(ordinal) } else { default_ordinal }
+}
+
+// bidi_class_of returns the UAX#9 bidirectional category of cp. Codepoints with
+// no listed range are L, which is what the UCD's @missing line specifies.
+pub fn (p &Properties) bidi_class_of(cp rune) BidiClass {
+	o := enum_ordinal(lookup_range(p.bidi_ranges, u32(cp), 0), p.bidi_names.len,
+		int(BidiClass.l))
+	return unsafe { BidiClass(o) }
+}
+
+// bidi_class_name returns the UCD name of cp's bidi class, e.g. 'AL'.
+pub fn (p &Properties) bidi_class_name(cp rune) string {
+	c := p.bidi_class_of(cp)
+	return p.bidi_names[int(c)]
+}
+
+// joining_type_of returns the Joining_Type of cp. U (non-joining) is the default.
+pub fn (p &Properties) joining_type_of(cp rune) JoiningType {
+	o := enum_ordinal(lookup_range(p.joining_ranges, u32(cp), 0), p.joining_names.len,
+		int(JoiningType.u))
+	return unsafe { JoiningType(o) }
+}
+
+// joining_group_of returns the index of cp's Joining_Group, or 0 when it has none.
+pub fn (p &Properties) joining_group_of(cp rune) int {
+	return int(lookup_range(p.group_ranges, u32(cp), 0))
+}
+
+// joining_group_name returns cp's Joining_Group name, or '' when it has none.
+pub fn (p &Properties) joining_group_name(cp rune) string {
+	idx := p.joining_group_of(cp)
+	if idx >= p.group_names.len {
+		return ''
+	}
+	return p.group_names[idx]
+}
+
+// combining_class_of returns the canonical combining class of cp. Marks that
+// combine at the same position and share a class keep their input order.
+pub fn (p &Properties) combining_class_of(cp rune) int {
+	return int(lookup_range(p.combining_ranges, u32(cp), 0))
+}
+
+// script_of returns the index of cp's script, or 0 for Unknown.
+pub fn (p &Properties) script_of(cp rune) int {
+	return int(lookup_range(p.script_ranges, u32(cp), 0))
+}
+
+// script_tag_of returns the ISO 15924 tag of cp's script. 'Zzzz' means the
+// script is not one Unicode names; 'Zyyy' is Common and 'Zinh' is inherited.
+pub fn (p &Properties) script_tag_of(cp rune) string {
+	idx := p.script_of(cp)
+	if idx >= p.script_names.len {
+		return 'Zzzz'
+	}
+	return p.script_names[idx]
+}
+
+// grapheme_class_of returns the UAX#29 grapheme break class of cp.
+pub fn (p &Properties) grapheme_class_of(cp rune) GraphemeClass {
+	o := enum_ordinal(lookup_range(p.grapheme_ranges, u32(cp), 0), p.grapheme_names.len,
+		int(GraphemeClass.other))
+	return unsafe { GraphemeClass(o) }
+}
+
+// line_break_of returns the UAX#14 line break class of cp.
+pub fn (p &Properties) line_break_of(cp rune) LineBreakClass {
+	o := enum_ordinal(lookup_range(p.linebreak_ranges, u32(cp), 0), p.linebreak_names.len,
+		int(LineBreakClass.xx))
+	return unsafe { LineBreakClass(o) }
+}
+
+// line_break_name returns the UCD name of cp's line break class, e.g. 'AL'.
+pub fn (p &Properties) line_break_name(cp rune) string {
+	c := p.line_break_of(cp)
+	if int(c) >= p.linebreak_names.len {
+		return ''
+	}
+	return p.linebreak_names[int(c)]
+}
+
+// is_arabic_script reports whether cp belongs to the Arabic script, which is what
+// turns on joining behaviour and the arabic shaping features.
+pub fn (p &Properties) is_arabic_script(cp rune) bool {
+	return p.script_tag_of(cp) == 'Arab'
+}
+
+// is_mark reports whether cp is a combining mark for the purposes of canonical
+// ordering. A nonzero combining class is the operative signal; the exact
+// General_Category test lives in the OpenType engine where it matters.
+pub fn (p &Properties) is_mark(cp rune) bool {
+	return p.combining_class_of(cp) != 0
+}
