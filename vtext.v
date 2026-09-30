@@ -123,6 +123,33 @@ pub fn (f &Font) has_gsub() bool {
 	return f.face.gsub != none
 }
 
+// has_mark_attachment reports whether the font says where a mark goes on the letter it
+// belongs to. A font without it draws the mark at the pen position, which for an Arabic letter
+// is beside the letter rather than on it.
+pub fn (f &Font) has_mark_attachment() bool {
+	g := f.face.gpos or { return false }
+	return g.has_mark_attachment()
+}
+
+// is_mark_glyph reports whether the font classifies this glyph as a combining mark. The
+// classification comes from the font rather than from Unicode, because the font is what decides
+// how its own glyphs are used.
+pub fn (f &Font) is_mark_glyph(gid u16) bool {
+	g := f.face.gdef or { return false }
+	return g.is_mark(gid)
+}
+
+// mark_offset returns where to draw a mark relative to the origin of the base glyph it belongs
+// to, in design units, with y positive upwards as the font's own coordinates run.
+//
+// found is false when the font has no rule for this pair, or has none for this mark's class on
+// this base. That is not an error: it is a font that does not say, and the caller is expected to
+// leave the mark where the pen is rather than invent a position.
+pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16) ?Offset2 {
+	gpos := f.face.gpos or { return none }
+	return gpos.mark_offset(mark_gid, base_gid)
+}
+
 // shaped_glyph_index applies the font's positional features to a base glyph and returns the
 // glyph that carries the shape.
 //

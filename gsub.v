@@ -70,9 +70,6 @@ pub struct Gsub {
 // new_gsub parses the GSUB table, or returns none when the font has none or it does not
 // parse. A font without usable substitution is a font whose letters stay in their base shape,
 // which is a degraded rendering rather than a broken one, so this never fails.
-// new_gsub parses the GSUB table, or returns none when the font has none or it does not
-// parse. A font without usable substitution is a font whose letters stay in their base shape,
-// which is a degraded rendering rather than a broken one, so this never fails.
 //
 // The parameter is named raw rather than data because data is a field name in this module,
 // and a local shadowing a type name makes V resolve methods on the type instead of the
@@ -261,12 +258,6 @@ fn parse_lookups(r &Reader, off int) []Lookup {
 		out << lookup
 	}
 	return out
-}
-
-// ResolvedSubtable is a subtable together with the lookup type that actually governs it.
-struct ResolvedSubtable {
-	kind u16
-	at   int
 }
 
 // resolve_subtable follows an extension lookup to the table it wraps.

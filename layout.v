@@ -22,7 +22,7 @@ pub mut:
 	// nothing.
 	width f64
 	// ascent and descent are the vertical extent of the line in pixels, taken from the
-	// tallest font that contributed a glyph.
+	// tallest font that contributed a glyph, with any mark that reaches above or below it.
 	ascent  f64
 	descent f64
 	// paragraph_level is the resolved direction as a level: even is left to right, odd is
@@ -76,6 +76,7 @@ pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSe
 		glyphs:          place_glyphs(placed, bidi)
 		paragraph_level: bidi.paragraph_level
 	}
+	position_marks(mut line, em_px)
 	measure_line(mut line, em_px)
 	return line
 }
@@ -116,13 +117,24 @@ fn place_glyphs(placed []Glyph, bidi BidiResult) []Glyph {
 // measure_line fills in the line's width and vertical extent.
 //
 // A line can be drawn from more than one font, and the fonts need not agree on how tall they
-// are, so the extent is the largest of the contributors rather than the first one's.
+// are, so the extent is the largest of the contributors rather than the first one's. A mark
+// that has been moved up onto its letter can reach above the font's own ascent, which is what
+// makes a fatha stick out of the line box, so the marks are measured too.
 fn measure_line(mut line &Line, em_px f64) {
 	for g in line.glyphs {
 		line.width = larger(line.width, g.x + g.advance)
 		if f := g.font {
 			line.ascent = larger(line.ascent, f.ascent(em_px))
 			line.descent = larger(line.descent, f.descent(em_px))
+			// A mark's own glyph sits above or below its position, so the extent of the line has
+			// to include where the mark reaches to, not just where its origin is. The bitmap's
+			// top is how far the ink reaches above the baseline and its left how far it reaches
+			// left of the pen, both of which the mark's y and x shift.
+			bmp := f.rasterize(g.gid, em_px, 0, 0)
+			if !bmp.is_empty() {
+				line.ascent = larger(line.ascent, g.y + f64(bmp.top + bmp.height))
+				line.descent = larger(line.descent, -g.y + f64(bmp.top))
+			}
 		}
 	}
 }
@@ -130,6 +142,75 @@ fn measure_line(mut line &Line, em_px f64) {
 // larger is the larger of two pixel measurements.
 fn larger(a f64, b f64) f64 {
 	return if a > b { a } else { b }
+}
+
+// draw_order returns the glyphs in the order they should be painted: letters first, marks
+// last.
+//
+// position_marks moves each mark onto the letter it belongs to, using the font's own anchors.
+//
+// A mark has no advance, so before this it sits wherever the pen happened to be when it came
+// round, which for a letter is at the baseline and at the letter's left edge. The font says
+// where it should really be: the mark has an anchor, the base has one per mark class, and the
+// mark goes wherever the two agree.
+//
+// The base is found by walking backwards in logical order, not visual order, because that is the
+// order the mark was written in. In a right-to-left line the two are opposites, so looking
+// backwards in visual order would attach the mark to the letter after it rather than the one it
+// follows. A mark with no letter before it in its run, which happens at the start of a word
+// carrying a stray vowel, is left at the pen position.
+fn position_marks(mut line &Line, em_px f64) {
+	// Two passes, and the order matters. The line is in visual order, and in a right-to-left
+	// line a mark comes before the letter it belongs to, so collecting the letters and then
+	// placing the marks in one pass would find the mark's base already behind it. Collecting
+	// every letter first means a mark can look in any direction.
+	mut bases := map[int]int{}
+	for i, g in line.glyphs {
+		if !g.is_mark {
+			bases[g.cluster] = i
+		}
+	}
+
+	for i, g in line.glyphs {
+		if !g.is_mark {
+			continue
+		}
+		// The base is the letter the mark was written after, which is the nearest one with a
+		// smaller input position. Searching by cluster rather than by position on the line is
+		// what makes this work in both directions, and it also steps over a ligature or a
+		// discarded control that sits between the two.
+		//
+		// The search is over the clusters that are present rather than over a fixed range, so a
+		// mark whose letter was dropped from the line finds nothing and stays at the pen.
+		mut base_index := -1
+		mut best := 0
+		for cluster, bi in bases {
+			if cluster < g.cluster && (base_index < 0 || cluster > best) {
+				base_index = bi
+				best = cluster
+			}
+		}
+		if base_index < 0 {
+			continue
+		}
+		base := line.glyphs[base_index]
+		f := g.font or { continue }
+		base_font := base.font or { continue }
+		// The glyphs have to come from the same font for an anchor in one to mean anything in
+		// the other. A line that fell back mid-word has marks in a different font from their
+		// base, and there is no correct answer, so the mark stays at the pen.
+		if f != base_font {
+			continue
+		}
+		off := f.mark_offset(g.gid, base.gid) or { continue }
+		// The offset is in design units and the line is in pixels, so it is scaled by the same
+		// ratio the advances came from.
+		scale := em_px / f64(f.face.units_per_em)
+		line.glyphs[i].x = base.x + f64(off.x) * scale
+		// y is positive upwards in the font's coordinates and downwards on a line, so the sign
+		// is flipped here rather than leaving every caller to remember.
+		line.glyphs[i].y = -f64(off.y) * scale
+	}
 }
 
 // draw_order returns the glyphs in the order they should be painted: letters first, marks
