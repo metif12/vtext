@@ -2,13 +2,38 @@ module vtext
 
 // vtext is a text shaping and rendering engine written in V.
 //
-// The pipeline is: Unicode itemisation -> bidirectional reordering -> OpenType
-// shaping -> font fallback -> line layout -> glyph atlas -> draw. Everything is
-// V except the outline rasteriser, which reuses the public-domain
-// stb_truetype header that already ships inside V's own thirdparty tree, so
-// importing this module adds no new external dependency.
+// The pipeline is: normalization -> Unicode itemisation -> bidirectional
+// reordering -> OpenType shaping -> font fallback -> line layout -> glyph atlas ->
+// draw. Everything is V except the outline rasteriser, which reuses the
+// public-domain stb_truetype header that already ships inside V's own thirdparty
+// tree, so importing this module adds no new external dependency.
 
 import os
+
+// Context holds the decoded Unicode tables the pipeline needs, and is built once per
+// text system. The tables are immutable, so a single Context can be shared between
+// threads and between faces.
+//
+// Building one costs a few hundred microseconds, which is a lot compared with
+// shaping a short string, so this is not something to do per call.
+pub struct Context {
+pub:
+	// properties holds the character properties: bidi class, joining type and group,
+	// combining class, script, grapheme class and line break class.
+	properties &Properties
+	// normalizer holds the canonical decomposition and composition tables of UAX#15.
+	normalizer &Normalizer
+}
+
+// new_context decodes every table. The caller owns the result and keeps it for the
+// lifetime of the text system.
+pub fn new_context() &Context {
+	tables := new_properties()
+	return &Context{
+		properties: tables
+		normalizer: new_normalizer(*tables)
+	}
+}
 
 // Font is a loaded font file. It is the entry point for metrics, glyph lookup
 // and rasterisation.

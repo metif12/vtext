@@ -21,6 +21,7 @@ $files = @(
 	"$base/ArabicShaping.txt"
 	"$base/CompositionExclusions.txt"
 	"$base/DerivedNormalizationProps.txt"
+	"$base/NormalizationTest.txt"
 	"$base/LineBreak.txt"
 	"$base/PropertyValueAliases.txt"
 	"$base/Scripts.txt"
@@ -51,4 +52,6 @@ foreach ($url in $files) {
 
 Write-Host ''
 Write-Host "Unicode $Version data is in $ucd"
-Write-Host 'Regenerate the tables with: v run tools/gen_tables.v'
+Write-Host 'Regenerate the tables with:'
+Write-Host '  v run tools/gen_tables.v'
+Write-Host '  v run tools/gen_normalization.v'
