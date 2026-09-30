@@ -55,6 +55,14 @@ pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSe
 			sub << decomposed[i]
 		}
 		shaped := ctx.shaper.shape_arabic(ctx.properties, sub)
+		mut run := []Glyph{}
+		// The script of the first letter in the run, which is what the font resolves its
+		// ligature features under. A run of one script has one, and a run is never mixed, since
+		// the bidi pass already split the text at every direction change.
+		mut script := 'arab'
+		if shaped.glyphs.len > 0 {
+			script = shaped.glyphs[0].script
+		}
 		for g in shaped.glyphs {
 			// A sequence is a list of input indices with the X9-removed characters taken
 			// out, so an index in the shaped run is an offset into the sequence rather than
@@ -67,8 +75,14 @@ pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSe
 			for j, mut out in fs.shaped_glyphs(g, em_px) {
 				offset := g.start + j
 				out.cluster = if offset < seq.len { seq[offset] } else { seq[g.start] }
-				placed << out
+				run << out
 			}
+		}
+		// The font's own ligatures, before anything is placed. A ligature is a property of the
+		// text's order, not of where it ends up on the line, so it has to happen while the run is
+		// still in logical order.
+		for glyph in fuse_ligatures(run, em_px, script) {
+			placed << glyph
 		}
 	}
 
@@ -79,6 +93,40 @@ pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSe
 	position_marks(mut line, em_px)
 	measure_line(mut line, em_px)
 	return line
+}
+
+// fuse_ligatures hands each stretch of the run that came from one font to that font to fuse.
+//
+// A ligature cannot straddle two fonts, because a glyph index in one font means nothing in
+// another. A line that fell back mid-word therefore has its ligature rules stop at the seam, and
+// the two letters it could have fused are drawn apart. That is the honest answer for a line
+// whose characters came from different fonts: there is no single glyph to draw them as.
+fn fuse_ligatures(glyphs []Glyph, em_px f64, script string) []Glyph {
+	if glyphs.len == 0 {
+		return glyphs
+	}
+	mut out := []Glyph{cap: glyphs.len}
+	mut at := 0
+	for at < glyphs.len {
+		f := glyphs[at].font or {
+			out << glyphs[at]
+			at++
+			continue
+		}
+		mut end := at + 1
+		for end < glyphs.len {
+			other := glyphs[end].font or { break }
+			if other != f {
+				break
+			}
+			end++
+		}
+		for glyph in f.ligate_glyphs(glyphs[at..end], script, em_px) {
+			out << glyph
+		}
+		at = end
+	}
+	return out
 }
 
 // place_glyphs positions the glyphs on the line in visual order.

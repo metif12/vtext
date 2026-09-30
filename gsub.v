@@ -8,10 +8,15 @@ module vtext
 // into a glyph index. The joining pass could not do this itself: it produces a shape, and
 // which glyph carries that shape is a property of the font.
 //
-// The scope here is the single-substitution lookups behind the four positional features,
-// isol, fina, init and medi. That is what makes a font like Dubai render properly joined.
-// Ligature substitution needs a run of glyphs rather than one, so it belongs with the rest
-// of the shaping pipeline and is not in this milestone.
+// The scope here is the single substitution behind the four positional features, isol, fina,
+// init and medi, and the ligature substitution behind ccmp and rlig. The first is what makes a
+// font like Dubai render properly joined; the second is what fuses a lam and an alef into one
+// glyph and composes two marks a font draws as one.
+//
+// What is not here is context substitution, lookup types 5 and 6, which read a whole run and
+// substitute according to what surrounds the glyph. Dubai puts its mark composition in a
+// chaining context lookup, so its marks are still not placed by this engine, and a font that
+// needs one to compose its marks is left in the degraded state rather than a wrong one.
 
 // Lookup types, from the OpenType specification.
 const gsub_lookup_single = 1
@@ -40,11 +45,31 @@ struct SingleSubst {
 	subs  []u16
 }
 
+// LigatureRule is one way a run of glyphs can be fused into a single glyph.
+struct LigatureRule {
+	// glyph is what the run becomes.
+	glyph u16
+	// components are the glyphs that follow the first one and are swallowed with it. The first
+	// glyph is not listed, because it is the one the coverage is indexed by and every rule in a
+	// set starts with the same one.
+	components []u16
+}
+
+// LigatureSet holds every rule that starts with one particular glyph, longest first as the
+// specification requires it to be written.
+struct LigatureSet {
+mut:
+	// first is the glyph these rules begin with.
+	first u16
+	rules []LigatureRule
+}
+
 // Lookup is one GSUB lookup, holding the rules of the kinds this milestone applies.
 struct Lookup {
 mut:
-	kind    u16
-	singles []SingleSubst
+	kind      u16
+	singles   []SingleSubst
+	ligatures []LigatureSet
 }
 
 // ScriptFeature pairs a feature tag with the lookups it names, for one script.
@@ -102,6 +127,108 @@ pub fn new_gsub(raw []u8) ?&Gsub {
 		lookups: lookups
 		scripts: parse_scripts(r, script_list, features)
 	}
+}
+
+// Ligatable is what a ligature pass needs to know about one glyph on a line: which glyph it is,
+// and which input character it came from. The fused glyph keeps the cluster of the first glyph
+// it swallowed, which is what makes a ligature traceable back to the text it stands for.
+pub struct Ligatable {
+pub mut:
+	gid     u16
+	cluster int
+	// source is the position this item had in the list that went in. A fused run is shorter than
+	// what it replaced, so the two lists do not line up and the caller cannot work out which
+	// original glyph a fused one came from by counting. It is the first glyph of the run, whose
+	// font, shape and mark flag are the ones the fused glyph inherits.
+	source int
+}
+
+// LigatureMatch is the outcome of a fusion: the glyph that replaces the run, and how many glyphs
+// it swallowed.
+struct LigatureMatch {
+	glyph    u16
+	consumed int
+}
+
+// match_ligature finds the longest rule that fuses a run of glyphs starting at a given position,
+// or none when the run does not fuse.
+//
+// Longest wins rather than first, because a font that offers both a two-glyph and a three-glyph
+// rule for the same opening letter has to be given the three-glyph one, or "lam lam alef" would
+// come out as a ligature plus a loose letter. The sets are already sorted that way when they
+// are parsed, and this walks them in order, so the first rule that matches is the longest.
+fn (l &Lookup) match_ligature(gids []Ligatable, at int) ?LigatureMatch {
+	first := gids[at].gid
+	for set in l.ligatures {
+		if set.first != first {
+			continue
+		}
+		for rule in set.rules {
+			// The rule has to fit entirely inside what is left of the run. A rule that runs off
+			// the end does not match, which is the same answer as a rule that does not apply.
+			if at + rule.components.len >= gids.len {
+				continue
+			}
+			mut ok := true
+			for k, component in rule.components {
+				if gids[at + 1 + k].gid != component {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				return LigatureMatch{
+					glyph:    rule.glyph
+					consumed: rule.components.len + 1
+				}
+			}
+		}
+	}
+	return none
+}
+
+// ligate fuses runs of glyphs according to a list of lookups, in the order given.
+//
+// The glyphs are in logical order, because that is the order the text was written in and the
+// order a font's rules are written against. Reordering for display comes later and does not
+// change which glyphs were fused with which.
+pub fn (g &Gsub) ligate(lookups []u16, items []Ligatable) []Ligatable {
+	if lookups.len == 0 || items.len == 0 {
+		return items
+	}
+	mut out := items
+	for li in lookups {
+		if li >= g.lookups.len {
+			continue
+		}
+		lookup := g.lookups[li]
+		if lookup.kind != gsub_lookup_ligature {
+			continue
+		}
+		// One pass over the run per lookup, building a new list. A lookup is a set of independent
+		// rules, so fusing one stretch must not stop the next stretch fusing, and a lookup cannot
+		// feed itself since the rules are read from the table rather than from the output.
+		mut next := []Ligatable{cap: out.len}
+		mut at := 0
+		for at < out.len {
+			if m := lookup.match_ligature(out, at) {
+				// The fused glyph belongs to the first character it swallowed, so a ligature
+				// is still traceable to the start of the text it came from, and it inherits
+				// that first glyph's font and shape.
+				next << Ligatable{
+					gid:     m.glyph
+					cluster: out[at].cluster
+					source:  out[at].source
+				}
+				at += m.consumed
+				continue
+			}
+			next << out[at]
+			at++
+		}
+		out = next.clone()
+	}
+	return out
 }
 
 // script returns the script with the given tag.
@@ -254,10 +381,103 @@ fn parse_lookups(r &Reader, off int) []Lookup {
 					lookup.singles << s
 				}
 			}
+			if resolved.kind == gsub_lookup_ligature {
+				for set in parse_ligature_subst(r, resolved.at) {
+					lookup.ligatures << set
+				}
+			}
+		}
+		// A lookup that has rules of one kind is reported as that kind, so a caller filtering on
+		// the type does not have to know that the type may have come from an extension header.
+		if lookup.ligatures.len > 0 {
+			lookup.kind = gsub_lookup_ligature
+		} else if lookup.singles.len > 0 && lookup.kind == gsub_lookup_extension {
+			lookup.kind = gsub_lookup_single
 		}
 		out << lookup
 	}
 	return out
+}
+
+// parse_ligature_subst reads one LigatureSubst subtable into the sets it holds.
+//
+// The offsets nest three deep and each level is relative to its own table rather than to the
+// subtable, which is the sort of thing that reads as plausible nonsense when a level is missed:
+// a ligature set that starts at the wrong place has a glyph count taken from a coordinate pair.
+fn parse_ligature_subst(r &Reader, at int) []LigatureSet {
+	mut out := []LigatureSet{}
+	if r.u16_at(at) != 1 {
+		return out
+	}
+	ranges := parse_coverage(r, at + int(r.u16_at(at + 2)))
+	set_count := int(r.u16_at(at + 4))
+	for si in 0 .. set_count {
+		// A set offset is from the start of the subtable, and the set belongs to the glyph at
+		// the matching coverage index.
+		set_at := at + int(r.u16_at(at + 6 + si * 2))
+		if si >= ranges.len {
+			break
+		}
+		first := coverage_glyph_at(ranges, si)
+		mut set := LigatureSet{ first: first }
+		lig_count := int(r.u16_at(set_at))
+		for li in 0 .. lig_count {
+			// A ligature offset is from the start of its set, not the subtable.
+			lig_at := set_at + int(r.u16_at(set_at + 2 + li * 2))
+			if rule := parse_ligature(r, lig_at) {
+				set.rules << rule
+			}
+		}
+		// Longest first, so a rule that swallows more glyphs is tried before one that swallows
+		// fewer. The font is required to write them in that order, but relying on that would make
+		// a font that does not fuse the longer pair, and sorting costs nothing.
+		set.rules.sort_with_compare(fn (a &LigatureRule, b &LigatureRule) int {
+			return b.components.len - a.components.len
+		})
+		out << set
+	}
+	return out
+}
+
+// parse_ligature reads one ligature rule: the glyph it becomes and the components after the
+// first.
+fn parse_ligature(r &Reader, at int) ?LigatureRule {
+	if !r.has(at, 4) {
+		return none
+	}
+	glyph := r.u16_at(at)
+	count := int(r.u16_at(at + 2))
+	if count < 2 {
+		// A rule that consumes one glyph is a single substitution wearing the wrong type, and
+		// treating it as a ligature would consume a glyph for nothing.
+		return none
+	}
+	mut components := []u16{cap: count - 1}
+	for i in 1 .. count {
+		components << r.u16_at(at + 2 + i * 2)
+	}
+	return LigatureRule{
+		glyph:      glyph
+		components: components
+	}
+}
+
+// coverage_glyph_at returns the glyph at a coverage index, which is the glyph a ligature set
+// belongs to.
+//
+// Coverage format 2 stores a range's start index rather than every glyph in it, so this walks
+// the ranges counting their lengths. That is the only way to get from a coverage index back to
+// a glyph, and a font using format 2 for its ligature coverage needs it.
+fn coverage_glyph_at(ranges []CoverageRange, index int) u16 {
+	mut remaining := index
+	for range in ranges {
+		length := int(range.last) - int(range.first) + 1
+		if remaining < length {
+			return range.first + u16(remaining)
+		}
+		remaining -= length
+	}
+	return 0
 }
 
 // resolve_subtable follows an extension lookup to the table it wraps.

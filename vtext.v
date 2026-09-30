@@ -117,6 +117,49 @@ pub fn (f &Font) has_glyph(cp rune) bool {
 	return f.face.has_glyph(cp)
 }
 
+// ligate_glyphs fuses runs of glyphs into single glyphs using the font's ligature features.
+//
+// This is what the joining pass cannot do on its own. It knows that a lam and an alef are one
+// shape, and it says so with a presentation form codepoint, but whether the font has a glyph for
+// that form, and how wide it is, are questions only the font can answer. A lam-alef drawn as
+// two letters is legible and wrong: the pair is narrower fused than apart, so a line built that
+// way is the wrong length.
+//
+// The features are applied in the order the specification gives, ccmp before rlig, so a mark
+// that composes into a single glyph is not then swallowed by a rule written for the pair.
+pub fn (f &Font) ligate_glyphs(glyphs []Glyph, script string, em_px f64) []Glyph {
+	g := f.face.gsub or { return glyphs }
+	mut out := []Ligatable{cap: glyphs.len}
+	for i, glyph in glyphs {
+		out << Ligatable{
+			gid:     glyph.gid
+			cluster: glyph.cluster
+			source:  i
+		}
+	}
+	for feature in ['ccmp', 'rlig'] {
+		out = g.ligate(g.lookups_for(script, feature), out)
+	}
+	// Every advance is read again, not just the fused ones, so the advance always belongs to the
+	// glyph it is on. A ligature is usually narrower than the glyphs it replaced, and carrying
+	// the first letter's advance over would leave the line the wrong length in exactly the way
+	// the ligature was meant to fix.
+	mut result := []Glyph{cap: out.len}
+	for item in out {
+		mut glyph := glyphs[item.source]
+		glyph.gid = item.gid
+		glyph.cluster = item.cluster
+		// A mark never advances the pen, whatever glyph it ended up as, so its zero advance is
+		// kept rather than measured. Measuring it would give a mark the width of its outline and
+		// push everything after it along the line.
+		if !glyph.is_mark {
+			glyph.advance = f.glyph_advance(item.gid, em_px)
+		}
+		result << glyph
+	}
+	return result
+}
+
 // has_gsub reports whether the font carries glyph substitution, which is what decides whether
 // it can draw a letter in anything but its base shape.
 pub fn (f &Font) has_gsub() bool {

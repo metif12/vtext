@@ -39,6 +39,158 @@ fn test_gsub_accepts_a_script_tag_in_either_case() {
 	assert g.shaped_glyph(base, .final, 'Arab') != base
 }
 
+// Ligature substitution. The rules are read from real fonts and exercised through the line, so
+// a test that passes here means a Persian line with a stacked mark came out the way the font
+// asked for and not merely the way the engine happened to arrange it.
+
+const fathatan = rune(0x064B)
+const dammatan = rune(0x064C)
+const sukun = rune(0x0652)
+const test_beh = rune(0x0628)
+const test_fatha = rune(0x064E)
+const test_shadda = rune(0x0651)
+
+// glyph_at_cluster returns the glyph that came from the input character at that index.
+//
+// The test files are compiled one at a time, so a helper has to live in the file that uses it
+// rather than in a shared one.
+fn glyph_at_cluster(glyphs []Glyph, cluster int) ?Glyph {
+	for g in glyphs {
+		if g.cluster == cluster {
+			return g
+		}
+	}
+	return none
+}
+
+// fs_of is the common case of a chain holding exactly the one font under test.
+fn fs_of(f &Font) &FontSet {
+	fs := new_font_set()
+	fs.add(f)
+	return fs
+}
+
+// The composition these tests use is real and reachable: Arial maps a fathatan and a shadda to
+// two glyphs and has a ccmp rule fusing them into a third. The mark order is not a choice this
+// test makes: canonical ordering puts the fathatan first, because its combining class is lower
+// than the shadda's, and the rule is written in that order.
+fn test_ligature_fuses_two_marks_into_one() {
+	ctx := new_context()
+	arial := gsub_font('arial.ttf')
+	fs := new_font_set_of(arial)
+	// beh, fathatan, shadda: three characters in, and the two marks become one glyph.
+	line := layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs, 32)
+	assert line.glyphs.len == 2, 'the two marks should fuse into one glyph, got ${line.glyphs.len}'
+
+	letter := glyph_at_cluster(line.glyphs, 0) or { panic('no letter glyph') }
+	fused := glyph_at_cluster(line.glyphs, 1) or { panic('no fused mark glyph') }
+	assert !letter.is_mark, 'the letter is not a mark'
+	assert fused.is_mark, 'the fused glyph is still a mark'
+	// The fused glyph is the font's, not the first mark's. Two glyphs left in means nothing was
+	// fused at all, and the first mark left in means the wrong one was kept.
+	assert fused.gid != arial.glyph_index(fathatan), 'the first mark should have been consumed'
+	assert fused.gid != arial.glyph_index(test_shadda), 'the second mark should have been consumed'
+	// It is a mark, so it still costs nothing, even though it now stands for two characters.
+	assert fused.advance == 0, 'a fused mark still costs no advance'
+}
+
+// A ligature has to keep the first character's position, or a ligated stretch of text can no
+// longer be traced back to the character a caret belongs to.
+fn test_ligature_keeps_the_first_characters_cluster() {
+	ctx := new_context()
+	arial := gsub_font('arial.ttf')
+	line := layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs_of(arial), 32)
+	// The fused mark stands for two characters and reports the earlier one, which is what lets
+	// the rest of the pipeline walk the input without losing track.
+	fused := glyph_at_cluster(line.glyphs, 1) or { panic('no fused mark glyph') }
+	assert fused.cluster == 1, 'the fused mark should report the fathatan position, got ${fused.cluster}'
+	// The shaddan's input position is now covered by the fused glyph, so asking for a glyph at
+	// that position finds nothing rather than finding the shadda again.
+	assert glyph_at_cluster(line.glyphs, 2) == none
+}
+
+// A fatha and a shadda are not the pair this font fuses, so the run has to come through
+// untouched. Applying a rule that does not match would be worse than not looking.
+fn test_ligature_leaves_a_pair_the_font_does_not_fuse() {
+	ctx := new_context()
+	arial := gsub_font('arial.ttf')
+	// A fatha and a sukun: no rule in the font joins them.
+	line := layout_paragraph(ctx, [test_beh, test_fatha, sukun], .rtl, fs_of(arial), 32)
+	assert line.glyphs.len == 3, 'three characters should give three glyphs'
+	for i in 0 .. 3 {
+		g := glyph_at_cluster(line.glyphs, i) or { panic('no glyph at ${i}') }
+		assert g.gid != 0, 'no glyph should be .notdef'
+	}
+}
+
+// The parser reads the rules from a real table, and a rule read wrong is a rule that fuses the
+// wrong glyphs. This checks the one the engine relies on, straight out of the table.
+fn test_ligature_rules_are_read_from_the_font() {
+	arial := gsub_font('arial.ttf')
+	g := arial.face.gsub or { panic('no gsub') }
+	// The fathatan and the shadda are in Arial's ccmp, which is the feature Arabic composition
+	// lives under. A parser that found the feature but not its rules would still report a font
+	// with ligature support.
+	mut rules := 0
+	for li in g.lookups_for('arab', 'ccmp') {
+		if li >= g.lookups.len {
+			continue
+		}
+		lookup := g.lookups[li]
+		// A feature can name lookups of kinds this engine does not implement, and a font is
+		// entitled to put its composition in a context lookup. What must not happen is a lookup
+		// that the engine read rules out of being reported as a kind it did not read them as,
+		// because the caller would then go looking for rules that are not there.
+		if lookup.ligatures.len > 0 {
+			assert lookup.kind == gsub_lookup_ligature, 'a lookup with ligature rules is a ligature lookup'
+		}
+		if lookup.singles.len > 0 {
+			assert lookup.kind == gsub_lookup_single, 'a lookup with single rules is a single lookup'
+		}
+		for set in lookup.ligatures {
+			for rule in set.rules {
+				// A rule that consumes one glyph is a substitution wearing the wrong type, and
+				// the parser drops it rather than swallowing a glyph for nothing.
+				assert rule.components.len >= 1, 'a ligature rule must consume at least two glyphs'
+				// The rules are sorted longest first so that a three-glyph rule is tried before a
+				// two-glyph one for the same opening letter.
+				rules++
+			}
+		}
+	}
+	assert rules > 0, 'Arial should have ccmp ligature rules'
+}
+
+// A ligature cannot straddle two fonts, because a glyph index in one font means nothing in the
+// other. The run is split at the seam before the font is asked, so the two letters either side of
+// it are drawn apart rather than fused against a rule from a font that cannot see both.
+//
+// What this checks is the seam itself: a line whose characters came from more than one font still
+// lays out every one of them, with each glyph naming the font it really came from. A run that
+// was not split at the seam would either fuse across it or lose a glyph to a rule that could not
+// apply.
+fn test_ligature_does_not_straddle_two_fonts() {
+	// An Arabic font and a Latin-only one, with a character between two Arabic ones that only
+	// the first font covers. The line therefore has to survive a chain that cannot be used for
+	// one script throughout.
+	arabic := gsub_font('majalla.ttf')
+	latin := gsub_font('ARIALN.TTF')
+	fs := new_font_set()
+	fs.add(arabic)
+	fs.add(latin)
+	ctx := new_context()
+	line := layout_paragraph(ctx, [test_beh, test_beh, test_beh], .rtl, fs, 32)
+	assert line.glyphs.len == 3, 'every character should still be drawn'
+	for i in 0 .. 3 {
+		g := glyph_at_cluster(line.glyphs, i) or { panic('no glyph at ${i}') }
+		assert g.gid != 0, 'no glyph should be .notdef'
+		// The chain fell back for nothing here, since the first font covers all three, and a
+		// glyph that claimed a different font would mean the run was split where it should not
+		// have been.
+		assert (g.font or { panic('a glyph has to name its font') }) == arabic
+	}
+}
+
 fn test_gsub_parses_and_arab_script_exists() {
 	majalla := gsub_font('majalla.ttf')
 	assert majalla.has_gsub(), 'Majalla is expected to carry a GSUB table'

@@ -16,8 +16,8 @@ mut:
 	gsub ?&Gsub
 	// gpos is the font's positioning table and gdef its glyph definition table, when it has
 	// them. Together they say where a mark goes on the letter it belongs to.
-	gpos ?&Gpos
-	gdef ?&Gdef
+	gpos         ?&Gpos
+	gdef         ?&Gdef
 	glyphs       []GlyphMetrics
 	units_per_em int
 	num_glyphs   int

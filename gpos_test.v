@@ -188,15 +188,15 @@ fn test_gpos_offsets_are_independent_of_the_em() {
 
 // A font whose mark rules are written against composed glyphs cannot place a mark the engine has
 // not composed, and the test says which kind of font it is looking at rather than quietly
-// finding nothing. This is the honest statement of the current limit: Dubai's marks go through
-// a ccmp substitution first, and that substitution is not part of this milestone.
-fn test_marks_composed_by_the_font_are_out_of_reach_for_now() {
+// finding nothing. Dubai is the honest example: its ccmp composition is in a chaining context
+// lookup, which this milestone does not implement, so its marks are still out of reach.
+fn test_marks_composed_by_a_context_lookup_are_out_of_reach_for_now() {
 	dubai := gpos_font('DUBAI-REGULAR.TTF')
 	// The font has rules.
 	assert dubai.has_mark_attachment(), 'Dubai does have mark rules'
 	// But they are not written against the glyph its cmap hands out for a fatha, so the lookup
 	// finds nothing. This is recorded as a fact about the font rather than asserted as a
-	// failure, because the missing piece is the composition step and not the parse.
+	// failure, because the missing piece is the context lookup and not the parse.
 	assert !dubai.mark_glyphs_passthrough(), 'Dubai composes its marks before positioning them'
 	assert dubai.mark_offset(dubai.glyph_index(fatha), dubai.glyph_index(beh)) == none
 	// A font that does not compose its marks is reachable, which is what the other tests use.
