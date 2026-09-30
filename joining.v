@@ -47,6 +47,10 @@ pub:
 	// cps nor base can be drawn as itself, because a caller driving a font's positional
 	// feature table needs to know the shape rather than the codepoint.
 	form JoiningForm
+	// script is the script tag of the letter, which is what selects the script a font
+	// resolves its positional features under. A font may offer 'fina' for more than one
+	// script, and the rules differ.
+	script string
 	// start and end index the run of input characters this glyph covers, which is more
 	// than one for a lam-alef ligature.
 	start int
@@ -147,11 +151,12 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 				// The pair covers the lam and the alef. Any mark after the alef belongs to
 				// the ligature, and becomes a glyph of its own.
 				out.glyphs << ShapedGlyph{
-					cps:   [rune(glyph)]
-					base:  [cps[i], cps[i + 1]]
-					form:  form
-					start: i
-					end:   i + 2
+					cps:    [rune(glyph)]
+					base:   [cps[i], cps[i + 1]]
+					form:   form
+					script: p.script_tag_of(cps[i])
+					start:  i
+					end:    i + 2
 				}
 				i = attach_marks(p, cps, i + 2, mut out)
 				continue
@@ -174,6 +179,7 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 				cps:     [cp]
 				base:    [cp]
 				form:    .isolated
+				script:  p.script_tag_of(cp)
 				start:   i
 				end:     i + 1
 				is_mark: p.combining_class_of(cp) != 0
@@ -187,11 +193,12 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 		// so does a tatweel, which is a join causing character rather than a letter.
 		form_cp := s.find_form(cp, u16(form))
 		out.glyphs << ShapedGlyph{
-			cps:   if form_cp != 0 { [rune(form_cp)] } else { [cp] }
-			base:  [cp]
-			form:  form
-			start: i
-			end:   i + 1
+			cps:    if form_cp != 0 { [rune(form_cp)] } else { [cp] }
+			base:   [cp]
+			form:   form
+			script: p.script_tag_of(cp)
+			start:  i
+			end:    i + 1
 		}
 		i = attach_marks(p, cps, i + 1, mut out)
 	}
@@ -222,6 +229,7 @@ fn attach_marks(p &Properties, cps []rune, from int, mut out &ShapedRun) int {
 				cps:     [cps[i]]
 				base:    [cps[i]]
 				form:    .isolated
+				script:  p.script_tag_of(cps[i])
 				start:   i
 				end:     i + 1
 				is_mark: true

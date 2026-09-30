@@ -8,8 +8,12 @@ module vtext
 // accessors below are the intended read path.
 struct Face {
 mut:
-	sfnt         &Sfnt
-	cmaps        []Cmap
+	sfnt  &Sfnt
+	cmaps []Cmap
+	// gsub is the font's glyph substitution table, when it has a usable one. It is how a
+	// letter's Arabic shape is found, for a font that keeps its shapes in GSUB rather than
+	// in the cmap.
+	gsub         ?&Gsub
 	glyphs       []GlyphMetrics
 	units_per_em int
 	num_glyphs   int
@@ -78,6 +82,9 @@ fn new_face(data []u8) !&Face {
 	face.read_os2()
 	face.read_post()
 	face.cmaps = parse_cmap(sfnt.table_data(tag_cmap))
+	// Substitution is optional and a font without it still loads, so a missing or unparsable
+	// GSUB is left as none rather than failing the face.
+	face.gsub = new_gsub(sfnt.table_data(tag_gsub))
 	face.units_per_em_f = if face.units_per_em > 0 {
 		f64(face.units_per_em)
 	} else {

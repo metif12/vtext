@@ -194,6 +194,123 @@ fn test_layout_draws_the_base_letter_when_the_form_is_missing() {
 	assert g.form == .isolated, 'the shape survives the missing form'
 }
 
+// ExpectedLetter is a base codepoint, the shape a word gives it, and whether the font is
+// expected to carry that shape in its substitution table. The last is there so that a test can
+// cover both routes at once: a letter the font shapes, and one it does not.
+struct ExpectedLetter {
+	base   rune
+	form   JoiningForm
+	shaped bool
+}
+
+// The point of the whole GSUB pass: a Persian word laid out against a font that keeps its
+// Arabic shapes in a substitution table comes out with each letter in the shape the joining
+// pass chose, and each glyph carrying its own advance.
+// The point of the whole GSUB pass: a Persian word laid out against a font that keeps some of
+// its Arabic shapes only in a substitution table comes out with each letter in the shape the
+// joining pass chose, and each glyph carrying its own advance.
+fn test_layout_shapes_persian_through_gsub() {
+	ctx := new_context()
+	// Majalla is the font that shows this. It carries most of its Arabic presentation forms in
+	// the cmap but is missing some of them, so the letters whose forms it lacks can only be
+	// drawn correctly shaped by going through the table. Dubai, which carries almost none of
+	// them, would put every letter on the table route and this test would not tell the two
+	// apart.
+	arabic := font_from('majalla.ttf')
+	assert arabic.has_gsub(), 'this test is about a font that shapes through GSUB'
+	fs := new_font_set_of(arabic)
+
+	// beh sin lam kaf yeh meem. A word with a letter in each position is the only way to reach
+	// the medial and final forms: a letter on its own is isolated, and a probe that forgets
+	// that reports the wrong thing about the other three shapes.
+	//
+	// The middle letters are the interesting ones. This font carries the presentation form for
+	// the first and last letters in its cmap, so those take the cmap route, while it has no cmap
+	// form for the sin and no substitution rule for the lam either, which is the other kind of
+	// miss. Between them they cover what can happen to a letter.
+	word := [`ب`, `س`, `ل`, `ک`, `ی`, `م`]
+	line := layout_paragraph(ctx, word, .rtl, fs, 32)
+	assert line.paragraph_level == 1, 'Persian resolves to a right-to-left paragraph'
+	assert line.glyphs.len == 6, 'six letters give six glyphs'
+	assert line.glyphs[0].cluster == 5, 'the meem is written last and drawn leftmost'
+
+	// The shape the joining pass gave each letter, and what this font is expected to draw for
+	// it. The form codepoint comes from the shaper rather than being written out, so a change to
+	// the joining tables shows up here as a failure about the shape rather than about a glyph.
+	run := ctx.shaper.shape_arabic(ctx.properties, word)
+	assert run.glyphs.len == 6, 'the word should shape into one glyph per letter'
+	// base, the shape the word gives it, and whether the letter is one this font keeps its
+	// shape for in the table rather than in the cmap. The last column is what makes the word
+	// worth testing: it has to contain a letter of each kind, or the word only exercises the
+	// route that is already known to work.
+	expected := [
+		ExpectedLetter{rune(0x0628), JoiningForm.initial, false}, // beh, has a cmap form
+		ExpectedLetter{rune(0x0633), JoiningForm.medial, true}, // sin, shaped through GSUB
+		ExpectedLetter{rune(0x0644), JoiningForm.medial, false}, // lam, has a cmap form
+		ExpectedLetter{rune(0x06A9), JoiningForm.medial, false}, // kaf, has a cmap form
+		ExpectedLetter{rune(0x06CC), JoiningForm.medial, false}, // yeh, has a cmap form
+		ExpectedLetter{rune(0x0645), JoiningForm.final, false}, // meem, has a cmap form
+	]
+	// The word has to contain at least one letter of each kind, or this test is not covering
+	// both routes and would pass even if one of them were broken.
+	mut via_cmap := 0
+	mut via_table := 0
+	for i, e in expected {
+		if arabic.has_glyph(run.glyphs[i].cps[0]) {
+			via_cmap++
+		} else {
+			via_table++
+		}
+	}
+	assert via_cmap > 0 && via_table > 0, 'the word should exercise both the cmap route and the table route'
+	mut width := f64(0)
+	for i, e in expected {
+		// The line is in visual order and the word is right to left, so the glyphs are asked
+		// for by the input character they came from rather than by position on the line.
+		g := glyph_at_cluster(line.glyphs, i) or { panic('no glyph for the character at ${i}') }
+		sg := run.glyphs[i]
+		assert sg.form == e.form, 'the letter at ${i} should be shaped ${e.form}'
+		assert g.form == e.form, 'the letter at ${i} should be drawn in the ${e.form} shape'
+
+		base := arabic.glyph_index(e.base)
+		assert base != 0, 'the font carries the base letter'
+		form_cp := sg.cps[0]
+		uses_cmap := arabic.has_glyph(form_cp)
+		// Whichever route the font layer takes is its business, but the drawn glyph has to be
+		// the right one for it, and it must never be .notdef.
+		assert g.gid != 0, 'the letter at ${i} came out as .notdef'
+		if uses_cmap {
+			assert g.gid == arabic.glyph_index(form_cp), 'the letter at ${i} should use the cmap form, which the font has'
+		} else {
+			// No cmap form, so the letter has to be drawn from its base glyph put through the
+			// font's table. The drawn glyph then has to differ from the unjoined base, since a
+			// letter with no cmap form is a letter this font only draws correctly shaped.
+			want := arabic.shaped_glyph_index(base, e.form, 'arab')
+			assert g.gid == want, 'the letter at ${i} should be the font shaped base glyph'
+			assert want != base, 'the letter at ${i} is meant to be shaped through GSUB'
+			assert e.shaped, 'the letter at ${i} was expected to come from the table'
+		}
+		// The advance has to belong to the drawn glyph. A shaped form is usually narrower than
+		// the base, so reusing the base advance would leave the line the wrong width.
+		assert approx(g.advance, arabic.glyph_advance(g.gid, 32), 0.001), 'the letter at ${i} should carry its own advance'
+		width += g.advance
+	}
+	assert approx(line.width, width, 0.001), 'the line is as wide as its shaped advances'
+}
+
+// A font that keeps its shapes in the cmap needs no substitution, and a font that has both
+// uses the cmap form: it is available without a second lookup, and both name the same shape.
+fn test_layout_prefers_the_cmap_form_over_substitution() {
+	ctx := new_context()
+	segoe := font_from('segoeui.ttf')
+	fs := new_font_set_of(segoe)
+	line := layout_paragraph(ctx, [`س`], .rtl, fs, 32)
+	assert line.glyphs.len == 1
+	g := line.glyphs[0]
+	assert g.gid == segoe.glyph_index(rune(0xFEB1)), 'the isolated sin form comes from the cmap'
+	assert approx(g.advance, segoe.glyph_advance(g.gid, 32), 0.001)
+}
+
 // A lam-alef is the one shaped letter that can stand for two characters, so a font without
 // the ligature form has to draw two letters rather than one.
 //

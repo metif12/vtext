@@ -117,6 +117,26 @@ pub fn (f &Font) has_glyph(cp rune) bool {
 	return f.face.has_glyph(cp)
 }
 
+// has_gsub reports whether the font carries glyph substitution, which is what decides whether
+// it can draw a letter in anything but its base shape.
+pub fn (f &Font) has_gsub() bool {
+	return f.face.gsub != none
+}
+
+// shaped_glyph_index applies the font's positional features to a base glyph and returns the
+// glyph that carries the shape.
+//
+// This is the step a font needs when it keeps its Arabic shapes in GSUB rather than in the
+// cmap. A font with no such table, or no rule for this letter, returns the base glyph, which
+// renders the letter correctly but unjoined.
+//
+// script is the script of the letter, so a font offering the same feature tag for several
+// scripts resolves the right rule.
+pub fn (f &Font) shaped_glyph_index(gid u16, form JoiningForm, script string) u16 {
+	g := f.face.gsub or { return gid }
+	return g.shaped_glyph(gid, form, script)
+}
+
 // glyph_advance is the horizontal advance of a glyph in pixels.
 pub fn (f &Font) glyph_advance(gid u16, em_px f64) f64 {
 	return f.face.glyph_advance(gid, em_px)
