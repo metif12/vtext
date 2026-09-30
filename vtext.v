@@ -23,6 +23,8 @@ pub:
 	properties &Properties
 	// normalizer holds the canonical decomposition and composition tables of UAX#15.
 	normalizer &Normalizer
+	// shaper holds the Arabic presentation forms, which the joining pass maps onto.
+	shaper &Shaper
 }
 
 // new_context decodes every table. The caller owns the result and keeps it for the
@@ -32,6 +34,7 @@ pub fn new_context() &Context {
 	return &Context{
 		properties: tables
 		normalizer: new_normalizer(*tables)
+		shaper:     new_shaper()
 	}
 }
 

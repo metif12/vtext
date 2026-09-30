@@ -31,6 +31,33 @@ fn test_context_holds_real_tables() {
 	assert ctx.normalizer.decompositions.len > 1000, 'the normalizer should hold real tables'
 	assert ctx.normalizer.nfd_no.len > 100, 'the NFD quick check set should be populated'
 	assert ctx.normalizer.nfc_no.len > 10, 'the NFC quick check set should be populated'
+	// The joining tables belong to the same Context, because joining keys on
+	// Joining_Type and the presentation forms are part of the same pipeline.
+	assert ctx.shaper.forms.len > 200, 'the shaper should hold real tables'
+	assert ctx.shaper.ligatures.len == 8, 'the lam-alef ligatures should be present'
+}
+
+// The whole Arabic path, from typed text to shaped codepoints: normalize, then join.
+// Persian SALAM, where the lam and the alef have to fuse.
+fn test_context_shapes_persian_text() {
+	ctx := new_context()
+	// sin lam alef meem, written as escapes rather than as literal characters: a non-ASCII
+	// literal makes the C backend emit a broken initialiser for a []rune.
+	typed := '\u0633\u0644\u0627\u0645'.runes()
+	// Persian has no canonical decompositions, so normalization leaves it alone and the
+	// shaper sees exactly the characters that were typed.
+	decomposed := ctx.normalizer.nfd(typed)
+	assert decomposed.len == 4, 'Persian should not decompose'
+
+	shaped := ctx.shaper.shape_arabic(ctx.properties, decomposed)
+	assert shaped.glyphs.len == 3, 'the lam and the alef should fuse, got ${shaped.glyphs.len}'
+	// The glyphs have to account for every input character, in order, or the font layer
+	// would lose track of which marks belong to which letter.
+	assert shaped.glyphs[0].start == 0 && shaped.glyphs[0].end == 1
+	assert shaped.glyphs[1].start == 1 && shaped.glyphs[1].end == 3, 'the ligature should cover both of its letters'
+	assert shaped.glyphs[2].start == 3 && shaped.glyphs[2].end == 4
+	assert shaped.glyphs[1].cps.len == 1, 'the ligature is drawn as one codepoint'
+	assert shaped.glyphs[1].cps[0] == rune(0xFEFC), 'the final lam-alef ligature'
 }
 
 fn test_context_normalizes_arabic_text() {
