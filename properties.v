@@ -93,16 +93,29 @@ pub enum JoiningType {
 	t = 5 // transparent
 }
 
-// joins_to_previous reports whether a letter of this type can connect to the
-// letter before it.
+// joins_to_previous reports whether a letter of this type can connect to the character
+// before it in the text.
+//
+// The name follows the logical order, not the visual one, which is the opposite for
+// right-to-left script and is the usual source of confusion here. A right joining letter
+// connects to what precedes it: alef in the two letters alef and beh takes its final
+// form, because the beh that follows it logically sits to its left on screen and joins
+// into it.
 pub fn (t JoiningType) joins_to_previous() bool {
-	return t in [.d, .l]
+	return t in [.d, .r, .c]
 }
 
-// joins_to_next reports whether a letter of this type can connect to the letter
-// after it.
+// joins_to_next reports whether a letter of this type can connect to the character after
+// it in the text. A left joining letter is the mirror image of a right joining one.
 pub fn (t JoiningType) joins_to_next() bool {
-	return t in [.d, .r]
+	return t in [.d, .l, .c]
+}
+
+// takes_a_shape reports whether the letter is one whose shape depends on its neighbours.
+// A join causing character holds a connection open without being a letter itself, so it
+// connects on both sides and still takes a shape of its own.
+pub fn (t JoiningType) takes_a_shape() bool {
+	return t in [.d, .r, .l, .c]
 }
 
 // is_transparent reports whether the character is a combining mark that is

@@ -45,14 +45,36 @@ fn test_joining_type_of_known_codepoints() {
 }
 
 fn test_joining_type_predicates() {
+	// Both names follow the logical order of the text, which is the reverse of the
+	// visual order in right-to-left script.
+	//
+	// A right joining letter such as alef connects to what comes before it: in alef then
+	// beh, the beh sits to the alef's left on screen and joins into it, so the alef takes
+	// a final form.
+	assert JoiningType.r.joins_to_previous()
+	assert !JoiningType.r.joins_to_next()
+	// A left joining letter is the mirror image.
+	assert JoiningType.l.joins_to_next()
+	assert !JoiningType.l.joins_to_previous()
+	// A dual joining letter connects on both sides.
 	assert JoiningType.d.joins_to_previous()
 	assert JoiningType.d.joins_to_next()
-	assert JoiningType.r.joins_to_next()
-	assert !JoiningType.r.joins_to_previous()
-	assert JoiningType.l.joins_to_previous()
-	assert !JoiningType.l.joins_to_next()
+	// A join causing character holds a connection open on both sides without being a
+	// letter itself, which is what ZWJ and tatweel do.
+	assert JoiningType.c.joins_to_previous()
+	assert JoiningType.c.joins_to_next()
+	assert JoiningType.c.takes_a_shape()
+	// A non-joining character and a transparent one connect to nothing.
+	assert !JoiningType.u.joins_to_previous()
+	assert !JoiningType.u.joins_to_next()
+	assert !JoiningType.t.joins_to_previous()
+	assert !JoiningType.t.joins_to_next()
+	assert !JoiningType.t.takes_a_shape()
+	assert !JoiningType.u.takes_a_shape()
+	// Only transparent characters are skipped when deciding joins.
 	assert JoiningType.t.is_transparent()
 	assert !JoiningType.d.is_transparent()
+	assert !JoiningType.c.is_transparent()
 }
 
 fn test_joining_group_covers_arabic_letters() {
