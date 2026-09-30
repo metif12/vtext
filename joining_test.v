@@ -82,17 +82,24 @@ fn test_joining_right_joining_alef() {
 // does not stop them connecting.
 fn test_joining_skips_transparent_marks() {
 	// beh + fatha + beh: the mark is transparent, so the two behs still join. The first
-	// connects only forward, the second only backward.
-	assert run_forms(['0628', '064E', '0628']) == ['initial', 'final']
-	assert run(['0628', '064E', '0628']) == ['FE91', 'FE90']
-	// The shaped letter has to cover the mark that follows it, or the mark would be left
-	// without a base to attach to.
+	// connects only forward, the second only backward. The mark is a glyph of its own and
+	// takes no shape, which is why it shows up in the form list as isolated.
+	assert run_forms(['0628', '064E', '0628']) == ['initial', 'isolated', 'final']
+	assert run(['0628', '064E', '0628']) == ['FE91', '064E', 'FE90']
+	// The mark is a glyph of its own rather than part of the letter's, because it is its
+	// own codepoint and has to reach the font's cmap: a letter's glyph names one
+	// codepoint, so a mark folded into it would be lost at the glyph lookup and never
+	// drawn. The letter no longer covers the mark, and the mark is flagged so the layout
+	// pass places it without moving the pen.
 	p := new_properties()
 	s := new_shaper()
 	shaped := s.shape_arabic(p, runes_of(['0628', '064E', '0628']))
-	assert shaped.glyphs.len == 2, 'the mark should not become a glyph of its own'
-	assert shaped.glyphs[0].start == 0 && shaped.glyphs[0].end == 2, 'the first letter should cover the mark'
-	assert shaped.glyphs[1].start == 2 && shaped.glyphs[1].end == 3, 'the second letter should stand alone'
+	assert shaped.glyphs.len == 3, 'the mark should be a glyph of its own'
+	assert shaped.glyphs[0].start == 0 && shaped.glyphs[0].end == 1, 'the first letter stands alone'
+	assert shaped.glyphs[1].start == 1 && shaped.glyphs[1].end == 2
+	assert shaped.glyphs[1].is_mark, 'the mark should be flagged as one'
+	assert shaped.glyphs[1].cps == [rune(0x064E)]
+	assert shaped.glyphs[2].start == 2 && shaped.glyphs[2].end == 3, 'the second letter stands alone'
 }
 
 // ZWNJ breaks the join and ZWJ forces it. Both are invisible, so neither is a glyph.
@@ -173,20 +180,21 @@ fn test_joining_space_breaks_the_word() {
 	assert got[1] == '0020', 'the space should pass through as itself'
 }
 
-// A letter with no presentation form for the shape it needs keeps its base codepoint, so
-// the font layer can still find it. This is what happens with a character that has no
-// final form in the UCD.
-fn test_joining_falls_back_to_the_base_codepoint() {
+// A mark that has no presentation form of its own keeps its base codepoint, so the font
+// layer can still find it. U+06A4 is a dual joining letter that does have forms.
+fn test_joining_keeps_an_unformed_mark_as_itself() {
 	p := new_properties()
 	s := new_shaper()
-	// U+0651 ARABIC SHADDA has joining type Transparent, so it is passed through rather
-	// than shaped. U+06A4 is a dual joining letter that does have forms.
+	// U+0651 ARABIC SHADDA has joining type Transparent and a combining class, so it is
+	// passed through as itself rather than shaped, and it becomes a mark glyph.
 	shaped := s.shape_arabic(p, runes_of(['0628', '0651', '0628']))
-	assert shaped.glyphs.len == 2, 'the shadda should attach to the letter'
+	assert shaped.glyphs.len == 3, 'the shadda is a glyph of its own'
 	assert shaped.glyphs[0].cps == [rune(0xFE91)], 'beh initial is U+FE91'
 	// The shape is reported even when the codepoint is the base, so a caller driving a
 	// font's positional features knows which to apply.
 	assert shaped.glyphs[0].form == .initial
+	assert shaped.glyphs[1].cps == [rune(0x0651)], 'the shadda passes through as itself'
+	assert shaped.glyphs[1].is_mark
 }
 
 // Empty input has to be handled without a special case at every step.

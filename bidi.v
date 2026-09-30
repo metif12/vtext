@@ -30,6 +30,12 @@ pub mut:
 	// isolating_sequences counts the isolating run sequences rule X10 found. It
 	// is a cheap signal when comparing against a reference implementation.
 	isolating_sequences int
+	// sequences holds the isolating run sequences themselves, each one the list of
+	// input indices it covers in text order. Shaping runs on one sequence at a
+	// time, because the rules that resolved a sequence had to treat it as a unit.
+	// X9-removed characters are absent, so an index here is always a character
+	// that will be drawn.
+	sequences [][]int
 }
 
 // DirEntry is one entry of the directional status stack built by rules X1 to X8.
@@ -99,6 +105,7 @@ pub fn resolve_paragraph(p &Properties, cps []rune, base_dir Direction) BidiResu
 	// X10, then the weak, neutral and implicit rules per isolating run sequence.
 	sequences := isolating_run_sequences(types, orig, explicit)
 	result.isolating_sequences = sequences.len
+	result.sequences = sequences
 	for seq in sequences {
 		work := flatten_sequence(seq)
 		sos := boundary_type(types, explicit, para_level, work[0], true)

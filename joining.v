@@ -10,8 +10,14 @@ module vtext
 //
 // The output is shaped codepoints, not glyph indices. Mapping them to glyphs is the font
 // layer's job, because the codepoint is what a font's cmap and its OpenType tables both
-// key on, and a font that carries the letter as a base character with its own positional
-// forms needs a different route through the same decision.
+// key on.
+//
+// The presentation forms are only half the story, and a shaped glyph therefore carries two
+// things: the form codepoint, and the base characters it was made from. A font that carries
+// the forms maps the codepoint directly, but most modern Arabic fonts do not: they carry the
+// base letters and put the four shapes in a GSUB table, so the form codepoint is .notdef
+// there. Keeping the base characters lets the font layer draw the letter anyway, and keeping
+// the form lets it hand the right shape to the OpenType pass afterwards.
 
 // JoiningForm is one of the four shapes a letter can take. The ordinals have to match the
 // generated arabic_form_names table.
@@ -29,18 +35,26 @@ const zero_width_joiner = rune(0x200D)
 // ShapedGlyph is one letter after joining, and the characters it stands for.
 pub struct ShapedGlyph {
 pub:
-	// cps is the presentation form, or the base character when the font has no
+	// cps is the presentation form, or the base character when the UCD has no
 	// presentation form for this shape. It is one codepoint, except for a lam-alef
 	// ligature.
 	cps []rune
-	// form is the shape the joining algorithm chose. It is meaningful even when cps
-	// falls back to the base character, because a caller driving a font's positional
+	// base is the character or characters cps was made from, unchanged. It is what the
+	// font layer draws when no font carries cps, which is the usual case for a font that
+	// keeps its shapes in a GSUB table rather than in the cmap.
+	base []rune
+	// form is the shape the joining algorithm chose. It is meaningful even when neither
+	// cps nor base can be drawn as itself, because a caller driving a font's positional
 	// feature table needs to know the shape rather than the codepoint.
 	form JoiningForm
 	// start and end index the run of input characters this glyph covers, which is more
-	// than one for a ligature and for a mark that was attached to the letter it follows.
+	// than one for a lam-alef ligature.
 	start int
 	end   int
+	// is_mark marks a combining mark. A mark is drawn at the position of the letter it
+	// follows and adds no advance of its own, so the layout pass has to know which
+	// glyphs to place without moving the pen and to draw last so they land on top.
+	is_mark bool
 }
 
 // ShapedRun is a whole run of text after joining, in logical order. Reordering it is the
@@ -130,14 +144,16 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 				// break at the ligature. This is what lets a lam-alef sit in the middle
 				// of a word rather than only at its edges.
 				propagate_past_ligature(p, cps, i, mut join_prev, mut join_next)
-				end := next_non_mark(p, cps, i + 1) + 1
+				// The pair covers the lam and the alef. Any mark after the alef belongs to
+				// the ligature, and becomes a glyph of its own.
 				out.glyphs << ShapedGlyph{
 					cps:   [rune(glyph)]
+					base:  [cps[i], cps[i + 1]]
 					form:  form
 					start: i
-					end:   end
+					end:   i + 2
 				}
-				i = end
+				i = attach_marks(p, cps, i + 2, mut out)
 				continue
 			}
 		}
@@ -151,13 +167,16 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 		}
 
 		// Anything else that cannot connect to either side is passed through as itself:
-		// a space, a mark on its own, a letter that is not part of a word.
+		// a space, a mark on its own, a letter that is not part of a word. A mark that
+		// lands here has no letter to attach to, so it is still positioned as one.
 		if !jt.takes_a_shape() {
 			out.glyphs << ShapedGlyph{
-				cps:   [cp]
-				form:  .isolated
-				start: i
-				end:   i + 1
+				cps:     [cp]
+				base:    [cp]
+				form:    .isolated
+				start:   i
+				end:     i + 1
+				is_mark: p.combining_class_of(cp) != 0
 			}
 			i++
 			continue
@@ -167,18 +186,50 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 		// The lam of a lam-alef pair that had no ligature form still needs a shape, and
 		// so does a tatweel, which is a join causing character rather than a letter.
 		form_cp := s.find_form(cp, u16(form))
-		// Marks that follow the letter belong to the same glyph, so the shaped letter
-		// covers them and the run does not break the base apart from its own accents.
-		end := next_non_mark(p, cps, i) + 1
 		out.glyphs << ShapedGlyph{
 			cps:   if form_cp != 0 { [rune(form_cp)] } else { [cp] }
+			base:  [cp]
 			form:  form
 			start: i
-			end:   end
+			end:   i + 1
 		}
-		i = end
+		i = attach_marks(p, cps, i + 1, mut out)
 	}
 	return out
+}
+
+// attach_marks appends the combining marks that follow position from as glyphs of their own
+// and returns the index just past them.
+//
+// A mark is its own glyph rather than part of the letter's, because it is its own
+// codepoint and has to reach the font's cmap: a letter's glyph can only name one
+// codepoint, so a mark folded into it would be lost at the font lookup and never drawn.
+// The mark still costs no advance and still sits where the letter is, so the layout pass
+// places it from is_mark.
+fn attach_marks(p &Properties, cps []rune, from int, mut out &ShapedRun) int {
+	mut i := from
+	for i < cps.len {
+		// Transparent is the joining type that covers a mark, and it is what decided
+		// where the letter's run of characters stopped, so the two agree on the boundary.
+		if !p.joining_type_of(cps[i]).is_transparent() {
+			break
+		}
+		// A transparent character with no combining class is an invisible format
+		// character such as ZWSP. It belongs to the letter it follows and is not
+		// drawn at all, so it gets no glyph.
+		if p.combining_class_of(cps[i]) != 0 {
+			out.glyphs << ShapedGlyph{
+				cps:     [cps[i]]
+				base:    [cps[i]]
+				form:    .isolated
+				start:   i
+				end:     i + 1
+				is_mark: true
+			}
+		}
+		i++
+	}
+	return i
 }
 
 // propagate_past_ligature carries the lam's forward join onto the letter after the alef.
@@ -293,19 +344,6 @@ fn next_letter(p &Properties, cps []rune, i int) int {
 		}
 	}
 	return -1
-}
-
-// next_non_mark returns the index of the last character of the mark run that starts at i,
-// so a shaped letter can cover the marks that belong to it.
-fn next_non_mark(p &Properties, cps []rune, i int) int {
-	mut last := i
-	for k in i + 1 .. cps.len {
-		if !p.joining_type_of(cps[k]).is_transparent() {
-			break
-		}
-		last = k
-	}
-	return last
 }
 
 // find_form returns the presentation form of a base in a shape, or 0 when there is none.
