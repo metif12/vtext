@@ -210,6 +210,31 @@ pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Off
 	return gpos.mark_offset(mark_gid, base_gid, base_is_mark)
 }
 
+// kern_offset returns how far to move one glyph when another follows it, in design units, with y
+// positive upwards as the font's own coordinates run.
+//
+// The two glyphs are given in the order the text reads them, which for a right-to-left script means
+// the rightmost glyph first. That is the order the font's rules are written in, and the reverse
+// order finds nothing: a font that kerns a pair tightly has a rule for that pair in reading order
+// and none for it backwards, so the line comes out slightly too wide rather than visibly wrong.
+//
+// script is the script the pair is in, because a font may kern one script differently from another
+// and applying the wrong script's rules is worse than applying none.
+//
+// A pair the font says nothing about returns none, and so does a pair it says is already correct as
+// far as this position is concerned, because a zero adjustment and no adjustment cannot be told
+// apart by the number alone and neither one moves the pen.
+pub fn (f &Font) kern_offset(left_gid u16, right_gid u16, script string) ?Offset2 {
+	gpos := f.face.gpos or { return none }
+	return gpos.kern_offset(left_gid, right_gid, script)
+}
+
+// kerns reports whether the font has any pair adjustment for a script.
+pub fn (f &Font) kerns(script string) bool {
+	gpos := f.face.gpos or { return false }
+	return gpos.has_kerning(script)
+}
+
 // places_marks_on_ligatures reports whether the font can position a mark on a fused pair, which
 // decides whether a mark after a lam-alef has a chance of landing anywhere useful.
 pub fn (f &Font) places_marks_on_ligatures() bool {
