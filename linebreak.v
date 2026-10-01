@@ -76,12 +76,9 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 
 	mut out := []BreakOpportunity{}
 	for i in 0 .. n - 1 {
-		left := classes[i]
-		right := classes[i + 1]
-		// LB21b is first, and it is the only rule that looks at more than the
-		// two characters either side. It has to come before the pairs because it
-		// is about a hyphen in an existing break, and a pair rule would otherwise
-		// decide the hyphen's own right-hand side first and get to the wrong
+		// LB21b is first, and it is the only rule that looks at more than the two characters either
+		// side. It has to come before the pairs because it is about a hyphen in an existing break, and
+		// a pair rule would otherwise decide the hyphen's own right-hand side first and get to the wrong
 		// answer about the run.
 		if is_break_after_hyphen_break(props, cps, classes, i) {
 			out << BreakOpportunity{ start: i + 1, at: i + 1 }

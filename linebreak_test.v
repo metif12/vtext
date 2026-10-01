@@ -5,7 +5,6 @@ module vtext
 // The tests check the rules against text where the answer is not a matter of
 // taste: a closing bracket may not start a line, a letter and the accent on it
 // are one unit, and a newline is a newline.
-import os
 
 fn word(cps ...int) []rune {
 	mut out := []rune{cap: cps.len}
