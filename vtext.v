@@ -235,6 +235,25 @@ pub fn (f &Font) kerns(script string) bool {
 	return gpos.has_kerning(script)
 }
 
+// context_placement returns what the font says about a pair of adjacent glyphs in a run, where the
+// answer may depend on what is around them.
+//
+// This is the form to use when the two glyphs are known to be adjacent rather than picked out of the
+// text. A font can place the same two letters differently depending on what precedes them, and that is
+// a rule about a position in a run rather than about a pair of glyphs, so the run is what the question
+// needs.
+//
+// The answer is a placement or an advance in design units, whichever the font's rule says. A rule under
+// the kern feature is usually a placement rather than a kern, so a caller asking for a kerning value
+// and getting a placement is getting what the font asked for.
+//
+// gids is the run in logical order, which is the order the font's patterns are written in. left and
+// right are indices into it, and for a right-to-left run left is the rightmost of the two.
+pub fn (f &Font) context_placement(gids []u16, left int, right int, script string) ?Offset2 {
+	gpos := f.face.gpos or { return none }
+	return gpos.context_offset(gids, left, right, script)
+}
+
 // contextually_positions reports whether the font moves a glyph based on what is around it.
 //
 // This is what a script with stacked forms needs: the middle shape of a three-letter stack has to move

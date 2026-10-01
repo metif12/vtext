@@ -24,6 +24,7 @@ pub:
 }
 
 // GPOS lookup types, from the OpenType specification.
+const gpos_lookup_single_position = 1
 const gpos_lookup_pair = 2
 const gpos_lookup_mark_to_base = 4
 const gpos_lookup_mark_to_ligature = 5
@@ -418,6 +419,10 @@ mut:
 	pairs []PairPos
 	// chains are chaining-context rules, which position a glyph based on what is around it.
 	chains []ChainPosition
+	// singles are single positioning rules, which move one glyph on its own. A context record usually
+	// names one of these rather than a pair rule, so a font that says "this glyph moves when it follows
+	// that one" is reachable only if these are parsed.
+	singles []SinglePos
 }
 
 // mark_glyphs_passthrough reports whether the mark glyphs a font uses in its positioning rules
@@ -675,9 +680,17 @@ pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string) ?Offset
 
 // has_kerning reports whether the font has any pair adjustment for a script, which is what a
 // caller needs to know before deciding whether to lay a line out twice to find the answer.
+//
+// A context counts. A font whose only rules are context-sensitive kerns just as much as one with a
+// plain pair table, and reporting false for it would make a caller lay a line out twice to learn there
+// was nothing to learn.
 pub fn (g &Gpos) has_kerning(script string) bool {
 	for li in g.kerning_for(script) {
-		if li < g.lookups.len && g.lookups[li].pairs.len > 0 {
+		if li >= g.lookups.len {
+			continue
+		}
+		lk := g.lookups[li]
+		if lk.pairs.len > 0 || lk.chains.len > 0 {
 			return true
 		}
 	}
@@ -705,10 +718,10 @@ pub mut:
 // keeps a Latin lookup from being run over Arabic text.
 pub fn (g &Gpos) contextual_for(script string) []u16 {
 	mut out := []u16{}
-	mut seen := map[u16]bool{}
+	mut named_lookups := map[u16]bool{}
 	for tag in ['calt', 'mark', 'mkmk', 'abvm', 'blwm', 'rclt', 'curs', 'kern'] {
 		for li in g.lookups_for(script, tag) {
-			if seen[li] || li >= g.lookups.len {
+			if named_lookups[li] || li >= g.lookups.len {
 				continue
 			}
 			// A feature may name a lookup that is not a context, and running a mark rule as if it
@@ -716,7 +729,7 @@ pub fn (g &Gpos) contextual_for(script string) []u16 {
 			if g.lookups[li].chains.len == 0 {
 				continue
 			}
-			seen[li] = true
+			named_lookups[li] = true
 			out << li
 		}
 	}
@@ -732,6 +745,128 @@ pub fn (g &Gpos) has_contextual_positioning(script string) bool {
 		}
 	}
 	return false
+}
+
+// context_offset returns what a rule under the kern feature says about a pair of adjacent glyphs in a
+// run, where the answer may depend on what is around them.
+//
+// A record names a lookup, and that lookup's own kind is what decides the answer. This is the part
+// worth writing down, because the name of the feature is misleading: a rule under kern is usually not a
+// kerning rule. Across the Arabic fonts on this machine, of the records a kern feature reaches, 186 name
+// a single positioning and 12 name a pair. Andalus is the clearest case: its first rule is "if one of
+// glyphs 160 through 167 comes before glyph 3, apply lookup 21", and lookup 21 moves one glyph rather
+// than closing a gap between two. Reading a record as though it named a pair finds no pair rule and
+// answers nothing, on a font whose rules are working perfectly.
+//
+// The record's position says which glyph of the pattern it applies to, and the lookup then decides which
+// glyph it covers. Those are two different things and they are not always the same glyph: this rule
+// matches glyphs 160 to 167 followed by glyph 3, and asks lookup 21 to move something, and lookup 21
+// covers glyph 3 rather than the 160s. So the answer is whichever of the pair the lookup covers, and
+// asking only about the first glyph of the pattern misses every rule shaped like this one.
+//
+// The plain pair rules are answered first, because a rule that says one thing about a pair regardless of
+// its surroundings is a more specific answer than one that says what to do only in a context, and a font
+// may put both kinds under one feature.
+pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string) ?Offset2 {
+	if left < 0 || right >= gids.len || left >= right {
+		return none
+	}
+	left_gid := gids[left]
+	right_gid := gids[right]
+	if off := g.kern_offset(left_gid, right_gid, script) {
+		return off
+	}
+	for li in g.kerning_for(script) {
+		if li >= g.lookups.len {
+			continue
+		}
+		for c in g.lookups[li].chains {
+			// The pattern is tried at every position from which it could reach both of the pair, which
+			// is from the left of the pair back by the number of backtrack glyphs to the right of it
+			// forward by the number of lookahead glyphs. Trying only the pair's own left position
+			// misses every rule with a backtrack, and a rule with a backtrack is most of them: the point
+			// of a backtrack is that the answer depends on what came before.
+			mut first := left - c.backtrack.len
+			if first < 0 {
+				first = 0
+			}
+			mut last := right + c.lookahead.len
+			if last > gids.len - 1 {
+				last = gids.len - 1
+			}
+			for at in first .. last + 1 {
+				m := match_chain_position(c, gids, at)
+				if m.start < 0 {
+					continue
+				}
+				// A pattern that matched somewhere else in the run is not this pair's rule, and the
+				// only thing that says so is whether it covers both of the glyphs the caller named.
+				if !spans_pair(c, m, left, right) {
+					continue
+				}
+				for rec in c.records {
+					if rec.position < 0 || rec.position >= m.positions.len {
+						continue
+					}
+					target := int(rec.lookup)
+					if target >= g.lookups.len {
+						continue
+					}
+					// The lookup is asked about the glyph the record names, and then about the other of
+					// the pair, because the two are not always the same glyph: a rule can match one letter
+					// in order to say how to place the next one.
+					named := gids[m.positions[rec.position]]
+					mut other := right_gid
+					if named != right_gid {
+						other = left_gid
+					}
+					// A single positioning is the common case and is asked first, because a rule that moves
+					// a glyph is what the font meant even when the same lookup also carries pair rules.
+					for rule in g.lookups[target].singles {
+						if a := rule.offset_for(named) {
+							return a
+						}
+						if named != other {
+							if a := rule.offset_for(other) {
+								return a
+							}
+						}
+					}
+					for rule in g.lookups[target].pairs {
+						if a := rule.offset_for(left_gid, right_gid) {
+							return Offset2{ x: a.x, y: a.y }
+						}
+					}
+				}
+			}
+		}
+	}
+	return none
+}
+
+// spans_pair reports whether a matched pattern is about the pair the caller named.
+//
+// A pattern reaches further than the pair it is about: a backtrack glyph sits before it and a lookahead
+// glyph after it. So the rule is this pair's rule when the span the pattern covers, from its first
+// input glyph back by the number of backtrack glyphs to its last forward by the lookahead ones, includes
+// either of the two named glyphs. A pattern of one glyph with one backtrack covers two positions, and
+// the pair the caller asked about is inside them.
+//
+// The check is one or the other rather than both, and that is the distinction worth writing down: a
+// pattern naming both glyphs is about the pair, and a pattern naming one and reaching the other as its
+// context is about one of them with a condition. Requiring both would throw away every rule with a
+// backtrack, and requiring neither would let any rule in the run apply to any pair.
+fn spans_pair(c &ChainPosition, m ChainMatchPositions, left int, right int) bool {
+	if m.start < 0 || m.positions.len == 0 {
+		return false
+	}
+	mut low := m.start - c.backtrack.len
+	if low < 0 {
+		low = 0
+	}
+	mut high := m.positions[m.positions.len - 1]
+	high += c.lookahead.len
+	return (left >= low && left <= high) || (right >= low && right <= high)
 }
 
 // apply_contextual walks a glyph run and returns every positioning a chaining context asks for.
@@ -982,6 +1117,11 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 					lookup.chains << rule
 				}
 			}
+			if resolved.kind == gpos_lookup_single_position {
+				if rule := parse_single_position(r, resolved.at) {
+					lookup.singles << rule
+				}
+			}
 		}
 		if lookup.mark_ligatures.len > 0 {
 			lookup.kind = gpos_lookup_mark_to_ligature
@@ -1103,6 +1243,83 @@ mut:
 	class2_records []PairValue
 	// is_format2 says which format the subtable declared, and is what the lookup does with it.
 	is_format2 bool
+}
+
+// SinglePos is one positioning rule: for a covered glyph on its own, move it.
+//
+// It is the smallest of the positioning tables and the one a context record most often names. A font
+// says "this glyph sits further left when it follows that one" with a rule of this shape inside a
+// context, and a rule of this shape is a placement rather than a kern: the glyph moves and the gap
+// after it does not, which is the difference between the two that matters when a context record is
+// applied.
+struct SinglePos {
+mut:
+	// ranges is the coverage of the glyphs this rule moves.
+	ranges []CoverageRange
+	// format is the value format, which says which of the four numbers each record holds. It is kept
+	// because a record with an x of zero and no x at all means the font says nothing about the
+	// horizontal, which is not the same as saying zero.
+	format u16
+	// values is indexed by the glyph's coverage index, so a record is found through the coverage
+	// rather than by an offset the caller would have to know about.
+	values []PairValue
+}
+
+// offset_for finds the adjustment for one glyph within a single rule.
+fn (rule &SinglePos) offset_for(gid u16) ?Offset2 {
+	idx := coverage_index(rule.ranges, gid) or { return none }
+	if idx >= rule.values.len {
+		return none
+	}
+	v := rule.values[idx]
+	// A rule that says nothing about either placement is no rule, and answering it with a zero would
+	// look like a font that had decided the glyph was already in the right place.
+	if v.format & 0x0003 == 0 {
+		return none
+	}
+	return Offset2{ x: i32(v.x_placement), y: i32(v.y_placement) }
+}
+
+// parse_single_position reads one SinglePos subtable, in format 1.
+//
+// Format 1 has one value for every covered glyph, and the value comes straight after the format that
+// says how wide it is. There is no count of the values: the coverage already says how many glyphs there
+// are, so a count would be redundant, and reading the first value as a count turns a value of -120 into
+// a count of 65416 and then walks 65416 records off the end of the table. That is why the numbers this
+// produced were the wrong ones rather than merely noisy ones, and it is a mistake worth naming because
+// the pair tables beside it do have a count and the two sit next to each other in the same table.
+//
+// Format 2 has one value for the whole coverage and a second array naming the glyphs that want
+// something else. It is not read here: no font on this machine uses it, and reading it as format 1 takes
+// the valueCount as a count and then reads coverage indices as records.
+fn parse_single_position(r &Reader, at int) ?SinglePos {
+	if r.u16_at(at) != 1 {
+		return none
+	}
+	ranges := parse_coverage(r, at + int(r.u16_at(at + 2)))
+	value_format := r.u16_at(at + 4)
+	if ranges.len == 0 {
+		return none
+	}
+	// The coverage's number of glyphs is the number of values, and a coverage is written as ranges, so
+	// it is the sum of the range widths rather than the length of the range list. A coverage of three
+	// glyphs in one range is still three values.
+	mut glyphs := 0
+	for cr in ranges {
+		glyphs += int(cr.last - cr.first) + 1
+	}
+	step := pair_value_size(value_format)
+	mut values := []PairValue{cap: glyphs, len: 0}
+	mut p := at + 6
+	for _ in 0 .. glyphs {
+		values << read_pair_value(r, p, value_format)
+		p += step
+	}
+	return SinglePos{
+		ranges: ranges
+		format: value_format
+		values: values
+	}
 }
 
 // parse_pair_pos reads one PairPos subtable, in whichever of the two formats it declares.
