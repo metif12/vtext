@@ -30,7 +30,9 @@ pub mut:
 	y f64
 	// cluster is the index of the input character this glyph came from. A ligature
 	// reports the first character it covers, so a caller can map a glyph back to the text
-	// it came from and to a caret position.
+	// it came from and to a caret position. A character that a substitution split into
+	// several glyphs has all of them reporting that same character, which is how a layout
+	// pass knows to draw them all rather than only the first.
 	cluster int
 	// is_mark reports that this glyph is a combining mark: it is drawn at the position of
 	// the letter before it and has no advance. Marks are drawn after the letters, so that

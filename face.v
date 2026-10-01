@@ -88,9 +88,13 @@ fn new_face(data []u8) !&Face {
 	face.cmaps = parse_cmap(sfnt.table_data(tag_cmap))
 	// Substitution and positioning are both optional, and a font without them still loads, so
 	// a missing or unparsable table is left as none rather than failing the face.
-	face.gsub = new_gsub(sfnt.table_data(tag_gsub))
-	face.gpos = new_gpos(sfnt.table_data(tag_gpos))
+	//
+	// GDEF comes first because the substitution lookups are written in terms of it: a lookup's
+	// flags say which glyphs a rule applies to by asking the glyph class table which is which,
+	// so a font's substitution is not interpretable until its glyph definitions have been read.
 	face.gdef = new_gdef(sfnt.table_data(tag_gdef))
+	face.gsub = new_gsub(sfnt.table_data(tag_gsub), face.gdef)
+	face.gpos = new_gpos(sfnt.table_data(tag_gpos))
 	face.units_per_em_f = if face.units_per_em > 0 {
 		f64(face.units_per_em)
 	} else {

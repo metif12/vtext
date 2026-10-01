@@ -101,15 +101,26 @@ fn test_layout_covers_every_visible_character() {
 fn test_layout_places_a_mark_on_its_letter() {
 	ctx := new_context()
 	fs := persian_fonts()
-	// beh + fatha: the mark is a glyph of its own, but it costs nothing and sits where the
-	// beh is.
+	// beh + fatha: the mark is a glyph of its own, but it costs nothing and sits on the beh.
 	line := layout_paragraph(ctx, [`ب`, rune(0x064E)], .rtl, fs, 32)
 	assert line.glyphs.len == 2, 'the mark is a glyph of its own'
 	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
 	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
 	assert mark.is_mark && !base.is_mark, 'only the mark is a mark'
 	assert mark.advance == 0, 'the mark costs no advance'
-	assert approx(mark.x, base.x, 0.001), 'the mark sits on the letter it follows'
+	// The mark is not at the pen: it is at the anchor the font gives it, which is the whole point
+	// of parsing GPOS. Before the font's own glyph for a fatha was being read, this pair had no
+	// rule and the mark landed on the baseline beside the letter, which is a legible but wrong
+	// accent and is exactly what the earlier cmap bug produced.
+	f := font_from('segoeui.ttf')
+	off := f.mark_offset(f.glyph_index(rune(0x064E)), f.glyph_index(rune(0x0628)), false) or {
+		panic('the font should have an offset for this pair')
+	}
+	scale := 32.0 / f64(f.units_per_em())
+	assert approx(mark.x - base.x, f64(off.x) * scale, 0.01), 'the mark sits at the font horizontal anchor'
+	// Font y is positive upwards and the line's is positive downwards, so the mark's y is the
+	// negation of the font's.
+	assert approx(mark.y, -f64(off.y) * scale, 0.01), 'the mark sits at the font vertical anchor'
 	// A mark must not widen the line, and the two glyphs are the only ones on it.
 	assert approx(line.width, base.advance, 0.001), 'the mark adds no width'
 }
@@ -216,7 +227,12 @@ fn test_layout_shapes_persian_through_gsub() {
 	// drawn correctly shaped by going through the table. Dubai, which carries almost none of
 	// them, would put every letter on the table route and this test would not tell the two
 	// apart.
-	arabic := font_from('majalla.ttf')
+	//
+	// The font is one whose cmap is genuinely incomplete for the word, which is the only way this
+	// test can tell the two routes apart. Most Arabic fonts on Windows carry every presentation
+	// form of these letters, and a font that does has nothing to send down the table route at all,
+	// so choosing one of those would leave this asserting half of what it claims to.
+	arabic := font_from('trado.ttf')
 	assert arabic.has_gsub(), 'this test is about a font that shapes through GSUB'
 	fs := new_font_set_of(arabic)
 
@@ -225,9 +241,8 @@ fn test_layout_shapes_persian_through_gsub() {
 	// that reports the wrong thing about the other three shapes.
 	//
 	// The middle letters are the interesting ones. This font carries the presentation form for
-	// the first and last letters in its cmap, so those take the cmap route, while it has no cmap
-	// form for the sin and no substitution rule for the lam either, which is the other kind of
-	// miss. Between them they cover what can happen to a letter.
+	// all of them but the yeh, so the yeh has to be shaped through the table instead, and that
+	// one letter is what makes the word worth testing.
 	word := [`ب`, `س`, `ل`, `ک`, `ی`, `م`]
 	line := layout_paragraph(ctx, word, .rtl, fs, 32)
 	assert line.paragraph_level == 1, 'Persian resolves to a right-to-left paragraph'
@@ -245,10 +260,10 @@ fn test_layout_shapes_persian_through_gsub() {
 	// route that is already known to work.
 	expected := [
 		ExpectedLetter{rune(0x0628), JoiningForm.initial, false}, // beh, has a cmap form
-		ExpectedLetter{rune(0x0633), JoiningForm.medial, true}, // sin, shaped through GSUB
+		ExpectedLetter{rune(0x0633), JoiningForm.medial, false}, // sin, has a cmap form
 		ExpectedLetter{rune(0x0644), JoiningForm.medial, false}, // lam, has a cmap form
 		ExpectedLetter{rune(0x06A9), JoiningForm.medial, false}, // kaf, has a cmap form
-		ExpectedLetter{rune(0x06CC), JoiningForm.medial, false}, // yeh, has a cmap form
+		ExpectedLetter{rune(0x06CC), JoiningForm.medial, true}, // yeh, no cmap form, so the table
 		ExpectedLetter{rune(0x0645), JoiningForm.final, false}, // meem, has a cmap form
 	]
 	// The word has to contain at least one letter of each kind, or this test is not covering
@@ -311,40 +326,37 @@ fn test_layout_prefers_the_cmap_form_over_substitution() {
 	assert approx(g.advance, segoe.glyph_advance(g.gid, 32), 0.001)
 }
 
-// A lam-alef is the one shaped letter that can stand for two characters, so a font without
-// the ligature form has to draw two letters rather than one.
+// A lam-alef is the one shaped letter that stands for two characters, so it is the only place
+// where two input characters are legitimately drawn by one glyph, and the only place where a
+// character can be left with no glyph of its own.
 //
-// Arabic Typesetting is the font that shows this on Windows: it carries the base Arabic
-// letters and no presentation forms at all, because it puts all four shapes in a GSUB table.
-// Every shaped letter laid out against it comes out as its base letter, and the ligature, which
-// has no single base letter, is the one that has to come apart.
-fn test_layout_splits_a_ligature_the_font_does_not_have() {
+// This used to assert the opposite, against Arabic Typesetting on the grounds that it carried no
+// presentation forms at all. That was an artefact of a cmap bug: the font does carry them, and so
+// does every other Arabic font on this machine, so there is now no font here that has the two
+// base letters and lacks the ligature. The shape of the pipeline when a form is missing is still
+// covered, at the font seam, by test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw in
+// glyph_test.v, which reaches the same branch without needing a font that does not exist.
+fn test_a_ligature_covers_both_of_its_characters() {
 	ctx := new_context()
 	arabic := font_from('ARABTYPE.TTF')
 	fs := new_font_set_of(arabic)
-	// A lam and an alef with nothing either side of them: the pair is isolated, U+FEFB.
-	assert !arabic.has_glyph(rune(0xFEFB)), 'this test is about a font with no forms'
-	assert !arabic.has_glyph(rune(0xFEFC)), 'this test is about a font with no forms'
+	// A lam and an alef with nothing either side of them: the pair is isolated.
+	assert arabic.has_glyph(rune(0xFEFB)), 'the font has the isolated form of the pair'
 	assert arabic.has_glyph(rune(0x0644)) && arabic.has_glyph(rune(0x0627)), 'it has both base letters'
 
 	line := layout_paragraph(ctx, [`ل`, `ا`], .rtl, fs, 32)
-	// One glyph would be the ligature. Two means the pair was drawn as its two letters.
-	assert line.glyphs.len == 2, 'the ligature is drawn as a lam and an alef'
-	mut clusters := []int{}
-	for g in line.glyphs {
-		clusters << g.cluster
-	}
-	// The alef is the second character written and, in a right-to-left line, the leftmost
-	// drawn. Each half of the pair keeps its own input position, which is what makes the two
-	// traceable back to the lam and the alef separately.
-	assert clusters == [1, 0]
-	lam := glyph_at_cluster(line.glyphs, 0) or { panic('no lam glyph') }
-	alef := glyph_at_cluster(line.glyphs, 1) or { panic('no alef glyph') }
-	// Both halves are real glyphs, because this font does carry the base letters.
-	assert lam.gid == arabic.glyph_index(rune(0x0644))
-	assert alef.gid == arabic.glyph_index(rune(0x0627))
-	// Nothing joined to the pair, so neither half is final.
-	assert lam.form == .isolated && alef.form == .isolated
+	// One glyph for two characters, and it is the ligature rather than either letter.
+	assert line.glyphs.len == 1, 'the pair should be one glyph, got ${line.glyphs.len}'
+	fused := line.glyphs[0]
+	assert fused.gid == arabic.glyph_index(rune(0xFEFB)), 'the fused glyph is the ligature form'
+	// It reports the lam, which is the first character written, so a caret can still be traced
+	// back to the text.
+	assert fused.cluster == 0, 'the fused glyph reports the first of its two characters'
+	// The alef's character is covered by that glyph rather than being drawn separately, which is
+	// what keeps the pair from coming out as three things on the line.
+	assert glyph_at_cluster(line.glyphs, 1) == none, 'the alef is covered by the ligature'
+	// And the pair is narrower fused than apart, which is the reason it is fused at all.
+	assert approx(fused.advance, arabic.glyph_advance(fused.gid, 32), 0.001)
 }
 
 // The same line laid out with only a font that has neither the letter nor the form has to
@@ -413,4 +425,26 @@ fn test_layout_zwnj_drops_out_and_keeps_the_rest() {
 	for g in line.glyphs {
 		assert g.gid != 0
 	}
+}
+
+// A mark's cluster is the character the reader wrote, not the position the mark ended up in after
+// normalization reordered it.
+fn test_layout_a_mark_reports_its_own_character_after_reordering() {
+	ctx := new_context()
+	f := font_from('tahoma.ttf')
+	fs := new_font_set_of(f)
+	beh := f.glyph_index(0x0628)
+	shadda := f.glyph_index(0x0651)
+	fatha := f.glyph_index(0x064E)
+	// Written as beh, shadda, fatha. A shadda is a higher combining class than a fatha, so
+	// decomposition has to swap them, which used to hand each mark the other's cluster and leave
+	// the shadda looking for a base it was not written after.
+	line := layout_paragraph(ctx, [rune(0x0628), rune(0x0651), rune(0x064E)], .rtl, fs, 64)
+	mut seen := map[int]int{}
+	for g in line.glyphs {
+		seen[g.cluster] = g.gid
+	}
+	assert seen[0] == beh
+	assert seen[1] == shadda, 'the shadda reports the character it was written for'
+	assert seen[2] == fatha, 'the fatha reports the character it was written for'
 }

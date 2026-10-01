@@ -169,6 +169,96 @@ pub fn (n &Normalizer) nfd(cps []rune) []rune {
 	return out
 }
 
+// nfd_mapped decomposes and also says which input character each output character came from.
+//
+// Decomposition changes the length of the text: a precomposed letter becomes two or three, and
+// canonical reordering can move a mark ahead of the one it was written after. Both mean an index into
+// the result is not an index into the input, and a caller that needs to trace a mark back to the
+// character a reader typed has no way to do it from the decomposed text alone.
+//
+// The mapping is one entry per output character, holding the input index it came from. A character
+// that decomposes into several gives all of them its own index, and a reordered mark keeps the
+// index it had, which is the whole point: the text the user wrote is the text a mark is reported
+// against, however many combining characters the font draws it with.
+pub fn (n &Normalizer) nfd_mapped(cps []rune) ([]rune, []int) {
+	// The quick path, where nothing is decomposed and nothing is reordered, maps every character to
+	// itself and costs one array.
+	if n.is_normalized_nfd(cps) && !n.marks_out_of_order(cps) {
+		mut same := []int{len: cps.len}
+		for i in 0 .. cps.len {
+			same[i] = i
+		}
+		return cps.clone(), same
+	}
+	// The slow path builds the mapping as it decomposes, and then permutes it alongside the text so
+	// that reordering moves the two together.
+	mut out := []rune{cap: cps.len}
+	mut source := []int{cap: cps.len}
+	for i in 0 .. cps.len {
+		before := out.len
+		n.append_decomposed(cps[i], 0, mut out)
+		for k in before .. out.len {
+			source << i
+		}
+	}
+	n.reorder_mapped(mut out, mut source)
+	return out, source
+}
+
+// reorder_mapped applies canonical reordering to a decomposed string and to the input indices
+// beside it, moving both together.
+//
+// Reordering the two separately cannot work, and the failure is quiet. A comparison that reads the
+// combining class of the original character gets a different answer from one that reads the
+// decomposed character, because one character can decompose into marks of several classes: a
+// Vietnamese letter that decomposes into a base and two marks is a single input index, so the
+// original character has no class to compare with at all. The classes that decide the order belong
+// to the characters in the decomposed text, and the index has to travel with the character it
+// belongs to.
+fn (n &Normalizer) reorder_mapped(mut out []rune, mut source []int) {
+	mut i := 0
+	for i < out.len {
+		if n.props.combining_class_of(out[i]) == 0 {
+			i++
+			continue
+		}
+		// The run of non-starters starts here and reaches to the next starter, or to the end, which
+		// is the same run reorder_canonical would find.
+		run_start := i
+		for i < out.len && n.props.combining_class_of(out[i]) != 0 {
+			i++
+		}
+		if i - run_start > 1 {
+			n.insertion_sort_mapped(mut out[run_start..i], mut source[run_start..i])
+		}
+	}
+}
+
+// insertion_sort_mapped sorts a run of non-starters by combining class, carrying each character's
+// input index along with it.
+//
+// The comparison is the one insertion_sort_marks makes, and it has to be the same one: stable, so
+// that marks sharing a class keep the order they were written in. Sorting the two arrays in step is
+// what keeps every index beside the character it names.
+fn (n &Normalizer) insertion_sort_mapped(mut run []rune, mut source []int) {
+	for i in 1 .. run.len {
+		c := run[i]
+		from := source[i]
+		cc := n.props.combining_class_of(c)
+		mut j := i - 1
+		for j >= 0 {
+			if n.props.combining_class_of(run[j]) <= cc {
+				break
+			}
+			run[j + 1] = run[j]
+			source[j + 1] = source[j]
+			j--
+		}
+		run[j + 1] = c
+		source[j + 1] = from
+	}
+}
+
 // marks_out_of_order reports whether any run of non-starters is not in combining class
 // order, which is the one thing the NFD quick check cannot see.
 fn (n &Normalizer) marks_out_of_order(cps []rune) bool {

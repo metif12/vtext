@@ -30,18 +30,46 @@ pub mut:
 	paragraph_level u8
 }
 
+// LayoutOptions are the choices about a line that belong to the caller rather than to the engine.
+//
+// The default is the one the engine is prepared to defend: no discretionary features, so the line
+// is the text. Anything that changes the width of what is drawn is a presentation decision, and a
+// text engine that made it on the caller's behalf would be a text engine that could not be relied
+// on to measure text.
+pub struct LayoutOptions {
+pub mut:
+	// features are the discretionary OpenType features to apply after the required ones, which
+	// the engine always applies. liga is the one a Persian line usually wants, since several
+	// letter pairs have ligature forms the text itself does not spell.
+	features []string
+}
+
 // layout_paragraph runs normalization, the bidirectional algorithm and Arabic joining over
 // cps, maps the result to glyphs through fs, and positions the glyphs on one line at em_px.
 //
 // base_dir drives rules P2 and P3 of the bidirectional algorithm: .auto takes the
 // direction from the first strong character, which is what a caller usually wants for a
 // line of unknown language.
+//
+// No discretionary features are applied. Use layout_paragraph_with to ask for any.
 pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSet,
 	em_px f64) Line {
+	return layout_paragraph_with(ctx, cps, base_dir, fs, em_px, &LayoutOptions{})
+}
+
+// layout_paragraph_with is layout_paragraph with the caller's options applied.
+pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &FontSet,
+	em_px f64, options &LayoutOptions) Line {
 	// Joining keys on joining types, and a precomposed character is a different codepoint
 	// with a different one, so the text has to be decomposed before it is shaped. The
 	// marks this separates are the ones the layout pass later has to place.
-	decomposed := ctx.normalizer.nfd(cps)
+	//
+	// The mapping comes back with the text because decomposition changes both the length and the
+	// order of it: a shadda written after a fatha is moved ahead of it, because canonical ordering
+	// puts the lower combining class first, and a shadda is a higher one. Without the mapping the
+	// two marks would report each other's input positions, and a mark would then be looked for
+	// against the wrong letter.
+	decomposed, origin := ctx.normalizer.nfd_mapped(cps)
 
 	bidi := resolve_paragraph(ctx.properties, decomposed, base_dir)
 
@@ -73,15 +101,26 @@ pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSe
 			// the input character it stands for, so the two are traced back to the lam and
 			// the alef separately.
 			for j, mut out in fs.shaped_glyphs(g, em_px) {
+				// The cluster is an index into the caller's text, not into the decomposed one. Going
+				// through the decomposition's own mapping is what makes a mark report the character
+				// it was written after rather than whichever character canonical ordering happened
+				// to put next to it.
 				offset := g.start + j
-				out.cluster = if offset < seq.len { seq[offset] } else { seq[g.start] }
+				mut cluster := seq[g.start]
+				if offset < seq.len {
+					decomposed_at := seq[offset]
+					if decomposed_at < origin.len {
+						cluster = origin[decomposed_at]
+					}
+				}
+				out.cluster = cluster
 				run << out
 			}
 		}
-		// The font's own ligatures, before anything is placed. A ligature is a property of the
-		// text's order, not of where it ends up on the line, so it has to happen while the run is
-		// still in logical order.
-		for glyph in fuse_ligatures(run, em_px, script) {
+		// The font's own substitutions, before anything is placed. A ligature or a mark
+		// composition is a property of the text's order, not of where it ends up on the line, so
+		// it has to happen while the run is still in logical order.
+		for glyph in substitute_in_fonts(run, em_px, script, options.features) {
 			placed << glyph
 		}
 	}
@@ -95,13 +134,14 @@ pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSe
 	return line
 }
 
-// fuse_ligatures hands each stretch of the run that came from one font to that font to fuse.
+// substitute_in_fonts hands each stretch of the run that came from one font to that font.
 //
-// A ligature cannot straddle two fonts, because a glyph index in one font means nothing in
-// another. A line that fell back mid-word therefore has its ligature rules stop at the seam, and
-// the two letters it could have fused are drawn apart. That is the honest answer for a line
-// whose characters came from different fonts: there is no single glyph to draw them as.
-fn fuse_ligatures(glyphs []Glyph, em_px f64, script string) []Glyph {
+// A substitution cannot straddle two fonts, because a glyph index in one font means nothing in
+// another. A line that fell back mid-word therefore has its rules stop at the seam, and the two
+// letters a ligature would have fused are drawn apart. That is the honest answer for a line whose
+// characters came from different fonts: there is no single glyph to draw them as, and a mark
+// composition that needs the letter before it is out of reach for the same reason.
+fn substitute_in_fonts(glyphs []Glyph, em_px f64, script string, features []string) []Glyph {
 	if glyphs.len == 0 {
 		return glyphs
 	}
@@ -121,7 +161,7 @@ fn fuse_ligatures(glyphs []Glyph, em_px f64, script string) []Glyph {
 			}
 			end++
 		}
-		for glyph in f.ligate_glyphs(glyphs[at..end], script, em_px) {
+		for glyph in f.substitute_glyphs(glyphs[at..end], script, em_px, features) {
 			out << glyph
 		}
 		at = end
@@ -139,13 +179,13 @@ fn fuse_ligatures(glyphs []Glyph, em_px f64, script string) []Glyph {
 // stands for.
 fn place_glyphs(placed []Glyph, bidi BidiResult) []Glyph {
 	mut out := []Glyph{cap: placed.len}
-	mut by_cluster := map[int]int{}
+	mut by_cluster := map[int][]int{}
 	for i, g in placed {
-		// The first glyph for a character wins, so a glyph covers a whole run of
-		// characters rather than each of them drawing again.
-		if !(g.cluster in by_cluster) {
-			by_cluster[g.cluster] = i
-		}
+		// A character can own more than one glyph, which is what a substitution that splits one
+		// character into several produces, so this holds every glyph of a character rather than the
+		// first. The order they were placed in is kept, because a split character is drawn in the
+		// order the font wrote its replacement sequence.
+		by_cluster[g.cluster] << i
 	}
 
 	mut x := f64(0)
@@ -153,11 +193,13 @@ fn place_glyphs(placed []Glyph, bidi BidiResult) []Glyph {
 		if !bidi.visible[v] {
 			continue
 		}
-		i := by_cluster[v] or { continue }
-		mut g := placed[i]
-		g.x = x
-		out << g
-		x += g.advance
+		indices := by_cluster[v] or { continue }
+		for i in indices {
+			mut g := placed[i]
+			g.x = x
+			out << g
+			x += g.advance
+		}
 	}
 	return out
 }
@@ -185,6 +227,47 @@ fn measure_line(mut line &Line, em_px f64) {
 			}
 		}
 	}
+}
+
+// mark_indices_by_cluster lists the line's marks, ordered so that a mark comes before the mark it
+// stacks on.
+//
+// The order is by ascending input position, not by position on the line, because a right to left
+// line is drawn in the opposite order to the one it was written in and stacking order is a property
+// of the writing. Two marks of one character are left in line order between themselves, which is the
+// one case where there is no writing order to go by.
+//
+// It is a function rather than a closure inside position_marks because a comparison closure cannot
+// reach the line, and putting the order here keeps the sort where it can see what it is comparing.
+// mark_indices_by_cluster lists the line marks, ordered so that a mark comes before the mark it
+// stacks on.
+//
+// The order is by descending input position, not by position on the line, because a right to left
+// line is drawn in the opposite order to the one it was written in and stacking order is a property
+// of the writing. Two marks of one character keep their line order between themselves, which is the
+// one case where there is no writing order to go by.
+//
+// The sort is written out rather than handed to a comparison closure because a closure cannot reach
+// the glyphs it would be comparing, and this is the only place in the module that needs an order
+// defined against them.
+fn mark_indices_by_cluster(glyphs []Glyph) []int {
+	mut marks := []int{}
+	for i in 0 .. glyphs.len {
+		if glyphs[i].is_mark {
+			marks << i
+		}
+	}
+	// An insertion sort by descending cluster, which is the order a stack is built in.
+	mut i := 1
+	for i < marks.len {
+		mut j := i
+		for j > 0 && glyphs[marks[j]].cluster > glyphs[marks[j - 1]].cluster {
+			marks[j], marks[j - 1] = marks[j - 1], marks[j]
+			j--
+		}
+		i++
+	}
+	return marks
 }
 
 // larger is the larger of two pixel measurements.
@@ -219,9 +302,49 @@ fn position_marks(mut line &Line, em_px f64) {
 		}
 	}
 
-	for i, g in line.glyphs {
-		if !g.is_mark {
-			continue
+	// The marks are placed from the last cluster backwards, which is the order a stack has to be
+	// built in. A mark on another mark is measured from where the mark under it ended up, so the
+	// mark underneath has to be placed first; placing a shadda and then a fatha on it in glyph
+	// order would put the fatha at the shadda's position before the shadda had one, and the fatha
+	// would then be carried along when the shadda moved.
+	mut marks := mark_indices_by_cluster(line.glyphs)
+	for oi in 0 .. marks.len {
+		i := marks[oi]
+		g := line.glyphs[i]
+		// The nearest preceding mark, which is what stacking means. A shadda carrying a fatha is
+		// the case: the fatha belongs to the shadda, and the font says where on the shadda in a
+		// different table from the one that places marks on letters. A mark whose nearest mark the
+		// font will not attach to falls through to the letter below, which is the degraded answer
+		// rather than a wrong one: a font with no mark-to-mark rule places both against the
+		// letter, and so did this engine before it could read that rule.
+		//
+		// Two glyphs of one input character are skipped rather than treated as a target for each
+		// other, so a character a substitution split into several glyphs does not stack one of
+		// them on another.
+		mut stacked_at := -1
+		mut stacked_best := 0
+		for k, c in line.glyphs {
+			if k == i || !c.is_mark || c.cluster == g.cluster || c.cluster >= g.cluster {
+				continue
+			}
+			if stacked_at < 0 || c.cluster > stacked_best {
+				stacked_at = k
+				stacked_best = c.cluster
+			}
+		}
+		if stacked_at >= 0 {
+			target := line.glyphs[stacked_at]
+			// A mark and the mark under it have to come from the same font, as below.
+			stack_font := g.font or { continue }
+			stack_target_font := target.font or { continue }
+			if stack_font == stack_target_font {
+				if off := stack_font.mark_offset(g.gid, target.gid, true) {
+					stack_scale := em_px / f64(stack_font.face.units_per_em)
+					line.glyphs[i].x = target.x + f64(off.x) * stack_scale
+					line.glyphs[i].y = -f64(off.y) * stack_scale
+					continue
+				}
+			}
 		}
 		// The base is the letter the mark was written after, which is the nearest one with a
 		// smaller input position. Searching by cluster rather than by position on the line is
@@ -250,7 +373,7 @@ fn position_marks(mut line &Line, em_px f64) {
 		if f != base_font {
 			continue
 		}
-		off := f.mark_offset(g.gid, base.gid) or { continue }
+		off := f.mark_offset(g.gid, base.gid, false) or { continue }
 		// The offset is in design units and the line is in pixels, so it is scaled by the same
 		// ratio the advances came from.
 		scale := em_px / f64(f.face.units_per_em)

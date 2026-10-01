@@ -213,6 +213,45 @@ fn test_normalize_known_cases() {
 	assert codepoints_to_string(n.nfc('hello'.runes())) == '0068 0065 006C 006C 006F'
 }
 
+// The decomposition's mapping, which is what keeps a mark attached to the character it was written
+// after once canonical ordering has moved it somewhere else.
+fn test_nfd_mapped_reports_the_character_a_mark_came_from() {
+	n := new_normalizer(new_properties())
+
+	// The case the layout pass depends on. A shadda is class 33 and a fatha class 30, so NFD puts
+	// the fatha first even though it was written second, and an index into the decomposed text is
+	// not the index the reader's text has.
+	src := runes_of(['0628', '0651', '064E'])
+	mut got, mut source := n.nfd_mapped(src)
+	assert codepoints_to_string(got) == '0628 064E 0651'
+	assert source == [0, 2, 1]
+
+	// A character that decomposes into several gives all of them its own index, and they stay
+	// together, because the marks and the base they belong to come from one written character.
+	// U+00C1 is A-ACUTE, a base and a mark, and it is precomposed, so it is exactly this case.
+	got, source = n.nfd_mapped(runes_of(['00C1', '0041']))
+	assert codepoints_to_string(got) == '0041 0301 0041'
+	assert source == [0, 0, 1]
+
+	// Decomposition can introduce a mark that was never in the input, as a Hangul syllable does
+	// when it breaks into jamo. Every one of the jamo belongs to the one syllable.
+	got, source = n.nfd_mapped(runes_of(['AC01', '0041']))
+	assert codepoints_to_string(got) == '1100 1161 11A8 0041'
+	assert source == [0, 0, 0, 1]
+
+	// Text that is already decomposed and in order maps every character to itself, which is the
+	// path the layout pass takes for most strings.
+	got, source = n.nfd_mapped(runes_of(['0041', '0301']))
+	assert codepoints_to_string(got) == '0041 0301'
+	assert source == [0, 1]
+
+	// A single character is its own case, and an empty string maps to nothing.
+	_, source = n.nfd_mapped(runes_of(['0651']))
+	assert source == [0]
+	_, source = n.nfd_mapped([])
+	assert source.len == 0
+}
+
 // runes_of is a test helper that reads a column written the way the UCD writes one.
 fn runes_of(fields []string) []rune {
 	mut out := []rune{}
