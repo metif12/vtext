@@ -41,6 +41,9 @@ The pipeline is the one UAX #9 and the OpenType specification describe, in order
 Character data is generated from the UCD into `ucd_*.v`, so there are no runtime tables to load and
 no network access is needed to build.
 
+`ROADMAP.md` says what is left in the engine, and lists the examples and the tools that come after
+it.
+
 ## Supported
 
 - TrueType and CFF outlines, and font collections (TTC).
