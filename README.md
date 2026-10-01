@@ -52,6 +52,7 @@ it.
 - GSUB single, multiple, alternate, ligature and contextual substitutions.
 - GPOS mark-to-base, mark-to-ligature and mark-to-mark attachment.
 - GPOS pair adjustment (kerning), in both the per-pair and per-class forms.
+- GPOS chaining-context positioning (lookup type 8, format 3).
 - Right-to-left lines, mixed-direction paragraphs, and bidi mirroring.
 - Line breaking per UAX #14, and wrapping to a width.
 - Glyph rasterization through a bundled stb_truetype.
@@ -66,7 +67,11 @@ Named here so that a caller is not surprised by them.
   (LB16b, LB17b) and the strict level rules are not implemented. Neither affects Arabic or Persian.
 - **CJK line breaking.** The ideographic rules are not implemented, so a Han or Kana run breaks at
   every character rather than at the word boundaries a reader expects.
-- **Contextual positioning.** GPOS chaining-context lookups (types 5 and 6) are not parsed.
+- **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
+  Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
+- **Cursive attachment (GPOS type 1).** Three Windows Arabic fonts carry it — Traditional Arabic
+  with 7 lookups, Simplified Arabic with 57, Majalla with 54 — and it is what makes a cursive script
+  look cursive rather than merely joined. This engine joins by picking one of four shapes instead.
 - **Device and variation tables.** A hint that a pair is tighter at one size than another is skipped,
   so a kern is the same at every size.
 - **Justification and kashida.**
@@ -150,6 +155,23 @@ whatever the width is.
 `break_opportunities` is the lower half of this, for a caller that wants to decide the width itself
 or to draw the opportunities.
 
+### Contextual positioning
+
+A font that moves a glyph based on what is around it. A `true` here means the font has such rules for
+a script, not that this engine reaches them: Tahoma carries two hundred and none of them fire, because
+its `ccmp` composes the marks they are written against and no string reaches a composed glyph. See
+`mark_glyphs_passthrough` for the same situation on mark attachment.
+
+```v
+if font.contextually_positions('arab') {
+	// the font has chaining-context rules for this script
+}
+```
+
+`Gpos.apply_contextual` returns what each matched rule asks for, resolved to a glyph index and a
+lookup, so a caller can run the lookups itself and decide the order. The order matters: a later rule is
+meant to override an earlier one, and that decision belongs to whoever owns the pipeline.
+
 ### Kerning
 
 A font's pair adjustments, which move one glyph when a particular glyph follows it. The two glyphs
@@ -225,6 +247,11 @@ number that looks fine, and then walks offsets out of something that is not an a
 **Class 0 is a real class.** It is what a glyph gets when no definition names it, and a font that
 kerns a class of letters against everything else writes into the class 0 row. What decides a pair is
 the coverage, not the class value.
+
+**A positioning record is a pair of indices and nothing else.** There is no count of them and no value
+format on the contextual side, even though the substitution side has fields that look as though they
+belong there. Reading one takes a word that belongs to the first record, which shifts every record by
+one and turns a lookup index of 62 into a value format of 62.
 
 ## Layout
 

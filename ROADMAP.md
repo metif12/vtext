@@ -50,12 +50,33 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-### Contextual positioning (GPOS types 5 and 6)
+### ~~Chaining-context positioning (GPOS type 8)~~
 
-Chaining-context lookups. A font uses them to move a glyph based on what is
-around it, which is how a script with stacked forms places the forms. The
-engine already parses chaining contexts for GSUB, so the shape of the code is
-known; it is the same walk with a positioning action at the end.
+**Parsed, format 3.** `apply_contextual` walks a glyph run and returns what each matched rule asks for,
+resolved to a glyph index and a lookup. Counted against fontTools on the same fonts, the parse agrees
+exactly: Tahoma 229 rules over 32 lookups, Simplified Arabic 15 over 11, Majalla 71 over 27.
+
+It reaches nothing, though, and the reason is worth more than the rule engine. Tahoma names 1815 glyphs
+across its patterns and this engine produces exactly one of them. Its `ccmp` composes a shadda and a
+fatha into a single glyph, so the rules are written against composed glyphs no string reaches. This is
+the same wall the mark attachment code hit and works around. Simplified Arabic reaches 32 of 1501 and
+still fires nothing, for the same reason.
+
+Formats 1 and 2 are not read. They need a class for every glyph in a pattern and then a jump through a
+rule set, and no font on this machine uses them.
+
+### Cursive attachment (GPOS type 1)
+
+Three Windows Arabic fonts carry it: Traditional Arabic with 7 lookups, Simplified
+Arabic with 57, and Majalla with 54. This is the table that says how the exit
+point of one letter meets the entry point of the next, and it is what makes a
+cursive script look cursive rather than merely joined.
+
+This engine joins by picking one of four shapes and does not use it, which is a
+deliberate choice rather than an omission: for Arabic the four shapes are enough,
+and a cursive font can need a fifth that no joining type names. It is the one
+item in this phase that would change how Arabic text is shaped rather than add
+something beside it, so it needs measuring against a font before it is written.
 
 ### Device and variation tables
 
