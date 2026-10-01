@@ -117,7 +117,7 @@ pub fn (f &Font) has_glyph(cp rune) bool {
 	return f.face.has_glyph(cp)
 }
 
-// ligate_glyphs fuses runs of glyphs into single glyphs using the font's ligature features.
+// substitute_glyphs applies the font's substitution features to a run of glyphs.
 //
 // This is what the joining pass cannot do on its own. It knows that a lam and an alef are one
 // shape, and it says so with a presentation form codepoint, but whether the font has a glyph for
@@ -125,9 +125,18 @@ pub fn (f &Font) has_glyph(cp rune) bool {
 // two letters is legible and wrong: the pair is narrower fused than apart, so a line built that
 // way is the wrong length.
 //
-// The features are applied in the order the specification gives, ccmp before rlig, so a mark
-// that composes into a single glyph is not then swallowed by a rule written for the pair.
-pub fn (f &Font) ligate_glyphs(glyphs []Glyph, script string, em_px f64) []Glyph {
+// The features applied by default are ccmp and rlig, in the order the specification gives them, so
+// that a mark which composes into a single glyph is not then swallowed by a rule written for the
+// pair. Those two are on for every line because a line missing its mark composition is not the
+// text, and neither of them is a presentation choice.
+//
+// Discretionary features are not applied here. liga is the one that matters for Persian, where
+// several letter pairs have codepoint reachable ligature forms, and turning it on changes the width
+// of the text, so it belongs to whoever asked for the line rather than to the engine. A caller
+// that wants one names it in extra, and it is applied after the required features, which is the
+// order the specification gives discretionary features.
+pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
+	extra []string) []Glyph {
 	g := f.face.gsub or { return glyphs }
 	mut out := []Ligatable{cap: glyphs.len}
 	for i, glyph in glyphs {
@@ -138,7 +147,10 @@ pub fn (f &Font) ligate_glyphs(glyphs []Glyph, script string, em_px f64) []Glyph
 		}
 	}
 	for feature in ['ccmp', 'rlig'] {
-		out = g.ligate(g.lookups_for(script, feature), out)
+		out = g.substitute(g.lookups_for(script, feature), out)
+	}
+	for feature in extra {
+		out = g.substitute(g.lookups_for(script, feature), out)
 	}
 	// Every advance is read again, not just the fused ones, so the advance always belongs to the
 	// glyph it is on. A ligature is usually narrower than the glyphs it replaced, and carrying
@@ -182,15 +194,34 @@ pub fn (f &Font) is_mark_glyph(gid u16) bool {
 	return g.is_mark(gid)
 }
 
-// mark_offset returns where to draw a mark relative to the origin of the base glyph it belongs
-// to, in design units, with y positive upwards as the font's own coordinates run.
+// mark_offset returns where to draw a mark relative to the origin of the glyph it belongs to, in
+// design units, with y positive upwards as the font's own coordinates run.
+//
+// base_is_mark says what the second glyph is, because the three rules a mark can be placed by are
+// three different tables: over a letter is mark-to-base, over another mark is mark-to-mark, and
+// over a ligature is mark-to-ligature. A font that uses one of them for a pair has nothing to say
+// about the pair in the others, so the caller has to say which situation it is in.
 //
 // found is false when the font has no rule for this pair, or has none for this mark's class on
-// this base. That is not an error: it is a font that does not say, and the caller is expected to
+// this glyph. That is not an error: it is a font that does not say, and the caller is expected to
 // leave the mark where the pen is rather than invent a position.
-pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16) ?Offset2 {
+pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Offset2 {
 	gpos := f.face.gpos or { return none }
-	return gpos.mark_offset(mark_gid, base_gid)
+	return gpos.mark_offset(mark_gid, base_gid, base_is_mark)
+}
+
+// places_marks_on_ligatures reports whether the font can position a mark on a fused pair, which
+// decides whether a mark after a lam-alef has a chance of landing anywhere useful.
+pub fn (f &Font) places_marks_on_ligatures() bool {
+	gpos := f.face.gpos or { return false }
+	return gpos.has_mark_to_ligature()
+}
+
+// stacks_marks reports whether the font can position one mark on another, which is what a shadda
+// carrying a fatha needs.
+pub fn (f &Font) stacks_marks() bool {
+	gpos := f.face.gpos or { return false }
+	return gpos.has_mark_to_mark()
 }
 
 // shaped_glyph_index applies the font's positional features to a base glyph and returns the
