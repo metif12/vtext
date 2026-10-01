@@ -11,8 +11,19 @@ mut:
 	// byte offset from each idRangeOffset slot, so the subtable cannot be read
 	// without the surrounding table.
 	data []u8
-	// glyph_array_off is the absolute offset of a format 4 glyphIdArray.
-	glyph_array_off int
+	// id_range_base is the absolute offset of a format 4 idRangeOffset array, which is the
+	// base every idRangeOffset value is measured from.
+	//
+	// It is not the start of glyphIdArray, and the difference is the whole bug this field was
+	// renamed for: the specification measures each offset from the address of its own slot, so
+	// a segment's first entry lives segCount*2 bytes before glyphIdArray and every entry after
+	// that lives correspondingly earlier than a base of glyphIdArray would put it. Reading a
+	// font with this wrong does not fail, and does not obviously misbehave either: glyphIdArray
+	// is a dense run of glyph indices, so reading segCount*2 bytes too far lands on a real but
+	// wrong glyph, one that looks like a plausible neighbour. Dubai is a font that has this
+	// wrong: its Arabic letters came out as the glyph three places along, which is why none of
+	// its positional features matched anything.
+	id_range_base int
 	// format 0 / 6: a flat glyph array.
 	glyph_ids  []u16
 	first_code u16
@@ -231,7 +242,9 @@ fn parse_cmap_format4(mut sub &Cmap, r Reader, off int) {
 	for i in 0 .. seg_count {
 		sub.id_range[i] = r.u16_at(p + i * 2)
 	}
-	sub.glyph_array_off = p + seg_count * 2
+	// The base every idRangeOffset is measured from is the address of the idRangeOffset array
+	// itself, not the start of the glyphIdArray that follows it.
+	sub.id_range_base = p
 	// start_code is populated, which is how parse_cmap recognises this
 	// subtable as non-empty. glyphIdArray stays empty: format 4 is read
 	// through the idRangeOffset byte offset rather than by slicing it out.
@@ -331,8 +344,11 @@ fn (c &Cmap) lookup_format4(cp u32) ?u16 {
 	if range_off == 0 {
 		return u16(u32(target) + u32(delta))
 	}
-	// idRangeOffset is a byte offset from its own slot into glyphIdArray.
-	idx := c.glyph_array_off + lo * 2 + int(range_off) +
+	// idRangeOffset is a byte offset from its own slot into glyphIdArray, so the address is
+	// the slot's address and not the start of the array after it. The two differ by
+	// segCount*2 bytes, which is segCount glyph indices, and reading from the wrong one yields a
+	// neighbouring glyph rather than an obvious failure.
+	idx := c.id_range_base + lo * 2 + int(range_off) +
 		int(target - c.start_code[lo]) * 2
 	mut r := new_reader(c.data)
 	if !r.has(idx, 2) {
