@@ -203,7 +203,7 @@ fn parse_class_def(r &Reader, at int) ClassDef {
 	format := r.u16_at(at)
 	if format == 1 {
 		start := r.u16_at(at + 2)
-		count := int(r.u16_at(at + 4))
+		mut count := int(r.u16_at(at + 4))
 		for i in 0 .. count {
 			c.entries << ClassRangeEntry{
 				first: start + u16(i)
@@ -423,6 +423,10 @@ mut:
 	// names one of these rather than a pair rule, so a font that says "this glyph moves when it follows
 	// that one" is reachable only if these are parsed.
 	singles []SinglePos
+	// cursives are cursive attachment rules, which say where a glyph's stroke enters and leaves. This
+	// is what makes a cursive script continuous rather than merely joined, and it changes the shape of
+	// a line rather than adding something beside it.
+	cursives []Cursive
 }
 
 // mark_glyphs_passthrough reports whether the mark glyphs a font uses in its positioning rules
@@ -1118,6 +1122,15 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 				}
 			}
 			if resolved.kind == gpos_lookup_single_position {
+				// Type 1 is two different tables under one number, a single positioning and a cursive
+				// attachment, and they write the same first words. The cursive reader is the one that
+				// knows how to tell them apart, so it goes first and refuses anything whose offsets
+				// point back into its own records. What it refuses is then read as a positioning rule,
+				// which is what it is.
+				if rule := parse_cursive(r, resolved.at) {
+					lookup.cursives << rule
+					continue
+				}
 				if rule := parse_single_position(r, resolved.at) {
 					lookup.singles << rule
 				}
@@ -1243,6 +1256,157 @@ mut:
 	class2_records []PairValue
 	// is_format2 says which format the subtable declared, and is what the lookup does with it.
 	is_format2 bool
+}
+
+// EntryExit is one glyph's pair of cursive anchors: where its stroke enters and where it leaves.
+//
+// This is the difference between a joined script and merely joined letters. A font that uses these
+// says the pen should carry from the exit point of one letter to the entry point of the next, so two
+// letters can be drawn at whatever spacing keeps the stroke continuous, and a letter can have a
+// different width from the one its advance would give it.
+//
+// Either anchor may be absent. A letter at the start of a word has nothing before it and some fonts
+// give it no entry point, and a letter at the end has nothing after it and no exit point, so an absent
+// one is a normal thing rather than a broken table.
+struct EntryExit {
+mut:
+	entry Anchor
+	exit  Anchor
+}
+
+// Cursive is one cursive attachment rule: which glyphs carry anchors, and what they are.
+//
+// The anchors are found by coverage index rather than by an offset, so a glyph is looked up the same
+// way a mark is looked up by its class.
+struct Cursive {
+mut:
+	// format is which of the two formats the subtable declared.
+	format u16
+	// ranges is the coverage of the glyphs that carry anchors.
+	ranges []CoverageRange
+	// marks is indexed by the glyph's coverage index.
+	marks []EntryExit
+}
+
+// offset_for finds the anchors of one glyph within a single rule.
+fn (rule &Cursive) offset_for(gid u16) ?EntryExit {
+	idx := coverage_index(rule.ranges, gid) or { return none }
+	if idx >= rule.marks.len {
+		return none
+	}
+	return rule.marks[idx]
+}
+
+// parse_cursive reads one CursivePos subtable, and refuses anything that is not one.
+//
+// Lookup type 1 is two different tables under one number: a single positioning and a cursive
+// attachment. Both declare format 1, both write a coverage in the same place, and the bytes after the
+// coverage are a list either way, so nothing in the first few words says which one this is. Guessing by
+// reading anchors and falling back is not good enough, because a single positioning's value record read
+// as an offset can land on something that looks like an anchor: Andalus's lookup 21 writes a
+// valueFormat of 3 in the word a cursive rule reads as its first anchor offset, and 3 is a valid
+// anchor format. Guessing that way takes a real kerning rule out of the font.
+//
+// So this asks the question the layout can answer. In a cursive rule the anchors are a separate table
+// written after the records, so every offset in the records points past the end of the records
+// themselves. In a single positioning the word in that place is the value format, which is a small
+// bitmask and cannot point past a value array that is already there. One test separates the two, and a
+// table that fails it is read as the positioning rule it then must be.
+fn parse_cursive(r &Reader, at int) ?Cursive {
+	format := r.u16_at(at)
+	if format != 1 && format != 2 {
+		return none
+	}
+	ranges := parse_coverage(r, at + int(r.u16_at(at + 2)))
+	if ranges.len == 0 {
+		return none
+	}
+	// The coverage's number of glyphs is what decides how many records there are, and it is the sum of
+	// the range widths rather than the length of the range list: a coverage of five glyphs written as
+	// one range still has five records.
+	mut glyphs := 0
+	for cr in ranges {
+		glyphs += int(cr.last - cr.first) + 1
+	}
+	mut count := glyphs
+	if format == 2 {
+		count = int(r.u16_at(at + 4))
+		// A font that names more records than it has coverage is claiming glyphs it does not cover, so
+		// only the covered ones are read.
+		if count > glyphs {
+			count = glyphs
+		}
+	}
+	// Where the records stop. Format 1 writes one record per covered glyph without saying how many,
+	// format 2 writes the count first and so starts its records two bytes later. Every anchor has to be
+	// past this, which is what tells the two tables apart.
+	mut first_record := at + 4
+	if format == 2 {
+		first_record = at + 6
+	}
+	records_end := first_record + 4 * count
+	mut marks := []EntryExit{cap: glyphs, len: 0}
+	mut p := first_record
+	for _ in 0 .. count {
+		// A record is two offsets from the start of the subtable, and an offset of zero means that end
+		// of the letter takes no part in the joining.
+		if !cursive_record_plausible(r, at, records_end, p) {
+			return none
+		}
+		marks << EntryExit{
+			entry: parse_anchor_at(r, at, int(r.u16_at(p)))
+			exit:  parse_anchor_at(r, at, int(r.u16_at(p + 2)))
+		}
+		p += 4
+	}
+	// The glyphs a format 2 rule covers but does not record take no part in the joining, and they get
+	// nothing at all rather than empty anchors, which is what a letter at the end of a word looks like.
+	mut idx := 0
+	for idx < glyphs - count {
+		marks << EntryExit{}
+		idx++
+	}
+	// A rule whose every offset is zero anchors nothing, and a font that means it wrote a positioning
+	// rule rather than a cursive one.
+	mut anchored := false
+	for m in marks {
+		if m.entry.exists || m.exit.exists {
+			anchored = true
+		}
+	}
+	if !anchored {
+		return none
+	}
+	return Cursive{
+		format: format
+		ranges: ranges
+		marks:  marks
+	}
+}
+
+// cursive_record_plausible says whether the two offsets at p could be a cursive record.
+//
+// A zero offset is always allowed, since it means the anchor is absent rather than misplaced. Every
+// offset that is there has to point past the records and land on something that declares itself an
+// anchor, which is a format between 1 and 3.
+fn cursive_record_plausible(r &Reader, base int, records_end int, p int) bool {
+	for slot in 0 .. 2 {
+		offset := int(r.u16_at(p + 2 * slot))
+		if offset == 0 {
+			continue
+		}
+		if base + offset < records_end {
+			return false
+		}
+		if !r.has(base + offset, 4) {
+			return false
+		}
+		declared := r.u16_at(base + offset)
+		if declared < 1 || declared > 3 {
+			return false
+		}
+	}
+	return true
 }
 
 // SinglePos is one positioning rule: for a covered glyph on its own, move it.
