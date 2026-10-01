@@ -53,6 +53,7 @@ it.
 - GPOS mark-to-base, mark-to-ligature and mark-to-mark attachment.
 - GPOS pair adjustment (kerning), in both the per-pair and per-class forms.
 - Right-to-left lines, mixed-direction paragraphs, and bidi mirroring.
+- Line breaking per UAX #14, and wrapping to a width.
 - Glyph rasterization through a bundled stb_truetype.
 
 ## Not supported
@@ -61,8 +62,10 @@ Named here so that a caller is not surprised by them.
 
 - **The legacy `kern` table.** Kerning is read from GPOS only, which is where every font worth using
   puts it. A font that has only a `kern` table is drawn unkerned.
-- **Line breaking.** The UAX #14 class data is present in `properties.v` but no rule engine uses it
-  yet. `layout_paragraph` returns one line and does not wrap.
+- **The parts of UAX #14 that need a dictionary or a resolved level.** Segmentation inside a word
+  (LB16b, LB17b) and the strict level rules are not implemented. Neither affects Arabic or Persian.
+- **CJK line breaking.** The ideographic rules are not implemented, so a Han or Kana run breaks at
+  every character rather than at the word boundaries a reader expects.
 - **Contextual positioning.** GPOS chaining-context lookups (types 5 and 6) are not parsed.
 - **Device and variation tables.** A hint that a pair is tighter at one size than another is skipped,
   so a kern is the same at every size.
@@ -127,6 +130,25 @@ for g in line.glyphs {
 back to the text or to a caret position. A ligature reports the first character it covers. A mark
 and its base are both in the list and share an `x`, because a mark is drawn on top of its base rather
 than after it.
+
+### Wrapping
+
+A paragraph laid out to fit a width, with the input range each line came from. The whole paragraph
+is shaped once and the lines are cut out of it, so trying a narrower width costs no extra shaping.
+
+```v
+for w in vtext.wrap_paragraph(ctx, text.runes(), .rtl, fs, 32.0, 400.0) {
+	draw(w.line)         // the glyphs, positioned, ready to draw
+	caret_at(w.from, w.to)  // the range of the caller's text this line holds
+}
+```
+
+Three rules are handled rather than left to the caller: a space never ends a line, a word wider than
+the margin goes on a line of its own rather than being split, and a newline ends the paragraph
+whatever the width is.
+
+`break_opportunities` is the lower half of this, for a caller that wants to decide the width itself
+or to draw the opportunities.
 
 ### Kerning
 

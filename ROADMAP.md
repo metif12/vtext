@@ -34,17 +34,21 @@ Fourteen test files, all passing, reading real fonts from the system.
 These are the things a caller would hit and find missing. Each one is a
 correctness question, not a feature, and none of them is large.
 
-### Line breaking (UAX #14)
+### ~~Line breaking (UAX #14)~~
 
-The class data is already in `properties.v`. What is missing is the rule
-engine, and the hard part is not the rules themselves: it is that a line must
-be measured before it is broken, so breaking has to come after layout and
-interact with it. A break opportunity that is chosen before the glyphs have
-widths is chosen wrongly for a line whose last word does not fit.
+**Done.** `break_opportunities` reports where a line may end, and `wrap_paragraph` measures the
+shaped paragraph once and cuts it into lines that fit. It is separate from `layout_paragraph` because a
+line has to be measured before it can be broken, and laying out the whole paragraph once is what
+makes a narrower width affordable to try.
 
-The API should be a break function over a shaped paragraph, not inside
-`layout_paragraph`, because the caller owns the width and the caller may be
-drawing to something that scrolls rather than to a page.
+Three rules a caller would otherwise get wrong are handled there: a space is never left at the end of
+a line, a word wider than the margin goes on a line of its own rather than being split, and a
+newline ends the paragraph whatever the width is.
+
+The rules that are not implemented are the ones that need a resolved line-break level and a
+dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictionary segmentation,
+and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
+they are not there.
 
 ### Contextual positioning (GPOS types 5 and 6)
 
