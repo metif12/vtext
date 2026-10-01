@@ -29,11 +29,14 @@ const gpos_lookup_mark_to_ligature = 5
 const gpos_lookup_mark_to_mark = 6
 const gpos_lookup_extension = 9
 
-// The GDEF glyph classes. Only the first two matter to attachment: a mark attaches to a base or
-// to a ligature, and those are the only things it attaches to.
+// The GDEF glyph classes. Attachment cares about the first three: a mark attaches to a base or
+// to a ligature, and those are the only things it attaches to. The fourth is a component, which
+// attachment never sees but the substitution flags do, because a lookup told to ignore base
+// glyphs has to step over components too.
 const glyph_class_base = 1
 const glyph_class_ligature = 2
 const glyph_class_mark = 3
+const glyph_class_component = 4
 
 // ClassDef is a sorted set of glyph ranges carrying a class value, which is how both the glyph
 // class table and the mark attachment class table are built.
@@ -59,6 +62,11 @@ mut:
 	// out, in which case every mark is class zero and uses the base's only anchor.
 	mark_classes     ClassDef
 	has_mark_classes bool
+	// mark_sets are the mark filtering sets, which a lookup can name in place of testing the
+	// mark class. They are a later addition than the classes and live behind a version check,
+	// and no Arabic font on Windows carries them, so this is empty for most of the fonts this
+	// engine is pointed at.
+	mark_sets [][]CoverageRange
 }
 
 // new_gdef parses the GDEF table, or returns none when the font has none.
@@ -78,10 +86,38 @@ pub fn new_gdef(raw []u8) ?&Gdef {
 		g.mark_classes = parse_class_def(r, int(r.u16_at(10)))
 		g.has_mark_classes = true
 	}
+	// The mark glyph sets are a fifth offset, and only version 1.2 and later has one. The
+	// version has to be the gate rather than the offset being nonzero: in a 1.0 table the fifth
+	// slot does not exist, so reading it lands inside the glyph class table and finds whatever
+	// class count happens to be sitting there.
+	if r.u16_at(2) >= 2 && r.has(12, 2) && r.u16_at(12) != 0 {
+		g.mark_sets = parse_mark_glyph_sets(r, int(r.u16_at(12)))
+	}
 	if g.glyph_classes.entries.len == 0 {
 		return none
 	}
 	return g
+}
+
+// parse_mark_glyph_sets reads a MarkGlyphSetsDef, which is a list of coverage tables.
+//
+// The offsets in it are 32 bits and relative to the start of the MarkGlyphSetsDef rather than to
+// their own entry. That is the one thing about this table a 16-bit offset could not have done: a
+// font is allowed more coverage tables in here than fit in 64KB of 16-bit offsets.
+fn parse_mark_glyph_sets(r &Reader, at int) [][]CoverageRange {
+	mut out := [][]CoverageRange{}
+	if r.u16_at(at) != 1 {
+		return out
+	}
+	count := int(r.u16_at(at + 2))
+	for i in 0 .. count {
+		base := at + 4 + i * 4
+		if !r.has(base, 4) {
+			break
+		}
+		out << parse_coverage(r, at + int(r.u32_at(base)))
+	}
+	return out
 }
 
 // glyph_class returns what kind of glyph this is: 0 unclassified, 1 base, 2 ligature, 3 mark.
@@ -109,6 +145,33 @@ pub fn (g &Gdef) mark_class(gid u16) int {
 pub fn (g &Gdef) is_base(gid u16) bool {
 	c := g.glyph_class(gid)
 	return c == glyph_class_base || c == glyph_class_ligature
+}
+
+// is_ligature reports whether the font says this glyph is a ligature, which a substitution
+// lookup told to ignore ligatures has to be able to recognise.
+pub fn (g &Gdef) is_ligature(gid u16) bool {
+	return g.glyph_class(gid) == glyph_class_ligature
+}
+
+// is_base_or_component reports whether a lookup told to ignore base glyphs has to step over
+// this one. Components count as base for that purpose, which is the whole reason GDEF 1.3
+// introduced them: a mark that is a component of a composite glyph is a mark, and a base that
+// is one is a base.
+pub fn (g &Gdef) is_base_or_component(gid u16) bool {
+	c := g.glyph_class(gid)
+	return c == glyph_class_base || c == glyph_class_component
+}
+
+// in_mark_set reports whether a glyph is in one of the mark filtering sets.
+//
+// A set index that names nothing is not a match. The alternative is to treat a missing set as
+// covering everything, which would make a lookup that named a set silently apply to every mark
+// on the line, which is the failure this whole mechanism exists to avoid.
+pub fn (g &Gdef) in_mark_set(index int, gid u16) bool {
+	if index < 0 || index >= g.mark_sets.len {
+		return false
+	}
+	return coverage_index(g.mark_sets[index], gid) != none
 }
 
 // class_of returns the class of a glyph, or 0 when the table does not cover it.
@@ -191,6 +254,45 @@ struct MarkToBase {
 	base_anchors [][]Anchor
 }
 
+// LigatureAnchorPair is one component's two anchors for one mark class: the point on the ligature
+// and the point on the mark that have to meet.
+struct LigatureAnchorPair {
+mut:
+	ligature Anchor
+	mark     Anchor
+}
+
+// LigatureComponent is one component of one ligature, with a pair of anchors per mark class.
+struct LigatureComponent {
+mut:
+	pairs []LigatureAnchorPair
+}
+
+// MarkToLigature is one mark-to-ligature lookup: where a mark goes on a ligature, which is not the
+// same place for every part of the ligature.
+//
+// A lam-alef is the case this exists for. The pair is drawn as one glyph, and a mark written
+// after it belongs to the alef rather than to the lam, so the font carries an anchor per component
+// and the engine has to know which component the mark belongs to. A mark written after the pair
+// belongs to the last component, which is the only case a caller can express today: a mark in the
+// middle of a lam-alef is a third thing, and one this does not model.
+struct MarkToLigature {
+	// mark_ranges is the coverage of the marks this lookup covers.
+	mark_ranges []CoverageRange
+	// ligature_ranges is the coverage of the ligatures it can attach to.
+	ligature_ranges []CoverageRange
+	// class_count is how many mark classes there are, and so how many anchor pairs each component
+	// carries.
+	class_count int
+	// mark_anchors and mark_classes are indexed by the mark's coverage index, which is the order
+	// the mark array is written in.
+	mark_anchors []Anchor
+	mark_classes []u16
+	// components is indexed by the ligature's coverage index, and each entry is that ligature's
+	// components in order.
+	components [][]LigatureComponent
+}
+
 // Gpos is a parsed GPOS table, reduced to mark attachment.
 pub struct Gpos {
 mut:
@@ -204,8 +306,17 @@ mut:
 // GposLookup is one positioning lookup, holding the rules of the kinds this milestone applies.
 struct GposLookup {
 mut:
-	kind       u16
+	kind u16
+	// mark_bases are mark-to-base rules, where the second glyph is a letter.
 	mark_bases []MarkToBase
+	// mark_marks are mark-to-mark rules, which have exactly the shape of a mark-to-base rule and
+	// differ only in what the second glyph is. They are held apart because the engine has to know
+	// which one it is applying: a mark attaches to a mark only when the font says how, and
+	// attaching it to the letter underneath instead is a different placement.
+	mark_marks []MarkToBase
+	// mark_ligatures are mark-to-ligature rules, where the second glyph has one anchor set per
+	// component.
+	mark_ligatures []MarkToLigature
 }
 
 // mark_glyphs_passthrough reports whether the mark glyphs a font uses in its positioning rules
@@ -214,9 +325,12 @@ mut:
 // It exists because the two are not always the same and the difference matters. A font that
 // composes its marks through a ccmp substitution has its positioning rules written against the
 // composed glyph, not against the one the cmap hands out, so a mark that has not been through
-// that substitution will not be found in any coverage. This is a diagnostic for that situation
-// rather than a correction for it: the fix is to run the composition, which is a different
-// feature and a different milestone.
+// that substitution will not be found in any coverage.
+//
+// The composition is run, so this is no longer a report of something the engine has not done. It
+// is a report of a font whose composition rules are written against glyphs the pipeline never
+// produces, which is Dubai's case and is not a thing the substitution pass can fix: the rules are
+// reachable and parsed, and there is simply no path from the text to the glyphs they name.
 pub fn (f &Font) mark_glyphs_passthrough() bool {
 	gpos := f.face.gpos or { return true }
 	return gpos.covers_mark(f.glyph_index(rune(0x064E)))
@@ -250,10 +364,15 @@ pub fn new_gpos(raw []u8) ?&Gpos {
 	// Latin fonts and nothing at all on the Arabic ones, which is the same silent failure the
 	// script tag case caused.
 	//
-	// The order is abvm, blwm then mark, and it matters only in that a rule found first wins.
-	// A font does not put the same mark under two of them, so the order is not load bearing; it
-	// is written this way because those are the features a mark can be under.
-	for feat in ['abvm', 'blwm', 'mark'] {
+	// A mark on another mark is a fourth feature, mkmk, and it is not one of the three above. The
+	// fonts that carry these rules put them there and nowhere else: Tahoma has thirteen mark-to-mark
+	// subtables and every one of them is under mkmk, so a lookup of abvm, blwm and mark finds none
+	// of them and stacking two accents silently falls back to putting both against the letter.
+	//
+	// The order is abvm, blwm, mark then mkmk, and it matters only in that a rule found first wins.
+	// A font does not put the same mark under two of them, so the order is not load bearing; it is
+	// written this way because those are the features a mark can be under.
+	for feat in ['abvm', 'blwm', 'mark', 'mkmk'] {
 		g.mark_feature_lookups << g.lookups_for('arab', feat)
 	}
 	return g
@@ -317,15 +436,32 @@ pub fn (g &Gpos) covers_mark(gid u16) bool {
 //
 // y is positive upwards, which is the direction the font's own coordinates run in. A renderer
 // working in screen coordinates has to flip it.
-pub fn (g &Gpos) mark_offset(mark_gid u16, base_gid u16) ?Offset2 {
+pub fn (g &Gpos) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Offset2 {
 	for li in g.mark_feature_lookups {
 		if li >= g.lookups.len {
 			continue
 		}
 		lookup := g.lookups[li]
-		if lookup.kind != gpos_lookup_mark_to_base {
+		if base_is_mark {
+			for rule in lookup.mark_marks {
+				if off := rule.offset_for(mark_gid, base_gid) {
+					return Offset2{ x: off.x, y: off.y }
+				}
+			}
 			continue
 		}
+		// The ligature rules are tried before the base rules because a ligature is not a base: a
+		// font that positions marks on a lam-alef does so per component, and a mark-to-base rule
+		// that happened to cover the same glyph would place it on the wrong part of the pair.
+		for rule in lookup.mark_ligatures {
+			if off := rule.offset_for(mark_gid, base_gid) {
+				return Offset2{ x: off.x, y: off.y }
+			}
+		}
+		// The base rules are whatever landed in mark_bases, which is only ever filled from a
+		// mark-to-base subtable. Asking whether the lookup is typed 4 would work too, but it is
+		// the rules that were read that matter, and an extension lookup that resolved to this is
+		// typed 9 until something says otherwise.
 		for rule in lookup.mark_bases {
 			if off := rule.offset_for(mark_gid, base_gid) {
 				return Offset2{ x: off.x, y: off.y }
@@ -333,6 +469,79 @@ pub fn (g &Gpos) mark_offset(mark_gid u16, base_gid u16) ?Offset2 {
 		}
 	}
 	return none
+}
+
+// offset_for finds the attachment for one mark and one component of one ligature.
+//
+// The component is the ligature's last one, because that is the only one a caller can mean: a mark
+// written after a fused pair belongs to the last character of the pair, and a mark written between
+// the two characters is a thing this does not represent.
+//
+// Both anchors have to be there. A ligature anchor on its own says where a mark goes but not
+// which way up the mark should sit, and a mark anchor on its own says where the mark's own origin
+// belongs but nothing about the ligature, so a pair with only one half present is not enough to
+// place the mark and none is returned.
+fn (rule &MarkToLigature) offset_for(mark_gid u16, ligature_gid u16) ?Offset2 {
+	mark_index := coverage_index(rule.mark_ranges, mark_gid) or { return none }
+	ligature_index := coverage_index(rule.ligature_ranges, ligature_gid) or { return none }
+	if mark_index >= rule.mark_anchors.len || mark_index >= rule.mark_classes.len {
+		return none
+	}
+	if ligature_index >= rule.components.len {
+		return none
+	}
+	parts := rule.components[ligature_index]
+	if parts.len == 0 {
+		return none
+	}
+	class := int(rule.mark_classes[mark_index])
+	// Which component the mark belongs to is not knowable from the text: a mark written after a
+	// lam-alef goes on the alef, but the font says which component by giving that one the anchors
+	// and leaving the others empty. A lam-alef in Tahoma is a two component ligature whose
+	// anchors are all on the first component, so picking the last component finds nothing and
+	// leaves the mark at the pen.
+	//
+	// So the component is the first one that has an anchor for this mark's class. Scanning for it
+	// rather than assuming a position is also what makes a ligature with a mark in the middle of
+	// it work: there the anchor is on the component the mark was written over, wherever that is.
+	mut found := -1
+	for ci in 0 .. parts.len {
+		pairs := parts[ci].pairs
+		if class < pairs.len && pairs[class].ligature.exists && pairs[class].mark.exists {
+			found = ci
+			break
+		}
+	}
+	if found < 0 {
+		return none
+	}
+	pair := parts[found].pairs[class]
+	return Offset2{
+		x: pair.ligature.x - pair.mark.x
+		y: pair.ligature.y - pair.mark.y
+	}
+}
+
+// has_mark_to_ligature reports whether the font places marks on ligatures at all, which is what
+// tells a caller that a mark over a fused pair is going to be found rather than assumed.
+pub fn (g &Gpos) has_mark_to_ligature() bool {
+	for li in g.mark_feature_lookups {
+		if li < g.lookups.len && g.lookups[li].mark_ligatures.len > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// has_mark_to_mark reports whether the font places a mark on another mark, which is what stacking
+// two accents needs.
+pub fn (g &Gpos) has_mark_to_mark() bool {
+	for li in g.mark_feature_lookups {
+		if li < g.lookups.len && g.lookups[li].mark_marks.len > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // offset_for finds the attachment for one mark and base pair within a single rule.
@@ -390,8 +599,24 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 					lookup.mark_bases << rule
 				}
 			}
+			if resolved.kind == gpos_lookup_mark_to_mark {
+				// The two formats are the same shape with a different second glyph, so the same
+				// reader serves both and the kind is what tells them apart later.
+				if rule := parse_mark_to_base(r, resolved.at) {
+					lookup.mark_marks << rule
+				}
+			}
+			if resolved.kind == gpos_lookup_mark_to_ligature {
+				if rule := parse_mark_to_ligature(r, resolved.at) {
+					lookup.mark_ligatures << rule
+				}
+			}
 		}
-		if lookup.kind == gpos_lookup_extension && lookup.mark_bases.len > 0 {
+		if lookup.mark_ligatures.len > 0 {
+			lookup.kind = gpos_lookup_mark_to_ligature
+		} else if lookup.mark_marks.len > 0 {
+			lookup.kind = gpos_lookup_mark_to_mark
+		} else if lookup.kind == gpos_lookup_extension && lookup.mark_bases.len > 0 {
 			lookup.kind = gpos_lookup_mark_to_base
 		}
 		out << lookup
@@ -451,7 +676,7 @@ fn parse_mark_to_base(r &Reader, at int) ?MarkToBase {
 		record := mark_array + 2 + i * 4
 		mark_classes << r.u16_at(record)
 		// The anchor offset is relative to the start of the mark array, not to the record.
-		mark_anchors << parse_anchor(r, mark_array + int(r.u16_at(record + 2)))
+		mark_anchors << parse_anchor_at(r, mark_array, int(r.u16_at(record + 2)))
 	}
 
 	// The base array is one record per covered base, and each record is one anchor per class.
@@ -461,7 +686,7 @@ fn parse_mark_to_base(r &Reader, at int) ?MarkToBase {
 		record := base_array + 2 + i * class_count * 2
 		mut anchors := []Anchor{cap: class_count}
 		for c in 0 .. class_count {
-			anchors << parse_anchor(r, base_array + int(r.u16_at(record + c * 2)))
+			anchors << parse_anchor_at(r, base_array, int(r.u16_at(record + c * 2)))
 		}
 		base_anchors << anchors
 	}
@@ -476,12 +701,138 @@ fn parse_mark_to_base(r &Reader, at int) ?MarkToBase {
 	}
 }
 
+// parse_mark_to_ligature reads one MarkToLigaturePos subtable. Only format 1 exists, so there is
+// no second reading to try.
+//
+// The ligature array is where this differs from a mark-to-base rule: each ligature carries one
+// record per component, and each component carries an anchor per mark class. A ligature that does
+// not say how many components it has is a ligature this cannot attach to.
+// parse_mark_to_ligature reads one MarkToLigaturePos subtable. Only format 1 exists, so there is
+// no second reading to try.
+//
+// The ligature array is the part worth spelling out, because reading it wrongly is silent and every
+// wrong reading produces a plausible looking number. From the specification it is:
+//
+//	LigatureArray
+//	    uint16        ligatureCount
+//	    Offset16      ligatureAttachOffsets[ligatureCount]
+//
+//	and each offset names a LigatureAttach elsewhere in the table:
+//
+//	LigatureAttach
+//	    uint16        componentCount
+//	    ComponentRecord[componentCount], each one classCount ligature and mark anchor offsets
+//
+// So there is no ComponentCount in the LigatureArray at all: what sits after the count is a list of
+// offsets, and the count each ligature has is inside the table its offset names. The offsets are
+// from the beginning of the LigatureArray, not from the offset list and not from the LigatureAttach.
+//
+// A version of this read the offsets as component counts, which gave sixty four components for a
+// two character ligature, and then built anchors for all sixty four of them out of whatever bytes
+// followed, every one of which was read from the wrong place. The numbers looked like counts, so
+// nothing complained. Another version read one shared count for the whole array, which is not in
+// the specification either. The count is per record and the record is reached through an offset.
+fn parse_mark_to_ligature(r &Reader, at int) ?MarkToLigature {
+	if r.u16_at(at) != 1 {
+		return none
+	}
+	mark_ranges := parse_coverage(r, at + int(r.u16_at(at + 2)))
+	ligature_ranges := parse_coverage(r, at + int(r.u16_at(at + 4)))
+	class_count := int(r.u16_at(at + 6))
+	mark_array := at + int(r.u16_at(at + 8))
+	ligature_array := at + int(r.u16_at(at + 10))
+	if mark_ranges.len == 0 || ligature_ranges.len == 0 || class_count == 0 {
+		return none
+	}
+	// The mark array is one record per covered mark, in coverage order: the mark's class, and an
+	// offset to the mark's own anchor, measured from the start of the mark array.
+	mut mark_anchors := []Anchor{}
+	mut mark_classes := []u16{}
+	mark_count := int(r.u16_at(mark_array))
+	// The count is how many four byte records follow, so a count the table cannot hold is a font
+	// claiming more than it has.
+	if mark_count * 4 > r.len() - mark_array - 2 {
+		return none
+	}
+	for i in 0 .. mark_count {
+		record := mark_array + 2 + i * 4
+		mark_classes << r.u16_at(record)
+		mark_anchors << parse_anchor_at(r, mark_array, int(r.u16_at(record + 2)))
+	}
+
+	// The ligature array is a count and a list of offsets, one per covered ligature. The count is
+	// taken at face value because the offsets are what decide whether it is right: a count with an
+	// offset list that does not fit the table is refused here, and a count naming a table that does
+	// not exist is refused per record below, which is where the damage would otherwise happen.
+	ligature_count := int(r.u16_at(ligature_array))
+	if ligature_count == 0 || ligature_count * 2 > r.len() - ligature_array - 2 {
+		return none
+	}
+
+	mut components := [][]LigatureComponent{}
+	for li in 0 .. ligature_count {
+		// The offset is from the start of the ligature array, and the component count is inside the
+		// table the offset names rather than beside the offset.
+		attach := ligature_array + int(r.u16_at(ligature_array + 2 + li * 2))
+		component_count := int(r.u16_at(attach))
+		// A component record is two offsets per class, so a count that cannot fit in what is left of
+		// the table is a font claiming more than it has. Such a ligature is left with no components,
+		// which attaches nothing rather than attaching somewhere arbitrary, and the ligatures after
+		// it are still read because each has its own offset.
+		need := component_count * class_count * 4
+		if component_count == 0 || need > r.len() - attach - 2 {
+			components << [][]LigatureComponent{}
+			continue
+		}
+		mut parts := []LigatureComponent{}
+		for ci in 0 .. component_count {
+			mut pairs := []LigatureAnchorPair{cap: class_count}
+			for k in 0 .. class_count {
+				// One component of one ligature for one class, and it is two offsets: the point on
+				// the ligature and the point on the mark that have to meet.
+				rec := attach + 2 + (ci * class_count + k) * 4
+				pairs << LigatureAnchorPair{
+					ligature: parse_anchor_at(r, attach, int(r.u16_at(rec)))
+					mark:     parse_anchor_at(r, attach, int(r.u16_at(rec + 2)))
+				}
+			}
+			parts << LigatureComponent{
+				pairs: pairs
+			}
+		}
+		components << parts
+	}
+
+	return MarkToLigature{
+		mark_ranges:     mark_ranges
+		ligature_ranges: ligature_ranges
+		class_count:     class_count
+		mark_anchors:    mark_anchors
+		mark_classes:    mark_classes
+		components:      components
+	}
+}
+
 // parse_anchor reads an Anchor table.
 //
 // Format 1 is a point. Formats 2 and 3 add a contour point and device tables, both of which are
 // about hinting and variations rather than about where the mark goes, so the coordinates are
 // read from all three and the rest is ignored. The tables a font uses here are small, and the
 // offsets are all bounds checked, so a malformed one costs nothing but the placement.
+// parse_anchor_at resolves an anchor offset against the array the offset is measured from.
+//
+// A zero offset means there is no anchor, and that has to be tested before the addition rather
+// than after: adding it lands on the array itself, where the bytes read as an anchor format are
+// the first record's own offset. Those are usually small numbers, so a missing anchor silently
+// becomes a real anchor at a plausible-looking place instead of being reported missing. That is
+// how a mark ends up somewhere the font never asked for.
+fn parse_anchor_at(r &Reader, base int, offset int) Anchor {
+	if offset == 0 {
+		return Anchor{}
+	}
+	return parse_anchor(r, base + offset)
+}
+
 fn parse_anchor(r &Reader, at int) Anchor {
 	format := r.u16_at(at)
 	if format < 1 || format > 3 {

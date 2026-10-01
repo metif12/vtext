@@ -127,13 +127,13 @@ fn test_an_above_mark_lands_higher_than_a_below_mark() {
 	em := f64(32)
 
 	fatha_low, _ := ink_span(arial, arial.glyph_index(fatha), em)
-	fatha_off := arial.mark_offset(arial.glyph_index(fatha), beh_gid) or {
+	fatha_off := arial.mark_offset(arial.glyph_index(fatha), beh_gid, false) or {
 		panic('a fatha over a beh should be placed')
 	}
 	fatha_ink := fatha_low + in_pixels(arial, fatha_off.y, em)
 
 	kasra_low, _ := ink_span(arial, arial.glyph_index(kasra), em)
-	kasra_off := arial.mark_offset(arial.glyph_index(kasra), beh_gid) or {
+	kasra_off := arial.mark_offset(arial.glyph_index(kasra), beh_gid, false) or {
 		panic('a kasra over a beh should be placed')
 	}
 	kasra_ink := kasra_low + in_pixels(arial, kasra_off.y, em)
@@ -159,7 +159,7 @@ fn test_the_base_letter_affects_the_offset() {
 	mut offsets := map[string]bool{}
 	for letter in [beh, seen, meem] {
 		gid := arial.glyph_index(letter)
-		off := arial.mark_offset(fatha_gid, gid) or { continue }
+		off := arial.mark_offset(fatha_gid, gid, false) or { continue }
 		offsets['${off.x},${off.y}'] = true
 	}
 	assert offsets.len > 1, 'a fatha should land differently on different letters'
@@ -170,9 +170,9 @@ fn test_mark_offset_is_absent_for_a_pair_the_font_does_not_place() {
 	// A mark on a glyph the font has no rule for. The answer has to be absent rather than zero,
 	// because zero means "put it here" and absent means "this font does not say", and the caller
 	// leaves the mark at the pen for the second and not the first.
-	assert arial.mark_offset(arial.glyph_index(fatha), 0xFFFE) == none
+	assert arial.mark_offset(arial.glyph_index(fatha), 0xFFFE, false) == none
 	// A mark the font places, against a base that is not a letter at all.
-	assert arial.mark_offset(arial.glyph_index(fatha), arial.glyph_index(fatha)) == none
+	assert arial.mark_offset(arial.glyph_index(fatha), arial.glyph_index(fatha), false) == none
 }
 
 fn test_gpos_offsets_are_independent_of_the_em() {
@@ -180,26 +180,55 @@ fn test_gpos_offsets_are_independent_of_the_em() {
 	// the layout pass is what scales it. A test that scaled here would pass while the line came
 	// out at the wrong size.
 	tahoma := gpos_font('tahoma.ttf')
-	a := tahoma.mark_offset(tahoma.glyph_index(fatha), tahoma.glyph_index(beh)) or {
+	a := tahoma.mark_offset(tahoma.glyph_index(fatha), tahoma.glyph_index(beh), false) or {
 		panic('no offset')
 	}
 	assert a.x != 0 || a.y != 0, 'the offset is in design units and is not zero'
 }
 
 // A font whose mark rules are written against composed glyphs cannot place a mark the engine has
-// not composed, and the test says which kind of font it is looking at rather than quietly
-// finding nothing. Dubai is the honest example: its ccmp composition is in a chaining context
-// lookup, which this milestone does not implement, so its marks are still out of reach.
-fn test_marks_composed_by_a_context_lookup_are_out_of_reach_for_now() {
+// not composed. Dubai is the case that proves the whole composition path works, and it is worth
+// recording what it took to get there because the font is not an obvious one to shape.
+//
+// Dubai writes its mark composition as chaining contexts over a private range of glyph ids, and
+// for a long time those rules could not match anything, for two independent reasons. The first was
+// that the engine did not read chaining contexts at all. The second, and the one that survived the
+// first being fixed, was a cmap bug: the glyph ids Dubai's substitution and positioning tables name
+// were not the ids its cmap handed out, so no rule could ever see the glyph it was written for.
+// Every Arabic letter came out as a real glyph that was simply the wrong one.
+//
+// So this asserts the whole chain working, from the codepoint to the mark on the letter, because
+// each of those steps was once wrong and the failure at any one of them looks the same from the
+// outside: a mark sitting at the pen instead of on the letter.
+fn test_dubai_composes_and_places_a_mark_on_its_letter() {
 	dubai := gpos_font('DUBAI-REGULAR.TTF')
-	// The font has rules.
+	// The font has the rules, and now the glyphs they are written against are the ones its cmap
+	// hands out, which is the whole of what was missing.
 	assert dubai.has_mark_attachment(), 'Dubai does have mark rules'
-	// But they are not written against the glyph its cmap hands out for a fatha, so the lookup
-	// finds nothing. This is recorded as a fact about the font rather than asserted as a
-	// failure, because the missing piece is the context lookup and not the parse.
-	assert !dubai.mark_glyphs_passthrough(), 'Dubai composes its marks before positioning them'
-	assert dubai.mark_offset(dubai.glyph_index(fatha), dubai.glyph_index(beh)) == none
-	// A font that does not compose its marks is reachable, which is what the other tests use.
+	assert dubai.mark_glyphs_passthrough(), 'Dubai positions the mark glyph its cmap gives'
+	beh_gid := dubai.glyph_index(beh)
+	fatha_gid := dubai.glyph_index(fatha)
+	off := dubai.mark_offset(fatha_gid, beh_gid, false) or { panic('no mark offset for the pair') }
+	assert off.y != 0 || off.x != 0, 'the font has to say where the mark goes'
+	// And through the whole pipeline the mark is lifted off the baseline onto the letter, which is
+	// the visible difference between a mark that has been placed and one that has not.
+	ctx := new_context()
+	line := layout_paragraph(ctx, [beh, fatha], .rtl, new_font_set_of(dubai), 32)
+	assert line.glyphs.len == 2, 'the letter and the mark are both drawn'
+	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
+	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
+	assert mark.is_mark && !base.is_mark, 'only the mark is a mark'
+	assert mark.y != 0, 'the mark should be lifted onto the letter, not left at the pen'
+	// The four shapes of the letter are four glyphs. Before the cmap fix all four came back as the
+	// base letter, which is the shape a joining engine produces when it is handed a font that says
+	// nothing, and it is legible, which is what made the bug so quiet.
+	mut shapes := map[u16]bool{}
+	for form in [JoiningForm.isolated, .final, .initial, .medial] {
+		shapes[dubai.shaped_glyph_index(beh_gid, form, 'arab')] = true
+	}
+	assert shapes.len == 4, 'the four shapes should be four glyphs, got ${shapes.len}'
+	// A font that does compose its marks is not the only case worth having, so the other tests
+	// still use one that lets a mark through untouched.
 	assert gpos_font('tahoma.ttf').mark_glyphs_passthrough()
 }
 
@@ -218,7 +247,7 @@ fn test_layout_puts_a_mark_at_its_letter_anchor() {
 	assert mark.advance == 0, 'a mark costs no advance'
 	// The pen has not moved between the two, so without attachment they sit in the same place.
 	// With it they do not, and the move is the font's own scaled to the em.
-	off := arial.mark_offset(mark.gid, base.gid) or { panic('the font should place this mark') }
+	off := arial.mark_offset(mark.gid, base.gid, false) or { panic('the font should place this mark') }
 	assert approx(mark.x, base.x + in_pixels(arial, off.x, 32), 0.001), 'the mark should sit at the font horizontal offset, base x=${base.x} mark x=${mark.x} off=${off.x}'
 	// The line's y is positive downwards while the font's is positive upwards, so the sign is
 	// flipped on the way out. Getting that wrong puts a fatha under its letter.
