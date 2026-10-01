@@ -48,6 +48,7 @@ no network access is needed to build.
 - Arabic joining forms, and the isolated, initial, medial and final shapes.
 - GSUB single, multiple, alternate, ligature and contextual substitutions.
 - GPOS mark-to-base, mark-to-ligature and mark-to-mark attachment.
+- GPOS pair adjustment (kerning), in both the per-pair and per-class forms.
 - Right-to-left lines, mixed-direction paragraphs, and bidi mirroring.
 - Glyph rasterization through a bundled stb_truetype.
 
@@ -55,14 +56,16 @@ no network access is needed to build.
 
 Named here so that a caller is not surprised by them.
 
-- **Kerning.** GPOS pair-adjustment lookups (type 2) are not parsed, and neither is the `kern`
-  table. Latin text is shaped and drawn without letter spacing correction.
+- **The legacy `kern` table.** Kerning is read from GPOS only, which is where every font worth using
+  puts it. A font that has only a `kern` table is drawn unkerned.
 - **Line breaking.** The UAX #14 class data is present in `properties.v` but no rule engine uses it
   yet. `layout_paragraph` returns one line and does not wrap.
 - **Contextual positioning.** GPOS chaining-context lookups (types 5 and 6) are not parsed.
+- **Device and variation tables.** A hint that a pair is tighter at one size than another is skipped,
+  so a kern is the same at every size.
 - **Justification and kashida.**
-- **Non-Arabic scripts beyond the basics.** Latin, Greek and Cyrillic resolve their glyphs, shapes
-  and draw correctly, but a font's Latin-specific positioning tables go unused.
+- **Non-Arabic scripts beyond the basics.** Latin, Greek and Cyrillic resolve their glyphs, shapes,
+  kern and draw correctly, but a font's script-specific positioning tables go unused.
 - **Vertical text.**
 
 ## Using it
@@ -122,6 +125,25 @@ back to the text or to a caret position. A ligature reports the first character 
 and its base are both in the list and share an `x`, because a mark is drawn on top of its base rather
 than after it.
 
+### Kerning
+
+A font's pair adjustments, which move one glyph when a particular glyph follows it. The two glyphs
+are named in the order the text reads them, so a right-to-left pair is the rightmost first, and
+`script` names the script because a font may kern one script differently from another.
+
+```v
+if off := font.kern_offset(left_gid, right_gid, 'arab') {
+	// off is in design units; divide by units_per_em and multiply by the pixel size
+}
+
+if font.kerns('arab') {
+	// the font has pair rules for this script
+}
+```
+
+Ask about the glyphs the pipeline produced rather than the letters in the text. Two letters that join
+are shaped into a different glyph, and a lam-alef is one glyph that no pair rule can name.
+
 ### Marks
 
 Three tables place a mark, and the API asks which one is meant, because a font may use any of them
@@ -163,6 +185,21 @@ the wrong letter. `nfd_mapped` returns the mapping and `layout.v` goes through i
 **A lookup table is not the number of things it covers.** A `Coverage` table's count is the number of
 ranges, not the number of glyphs, and a `LigatureArray` is indexed through offsets that point at
 variable-length structures. Sizes are checked before they are used to allocate.
+
+**A value format is not a field name.** A GPOS `ValueRecord` is variable length, and the bits of the
+format say which of four fields are there: `0x0001` is xPlacement, `0x0002` yPlacement, `0x0004`
+xAdvance and `0x0008` yAdvance. Kerning is `0x0004`, so reading an xPlacement where an xAdvance
+belongs produces the right number in the wrong place: the letter moves out from under its neighbour
+and the gap between them stays the same.
+
+**The two pair formats diverge at the sixth field.** Format 1 has a count of `PairSet` tables where
+format 2 has two class definitions, and both begin with the same coverage and the same two value
+formats. Reading one as the other takes a class definition's offset as a count, which is a small
+number that looks fine, and then walks offsets out of something that is not an array of them.
+
+**Class 0 is a real class.** It is what a glyph gets when no definition names it, and a font that
+kerns a class of letters against everything else writes into the class 0 row. What decides a pair is
+the coverage, not the class value.
 
 ## Layout
 
