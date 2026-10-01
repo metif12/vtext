@@ -52,49 +52,54 @@ they are not there.
 
 ### ~~Chaining-context positioning (GPOS type 8)~~
 
-**Parsed, format 3.** `apply_contextual` walks a glyph run and returns what each matched rule asks for,
-resolved to a glyph index and a lookup. Counted against fontTools on the same fonts, the parse agrees
-exactly: Tahoma 229 rules over 32 lookups, Simplified Arabic 15 over 11, Majalla 71 over 27, Calibri 69
-over 69.
+**Parsed, format 3, and applied.** `apply_contextual` walks a glyph run and returns what each matched
+rule asks for, and `context_placement` answers a pair from one. Counted against fontTools on the same
+fonts, the parse agrees exactly: Tahoma 229 rules over 32 lookups, Simplified Arabic 15 over 11,
+Majalla 71 over 27, Calibri 69 over 69.
 
-It reaches almost nothing, and the reason turned out to be worth more than the rule engine. Tahoma
-names 208 glyphs across its patterns and this engine produces one of them. The patterns name glyphs
-3426 through 3440, which GSUB lookup 55 makes from the Persian digits — and no feature in the font
-names lookup 55. It is a dead lookup, so those glyphs cannot exist however the text is shaped, and the
-rules that want them cannot fire in any engine. The same is true of glyph 1499, which no lookup and no
+The rules under `mark` are unreachable, and the reason is worth more than the rule engine. Tahoma names
+208 glyphs across its patterns and this engine produces one of them. The patterns name glyphs 3426
+through 3440, which GSUB lookup 55 makes from the Persian digits — and no feature in the font names
+lookup 55. It is a dead lookup, so those glyphs cannot exist however the text is shaped, and the rules
+that want them cannot fire in any engine. The same is true of glyph 1499, which no lookup and no
 codepoint produces at all.
 
 That is a font bug rather than a gap here, and it is worth knowing because it means the 229 rules are
-not 229 rules that are being missed.
+not 229 rules that are being missed. The rules under `kern` are a different matter and do fire.
 
-### Context-sensitive kerning: what it needs
+### ~~Context-sensitive kerning~~
 
-A chaining rule under the `kern` feature is usually not a kerning rule at all. Andalus is the clearest
-case and it is the shape to expect: its first rule is "if one of glyphs 160 through 167 comes before
-glyph 3, apply lookup 21", and lookup 21 is a **single positioning**, not a pair. A font saying "move
-this glyph when it follows that one" is placing a form, not closing a gap.
+**Done.** `context_placement` takes a shaped run and two indices into it, and answers the pair from
+either a plain pair rule or a rule that matches around it. A font may put both under one feature and the
+caller does not have to know which lookup a given pair lives in.
 
-So applying these needs two things that are not there yet:
+This is where the chaining rules turn out to matter after all, under `kern` rather than `mark`. Ten of
+Tahoma's are under kern, 17 of Segoe UI's, 10 in Arial and Times, 6 in Traditional Arabic, 11 in
+Simplified Arabic, 22 in Majalla, 8 in Andalus and 26 in Calibri. Asked about the runs they were written
+for, 28 of them answer.
 
-- SinglePos parsed, in both formats. Format 2 is the one worth writing: it has one value for a whole
-  coverage and a second array of exceptions, each naming the glyph by its index within the coverage.
-- A pair-shaped API that resolves a record through whatever kind of lookup it names, rather than
-  assuming a pair.
+Two things had to be right, and both were found by reading a font's own bytes rather than the
+specification:
 
-Counted over the fonts on this machine, the rules under `kern` are 10 in Tahoma, 17 in Segoe UI, 10 in
-Arial, 10 in Times, 6 in Traditional Arabic, 11 in Simplified Arabic, 22 in Majalla, 8 in Andalus and
-26 in Calibri. Andalus is the one to write the test against: 55 of its 142 pattern glyphs are reachable
-from a codepoint, so its rules can actually fire.
+A rule under kern usually names a single positioning rather than a pair. Of the records a kern feature
+reaches across these fonts, 186 name a single and 12 name a pair. Andalus's first rule is "if one of
+glyphs 160 through 167 comes before glyph 3, apply lookup 21", and lookup 21 covers glyph 3 with an
+xPlacement of -120: it moves the second letter because of what came before the first.
 
-**Blocked by a compiler bug.** SinglePos format 2 is written and correct, but this compiler fails to
-emit usable C for a function that takes or returns a slice of a struct: `src.c: expected expression
-before ')' token` with an `__arr_val_N` undeclared behind it. Passing the slice by reference, by
-mutable reference, and building it with an explicit capacity all reach the same failure. The parser is
-in `gpos_ctx_test.v`'s sibling branch and needs either a compiler fix or a representation that avoids
-the construct, and until one of those exists this stays off.
+And a rule with a backtrack is about one glyph with a condition. Its pattern names the glyph being
+placed and reaches back to what makes it different, so the pair a caller names is a glyph and its
+context rather than two the pattern both names.
 
-Formats 1 and 2 of the context itself are also not read. They need a class for every glyph in a pattern
-and then a jump through a rule set, and no font on this machine uses them.
+SinglePos format 1 has no count of its values, because the coverage already says how many there are.
+Reading the first value as a count turns -120 into 65416 and walks off the end of the table. The pair
+tables beside it in the same table do have a count, which is what makes the two easy to confuse.
+
+### ~~SinglePos format 2~~
+
+**Not done, and nothing here uses it.** Format 2 has one value for a whole coverage and a second array
+naming the glyphs that want something else, each by its coverage index. No font on this machine uses it,
+and reading it as format 1 takes the valueCount as a count and then reads coverage indices as records,
+which is worse than refusing it.
 
 ### Cursive attachment (GPOS type 1)
 

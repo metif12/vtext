@@ -69,6 +69,9 @@ Named here so that a caller is not surprised by them.
   every character rather than at the word boundaries a reader expects.
 - **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
   Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
+- **SinglePos format 2.** Format 1 is read, which is what every font here uses. Format 2 has one value
+  for a whole coverage and a second array of exceptions, and reading it as format 1 takes the valueCount
+  as a count and then reads coverage indices as records.
 - **Cursive attachment (GPOS type 1).** Three Windows Arabic fonts carry it — Traditional Arabic
   with 7 lookups, Simplified Arabic with 57, Majalla with 54 — and it is what makes a cursive script
   look cursive rather than merely joined. This engine joins by picking one of four shapes instead.
@@ -198,19 +201,20 @@ if font.kerns('arab') {
 Ask about the glyphs the pipeline produced rather than the letters in the text. Two letters that join
 are shaped into a different glyph, and a lam-alef is one glyph that no pair rule can name.
 
-`kern_pair_in` is the form to use when the two glyphs are known to be adjacent in a run, because a font
-can kern the same two letters differently depending on what is around them. A run of three in Arabic can
-need three answers that a pair table cannot give.
+`context_placement` is the form to use when the two glyphs are known to be adjacent in a run, because a
+font can place the same two letters differently depending on what precedes them. A run of three in Arabic
+can need three answers that a pair table cannot give.
 
 ```v
 // gids is the shaped run in logical order; left and right are indices into it.
-if off := font.kern_pair_in(gids, 0, 1, 'arab') {
-	// this pair is kerned differently here than it would be two letters into the word
+if off := font.context_placement(gids, 0, 1, 'arab') {
+	// this pair is placed differently here than it would be two letters into the word
 }
 ```
 
 The rules behind it are counted by `kerns`, so a font whose only kerning is context-sensitive still
-reports true.
+reports true. The answer is a placement rather than an advance, because a rule under kern usually is
+one.
 
 ### Marks
 
@@ -276,22 +280,19 @@ one and turns a lookup index of 62 into a value format of 62.
 
 **A record under the kern feature usually names a single positioning, not a pair.** Andalus's first
 kerning rule is "if one of glyphs 160 through 167 comes before glyph 3, apply lookup 21", and lookup 21
-moves one glyph rather than closing a gap between two. Assuming a pair finds no rule and answers nothing
-on a font whose rules are working perfectly.
+moves one glyph rather than closing a gap between two. Across the Arabic fonts here, of the records a
+kern feature reaches, 186 name a single positioning and 12 name a pair. Assuming a pair finds no rule
+and answers nothing on a font whose rules are working perfectly.
 
-## Known compiler problems
+**A SinglePos format 1 value comes straight after the format that says how wide it is.** There is no
+count of the values, because the coverage already says how many there are. Reading the first value as a
+count turns a value of -120 into a count of 65416, and the pair tables beside it in the same table do
+have a count, which is what makes the two easy to confuse.
 
-Two shapes of code fail to compile with this compiler, both producing C that does not build rather than
-a V-level error. Both were found the slow way here, so they are written down.
-
-**A function that takes a slice of a struct as a mutable parameter.** `fn f(mut xs []PairValue)` reaches
-`src.c: expected expression before ')' token` with an `__arr_val_N` undeclared behind it, and so does a
-mutable reference to one. Returning such a slice fails the same way. Building the array locally and
-appending to it works; passing it in does not. `read_single_exceptions` in the context work was stuck on
-this for a while before it was recognised as the compiler and not the code.
-
-**An empty array literal of a struct with no capacity.** `[]PairValue{}` fails the same way. Writing it
-as `[]PairValue{cap: n, len: 0}` compiles.
+**A rule with a backtrack is about one glyph with a condition.** Its pattern names the glyph being
+placed and reaches back to what makes it different, so the two glyphs a caller asks about are a glyph
+and its context rather than two the pattern both names. A reader that insists the pattern covers both
+discards every rule shaped like this one, and most rules under kern are shaped like it.
 
 ## Layout
 
