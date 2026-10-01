@@ -158,9 +158,16 @@ or to draw the opportunities.
 ### Contextual positioning
 
 A font that moves a glyph based on what is around it. A `true` here means the font has such rules for
-a script, not that this engine reaches them: Tahoma carries two hundred and none of them fire, because
-its `ccmp` composes the marks they are written against and no string reaches a composed glyph. See
-`mark_glyphs_passthrough` for the same situation on mark attachment.
+a script, not that this engine reaches them.
+
+Two things make this worth reading. Tahoma carries 229 of these and none fire, because its patterns
+name glyphs its own GSUB cannot produce: the lookup that would make them is named by no feature, so
+they cannot exist however the text is shaped. That is a font bug, and no engine reaches them. The rules
+under the `mark` feature are the interesting case, and on the Arabic fonts this engine reads they are
+mostly unreachable for the same reason.
+
+Calibri carries 69 chaining lookups and has none of them under any feature of any script. A `true`
+answer here can mean a rule that nothing can reach.
 
 ```v
 if font.contextually_positions('arab') {
@@ -190,6 +197,20 @@ if font.kerns('arab') {
 
 Ask about the glyphs the pipeline produced rather than the letters in the text. Two letters that join
 are shaped into a different glyph, and a lam-alef is one glyph that no pair rule can name.
+
+`kern_pair_in` is the form to use when the two glyphs are known to be adjacent in a run, because a font
+can kern the same two letters differently depending on what is around them. A run of three in Arabic can
+need three answers that a pair table cannot give.
+
+```v
+// gids is the shaped run in logical order; left and right are indices into it.
+if off := font.kern_pair_in(gids, 0, 1, 'arab') {
+	// this pair is kerned differently here than it would be two letters into the word
+}
+```
+
+The rules behind it are counted by `kerns`, so a font whose only kerning is context-sensitive still
+reports true.
 
 ### Marks
 
@@ -252,6 +273,25 @@ the coverage, not the class value.
 format on the contextual side, even though the substitution side has fields that look as though they
 belong there. Reading one takes a word that belongs to the first record, which shifts every record by
 one and turns a lookup index of 62 into a value format of 62.
+
+**A record under the kern feature usually names a single positioning, not a pair.** Andalus's first
+kerning rule is "if one of glyphs 160 through 167 comes before glyph 3, apply lookup 21", and lookup 21
+moves one glyph rather than closing a gap between two. Assuming a pair finds no rule and answers nothing
+on a font whose rules are working perfectly.
+
+## Known compiler problems
+
+Two shapes of code fail to compile with this compiler, both producing C that does not build rather than
+a V-level error. Both were found the slow way here, so they are written down.
+
+**A function that takes a slice of a struct as a mutable parameter.** `fn f(mut xs []PairValue)` reaches
+`src.c: expected expression before ')' token` with an `__arr_val_N` undeclared behind it, and so does a
+mutable reference to one. Returning such a slice fails the same way. Building the array locally and
+appending to it works; passing it in does not. `read_single_exceptions` in the context work was stuck on
+this for a while before it was recognised as the compiler and not the code.
+
+**An empty array literal of a struct with no capacity.** `[]PairValue{}` fails the same way. Writing it
+as `[]PairValue{cap: n, len: 0}` compiles.
 
 ## Layout
 
