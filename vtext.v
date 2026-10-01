@@ -235,6 +235,17 @@ pub fn (f &Font) kerns(script string) bool {
 	return gpos.has_kerning(script)
 }
 
+// contextually_positions reports whether the font moves a glyph based on what is around it.
+//
+// This is what a script with stacked forms needs: the middle shape of a three-letter stack has to move
+// depending on whether there is anything above it, and a font says so with a rule rather than with a
+// fifth shape. A Latin font has none, because Latin has nothing to stack, so this is a question worth
+// asking before expecting a mark to land somewhere particular.
+pub fn (f &Font) contextually_positions(script string) bool {
+	gpos := f.face.gpos or { return false }
+	return gpos.has_contextual_positioning(script)
+}
+
 // places_marks_on_ligatures reports whether the font can position a mark on a fused pair, which
 // decides whether a mark after a lam-alef has a chance of landing anywhere useful.
 pub fn (f &Font) places_marks_on_ligatures() bool {

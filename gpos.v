@@ -28,6 +28,7 @@ const gpos_lookup_pair = 2
 const gpos_lookup_mark_to_base = 4
 const gpos_lookup_mark_to_ligature = 5
 const gpos_lookup_mark_to_mark = 6
+const gpos_lookup_chain_context = 8
 const gpos_lookup_extension = 9
 
 // The GDEF glyph classes. Attachment cares about the first three: a mark attaches to a base or
@@ -294,6 +295,99 @@ struct MarkToLigature {
 	components [][]LigatureComponent
 }
 
+// ContextRecord is one positioning a chaining context performs once its pattern has matched: which
+// of the input positions it applies to, and which lookup does the work.
+//
+// A record is a pair of indices and carries no value of its own. That is worth saying because the
+// substitution side of the specification has a field here that looks like it belongs in a positioning
+// record too, and reading it takes a word that belongs to this record instead. The whole thing then
+// shifts by one, and the lookup index becomes whatever the sequence index should have been.
+struct ContextRecord {
+mut:
+	// position is an index into the context's input sequence, and it is deliberately not an offset
+	// into the glyph run: a rule matching three input glyphs can position the second of them and
+	// leave the other two alone.
+	position int
+	// lookup is the lookup to run at that position, resolved against the same lookup list this
+	// context came from.
+	lookup u16
+}
+
+// ChainPosition is a chaining context in format 3: the pattern of glyphs before, at and after the
+// position being positioned, given as coverage tables.
+//
+// Format 3 is the form the Arabic fonts this engine reads use. It names coverage tables directly, so
+// matching it is a run of binary searches with no second lookup step, where formats 1 and 2 would
+// need a class for every glyph in the pattern and then a jump through a rule set to find out what to
+// do about it.
+struct ChainPosition {
+mut:
+	// backtrack are the coverages to match before the first input glyph, nearest first.
+	backtrack [][]CoverageRange
+	// input are the coverages to match at and after the position, the first being the one a record
+	// with position zero positions.
+	input [][]CoverageRange
+	// lookahead are the coverages to match after the last input glyph, nearest first.
+	lookahead [][]CoverageRange
+	// records is the list of positioning actions to apply once the pattern has matched.
+	records []ContextRecord
+}
+
+// parse_chain_position reads one ChainContextPos subtable in format 3.
+//
+// The header interleaves: a count, then that many coverage offsets, then the next count. Reading the
+// three counts off the front instead gives an input count of eighteen on a rule that matches a single
+// glyph, and every coverage offset after that points at a glyph range rather than at a table.
+//
+// The records are the second thing this has to get right, and the mistake is an obvious one to make
+// because the substitution side of the specification has a field that looks like it belongs here. There
+// is no posLookupCount: a record is a pair of indices and nothing else, and the second one names a
+// lookup to run. Reading a count that is not there takes a word that belongs to the first record, which
+// shifts every record by one and turns the lookup index into whatever the sequence index should have
+// been. Tahoma's first rule names lookup 62, which with a one glyph pattern is a perfectly ordinary
+// lookup number, and reading it as a format gives 62 as a mask instead.
+fn parse_chain_position(r &Reader, at int) ?ChainPosition {
+	if r.u16_at(at) != 3 {
+		return none
+	}
+	mut c := ChainPosition{}
+	mut p := at + 2
+
+	// The three coverage lists, each a count followed by that many offsets from the subtable. The
+	// same helper GSUB uses reads these, because the two formats lay them out identically.
+	back := read_coverages(r, at, p)
+	p = back.next
+	c.backtrack = back.ranges
+	inp := read_coverages(r, at, p)
+	p = inp.next
+	c.input = inp.ranges
+	ahead := read_coverages(r, at, p)
+	p = ahead.next
+	c.lookahead = ahead.ranges
+	if c.input.len == 0 {
+		return none
+	}
+
+	pos_count := int(r.u16_at(p))
+	p += 2
+	// A count whose records cannot fit in what is left of the table is a font claiming more than it
+	// has, and is refused rather than walked off the end.
+	if pos_count <= 0 || pos_count * 4 > r.len() - p {
+		return none
+	}
+
+	mut records := []ContextRecord{cap: pos_count}
+	for _ in 0 .. pos_count {
+		records << ContextRecord{
+			position: int(r.u16_at(p))
+			lookup:   r.u16_at(p + 2)
+		}
+		p += 4
+	}
+	c.records = records
+	return c
+}
+
 // Gpos is a parsed GPOS table, reduced to mark attachment.
 pub struct Gpos {
 mut:
@@ -322,6 +416,8 @@ mut:
 	// particular glyph follows it. A lookup holds either these or the mark rules, never both,
 	// because a lookup has one type and the type says which of the two it is.
 	pairs []PairPos
+	// chains are chaining-context rules, which position a glyph based on what is around it.
+	chains []ChainPosition
 }
 
 // mark_glyphs_passthrough reports whether the mark glyphs a font uses in its positioning rules
@@ -588,6 +684,149 @@ pub fn (g &Gpos) has_kerning(script string) bool {
 	return false
 }
 
+// ChainApplication is one positioning a chaining context asks for, once its pattern has matched.
+//
+// It is resolved rather than raw: the record named a lookup and a glyph of the pattern, and this is
+// that glyph's index in the run with the lookup that will move it. A caller applies it without knowing
+// anything about contexts.
+pub struct ChainApplication {
+pub mut:
+	// at is the index in the glyph run of the glyph to move.
+	at int
+	// lookup is the lookup to run at that glyph.
+	lookup u16
+}
+
+// contextual_for returns the chaining-context lookups a script's features name.
+//
+// The features are the ones a font uses for this and the list is not the same for every font: a Latin
+// font carries none at all, and an Arabic font carries them under calt, mark and mkmk depending on
+// which of them has rules that need context. Asking per script rather than collecting once is what
+// keeps a Latin lookup from being run over Arabic text.
+pub fn (g &Gpos) contextual_for(script string) []u16 {
+	mut out := []u16{}
+	mut seen := map[u16]bool{}
+	for tag in ['calt', 'mark', 'mkmk', 'abvm', 'blwm', 'rclt', 'curs', 'kern'] {
+		for li in g.lookups_for(script, tag) {
+			if seen[li] || li >= g.lookups.len {
+				continue
+			}
+			// A feature may name a lookup that is not a context, and running a mark rule as if it
+			// were one would move a mark with nothing having said it should.
+			if g.lookups[li].chains.len == 0 {
+				continue
+			}
+			seen[li] = true
+			out << li
+		}
+	}
+	return out
+}
+
+// has_contextual_positioning reports whether the font positions a glyph based on what is around it,
+// which is what a script with stacked forms needs and a Latin font does not.
+pub fn (g &Gpos) has_contextual_positioning(script string) bool {
+	for li in g.contextual_for(script) {
+		if li < g.lookups.len && g.lookups[li].chains.len > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// apply_contextual walks a glyph run and returns every positioning a chaining context asks for.
+//
+// gids is the run in logical order, which is the order the context's pattern is written in: a rule's
+// backtrack list reads backwards from the position and its lookahead list reads forwards, and neither
+// reverses for a right-to-left run, because the flag is about the order lookups are applied in rather
+// than the order a font writes its pattern in.
+//
+// A glyph is reported at most once. Two rules can both match at the same position and both want to
+// move it, and which one wins is the order the lookups are applied in, which the caller owns; this
+// returns what each rule asks for and lets the caller decide.
+pub fn (g &Gpos) apply_contextual(gids []u16, script string) []ChainApplication {
+	mut out := []ChainApplication{}
+	if gids.len == 0 {
+		return out
+	}
+	// The rules are tried in the order the features name them, and within a lookup in the order the
+	// subtables are written, because a later one is meant to override an earlier one and the caller
+	// cannot know that unless the order is preserved.
+	for li in g.contextual_for(script) {
+		if li >= g.lookups.len {
+			continue
+		}
+		lookup := g.lookups[li]
+		for c in lookup.chains {
+			for at in 0 .. gids.len {
+				m := match_chain_position(c, gids, at)
+				if m.start < 0 {
+					continue
+				}
+				for rec in c.records {
+					if rec.position < 0 || rec.position >= m.positions.len {
+						continue
+					}
+					out << ChainApplication{
+						at:     m.positions[rec.position]
+						lookup: rec.lookup
+					}
+				}
+			}
+		}
+	}
+	return out
+}
+
+// match_chain_position tests a context's pattern at one position in a glyph run.
+//
+// The backtrack and lookahead lists are written nearest glyph first and the input list runs forwards,
+// and none of that changes with the writing direction. The returned start is negative when the pattern
+// does not match, and the positions are the indices in the run of every input glyph, in pattern order,
+// so a record's position indexes straight into them.
+fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPositions {
+	if c.input.len == 0 || at + c.input.len > gids.len {
+		return ChainMatchPositions{ start: -1 }
+	}
+	for k, cov in c.backtrack {
+		back := at - 1 - k
+		if back < 0 {
+			return ChainMatchPositions{ start: -1 }
+		}
+		if coverage_index(cov, gids[back]) == none {
+			return ChainMatchPositions{ start: -1 }
+		}
+	}
+	// Positions are assigned by index rather than appended: the slice is made at its final length so
+	// that a record naming position n reads position n and not the end of the list.
+	mut positions := []int{len: c.input.len}
+	for k, cov in c.input {
+		if coverage_index(cov, gids[at + k]) == none {
+			return ChainMatchPositions{ start: -1 }
+		}
+		positions[k] = at + k
+	}
+	for k, cov in c.lookahead {
+		ahead := at + c.input.len + k
+		if ahead >= gids.len {
+			return ChainMatchPositions{ start: -1 }
+		}
+		if coverage_index(cov, gids[ahead]) == none {
+			return ChainMatchPositions{ start: -1 }
+		}
+	}
+	return ChainMatchPositions{ start: at, positions: positions }
+}
+
+// ChainMatchPositions is a context pattern that has matched and where in the run it matched.
+struct ChainMatchPositions {
+mut:
+	// start is the index of the first input glyph, or negative when nothing matched.
+	start int
+	// positions are the indices of every input glyph, in pattern order.
+	positions []int
+}
+
 // has_mark_to_mark reports whether the font places a mark on another mark, which is what stacking
 // two accents needs.
 pub fn (g &Gpos) has_mark_to_mark() bool {
@@ -738,6 +977,11 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 					lookup.mark_ligatures << rule
 				}
 			}
+			if resolved.kind == gpos_lookup_chain_context {
+				if rule := parse_chain_position(r, resolved.at) {
+					lookup.chains << rule
+				}
+			}
 		}
 		if lookup.mark_ligatures.len > 0 {
 			lookup.kind = gpos_lookup_mark_to_ligature
@@ -745,6 +989,10 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 			lookup.kind = gpos_lookup_mark_to_mark
 		} else if lookup.kind == gpos_lookup_extension && lookup.mark_bases.len > 0 {
 			lookup.kind = gpos_lookup_mark_to_base
+		} else if lookup.kind == gpos_lookup_extension && lookup.chains.len > 0 {
+			// A lookup that reached its real type through an extension reports that type, so that
+			// a caller asking what a lookup is gets the answer rather than the extension.
+			lookup.kind = gpos_lookup_chain_context
 		}
 		out << lookup
 	}
