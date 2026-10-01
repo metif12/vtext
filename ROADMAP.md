@@ -101,18 +101,45 @@ naming the glyphs that want something else, each by its coverage index. No font 
 and reading it as format 1 takes the valueCount as a count and then reads coverage indices as records,
 which is worse than refusing it.
 
-### Cursive attachment (GPOS type 1)
+### ~~Cursive attachment: what it actually needs~~
 
-Three Windows Arabic fonts carry it: Traditional Arabic with 7 lookups, Simplified
-Arabic with 57, and Majalla with 54. This is the table that says how the exit
-point of one letter meets the entry point of the next, and it is what makes a
-cursive script look cursive rather than merely joined.
+**The premise was wrong, and it is worth writing down how.** I had recorded that Traditional Arabic
+carries 7 cursive lookups, Simplified Arabic 57 and Majalla 54, and that this is what makes a cursive
+script look cursive. Those counts are GPOS lookup type 1, and lookup type 1 is two tables under one
+number: a single positioning and a cursive attachment. All of them are single positionings. The same
+mistake twice in one session, after the compiler bug: a number counted, then given a meaning it did
+not have.
 
-This engine joins by picking one of four shapes and does not use it, which is a
-deliberate choice rather than an omission: for Arabic the four shapes are enough,
-and a cursive font can need a fifth that no joining type names. It is the one
-item in this phase that would change how Arabic text is shaped rather than add
-something beside it, so it needs measuring against a font before it is written.
+Counting properly means unwrapping extensions first, because a font that reaches its positioning
+through an extension stores the real type in the extension header. Walking every font on this machine
+that way finds no cursive attachment at all. The one `curs` feature, in Dubai, names an extension whose
+header says type 3 — a mark attachment — and fontTools calls that subtable a CursivePos because it
+reads the bytes' shape rather than the header that names the type. Its mark array offset happens to land
+on something shaped like an anchor, which is how one table looks like the other.
+
+So Arabic joining in these fonts is entirely GSUB substitution, which this engine already does. What
+remains is the reader, and it is written:
+
+- `Cursive` and `EntryExit` in `gpos.v`, in both formats, with a record found through the coverage.
+- A refusal that matters. A single positioning's valueFormat sits exactly where a cursive rule's first
+  anchor offset sits, and 3 is a valid anchor format, so reading anchors first takes real kerning rules
+  out of the font — it did, and the kerning tests failed. The test now fixes that shape as bytes.
+- The guard is structural rather than lucky: in a cursive rule the anchors are a table after the
+  records, so every offset points past the records, while a value format is a bitmask of a few hundred
+  and cannot point past a value array that is already there.
+- What is still missing is the attachment itself, which is not a positioning rule but a change to
+  advance: the pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter
+  can end up wider or narrower than its advance says. That needs a font with a cursive attachment to be
+  worth writing, and there is none here.
+
+### Cursive attachment: the attachment itself
+
+The reader for a cursive rule is done. The attachment is not, and it is not a positioning rule: the
+pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter can end up wider
+or narrower than its advance says, and the whole line has to be placed in two passes rather than one.
+It needs a font that has a cursive attachment to be measured against, and none of the fonts on this
+machine has one. Bringing one in — Amiri or Scheherazade, or a Nastaliq face — is the first thing this
+needs, and it is a question about which fonts the library is expected to open rather than about OpenType.
 
 ### Device and variation tables
 

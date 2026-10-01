@@ -72,9 +72,13 @@ Named here so that a caller is not surprised by them.
 - **SinglePos format 2.** Format 1 is read, which is what every font here uses. Format 2 has one value
   for a whole coverage and a second array of exceptions, and reading it as format 1 takes the valueCount
   as a count and then reads coverage indices as records.
-- **Cursive attachment (GPOS type 1).** Three Windows Arabic fonts carry it — Traditional Arabic
-  with 7 lookups, Simplified Arabic with 57, Majalla with 54 — and it is what makes a cursive script
-  look cursive rather than merely joined. This engine joins by picking one of four shapes instead.
+- **Cursive attachment (GPOS type 1).** Read, in both formats, but the reader refuses a table whose
+  offsets point back into its own records, which is what tells a cursive rule from a single
+  positioning. No font on this machine has one, so nothing here exercises the attachment itself: Arabic
+  joining in the Windows fonts comes entirely from GSUB substitution, which this engine does do. The
+  one `curs` feature here, in Dubai, reaches a mark attachment lookup, and fontTools calls that
+  subtable a CursivePos because it reads the shape rather than the extension header that names the
+  type.
 - **Device and variation tables.** A hint that a pair is tighter at one size than another is skipped,
   so a kern is the same at every size.
 - **Justification and kashida.**
