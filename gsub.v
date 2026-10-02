@@ -214,12 +214,65 @@ struct Script {
 pub struct Gsub {
 	lookups []Lookup
 	scripts []Script
+	// declared is the whole FeatureList, including the features no language system enables.
+	//
+	// It is kept apart from the scripts for a reason that only shows up in a report. A script's features
+	// are the ones its default language system enables, which is the right answer for shaping a run of
+	// text and the wrong answer for "what does this font offer": a font can enable 'isol' only under a
+	// tagged language, and a count built from the scripts misses it. Segoe UI is exactly that case, and
+	// its FeatureList names two tags no default language system reaches. So the list is kept whole and
+	// the shaping path is left reading the scripts.
+	declared []Feature
 	// gdef is the glyph definition table, which the lookup flags are written in terms of. A font
 	// without one classifies nothing, so every glyph is unclassified and only the flags that
 	// need no class do anything. That is a real answer rather than a default: a rule that says
 	// "ignore the marks" against a font that does not say which glyphs are marks has to see
 	// every glyph, and skipping nothing is what that means.
 	gdef ?&Gdef
+}
+
+// feature_tags lists every feature tag the table's FeatureList names, with the duplicates a font creates
+// by listing the same tag twice collapsed into one.
+//
+// The list is the FeatureList rather than the scripts' features, and the difference is not academic. A
+// script enables the features of one language system, which is the right question when shaping a run of
+// text, and the wrong one when asking what a font has: Segoe UI declares 25 tags in GSUB and only 23 of
+// them are reachable from any default language system, with 'isol' and 'locl' living under a tagged
+// language alone. A count of 23 would say the font cannot isolate a letter, which is false. It is enabled
+// only when the text says which language, and this engine does not ask the text.
+//
+// Dubai is the other half of the shape of this: its GPOS offers a 'curs' tag, so a report of the tags says
+// the font has cursive positioning, while nothing this engine reads will ever use it. Both facts are
+// wanted, and they are wanted together.
+pub fn (g &Gsub) feature_tags() []string {
+	mut out := []string{}
+	mut seen := map[string]bool{}
+	for f in g.declared {
+		if seen[f.tag] {
+			continue
+		}
+		seen[f.tag] = true
+		out << f.tag
+	}
+	return out
+}
+
+// script_tags lists the script tags the table declares, which is what its ScriptList holds.
+//
+// The table may declare a script the font carries nothing for, and it may declare 'DFLT' rather than a
+// real script tag. Both are reported as they are, because a caller comparing two fonts wants to know that
+// one of them used DFLT rather than a script list.
+pub fn (g &Gsub) script_tags() []string {
+	mut out := []string{}
+	mut seen := map[string]bool{}
+	for script in g.scripts {
+		if seen[script.tag] {
+			continue
+		}
+		seen[script.tag] = true
+		out << script.tag
+	}
+	return out
 }
 
 // new_gsub parses the GSUB table, or returns none when the font has none or it does not
@@ -257,9 +310,10 @@ pub fn new_gsub(raw []u8, gdef ?&Gdef) ?&Gsub {
 	// without the list it indexes.
 	features := parse_features(r, feature_list)
 	return &Gsub{
-		lookups: lookups
-		scripts: parse_scripts(r, script_list, features)
-		gdef:    gdef
+		lookups:  lookups
+		scripts:  parse_scripts(r, script_list, features)
+		declared: features
+		gdef:     gdef
 	}
 }
 

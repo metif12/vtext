@@ -38,8 +38,14 @@ enum BreakKind {
 // right-to-left paragraph is not the order the text was written in. A caller
 // that wants to keep a caret position uses start, and a caller that wants to
 // draw two lines uses the glyph index.
-struct BreakOpportunity {
-mut:
+//
+// The struct is public because `break_opportunities` is, and a public function
+// returning a private struct leaves its caller able to count the results and
+// nothing else. Every field is read-only: these are the positions the line
+// breaker found, and a caller that moved one would be laying out somewhere the
+// rules do not say there is anywhere to lay out.
+pub struct BreakOpportunity {
+pub:
 	// start is the input index the next line would begin at.
 	start int
 	// at is the index in a shaped line's glyphs that the break falls before.
@@ -81,7 +87,11 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 		// a pair rule would otherwise decide the hyphen's own right-hand side first and get to the wrong
 		// answer about the run.
 		if is_break_after_hyphen_break(props, cps, classes, i) {
-			out << BreakOpportunity{ start: i + 1, at: i + 1 }
+			out << BreakOpportunity{
+				start:        i + 1
+				at:           i + 1
+				is_mandatory: is_mandatory_break_at(classes, i + 1, n, mandatory_first)
+			}
 			continue
 		}
 		// LB7, and then the pairs, in the order the specification numbers them. The
@@ -94,26 +104,39 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 		// A break at the end of the text is the caller's decision, not the text's,
 		// so only a mandatory one is reported here.
 		_ = kind
-		out << BreakOpportunity{ start: i + 1, at: i + 1 }
+		out << BreakOpportunity{
+			start:        i + 1
+			at:           i + 1
+			is_mandatory: is_mandatory_break_at(classes, i + 1, n, mandatory_first)
+		}
 	}
 	// The end of the text is a break the caller always has, and reporting it
 	// means the caller does not have to special-case the last line.
-	out << BreakOpportunity{ start: n, at: n }
-	if mandatory_first {
-		// A mandatory break ends a run, so a caller walking the list in order
-		// stops there rather than continuing past a paragraph. Marking them is
-		// enough; the caller decides what a paragraph boundary means.
-		for i in 0 .. out.len {
-			pos := out[i].at
-			if pos > 0 && pos <= n {
-				c := classes[clamp_index(pos - 1, n)]
-				if c == .lf || c == .bk || c == .cr || c == .nl {
-					out[i].is_mandatory = true
-				}
-			}
-		}
+	out << BreakOpportunity{
+		start:        n
+		at:           n
+		is_mandatory: is_mandatory_break_at(classes, n, n, mandatory_first)
 	}
 	return out
+}
+
+// is_mandatory_break_at says whether the character before position pos is one the
+// rules require a break after.
+//
+// A mandatory break ends a run, so a caller walking the list in order stops there
+// rather than continuing past a paragraph. Marking the opportunity is enough; the
+// caller decides what a paragraph boundary means for it.
+//
+// mandatory_first is passed rather than closed over because the same list is built
+// both ways. A caller laying out one paragraph asks for mandatory breaks to be
+// marked, and a caller measuring a single line asks for the newline to be treated as
+// a space instead, which is a different question about the same positions.
+fn is_mandatory_break_at(classes []LineBreakClass, pos int, n int, mandatory_first bool) bool {
+	if !mandatory_first || pos <= 0 || pos > n {
+		return false
+	}
+	c := classes[clamp_index(pos - 1, n)]
+	return c == .lf || c == .bk || c == .cr || c == .nl
 }
 
 // break_kind is the class of break between two characters, which is what rules

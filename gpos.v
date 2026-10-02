@@ -394,6 +394,14 @@ pub struct Gpos {
 mut:
 	lookups []GposLookup
 	scripts []Script
+	// declared is the whole FeatureList, including the features no language system enables.
+	//
+	// It is kept apart from the scripts for a reason that only shows up in a report. A script's features
+	// are the ones its default language system enables, which is the right answer for shaping a run of
+	// text and the wrong answer for "what does this font offer": a font can enable a feature only under a
+	// tagged language, and a count built from the scripts misses it. So the list is kept whole and the
+	// shaping path is left reading the scripts.
+	declared []Feature
 	// mark_feature_lookups are the lookups of the mark feature for the Arabic script, which is
 	// where a font puts mark-to-base rules for Arabic letters.
 	mark_feature_lookups []u16
@@ -468,6 +476,7 @@ pub fn new_gpos(raw []u8) ?&Gpos {
 	mut g := &Gpos{}
 	g.lookups = lookups
 	g.scripts = parse_scripts(r, script_list, features)
+	g.declared = features
 	// Arabic fonts do not put their mark rules under the generic mark feature. Above-base marks
 	// live under abvm and below-base marks under blwm, which is what lets a font attach a fatha
 	// high on a letter and a kasra low on the same one. Asking for mark alone finds them on the
@@ -500,6 +509,45 @@ pub fn (g &Gpos) has_mark_attachment() bool {
 		}
 	}
 	return false
+}
+
+// feature_tags lists every feature tag the table's FeatureList names, with the duplicates a font creates
+// by listing the same tag twice collapsed into one.
+//
+// The list is the FeatureList rather than the scripts' features, because those are one language system's
+// answer and this is a question about the font. The two differ in both directions, and both directions
+// matter: a font can offer a feature no default language system reaches, and it can offer one nothing in
+// this engine will ever read.
+//
+// Dubai is the case worth naming for the second. Its GPOS declares 'curs', so a report of the tags says
+// the font has cursive positioning, and not one of its lookups is applied by anything here. That is not a
+// contradiction to be resolved by hiding the tag. It is the difference between what a font can do and
+// what this engine does, and the only way to see it is to print both.
+pub fn (g &Gpos) feature_tags() []string {
+	mut out := []string{}
+	mut seen := map[string]bool{}
+	for f in g.declared {
+		if seen[f.tag] {
+			continue
+		}
+		seen[f.tag] = true
+		out << f.tag
+	}
+	return out
+}
+
+// script_tags lists the script tags the table declares, which is what its ScriptList holds.
+pub fn (g &Gpos) script_tags() []string {
+	mut out := []string{}
+	mut seen := map[string]bool{}
+	for script in g.scripts {
+		if seen[script.tag] {
+			continue
+		}
+		seen[script.tag] = true
+		out << script.tag
+	}
+	return out
 }
 
 // lookups_for returns the lookups a script's feature names, in the order to apply them.

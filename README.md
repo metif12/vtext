@@ -233,6 +233,40 @@ offset := font.mark_offset(mark_gid, base_gid, true)   // over another mark
 The offsets are in design units with y upwards, as the font's own coordinates run. A font that has
 no rule for the pair returns `none`, and the caller leaves the mark at the pen.
 
+### Asking a font what it has
+
+Some questions are about the font rather than about the string. `Font.kerns` asks whether a font kerns;
+`Font.kern_offset` asks what it does to a pair. The first is a report and the second is the engine
+acting, and they are kept apart. Everything in this section is the first kind.
+
+```v
+for t in font.tables() {
+    println('${t.tag} at ${t.offset}, ${t.length} bytes')
+}
+font.has_table('COLR')            // the font has one this engine draws nothing with
+font.outlines()                   // 'glyf', 'CFF ', or ''
+font.num_lookups('GPOS')          // the count in the table's own LookupList
+font.features('GSUB')             // the FeatureList, sorted
+font.scripts('GPOS')              // the ScriptList, sorted
+font.cmap_counts()                // mapped codepoints per subtable
+font.glyph_class_counts()         // in the order of glyph_class_names
+font.is_variable()                // has an fvar table, which is not the same as reading one
+font.variable_axes()
+```
+
+`features` reads the FeatureList rather than the features the scripts enable, and those are different
+sets. Segoe UI declares 25 tags in GSUB; only 23 are reachable from any default language system,
+because `isol` and `locl` are enabled only under a tagged language. A count of 23 would say the font
+cannot isolate a letter, which is false. What a *run of text* can reach is asked through
+`substitute_glyphs`, and that is a separate question on purpose.
+
+`glyph_class_counts` puts every glyph in `unclassified` when there is no GDEF, so the counts add up to
+the glyph count either way. `BreakOpportunity` is public too: it was not, and `break_opportunities` was,
+which left a caller able to count its results and read none of them.
+
+These are what `tools/fontdump`, `tools/fontcheck` and `tools/shapetrace` are written against, and they
+are public because a library that cannot be inspected from outside cannot be diagnosed from outside.
+
 ## Building and testing
 
 The build needs V built with GCC, because the rasterizer is C.

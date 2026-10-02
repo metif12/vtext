@@ -203,6 +203,58 @@ fn (mut f Face) read_post() {
 	f.is_fixed_pitch = r.u32_at(rec.offset + 12) != 0
 }
 
+// read_variable_axes reads the axis records out of an `fvar` table.
+//
+// This is a report about the font rather than an ability to act on it. Nothing else in the engine reads
+// `fvar`, so a caller that reads the axes and then asks for a weight gets the default instance and no
+// error, which is exactly the case worth being able to see coming. Reading the ranges costs nothing and is
+// the difference between a program that knows it cannot vary and one that finds out after drawing.
+//
+// The table is:
+//	uint16 majorVersion
+//	uint16 minorVersion
+//	Offset16 axesArray      measured from the beginning of the table
+//	uint16 reserved         always 2
+//	uint16 axisCount
+//	uint16 axisSize         always 20
+//	uint16 instanceCount
+//	uint16 instanceSize
+// then the axis records, and the named instances after them, which are not read here.
+//
+// The axis size is checked rather than assumed. A table claiming records that are not twenty bytes long is
+// one whose axes are not the shape this reader knows, and reading them anyway would produce plausible
+// numbers that are not the font's.
+fn (f &Face) read_variable_axes() []VariableAxis {
+	rec := f.sfnt.record(tag_fvar) or { return []VariableAxis{} }
+	r := new_reader(f.sfnt.data)
+	if !r.has(rec.offset + 16, 2) {
+		return []VariableAxis{}
+	}
+	if r.u16_at(rec.offset + 12) != 20 {
+		return []VariableAxis{}
+	}
+	axes_at := rec.offset + int(r.u16_at(rec.offset + 4))
+	count := int(r.u16_at(rec.offset + 8))
+	mut out := []VariableAxis{cap: count}
+	for i in 0 .. count {
+		at := axes_at + i * 20
+		if !r.has(at, 20) {
+			break
+		}
+		out << VariableAxis{
+			// The tag is four bytes, and a short tag is padded rather than shortened, so the trailing
+			// space is kept: trimming it would name a tag the font does not use.
+			tag:     r.tag_at(at)
+			// The range is written as Fixed, a 16.16 number, so a weight of 400 comes out as exactly 400.0
+			// and a 400.5 as exactly 400.5 rather than as something rounded.
+			minimum: f64(r.i32_at(at + 4)) / 65536.0
+			deflt:   f64(r.i32_at(at + 8)) / 65536.0
+			maximum: f64(r.i32_at(at + 12)) / 65536.0
+		}
+	}
+	return out
+}
+
 // stb_ptr returns the address of the rasteriser handle.
 fn (f &Face) stb_ptr() voidptr {
 	return voidptr(&f.stb_buf[0])

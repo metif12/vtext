@@ -423,6 +423,49 @@ Programs for people using the library, built out of the examples. Each one
 should be useful on its own without the library, and the library should be
 something it happens to use.
 
+### The inspection API
+
+**Done**, in `inspect.v`. `fontdump`, `shapetrace` and `fontcheck` all need to ask a font questions that
+no part of the shaping pipeline was written to answer, and all three were otherwise going to reach into
+private state or re-parse the file themselves. The API is what they are written against.
+
+```
+Font.tables() []TableInfo          tag, offset, length, sorted
+Font.has_table(tag) bool
+Font.table_length(tag) int         zero when absent
+Font.outlines() string             'glyf', 'CFF ', or ''
+Font.num_lookups(table) int        the LookupList's own count
+Font.features(table) []string      the FeatureList, sorted, deduplicated
+Font.num_features(table) int
+Font.scripts(table) []string       the ScriptList, sorted
+Font.cmap_formats() []int
+Font.cmap_counts() []int           mapped codepoints per subtable, notdef excluded
+Font.glyph_class_counts() [5]int   in the order of glyph_class_names
+Font.is_variable() bool
+Font.variable_axes() []VariableAxis
+```
+
+Everything here is a report about a font the engine has already read. None of it changes what the engine
+does, and none of it guesses. The distinction worth keeping is between a report and the engine acting:
+`Font.kerns` says whether a font kerns, `Font.kern_offset` says what it does to a pair.
+
+Two decisions in it were settled by measurement rather than by taste.
+
+`features` reads the **FeatureList**, not the features the scripts enable. Those are different sets and
+the difference is not academic: Segoe UI declares 25 tags in GSUB and only 23 are reachable from any
+default language system, because `isol` and `locl` are enabled only under a tagged language. A count of
+23 would say the font cannot isolate a letter, which is false. It can, and this engine does not ask the
+text which language it is in. The shaping path is left reading the scripts, which is still the right
+answer for shaping a run of text.
+
+`glyph_class_counts` puts every glyph in `unclassified` when there is no GDEF, rather than returning zeros.
+Returning early looked reasonable and meant the counts did not add up to anything: a caller summing them
+to check no class had been dropped would conclude all of them had been. That was a real bug, caught
+against a real font with its GDEF stripped rather than against a mock.
+
+`BreakOpportunity` is now public. It was not, and `break_opportunities` was, which left a caller able to
+count its results and read none of them.
+
 ### `tools/fontdump`
 
 Print what a font actually contains: its tables, the scripts and features it
