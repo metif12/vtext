@@ -53,7 +53,13 @@ fn main() {
 	// One set with both fonts in it, so a character the Latin font has no glyph for is found in the
 	// Arabic one rather than drawn as a box. Order is preference: the first font that covers a
 	// character wins.
-	fs := vtext.new_font_set_of(latin, arabic)
+	//
+	// Except that a flat order is not enough here, because both fonts cover both scripts. Segoe UI has
+	// Arabic in it, so a chain of (latin, arabic) draws every Persian letter in Segoe UI and never
+	// reaches Traditional Arabic at all, and reversing it draws the English word in a naskh face. The
+	// set is given per script instead: Arabic goes to the Arabic font and everything else to the Latin
+	// one, which is what handing over two fonts and one mixed line was supposed to mean.
+	fs := vtext.new_script_font_set(arabic, latin)
 
 	// The canvas is sized from the text: the widest line sets the width, and the tallest ascent plus
 	// the line heights set the height.

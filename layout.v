@@ -100,7 +100,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 			// lam-alef in a font with no ligature form. Each of those glyphs is tagged with
 			// the input character it stands for, so the two are traced back to the lam and
 			// the alef separately.
-			for j, mut out in fs.shaped_glyphs(g, em_px) {
+			for j, mut out in fs.shaped_glyphs(ctx, g, em_px) {
 				// The cluster is an index into the caller's text, not into the decomposed one. Going
 				// through the decomposition's own mapping is what makes a mark report the character
 				// it was written after rather than whichever character canonical ordering happened

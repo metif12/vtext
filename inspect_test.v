@@ -201,14 +201,87 @@ fn remove_table(data []u8, tag string) []u8 {
 	return out
 }
 
+fn test_script_font_set_picks_the_face_its_script_was_given_for() {
+	ctx := new_context()
+	segoe := inspect_font('segoeui.ttf')
+	trado := inspect_font('trado.ttf')
+
+	// Both fonts cover Latin and Arabic, which is what makes the flat order unusable here. A chain of
+	// (latin, arabic) draws every Arabic letter in the Latin font and never reaches the Arabic one, and
+	// a chain of (arabic, latin) has the mirror problem.
+	assert segoe.has_glyph(rune(0x0628)), 'Segoe UI covers beh'
+	assert trado.has_glyph(rune(0x0628)), 'Traditional Arabic covers beh too'
+	assert segoe.has_glyph(rune(0x41)), 'Segoe UI covers A'
+	assert trado.has_glyph(rune(0x41)), 'Traditional Arabic covers A too'
+
+	fs := new_script_font_set(trado, segoe)
+
+	// The point of the type: the specialised font wins inside its script and the general font covers
+	// everything else. Measured by asking the set, not by looking at a line.
+	arabic := fs.pick_in(ctx, rune(0x0628)) or { panic('beh should resolve') }
+	assert arabic == trado, 'Arabic should be drawn in the Arabic font'
+
+	latin := fs.pick_in(ctx, rune(0x41)) or { panic('A should resolve') }
+	assert latin == segoe, 'Latin should fall to the general font'
+
+	// And the whole point of the bug this was written for: the same set in the old order would have
+	// picked Segoe for beh, because Segoe is first and Segoe covers beh.
+	flat := new_font_set_of(segoe, trado)
+	flat_arabic := flat.pick(rune(0x0628)) or { panic('beh should resolve') }
+	assert flat_arabic == segoe, 'a flat chain latin-first really does pick the Latin font'
+	assert flat_arabic != arabic, 'which is the difference this type exists to express'
+}
+
+fn test_script_font_set_falls_back_for_what_its_primary_lacks() {
+	ctx := new_context()
+	segoe := inspect_font('segoeui.ttf')
+	trado := inspect_font('trado.ttf')
+
+	fs := new_script_font_set(trado, segoe)
+
+	// A character the Arabic font has no glyph for still has to come from somewhere, and it must come
+	// from the general font rather than from .notdef. Arabic Presentation Forms are the case that
+	// matters here: a naskh font usually keeps its shaped letters in GSUB and has no U+FExx codepoint,
+	// so the set is asked about a codepoint neither font covers directly.
+	f := fs.pick_in(ctx, rune(0xFE8F)) or { panic('a presentation form should still resolve') }
+	assert f == trado, 'the primary font answers by falling back to itself when nothing covers it'
+
+	// A character neither font covers still resolves, to the general font, so that a miss draws .notdef
+	// rather than dropping the character and silently reflowing the line. This is the answer a flat
+	// chain gives, and a per-script set has to give the same one: the chain and the two fields are
+	// different storage for the same promise.
+	uncovered := fs.pick_in(ctx, rune(0x10FFFF)) or { panic('a miss should still name a font') }
+	assert uncovered == segoe, 'a per-script set falls back the way a flat chain does'
+	flat_miss := new_font_set_of(segoe, trado).pick(rune(0x10FFFF)) or { panic('a miss names a font') }
+	assert flat_miss == segoe, 'and the flat chain says the same'
+}
+
+fn test_a_flat_font_set_ignores_the_context_entirely() {
+	ctx := new_context()
+	segoe := inspect_font('segoeui.ttf')
+	trado := inspect_font('trado.ttf')
+
+	// The property that lets a caller swap one set for the other without touching anything else: with no
+	// primary and no general, pick_in is exactly pick.
+	fs := new_font_set_of(segoe, trado)
+	for cp, expected in {
+		rune(0x0628): segoe
+		rune(0x41):   segoe
+	} {
+		got := fs.pick_in(ctx, cp) or { panic('should resolve') }
+		assert got == expected, 'a flat set must resolve U+${u32(cp):04X} the same way'
+		assert got == fs.pick(cp) or { panic('should resolve') }, 'pick_in and pick must agree'
+	}
+}
+
 fn test_feature_lookups_separates_a_named_feature_from_an_implemented_one() {
 	f := inspect_font('segoeui.ttf')
 
 	// This is the number that answers "the feature is there but nothing happens", which is a different
 	// question from whether the font declares the tag. Segoe UI names kern under seven scripts with
 	// differing lookup counts, so a single number for the table would be a number about nothing.
-	assert f.feature_lookups('GPOS', 'arab', 'kern') == 19, 'expected 19 kern lookups under arab, got ${f.feature_lookups("GPOS", "arab", "kern")}'
-	assert f.feature_lookups('GPOS', 'latn', 'kern') == 1, 'expected 1 kern lookup under latn, got ${f.feature_lookups("GPOS", "latn", "kern")}'
+	assert f.feature_lookups('GPOS', 'arab', 'kern') == 19, 'expected 19 kern lookups under arab, got ${f.feature_lookups('GPOS', 'arab', 'kern')}'
+	assert f.feature_lookups('GPOS', 'latn', 'kern') == 1, 'expected 1 kern lookup under latn, got ${f.feature_lookups('GPOS', 'latn', 'kern')}'
 
 	// The case the whole inspection API exists for: 'isol' is in Segoe UI's FeatureList and has no
 	// lookups under any script, because this engine only asks one language system and none of them

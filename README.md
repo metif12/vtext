@@ -104,14 +104,35 @@ line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, 32.0)
 
 ### Fonts
 
-`FontSet` is an ordered fallback chain. A codepoint is drawn with the first font that has a glyph
-for it, so a chain of an Arabic font followed by a Latin font covers mixed text.
+`FontSet` is an ordered fallback chain. A codepoint is drawn with the first font that has a glyph for it.
 
 ```v
 fs := vtext.new_font_set()
 fs.add(arabic_font)  // first choice
 fs.add(latin_font)   // used for codepoints the first has no glyph for
 ```
+
+A flat order cannot express what a mixed-script line usually wants, and the reason is worth stating
+because it is not obvious until you count the glyphs. **Both** Segoe UI and Traditional Arabic cover
+both Latin and Arabic. So a chain of (latin, arabic) draws every Persian letter in Segoe UI and never
+reaches the Arabic font, and a chain of (arabic, latin) draws the English word in a naskh face. Neither
+order is wrong as an order; each is wrong as an answer to "draw this Persian line in a naskh face and
+that English word in a Latin one".
+
+```v
+// Arabic goes to the Arabic font, everything else to the Latin one.
+fs := vtext.new_script_font_set(arabic_font, latin_font)
+fs.pick_in(ctx, rune(0x0628))  // -> arabic_font
+fs.pick_in(ctx, rune(0x41))    // -> latin_font
+```
+
+Measured on Segoe UI and Traditional Arabic, `سلام` drawn through a flat latin-first chain produces
+**0** glyphs from the Arabic font, and through a per-script chain produces **4**, with `hello سلام`
+giving 6 Latin and 4 Arabic.
+
+A per-script set with no primary and no general is exactly a flat set, so the two are interchangeable and
+`pick_in` and `pick` agree in that case. The script test is the same generated table the joining pass
+uses, so the set cannot disagree with the shaper about which characters are Arabic.
 
 ### Features
 

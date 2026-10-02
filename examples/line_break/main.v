@@ -50,7 +50,7 @@ fn main() {
 	ctx := vtext.new_context()
 	latin := vtext.load_font_file(latin_font) or { panic('cannot open ${latin_font}: ${err}') }
 	arabic := vtext.load_font_file(arabic_font) or { panic('cannot open ${arabic_font}: ${err}') }
-	fs := vtext.new_font_set_of(latin, arabic)
+	fs := vtext.new_script_font_set(arabic, latin)
 
 	// Wrap first and measure, so the canvas is sized from what was produced rather than from a guess. A
 	// fixed height crops the last line the moment a width or a word changes, which is how the first

@@ -90,7 +90,7 @@ fn main() {
 	ctx := vtext.new_context()
 	latin := vtext.load_font_file(latin_font) or { panic('cannot open ${latin_font}: ${err}') }
 	arabic := vtext.load_font_file(arabic_font) or { panic('cannot open ${arabic_font}: ${err}') }
-	fs := vtext.new_font_set_of(latin, arabic)
+	fs := vtext.new_script_font_set(arabic, latin)
 
 	// What the font says it can do. Every row below depends on these three answers, and printing them
 	// means a reader does not have to take the picture's word for which rules were used.

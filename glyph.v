@@ -80,6 +80,16 @@ pub struct FontSet {
 pub mut:
 	// fonts is the chain, most preferred first.
 	fonts []&Font
+	// primary is the font to prefer for the script it was chosen for, or none for a flat chain.
+	//
+	// It sits outside fonts because it is not a fallback at all. In a flat chain the first font that
+	// covers a character wins, which for two fonts that both cover Arabic means the Latin one always
+	// does and the Arabic one never can. primary is consulted by script instead, so a character in the
+	// chosen script reaches the chosen face even though a general font would also have covered it.
+	primary ?&Font
+	// general is the font that covers everything else, including the script of any character primary has
+	// no glyph for.
+	general ?&Font
 }
 
 // new_font_set returns an empty chain.
@@ -90,6 +100,44 @@ pub fn new_font_set() &FontSet {
 // new_font_set_of returns a chain of the given fonts, most preferred first.
 pub fn new_font_set_of(fonts ...&Font) &FontSet {
 	return &FontSet{ fonts: fonts }
+}
+
+// new_script_font_set returns a chain that prefers a font for the script each character belongs to.
+//
+// A flat order cannot express what a mixed-script line wants. Both Segoe UI and Traditional Arabic cover
+// Latin and Arabic, so a chain of (latin, arabic) draws every Arabic letter in the Latin font and the
+// Arabic font is dead weight, and a chain of (arabic, latin) has the mirror problem. Neither order is
+// wrong as an order; each is wrong as an answer to "draw this Persian line in a naskh face and that
+// English word in a Latin one".
+//
+// A per-script chain answers that, and the rule it applies is the obvious one: the specialised font wins
+// inside the script it was chosen for, and the general font covers everything else. That is what a caller
+// means when they hand over two fonts and one string.
+//
+// The script comes from the pipeline's own script property rather than from a range check here, so
+// Common and Inherited are not special-cased twice in two places: Common has no script of its own and
+// falls to the general font, and Inherited takes the script of the character before it, which is what the
+// joining pass already worked out.
+//
+// The cost is that a codepoint is looked up more than once, once to ask which script it is and once to
+// find the font. This is a fallback chain, so it is already the slow path; a cache here would be a second
+// invalidation problem to keep correct for a cost nobody has measured.
+pub fn new_script_font_set(primary &Font, general &Font) &FontSet {
+	return &FontSet{ primary: primary, general: general, fonts: []&Font{} }
+}
+
+// lookup_font returns the font that will be used for cp, or none when the chain cannot answer.
+//
+// This is the decision new_script_font_set makes, exposed so a caller can ask it instead of guessing. A
+// program that wants to label a run with the face it was drawn in has no other way to find out, and
+// guessing from the FontSet's order would answer "the first font" to a question about "the first font
+// that has this character in this script".
+//
+// The script test is `Properties.is_arabic_script`, the same generated table the joining pass uses, so
+// the set cannot disagree with the shaper about which characters are Arabic. A private range check here
+// would be a second answer to that question and would drift from the first.
+pub fn (fs &FontSet) lookup_font(ctx &Context, cp rune) ?&Font {
+	return fs.pick_in(ctx, cp)
 }
 
 // add appends a font as the least preferred one, which is the usual order: the wanted font
@@ -118,6 +166,43 @@ pub fn (fs &FontSet) pick(cp rune) ?&Font {
 		}
 	}
 	return if fs.fonts.len == 0 { none } else { fs.fonts[0] }
+}
+
+// pick_in resolves a codepoint to a font, consulting the script before the flat chain.
+//
+// This is the lookup a per-script set needs and `pick` cannot serve, because `pick` has no way to ask
+// what script a character is. It is kept separate rather than folded into `pick` with an optional context
+// so that the flat chain's meaning stays one thing: first font that covers the character, in order.
+//
+// For a flat set this is exactly `pick`, because a per-script set with no primary font falls through to
+// the same walk. That is the property worth stating, since it is what lets a caller swap one for the
+// other without changing anything else about the pipeline.
+pub fn (fs &FontSet) pick_in(ctx &Context, cp rune) ?&Font {
+	if fs.primary != none {
+		primary := fs.primary or { unsafe { nil } }
+		if ctx.properties.is_arabic_script(cp) && primary.has_glyph(cp) {
+			return primary
+		}
+	}
+	if fs.general != none {
+		general := fs.general or { unsafe { nil } }
+		if general.has_glyph(cp) {
+			return general
+		}
+		// Neither font covers it. A flat chain answers with the first font rather than none, so that a
+		// miss draws .notdef instead of dropping the character and silently reflowing the line, and a
+		// per-script set must give the same answer for the same input. Falling through to `pick` would
+		// not do it: `pick` walks `fonts`, and a per-script set keeps its two fonts in their own fields,
+		// so the chain is empty and `pick` would report a miss instead.
+		return general
+	}
+	return fs.pick(cp)
+}
+
+// glyph_in is glyph through the script-aware lookup.
+pub fn (fs &FontSet) glyph_in(ctx &Context, cp rune, em_px f64) Glyph {
+	f := fs.pick_in(ctx, cp) or { return Glyph{} }
+	return f.glyph_for(cp, em_px)
 }
 
 // glyph looks cp up through the chain and returns the glyph with the font that produced it.
@@ -157,7 +242,12 @@ pub fn (fs &FontSet) covers(cp rune) bool {
 // letters and both have to be drawn. The lam takes the shape the ligature had. The alef
 // connects backwards only when the lam did, so it takes a final form whenever the ligature
 // joined to anything and an isolated one when the pair stood on its own.
-pub fn (fs &FontSet) shaped_glyphs(sg ShapedGlyph, em_px f64) []Glyph {
+//
+// ctx is here for one reason: a per-script FontSet has to ask which script a character is, and
+// the answer comes from the pipeline's own generated tables rather than from a range check
+// written a second time. A flat FontSet ignores it entirely, so this costs a flat chain
+// nothing.
+pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Glyph {
 	if sg.base.len == 0 {
 		return []Glyph{}
 	}
@@ -166,7 +256,7 @@ pub fn (fs &FontSet) shaped_glyphs(sg ShapedGlyph, em_px f64) []Glyph {
 		mut g := if sg.is_mark {
 			fs.mark_glyph(form_cp, em_px)
 		} else {
-			fs.glyph(form_cp, em_px)
+			fs.glyph_in(ctx, form_cp, em_px)
 		}
 		g.form = sg.form
 		return [g]
@@ -178,7 +268,7 @@ pub fn (fs &FontSet) shaped_glyphs(sg ShapedGlyph, em_px f64) []Glyph {
 		mut g := if sg.is_mark {
 			fs.mark_glyph(cp, em_px)
 		} else {
-			fs.glyph(cp, em_px)
+			fs.glyph_in(ctx, cp, em_px)
 		}
 		g.form = form
 		reshape(mut g, form, sg.script, em_px)

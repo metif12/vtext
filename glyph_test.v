@@ -77,6 +77,7 @@ fn test_font_set_falls_through_to_a_later_font() {
 fn test_font_set_lands_on_the_preferred_font_when_nothing_covers() {
 	f := load_test_font('segoeui.ttf')
 	fs := new_font_set_of(f)
+	ctx := new_context()
 	assert fs.len() == 1
 	// Nothing in the chain covers it, so the first font answers with .notdef. Dropping the
 	// character instead would silently reflow the line.
@@ -104,12 +105,13 @@ fn test_shaped_glyphs_prefers_the_form_when_a_font_has_it() {
 	// Segoe UI carries the presentation forms, so the form is what gets drawn.
 	segoe := load_test_font('segoeui.ttf')
 	fs := new_font_set_of(segoe)
+	ctx := new_context()
 	sg := ShapedGlyph{
 		cps:  [rune(0xFE8F)] // ARABIC LETTER BEH ISOLATED FORM
 		base: [rune(0x0628)]
 		form: .isolated
 	}
-	out := fs.shaped_glyphs(sg, 32)
+	out := fs.shaped_glyphs(ctx, sg, 32)
 	assert out.len == 1, 'one shaped letter is one glyph when the form is there'
 	assert out[0].gid == segoe.glyph_index(rune(0xFE8F))
 	assert out[0].form == .isolated
@@ -122,12 +124,13 @@ fn test_shaped_glyphs_falls_back_to_the_base_letter() {
 	assert !dubai.has_glyph(rune(0xFE8F))
 	assert dubai.has_glyph(rune(0x0628))
 	fs := new_font_set_of(dubai)
+	ctx := new_context()
 	sg := ShapedGlyph{
 		cps:  [rune(0xFE8F)]
 		base: [rune(0x0628)]
 		form: .final
 	}
-	out := fs.shaped_glyphs(sg, 32)
+	out := fs.shaped_glyphs(ctx, sg, 32)
 	assert out.len == 1, 'the base letter stands in for the missing form'
 	assert out[0].gid == dubai.glyph_index(rune(0x0628))
 	// The shape has to survive the substitution, because that is what the OpenType pass
@@ -143,12 +146,13 @@ fn test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw() {
 	// becomes two glyphs with the right shapes.
 	mono := load_test_font('consola.ttf')
 	fs := new_font_set_of(mono)
+	ctx := new_context()
 	sg := ShapedGlyph{
 		cps:  [rune(0xFEFC)] // ARABIC LIGATURE LAM WITH ALEF FINAL FORM
 		base: [rune(0x0644), rune(0x0627)]
 		form: .final
 	}
-	out := fs.shaped_glyphs(sg, 32)
+	out := fs.shaped_glyphs(ctx, sg, 32)
 	assert out.len == 2, 'a lam-alef is drawn as its two letters'
 	// The lam takes the shape the ligature had, and the alef connects backwards because the
 	// lam did.
@@ -160,7 +164,7 @@ fn test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw() {
 		base: [rune(0x0644), rune(0x0627)]
 		form: .isolated
 	}
-	apart := fs.shaped_glyphs(lone, 32)
+	apart := fs.shaped_glyphs(ctx, lone, 32)
 	assert apart.len == 2
 	assert apart[0].form == .isolated && apart[1].form == .isolated
 }
@@ -170,6 +174,7 @@ fn test_shaped_glyphs_asks_the_whole_chain_about_the_form() {
 	// font is the one that answers.
 	mono := load_test_font('consola.ttf')
 	dubai := load_test_font('DUBAI-REGULAR.TTF')
+	ctx := new_context()
 	fs := new_font_set()
 	fs.add(mono)
 	fs.add(dubai)
@@ -179,7 +184,7 @@ fn test_shaped_glyphs_asks_the_whole_chain_about_the_form() {
 		form: .isolated
 	}
 	assert !fs.covers(rune(0xFE8F)), 'neither font has the isolated form'
-	out := fs.shaped_glyphs(sg, 32)
+	out := fs.shaped_glyphs(ctx, sg, 32)
 	assert out.len == 1
 	assert out[0].gid == dubai.glyph_index(rune(0x0628))
 }
@@ -187,13 +192,14 @@ fn test_shaped_glyphs_asks_the_whole_chain_about_the_form() {
 fn test_shaped_glyphs_keeps_a_mark_flagged_and_advanceless() {
 	segoe := load_test_font('segoeui.ttf')
 	fs := new_font_set_of(segoe)
+	ctx := new_context()
 	sg := ShapedGlyph{
 		cps:     [rune(0x064E)] // ARABIC FATHA
 		base:    [rune(0x064E)]
 		form:    .isolated
 		is_mark: true
 	}
-	out := fs.shaped_glyphs(sg, 32)
+	out := fs.shaped_glyphs(ctx, sg, 32)
 	assert out.len == 1
 	assert out[0].is_mark, 'a mark stays a mark whichever route produced its glyph'
 	assert out[0].advance == 0, 'a mark must not move the pen'
@@ -201,5 +207,6 @@ fn test_shaped_glyphs_keeps_a_mark_flagged_and_advanceless() {
 
 fn test_shaped_glyphs_with_no_base_characters_draws_nothing() {
 	fs := new_font_set_of(load_test_font('segoeui.ttf'))
-	assert fs.shaped_glyphs(ShapedGlyph{ cps: [rune(0x41)], base: []rune{} }, 32).len == 0
+	ctx := new_context()
+	assert fs.shaped_glyphs(ctx, ShapedGlyph{ cps: [rune(0x41)], base: []rune{} }, 32).len == 0
 }
