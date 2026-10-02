@@ -297,11 +297,32 @@ One paragraph in a script the first font has no glyphs for, with the second
 font in the chain doing the work. Shows the chain from the only angle that
 matters, which is what the reader actually sees.
 
-### `examples/bidi`
+### ~~`examples/bidi`~~
 
-A paragraph mixing Arabic, Latin and digits, showing the reordering with the
-logical order printed underneath. The example for the case that is hardest to
-reason about and easiest to get wrong.
+**Done.** `v run .` writes `bidi.png`: four mixed-direction paragraphs, each printed with its resolved
+levels, its visual order as the pen meets the characters, and the characters as they are drawn.
+
+Four lines, each one a different decision:
+
+- `The word سلام means peace.` is mostly Latin with one Arabic word in it. Nothing moves.
+- `سلام The world` starts right to left, so the paragraph level is odd and the Latin moves to the left of
+  the Arabic. A line like this drawn as if it were the first has the order of its halves swapped.
+- `abc سلام 123 def` has a number between the scripts. Numbers are weak and take the direction of what
+  surrounds them, so `123` comes out before the Arabic rather than after it.
+- `۱۲۳ فارسی abc ۴۵۶` has two runs of Persian digits, and the visual order printed under it is the only
+  honest way to read it.
+
+The two printed orders are not redundant and their agreement is the check. `visual_order` names the
+characters in the order the pen meets them, which for a right-to-left run is the reverse of the order
+they were typed; the drawn glyphs are what a reader actually sees. Where the two differ, the difference
+has a reason: in the first line `السلام` ligates, so `سلام` contributes three glyphs rather than four, and
+the two orders are one character apart because of it. In the fourth line, which has no ligature, they are
+identical.
+
+Writing this turned up the difference between a visual order and a drawn line, which is easy to confuse
+because both are "the order it comes out in". A glyph array is left to right with a right-to-left run
+laid out backwards inside it, and the array order is the visual order; the readable reading is the
+reverse. Confusing them made the first two lines look like bugs in the engine when they were neither.
 
 ### ~~`examples/features`~~
 
