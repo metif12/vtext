@@ -26,8 +26,14 @@ comes with them.
 | GSUB: single, multiple, alternate, ligature, contextual | done |
 | GPOS: mark-to-base, mark-to-ligature, mark-to-mark | done |
 | GPOS: pair adjustment (kerning) | done |
+| GPOS: single positioning (format 1) | done |
+| GPOS: chaining-context positioning, format 3 | read and applied |
+| GPOS: cursive attachment, format 1 and 2 | read; the attachment itself is not written |
+| Line breaking (UAX #14) | partial: no dictionary, strict level, or CJK |
 
-Fourteen test files, all passing, reading real fonts from the system.
+Eighteen test files, all passing, reading real fonts from the system. The cursive reader is the one
+piece with no font to test it against, so its tables are built from words in `gpos_cursive_test.v`
+rather than opened from disk.
 
 ## Phase 1: the engine's remaining gaps
 
@@ -214,12 +220,32 @@ written on the function, since an argument that is too large does not look like 
 The original version of this example reached composition and timing work and stopped at the window
 binding; those files are not recoverable, so this is a rewrite rather than a restoration.
 
-### `examples/rtl_line`
+### ~~`examples/rtl_line`~~
 
-A right-to-left paragraph with a mark on every letter and a ligature in the
-middle, drawn large, with a debug mode that draws each glyph's box and its
-cluster index. The example that makes the engine's output checkable by eye, and
-the one to look at first when something is placed wrong.
+**Done.** `v run .` writes `rtl_line.png`; `v run . -debug` writes the same line with a box around every
+glyph and its cluster index under it.
+
+A right-to-left line drawn at 44 pixels, with a mark on every letter and a lam-alef in the middle, plus a
+Latin line above it so one FontSet and one call cover both directions. What to read off the debug
+picture:
+
+- The Latin line's cluster indexes ascend from 0 and the Arabic line's descend from 21 to 0, which is
+  the whole of bidirectional reordering visible in one glance. A line where they ascend on both is laid
+  out left to right twice.
+- A mark has no advance and shares its letter's x, so it has no box. Two boxes on one letter would mean
+  a mark had been given an advance it should not have.
+- The `ffi` ligature is one glyph with one box and three clusters, because the font says those three
+  characters are one thing and the cluster is what a caret position would use to get back to the text.
+
+Two things about the drawing rather than the engine, both of which look like engine bugs until measured:
+the cluster numbers are laid out with their own hand-drawn digits, because a debug number that fights the
+text is worse than a crude one; and they read left to right in both directions, since a number reads that
+way in every script. Drawing the digits backwards prints 12 as 21 on a mirrored line, which is exactly
+the kind of thing this picture exists to make visible rather than to hide.
+
+`paint.v` is a copy in each example rather than a shared module. A V program can only import a module on
+its module path, and making every example depend on a sibling directory to save forty lines of zlib is a
+worse trade than the forty lines. The two copies are kept identical.
 
 ### `examples/mark_stack`
 
