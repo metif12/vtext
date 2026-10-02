@@ -93,6 +93,23 @@ pub enum JoiningType {
 	t = 5 // transparent
 }
 
+// joining_type_name is a joining type as a word rather than as a number.
+//
+// The specification names six of them and the letters u, c, d, r, l and t are an abbreviation the reader
+// has to look up. A joining decision reported as "d connects forward, u does not" is a sentence about the
+// text; the same decision reported as "2 vs 0" is a lookup, and it is the kind of lookup that gets
+// remembered wrong. The words are the specification's own, so there is nothing here to translate.
+pub fn (jt JoiningType) name() string {
+	return match jt {
+		.u { 'non-joining' }
+		.c { 'join-causing' }
+		.d { 'dual-joining' }
+		.r { 'right-joining' }
+		.l { 'left-joining' }
+		.t { 'transparent' }
+	}
+}
+
 // joins_to_previous reports whether a letter of this type can connect to the character
 // before it in the text.
 //
@@ -313,6 +330,15 @@ pub fn (p &Properties) line_break_name(cp rune) string {
 		return ''
 	}
 	return p.linebreak_names[int(c)]
+}
+
+// joining_type_name is a codepoint's joining type as a word rather than as a number.
+//
+// The specification's own abbreviations are u, c, d, r, l and t, and a report that prints one of those is a
+// report the reader has to look up. The words are the specification's names for the same six values, so
+// there is nothing here to translate and nothing that can drift from the table.
+pub fn (p &Properties) joining_type_name(cp rune) string {
+	return p.joining_type_of(cp).name()
 }
 
 // is_arabic_script reports whether cp belongs to the Arabic script, which is what
