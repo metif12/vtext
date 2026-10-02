@@ -342,10 +342,38 @@ Two words because a feature does two different kinds of thing, and the second ki
 The risk in this one was whether any feature on this machine changes anything measurable at all. It does,
 in every Arabic font tested, so there was real material rather than a contrived case.
 
-### `examples/line_break`
+### ~~`examples/line_break`~~
 
-A paragraph that wraps, with the break opportunities marked, and a width slider
-or a few fixed widths. Depends on phase 1.
+**Done.** `v run .` writes `line_break.png`: one paragraph wrapped at 700, 400, 200 and 100 pixels as
+four columns side by side, each with its margin ruled, and an Arabic paragraph underneath the second
+column.
+
+Measured rather than believed, and the ranges are the check that matters. At 400 the lines are
+`[0..35]`, `[35..71]`, `[71..83]`: the paragraph accounted for three times over with no gap and no
+overlap. A wrapper that loses a space between lines or reorders two is visible in the printed ranges and
+nowhere else.
+
+The overflow is the second thing worth reading. At 100 pixels three lines run past the margin, and the
+printed widths say why: `quick brown` is 137, `jumps over` 124, `keeps on` 102. A line is not broken
+inside a word, so a word that does not fit is overlong rather than hyphenated — a decision the caller
+would have to make for itself and this engine will not make on their behalf.
+
+The Arabic paragraph is what makes wrapping a problem rather than an exercise. A Latin paragraph breaks
+at its spaces and that is all there is to it; Arabic has no spaces, so its breaks come from the UAX #14
+rules and this engine's coverage of them is partial. It wraps by the same call and breaks where the rules
+say, which is the honest statement of what that means today: five lines, none overlong at 220 pixels.
+
+One API gap found here and worth recording: `break_opportunities` is public but returns
+`[]BreakOpportunity`, which is private, so a caller outside the module cannot name the type it gets back
+and cannot read a break's position or whether it is mandatory. `wrap_paragraph` is enough to wrap with,
+but the ability to ask where a line may break is a question a caller has, and the answer is currently
+unreachable from outside. This is the second such gap; the other is `Face`, `Gpos` and `Gsub`, which are
+unreachable entirely.
+
+Drawing it needed two things the earlier examples did not. A column has to be as wide as its own widest
+line rather than the whole paragraph's, or every column is as wide as the widest and the four drawings
+overlap. And a glyph's x within its line is added by `draw_glyph_at` already, so passing the column offset
+plus the glyph position counts it twice.
 
 ### `examples/glyph_grid`
 
