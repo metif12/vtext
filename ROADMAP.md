@@ -25,7 +25,7 @@ comes with them.
 | Font fallback chains | done |
 | GSUB: single, multiple, alternate, ligature, contextual | done |
 | GPOS: mark-to-base, mark-to-ligature, mark-to-mark | done |
-| GPOS: pair adjustment (kerning) | done |
+| GPOS: pair adjustment (kerning) | done, both formats |
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read; the attachment itself is not written |
@@ -274,11 +274,22 @@ Measured, the fatha's ink reaches 22 pixels above the baseline in the first colu
 The offsets are in `Glyph.y`, so clearing y is the whole of "not placed", and the engine stores a mark's
 anchor result there: x at the base's x plus the anchor's, y at minus the anchor's, scaled to pixels.
 
-### `examples/kerning`
+### ~~`examples/kerning`~~
 
-A word in a font with kerning next to the same word in one without, and a
-debug overlay that draws each glyph's advance so the gap between two letters is
-visible rather than asserted.
+**Done.** `v run .` writes `kerning.png`: `AVAST To Yo WAY` at 90 pixels in Segoe UI and in Tahoma,
+with the pen's position at every glyph ruled full height and every advance ruled at the foot.
+
+The comparison is only honest because both fonts are real and the difference is the font's own decision.
+Segoe UI has 8146 Latin kern pairs and Tahoma has none, which is not an accident: Tahoma has Arabic
+kerning and no Latin kerning, and this engine has to respect that rather than treat an absent table as an
+empty one it may fill in.
+
+Measured, not eyeballed. Segoe UI kerns five of the fourteen pairs in the word, to −4.30 pixels at `To`,
+and the sum of the advances equals the line's width exactly in both fonts, so the kerning is inside the
+measurement rather than added to it afterwards.
+
+This example is also where the previous entry's fix came from: reading it needed real kern pairs to
+compare against, and asking Segoe UI for them produced none at all.
 
 ### `examples/fallback`
 
