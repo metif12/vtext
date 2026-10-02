@@ -186,12 +186,33 @@ Each example demonstrates one capability, is small enough to read in one
 sitting, and runs with one command. An example that needs three arguments and a
 config file is a tool.
 
-### `examples/hello`
+### ~~`examples/hello`~~
 
-Shape a string, draw it, quit. The starting point, and the one that proves the
-whole pipeline end to end: text in, positioned glyphs on a window. It is
-currently being rewritten; the version in the repository history reached the
-composition and timing work and stopped at the window binding.
+**Done**, as a file rather than a window. `v run .` in that directory writes `hello.png` and prints
+its path. Three lines go through the whole pipeline in one call: Latin with an `ffi` ligature, an
+Arabic word, and an English line with one Arabic word in it so bidirectional reordering has to do
+something. The canvas is sized from the lines the engine lays out rather than written down, because a
+fixed height crops the last line the moment the text changes.
+
+No window, deliberately. A window needs a graphics binding, and a binding is a dependency that has
+nothing to do with the text engine, so the part that shows the engine works is the part that writes a
+file. The PNG is written by hand out of `compress/zlib` and `hash/crc32` from the standard library, so
+the example depends on nothing but vtext.
+
+Writing it turned up two things worth knowing, both found by looking at the picture rather than at a
+passing test:
+
+A V string is a byte array, so `for r in text` over "مرحبا" yields the UTF-8 bytes `D9 85` as two
+separate runes and the text draws as `Ø` and friends. `.runes()` decodes it. Nothing in the engine
+notices, because by the time it is called the text is already nonsense.
+
+And `rasterize`'s subpixel offset is in quarters of a pixel, not the sixtieths stb_truetype takes, so
+a glyph placed at x of 17.39 wants `sub_x` of 2 and not 25. Sixty-fourths read as quarters is sixteen
+times too far and every glyph lands up to sixteen pixels from where the layout put it. That one is now
+written on the function, since an argument that is too large does not look like a wrong argument.
+
+The original version of this example reached composition and timing work and stopped at the window
+binding; those files are not recoverable, so this is a rewrite rather than a restoration.
 
 ### `examples/rtl_line`
 

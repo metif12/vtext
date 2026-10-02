@@ -8,6 +8,10 @@
 .vtmp/
 vtext_build.*
 
+# What an example writes when it runs. The pictures are output, not source, and committing one would
+# make a change to the engine look like a change to the example.
+examples/**/*.png
+
 # Unicode Character Database: fetched by tools/fetch_ucd.ps1, not committed.
 # The generated tables in ucd_*.v are committed, so a build never needs these.
 # The small derived files are kept so the UCD comparison tests can run without a
