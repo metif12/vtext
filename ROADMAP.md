@@ -303,11 +303,23 @@ A paragraph mixing Arabic, Latin and digits, showing the reordering with the
 logical order printed underneath. The example for the case that is hardest to
 reason about and easiest to get wrong.
 
-### `examples/features`
+### ~~`examples/features`~~
 
-The same word drawn with the required features only, then with a discretionary
-feature turned on, and the width of both printed. Shows what a feature does to
-the text rather than to the code.
+**Done.** `v run .` writes `features.png`: three words laid out twice, once with the required features
+alone and once with one discretionary feature by name, with the pen ruled at every glyph and both widths
+printed.
+
+Two words because a feature does two different kinds of thing, and the second kind is the more common:
+
+- `الله` goes from four glyphs to two under `liga` in every Arabic font on this machine — Segoe UI 90.84
+  to 80.16 pixels, Tahoma 92.63 to 77.53. That is a count change: two of those letters have a shape that
+  only exists as a pair.
+- `فارسی` stays at five glyphs under `liga` in Segoe UI and the line gets 16 pixels narrower. That is a
+  substitution that keeps the count: the same five letters, drawn differently, taking less room. It is
+  easy to miss, because nothing about the number of glyphs moves.
+
+The risk in this one was whether any feature on this machine changes anything measurable at all. It does,
+in every Arabic font tested, so there was real material rather than a contrived case.
 
 ### `examples/line_break`
 
