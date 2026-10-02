@@ -209,6 +209,32 @@ pub fn (f &Font) cmap_formats() []int {
 	return out
 }
 
+// feature_lookups says how many lookups a script's feature names in a table, or zero when the script
+// does not declare that feature.
+//
+// This is the number that separates a font that offers a feature and implements it from a font that
+// offers the name and leaves it empty. Both print the same feature tag, so a report that stops at the
+// tag cannot tell them apart, and a caller chasing "the feature is there but nothing happens" needs to
+// know which of the two they are looking at before they go looking anywhere else.
+//
+// It counts the lookups for one script rather than for the whole table. The same feature under two
+// scripts can have different lookup lists, and a sum over scripts would be a number about neither.
+pub fn (f &Font) feature_lookups(table string, script string, feature string) int {
+	match table {
+		'GSUB' {
+			gsub := f.face.gsub or { return 0 }
+			return gsub.lookups_for(script, feature).len
+		}
+		'GPOS' {
+			gpos := f.face.gpos or { return 0 }
+			return gpos.lookups_for(script, feature).len
+		}
+		else {
+			return 0
+		}
+	}
+}
+
 // glyph_class_counts counts the font's glyphs by what GDEF says each one is, in the order of
 // `glyph_class_names`.
 //

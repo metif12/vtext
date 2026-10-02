@@ -468,11 +468,36 @@ count its results and read none of them.
 
 ### `tools/fontdump`
 
-Print what a font actually contains: its tables, the scripts and features it
-offers, how many glyphs each cmap subtable maps, whether it has mark
-attachment, whether it kerns. The tool to reach for first, because most
-shaping questions are answered by knowing what the font has, and half of the
-bugs in this library were a font using a structure the library did not expect.
+**Done**, in `tools/fontdump.v`. Everything it prints comes from the inspection API, so this program and
+the library cannot disagree about a font: there is one parser and one set of numbers.
+
+```
+v run tools/fontdump.v C:/Windows/Fonts/segoeui.ttf [--verbose]
+```
+
+It prints the tables with their offsets, marking the ones this engine reads, the cmap subtables with their
+formats and mapped counts, the glyph class histogram by name, and for each of GSUB and GPOS the scripts
+and features split into the ones the engine uses and the ones it skips.
+
+The split is the point. A font's features are not a list of things that work; they are a list of things a
+font contains, some of which any given engine reaches. Printing both side by side is the only way to see
+the difference instead of arguing about it.
+
+`--verbose` adds the per-script lookup count for every feature the engine claims to use. That number is
+what separates a font that offers a feature and implements it from one that offers the name and leaves it
+empty, and on Segoe UI it settles an argument that was previously being had from memory:
+
+```
+isol  no script names it with any lookups
+locl  no script names it with any lookups
+kern under arab  19 lookups
+kern under latn   1 lookup
+```
+
+Both `isol` and `locl` are in Segoe UI's GSUB FeatureList. Neither has a single lookup under any script,
+because this engine asks one language system and none of them names them. A report that stopped at the
+feature tag would say the font can isolate a letter and that the font cannot, which is the same sentence
+pointing both ways.
 
 ### `tools/shapetrace`
 

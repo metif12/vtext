@@ -201,6 +201,28 @@ fn remove_table(data []u8, tag string) []u8 {
 	return out
 }
 
+fn test_feature_lookups_separates_a_named_feature_from_an_implemented_one() {
+	f := inspect_font('segoeui.ttf')
+
+	// This is the number that answers "the feature is there but nothing happens", which is a different
+	// question from whether the font declares the tag. Segoe UI names kern under seven scripts with
+	// differing lookup counts, so a single number for the table would be a number about nothing.
+	assert f.feature_lookups('GPOS', 'arab', 'kern') == 19, 'expected 19 kern lookups under arab, got ${f.feature_lookups("GPOS", "arab", "kern")}'
+	assert f.feature_lookups('GPOS', 'latn', 'kern') == 1, 'expected 1 kern lookup under latn, got ${f.feature_lookups("GPOS", "latn", "kern")}'
+
+	// The case the whole inspection API exists for: 'isol' is in Segoe UI's FeatureList and has no
+	// lookups under any script, because this engine only asks one language system and none of them
+	// names it. A report that stopped at the tag would say the font can isolate a letter and that the
+	// font cannot.
+	assert 'isol' in f.features('GSUB'), 'the font declares isol'
+	assert f.feature_lookups('GSUB', 'arab', 'isol') == 0, 'no script enables isol with lookups'
+	assert f.feature_lookups('GSUB', 'latn', 'isol') == 0, 'not under latn either'
+
+	// A feature the font never names is zero rather than an error, and so is a table that is not there.
+	assert f.feature_lookups('GSUB', 'arab', 'zzzz') == 0, 'an unknown feature has no lookups'
+	assert f.feature_lookups('kern', 'arab', 'kern') == 0, 'an unknown table has no lookups'
+}
+
 fn test_is_variable_and_axes() {
 	f := inspect_font('segoeui.ttf')
 
