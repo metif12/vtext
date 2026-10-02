@@ -1061,8 +1061,18 @@ fn (rule &PairPos) offset_for(left_gid u16, right_gid u16) ?Anchor {
 			return none
 		}
 		set := rule.pair_sets[first_index]
-		second_index := coverage_index(set.coverage, right_gid) or { return none }
-		if second_index >= set.records.len {
+		// The second glyphs are named by their own ids, in the order the records are written, so finding
+		// one is counting along the array rather than looking it up. The array is short — it is the set
+		// of glyphs this one first glyph pairs with — so a scan is the cheaper answer than a map, and it
+		// keeps a font with thousands of pair sets from allocating a map per set.
+		mut second_index := -1
+		for i, g in set.seconds {
+			if g == right_gid {
+				second_index = i
+				break
+			}
+		}
+		if second_index < 0 || second_index >= set.records.len {
 			return none
 		}
 		first_side = set.records[second_index][0]
@@ -1218,12 +1228,18 @@ pub fn (v &PairValue) has_x_advance() bool {
 	return v.format & 0x0004 != 0
 }
 
-// PairSet is every adjustment one first glyph has, indexed by the second glyph through a coverage.
+// PairSet is every adjustment one first glyph has.
+//
+// A PairSet has no coverage. It names the second glyphs as an array of glyph ids, in the order the
+// records that follow are written, so a record is found by counting along the array rather than by
+// looking the glyph up in a coverage. Reading a coverage at the offset where the second glyphs start
+// reads the first glyph id as a coverage format, which is not 1 or 2, so the whole set comes back
+// empty and the format reports as having no rules at all.
 struct PairSet {
 mut:
-	coverage []CoverageRange
-	// records is indexed by the second glyph's coverage index, and holds the two sides of the
-	// adjustment in order.
+	// seconds are the second glyphs, in the order the records are written.
+	seconds []u16
+	// records is indexed the same way as seconds, and holds the two sides of the adjustment in order.
 	records [][]PairValue
 }
 
@@ -1602,32 +1618,54 @@ fn parse_pair_pos(r &Reader, at int) ?PairPos {
 	}
 }
 
-// parse_pair_set reads one PairSet: a coverage of the second glyphs, and one pair of value records
-// per glyph in it, in coverage order.
+// parse_pair_set reads one PairSet: a count, then that many records.
 //
-// A PairValue here is two records, one for each glyph of the pair, and both are read even when one
-// of them is empty. A font that gives the second glyph a value format of zero leaves its record
-// with no fields, and the record still occupies the space the format says it does, so the reader has
-// to step over it to reach the next pair.
+// A record is three things in a row and no more: the second glyph, the value for the first glyph, and
+// the value for the second. The second glyph is a glyph id rather than an index into anything, and the
+// records are ordered by it.
+//
+// This is the shape the bytes have, which is not the shape the specification's prose suggests. The
+// specification describes the second glyphs as an array of offsets to the records followed by an array
+// of the records, which would put every glyph id first and every value after it. Segoe UI's Latin
+// kerning does not do that: its first PairSet is the count 65 and then C, -40, G, -40, J, 94, O, -40,
+// T, -147, U, -40, V, -140, each glyph immediately followed by its value, which is what fontTools reads
+// and what its own table description says the fields are.
+//
+// Reading it the other way produces a font that kerns A followed by V by +60 rather than -140, which is
+// a gap that opens rather than one that closes and looks like a different typeface at a glance.
+//
+// A PairValue here is two records, one for each glyph of the pair, and both are read even when one of
+// them is empty. A font that gives the second glyph a value format of zero leaves its record with no
+// fields, and the record still occupies the space the format says it does, so the reader has to step
+// over it to reach the next pair.
 fn parse_pair_set(r &Reader, at int, vf1 u16, vf2 u16) ?PairSet {
-	ranges := parse_coverage(r, at + int(r.u16_at(at + 2)))
-	if ranges.len == 0 {
+	if !r.has(at, 2) {
 		return none
 	}
-	// pairValueCount is a count of pairs, which is a count of glyphs the coverage names and not a
-	// count of ranges in it. A coverage of three glyphs in one range is still three records.
-	count := int(r.u16_at(at + 4))
+	count := int(r.u16_at(at))
+	if count <= 0 {
+		return none
+	}
 	vf1_size := pair_value_size(vf1)
-	step := vf1_size + pair_value_size(vf2)
-	mut records := [][]PairValue{cap: count}
-	mut at2 := at + 6
+	vf2_size := pair_value_size(vf2)
+	step := 2 + vf1_size + vf2_size
+	mut seconds := []u16{cap: count, len: 0}
+	mut records := [][]PairValue{cap: count, len: 0}
+	mut p := at + 2
 	for _ in 0 .. count {
-		records << [read_pair_value(r, at2, vf1), read_pair_value(r, at2 + vf1_size, vf2)]
-		at2 += step
+		if !r.has(p, step) {
+			break
+		}
+		seconds << r.u16_at(p)
+		records << [read_pair_value(r, p + 2, vf1), read_pair_value(r, p + 2 + vf1_size, vf2)]
+		p += step
+	}
+	if seconds.len == 0 || records.len == 0 {
+		return none
 	}
 	return PairSet{
-		coverage: ranges
-		records:  records
+		seconds: seconds
+		records: records
 	}
 }
 
