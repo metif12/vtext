@@ -16,16 +16,27 @@ import paint
 
 // The fonts this example asks for by role, rather than by name. Which file fills a role is this
 // program's decision; what the engine does with the result is the library's.
+//
+// Both cover Persian as well as Arabic, including the three letters Persian adds (peh, cheh, gaf) and
+// its own yeh and keheh, so one font set handles both scripts and nothing here falls back.
 const latin_font = 'C:/Windows/Fonts/segoeui.ttf'
 const arabic_font = 'C:/Windows/Fonts/trado.ttf'
 
-// Three lines, so one command shows three things at once: left-to-right text with a ligature, an
-// Arabic word, and a line that is mostly Latin with one Arabic word in the middle, which is where
-// bidirectional reordering has to do something.
+// Three lines, so one command shows three things at once.
+//
+// Persian rather than Arabic because it has more to get right in one line. It has letters Arabic does
+// not, a yeh and a keheh of its own, a half space that stops two letters joining, and digits that are
+// not the ones a Latin keyboard produces. The middle line is a single Persian word; the third is mostly
+// Persian with one English word inside it, which is where bidirectional reordering has to do something.
+//
+// The half space in the first line is written as U+200C rather than typed as one, and that is worth
+// being deliberate about. It has no width and nothing to see, so a ZWNJ in a string literal looks
+// exactly like the same word without one, and the one word here that depends on it would otherwise be
+// unreviewable: delete the character and the line still reads correctly, but it means something else.
 const lines = [
-	'V shapes text: ffi ligature, kerning AV, and a baseline.',
-	'مرحبا بالعالم',
-	'The word سلام means peace, inside an English line.',
+	'شکل‌دهی متن: نیم‌فاصله، چهار شکل، و خط پایه.',
+	'سلام دنیا',
+	'این یک جملهٔ فارسی است که در آن کلمهٔ hello هم آمده است.',
 ]
 
 // The margin and the gap between lines, in pixels. The canvas size is not written down: it is measured
