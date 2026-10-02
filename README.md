@@ -298,6 +298,24 @@ placed and reaches back to what makes it different, so the two glyphs a caller a
 and its context rather than two the pattern both names. A reader that insists the pattern covers both
 discards every rule shaped like this one, and most rules under kern are shaped like it.
 
+## Working with this compiler
+
+Three things this codebase ran into, written down because each one costs an hour to find again and none
+of them says where the problem is.
+
+**`m[k] or []T{}` fails on a map whose values are slices.** The same form compiles on a map of strings and
+on one of structs, and the failure is reported as an unexpected end of file at the end of the function, not
+at the expression that caused it. Asking `if k in m` first compiles and reads no worse. The shapes
+suspected of this earlier in the project's history — a mutable slice parameter, an empty array literal —
+were tested together and all compile; that was recorded as a compiler bug and the recording was wrong,
+but a fault is here and it is a different one.
+
+**`none` is not available as a name.** It reads as the option's empty value, so a counter called `none`
+gives "non-name `none` on left side of `:=`" rather than anything mentioning the name being taken.
+
+**A slice assigned into a struct inside a loop needs `clone()`.** The array is still live at the end of
+the iteration, so the struct gets a copy. `parse_mark_to_ligature` does this for its anchors.
+
 ## Layout
 
 ```

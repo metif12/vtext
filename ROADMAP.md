@@ -391,11 +391,31 @@ line rather than the whole paragraph's, or every column is as wide as the widest
 overlap. And a glyph's x within its line is added by `draw_glyph_at` already, so passing the column offset
 plus the glyph position counts it twice.
 
-### `examples/glyph_grid`
+### ~~`examples/glyph_grid`~~
 
-Every glyph in a font in a grid, with the codepoints that reach it. The
-example that turns "the font has no glyph for this character" from a guess into
-a fact, and the one to reach for when a shaping result looks wrong.
+**Done.** `v run .` writes `glyph_grid.png`: every glyph Consolas has, in a grid, at one of three greys
+depending on how many scanned codepoints reach it.
+
+The three greys answer the question this example exists for, which is whether an empty box means the cmap
+does not name the character or the font has no glyph for it. Those are different faults and only one of
+them is fixed by falling back to another font.
+
+Measured on Consolas: 3031 glyphs, of which 2196 are reached by exactly one codepoint in U+0000 to
+U+24FF, 40 are reached by more than one, and 795 by none. The 40 are invisible characters — U+0000 and
+U+0008 both land on gid 1, U+0020 and U+00A0 both on gid 3 — and they are why a font can cover a character
+and still not draw it. The 795 faint ones are box drawing, powerline and symbol glyphs, and they are real
+ink the engine can draw and ordinary text cannot ask for.
+
+Two things found while writing it, both about the compiler rather than the engine:
+
+`m[k] or []T{}` compiles on a map whose values are strings and fails on one whose values are slices,
+with the failure reported as an unexpected end of file at the end of the function rather than at the
+expression. That is a real fault and it contradicts the compiler-bug section that was removed earlier on
+the grounds that the shapes suspected then did not exist. Asking `if k in m` first compiles and reads no
+worse.
+
+And `none` is not available as a variable name. It reads as the option's empty value, so a counter called
+`none` produces "non-name `none` on left side of `:=`" rather than anything that says the name is taken.
 
 ## Phase 4: tools
 
