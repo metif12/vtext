@@ -247,12 +247,32 @@ the kind of thing this picture exists to make visible rather than to hide.
 its module path, and making every example depend on a sibling directory to save forty lines of zlib is a
 worse trade than the forty lines. The two copies are kept identical.
 
-### `examples/mark_stack`
+### ~~`examples/mark_stack`~~
 
-One letter with a fatha, a shadda and a kasra, next to the same three marks on
-a lam-alef, next to the same three on a letter in a font with no mark-to-mark
-rules. Shows what mark attachment does and what happens without it, which is
-the clearest way to see why the feature exists.
+**Done**, and the comparison is not what it was planned to be. `v run .` writes `mark_stack.png`: seven
+rows, each drawn twice, once as the engine placed it and once with every offset discarded, with the
+baseline ruled under both columns so "is this mark on the baseline or not" can be measured rather than
+believed. A fatha sits 17 pixels higher in the first column than in the second, which is the feature
+visible in one image.
+
+The third column was meant to be a font with no mark-to-mark rules. No font on this machine is: of the
+35 that cover beh, fatha, shadda, kasra, lam and alef, all 35 have a `mark` feature. So the row is a
+single mark that the font has a glyph for and no rule for anywhere — U+0301 in Tahoma, which has anchors
+for 53 combining marks and 168 it has glyphs for but no anchors. Both columns are identical there, which
+is the correct answer to a font that has said nothing, and it makes the point better than a second font
+would have: the difference between the columns is the font's anchors, not the engine.
+
+Two things were wrong in the plan and in the first draft of the text:
+
+A shadda and a fatha together become **one glyph by ligature substitution** in Tahoma, so the row written
+to show mark-to-mark showed no mark-to-mark at all. One glyph and a y of 8.7 is the ligature firing and a
+single placement, and it looks on the page like the row above it. The row that does show mark-to-mark is
+shadda on a kasra, where the two stay separate: gid 2354 placed at y of 18.3 on top of gid 2353 at 2.8.
+
+And the two columns first looked identical, which was me misreading a small picture rather than a bug.
+Measured, the fatha's ink reaches 22 pixels above the baseline in the first column and 35 in the second.
+The offsets are in `Glyph.y`, so clearing y is the whole of "not placed", and the engine stores a mark's
+anchor result there: x at the base's x plus the anchor's, y at minus the anchor's, scaled to pixels.
 
 ### `examples/kerning`
 
