@@ -1864,7 +1864,7 @@ fn parse_mark_to_ligature(r &Reader, at int) ?MarkToLigature {
 				}
 			}
 			parts << LigatureComponent{
-				pairs: pairs
+				pairs: pairs.clone()
 			}
 		}
 		components << parts
