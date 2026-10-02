@@ -291,11 +291,27 @@ measurement rather than added to it afterwards.
 This example is also where the previous entry's fix came from: reading it needed real kern pairs to
 compare against, and asking Segoe UI for them produced none at all.
 
-### `examples/fallback`
+### ~~`examples/fallback`~~
 
-One paragraph in a script the first font has no glyphs for, with the second
-font in the chain doing the work. Shows the chain from the only angle that
-matters, which is what the reader actually sees.
+**Done.** `v run .` writes `fallback.png`: three lines, every glyph underlined in the grey of the font it
+came from, with the counts printed under each line.
+
+A line drawn correctly looks exactly like a line drawn from one font, which is why the underlines are
+there: the mechanism is only visible when the report of it is drawn next to the result.
+
+The fonts are chosen to force the choice rather than avoid it. Consolas covers Latin, Greek and Cyrillic
+and no Arabic at all; Traditional Arabic covers Arabic and little else. Neither covers Hebrew.
+
+Measured: line one is 39 glyphs from Consolas and none from the second font. Line two is 29 and 7 — the
+change is at the script, not at a word boundary, because the decision is per character. Line three is 31
+from Consolas and 3 from neither, which are the three Hebrew letters.
+
+The last row needed the right test. The engine does not return no font for a character nothing covers: it
+returns the font it asked, with glyph index zero, because that is the font whose `.notdef` is being drawn.
+So a first version that counted glyphs with no font reported zero missing on a line with three characters
+that no font can draw. The test is the glyph index, and `.notdef` is drawn as the hollow box it is rather
+than dropped — dropping it would move every glyph after it along, which changes the text instead of
+showing that something was lost.
 
 ### ~~`examples/bidi`~~
 
