@@ -274,6 +274,62 @@ fn test_a_flat_font_set_ignores_the_context_entirely() {
 	}
 }
 
+fn test_lookup_type_counts_says_what_the_engine_will_not_read() {
+	segoe := inspect_font('segoeui.ttf')
+
+	// Every lookup is unwrapped before anything counts it, so a font that wraps its rules does not hide them:
+	// Segoe UI's LookupList is 137 type 9 records and what is inside them is 44 single, 4 pair, 36 mark to
+	// base, 1 mark to ligature, 12 mark to mark, 39 chaining contextual, and one that stayed a 9.
+	//
+	// The trailing 9 is the point of the whole exercise. It is a lookup whose extension wrapped something
+	// this engine does not read, so nothing inside it was recognised, and it keeps its declared kind
+	// rather than being renamed to something inferred. A count that reported 9 for all 137 would be true of
+	// the file and useless; a count that reported nothing for the one would hide a gap.
+	gpos := segoe.lookup_type_counts('GPOS')
+	assert gpos[1] == 44, 'expected 44 single positioning lookups, got ${gpos[1]}'
+	assert gpos[2] == 4, 'expected 4 pair positioning lookups, got ${gpos[2]}'
+	assert gpos[4] == 36, 'expected 36 mark to base lookups, got ${gpos[4]}'
+	assert gpos[5] == 1, 'expected 1 mark to ligature lookup, got ${gpos[5]}'
+	assert gpos[6] == 12, 'expected 12 mark to mark lookups, got ${gpos[6]}'
+	assert gpos[8] == 39, 'expected 39 chaining contextual lookups, got ${gpos[8]}'
+	assert gpos[9] == 1, 'and 1 extension whose contents this engine does not read, got ${gpos[9]}'
+	mut gpos_total := 0
+	for _, n in gpos {
+		gpos_total += n
+	}
+	assert gpos_total == 137, 'and every lookup is counted once, got ${gpos_total}'
+
+	// Dubai is the other half: its GPOS is 3 pair, 4 mark to base, 1 mark to ligature, 4 mark to mark, and one
+	// extension this engine cannot unwrap. The `curs` feature reaches that last one, which is why the
+	// cursive finding in fontcheck names both.
+	dubai := inspect_font('DUBAI-REGULAR.TTF')
+	dgpos := dubai.lookup_type_counts('GPOS')
+	assert dgpos[2] == 3, 'expected 3 pair positioning lookups in Dubai, got ${dgpos[2]}'
+	assert dgpos[4] == 4, 'expected 4 mark to base lookups in Dubai, got ${dgpos[4]}'
+	assert dgpos[6] == 4, 'expected 4 mark to mark lookups in Dubai, got ${dgpos[6]}'
+	assert dgpos[9] == 1, 'and 1 extension this engine cannot unwrap, got ${dgpos[9]}'
+	assert 'curs' in dubai.features('GPOS'), 'and Dubai declares the feature that reaches it'
+
+	// Tahoma does not wrap its lookups, so its counts are the kinds themselves and every one of them is
+	// something this engine reads. That is the case where a per-kind count is useful rather than merely
+	// true: it says how much of the font is in each shape.
+	tahoma := inspect_font('tahoma.ttf')
+	tsub := tahoma.lookup_type_counts('GSUB')
+	assert tsub[1] == 19, 'expected 19 single substitutions, got ${tsub[1]}'
+	assert tsub[2] == 7, 'expected 7 multiple substitutions, got ${tsub[2]}'
+	assert tsub[4] == 34, 'expected 34 ligature substitutions, got ${tsub[4]}'
+	assert tsub[6] == 17, 'expected 17 chaining context substitutions, got ${tsub[6]}'
+	// Four kinds, not three: type 3 is Alternate substitution and Tahoma has none of them. A count of kinds
+	// is four here only because four keys are present; three of them would be right if the map skipped a
+	// kind with no lookups, and the difference is the difference between "the font uses these kinds" and
+	// "the font uses these kinds and there is nothing of the others".
+	assert tsub.len == 4, 'Tahoma uses four lookup kinds in GSUB, saw ${tsub.len}'
+	assert 3 !in tsub, 'and no alternate substitutions'
+
+	// A table that is not there has no lookups and says so with an empty map rather than an error.
+	assert segoe.lookup_type_counts('kern').len == 0, 'kern is not a table of lookups'
+}
+
 fn test_feature_lookups_separates_a_named_feature_from_an_implemented_one() {
 	f := inspect_font('segoeui.ttf')
 

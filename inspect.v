@@ -235,6 +235,40 @@ pub fn (f &Font) feature_lookups(table string, script string, feature string) in
 	}
 }
 
+// lookup_type_counts says how many lookups of each type a table holds, keyed by the type number.
+//
+// This is the question behind every "can this engine use the font" answer. A font's lookup list holds every
+// rule it implements, and the engine reads a subset of the kinds; a lookup of a kind it does not read is
+// still in the list, still counted here, and does nothing when a feature reaches it. The difference between
+// those two facts is invisible from the feature list alone, because a feature that names nothing reachable
+// and a feature that names rules this engine skips look identical from outside.
+//
+// Keyed by number rather than by name because the numbers are what the specification defines and what a
+// caller comparing against another implementation will have. Type 5 in GSUB is ContextualSubst and type 6
+// is ChainingContextSubst, and the two are not the same rule at all: one matches a run and the other reads
+// what is around it. A report that named them by their role in this engine would hide that.
+pub fn (f &Font) lookup_type_counts(table string) map[int]int {
+	mut out := map[int]int{}
+	match table {
+		'GSUB' {
+			gsub := f.face.gsub or { return out }
+			for l in gsub.lookups {
+				out[int(l.kind)]++
+			}
+		}
+		'GPOS' {
+			gpos := f.face.gpos or { return out }
+			for l in gpos.lookups {
+				out[int(l.kind)]++
+			}
+		}
+		else {
+			return out
+		}
+	}
+	return out
+}
+
 // glyph_class_counts counts the font's glyphs by what GDEF says each one is, in the order of
 // `glyph_class_names`.
 //

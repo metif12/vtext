@@ -27,7 +27,7 @@ module main
 //
 // Usage: v run tools/gen_codepoint_names.v
 //
-// The UCD files under ucd/ are pinned by tools/fetch_ucd.ps1 and are not committed. The generated table
+// The UCD files under ucd/ are pinned by tools/fetch_ucd.v and are not committed. The generated table
 // records the Unicode version it came from, so a stale table is visible in its own contents rather than in
 // a file timestamp.
 

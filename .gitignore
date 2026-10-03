@@ -12,7 +12,7 @@ vtext_build.*
 # make a change to the engine look like a change to the example.
 examples/**/*.png
 
-# Unicode Character Database: fetched by tools/fetch_ucd.ps1, not committed.
+# Unicode Character Database: fetched by tools/fetch_ucd.v, not committed.
 # The generated tables in ucd_*.v are committed, so a build never needs these.
 # The small derived files are kept so the UCD comparison tests can run without a
 # network fetch.

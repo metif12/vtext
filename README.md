@@ -292,11 +292,34 @@ are public because a library that cannot be inspected from outside cannot be dia
 
 The build needs V built with GCC, because the rasterizer is C.
 
-```powershell
-.\env.ps1          # sets VEXE, CC and VMODULES
-.\test.ps1         # runs every _test.v file
-.\test.ps1 -Filter gpos   # one area
-v fmt -verify .    # formatting
+The scripts are V programs rather than PowerShell ones. A test runner for a V module should be a V program:
+the same language means one set of quoting rules, one idea of a path separator and one idea of an exit code,
+and a bug in the runner is then not a bug in anything it was checking. Two of these were PowerShell until
+2026-10-03 and the rewrite is in the history.
+
+```sh
+v run tools/env.v              # prints the build environment and checks the compiler is there
+v run tools/run_tests.v        # runs every _test.v file
+v run tools/run_tests.v gpos   # one area, matched as a substring of the file name
+v fmt -verify .                # formatting
+```
+
+`run_tests.v` builds one file at a time on purpose. `v test a.v b.v c.v` builds concurrently and enough of
+them collide in the compiler's own temporary build directory that a run fails with "CreateDirectory returned:
+The operation completed successfully", which says the directory already existed rather than that creating it
+failed. It retries a failure that mentions that phrase and does not retry a real one, and says so when a
+pass needed a retry.
+
+```sh
+v run tools/run.v tools/fontdump.v -- C:/Windows/Fonts/segoeui.ttf
+```
+
+`run.v` builds one program and runs it, which is two steps and both of them need their exit code.
+Everything after a bare `--` goes to the program, because the program's arguments and this script's options
+both start with a dash and guessing which is which is the kind of guess that works until it does not.
+
+```sh
+v run tools/fetch_ucd.v         # the UCD files, which are not committed
 ```
 
 The tests read real fonts from `C:\Windows\Fonts`, so they only run on a machine with Tahoma, Segoe

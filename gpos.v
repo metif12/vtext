@@ -26,6 +26,11 @@ pub:
 // GPOS lookup types, from the OpenType specification.
 const gpos_lookup_single_position = 1
 const gpos_lookup_pair = 2
+// Cursive attachment. It is named here for the same reason every other kind is and is not applied: the
+// reader below parses the entry and exit anchors, and the two-pass attachment that would use them is not
+// written. Naming it means a report can say "this font has cursive positioning and this engine does not
+// use it" rather than leaving that to be inferred from a feature tag.
+const gpos_lookup_cursive = 3
 const gpos_lookup_mark_to_base = 4
 const gpos_lookup_mark_to_ligature = 5
 const gpos_lookup_mark_to_mark = 6
@@ -1149,9 +1154,15 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 			continue
 		}
 		mut lookup := GposLookup{ kind: r.u16_at(at) }
+		// The type the lookup declares, kept apart from `lookup.kind` because the latter is rewritten at the
+		// end of this loop to whatever the lookup turned out to hold. The resolver has to see the declared
+		// type on every subtable: a lookup wrapping four rules has one extension header covering all four,
+		// and resolving the second against the type the first resolved to would read a rule as if it were a
+		// wrapper.
+		header_kind := lookup.kind
 		subtable_count := int(r.u16_at(at + 4))
 		for j in 0 .. subtable_count {
-			resolved := resolve_gpos_subtable(r, lookup.kind, at + int(r.u16_at(at + 6 + j * 2)))
+			resolved := resolve_gpos_subtable(r, header_kind, at + int(r.u16_at(at + 6 + j * 2)))
 			if resolved.kind == gpos_lookup_mark_to_base {
 				if rule := parse_mark_to_base(r, resolved.at) {
 					lookup.mark_bases << rule
@@ -1194,16 +1205,30 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 				}
 			}
 		}
+		// A lookup that reached its real type through an extension reports that type rather than the extension, so
+		// that a report counting lookup kinds says what the font does rather than how it is packaged. This runs
+		// after every subtable is read, because what a lookup is a function of everything it turned out to hold
+		// rather than of its first rule, and the order of the checks is the order of specificity: a lookup with
+		// ligature rules in it is a mark-to-ligature lookup even if it also has mark-to-base rules, because that
+		// is the rule that would fire on a ligature.
+		//
+		// A lookup that wraps nothing this engine reads keeps its declared kind, which for an extension is 9 and
+		// for anything else is its own number. That is the honest answer: the lookup holds rules of a kind this
+		// engine does not read, and saying so is more useful than naming a kind it was inferred to be.
 		if lookup.mark_ligatures.len > 0 {
 			lookup.kind = gpos_lookup_mark_to_ligature
 		} else if lookup.mark_marks.len > 0 {
 			lookup.kind = gpos_lookup_mark_to_mark
-		} else if lookup.kind == gpos_lookup_extension && lookup.mark_bases.len > 0 {
-			lookup.kind = gpos_lookup_mark_to_base
-		} else if lookup.kind == gpos_lookup_extension && lookup.chains.len > 0 {
-			// A lookup that reached its real type through an extension reports that type, so that
-			// a caller asking what a lookup is gets the answer rather than the extension.
+		} else if lookup.chains.len > 0 {
 			lookup.kind = gpos_lookup_chain_context
+		} else if lookup.pairs.len > 0 {
+			lookup.kind = gpos_lookup_pair
+		} else if lookup.cursives.len > 0 {
+			lookup.kind = gpos_lookup_cursive
+		} else if lookup.mark_bases.len > 0 {
+			lookup.kind = gpos_lookup_mark_to_base
+		} else if lookup.singles.len > 0 {
+			lookup.kind = gpos_lookup_single_position
 		}
 		out << lookup
 	}

@@ -21,7 +21,7 @@ module main
 // Every stage says when it did nothing. A trace that only prints what changed is useless on the runs that
 // matter, because the runs that matter are the ones where nothing changed and the question is why.
 //
-// The tables come from the UCD under ucd/ via tools/fetch_ucd.ps1 and are not committed.
+// The tables come from the UCD under ucd/ via tools/fetch_ucd.v and are not committed.
 //
 // Usage:
 //	v run tools/shapetrace.v <font.ttf> <text>
