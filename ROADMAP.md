@@ -16,7 +16,7 @@ comes with them.
 | Stage | State |
 | --- | --- |
 | SFNT and TTC containers, table directory | done |
-| cmap formats 0, 4, 6, 12 | done |
+| cmap formats 0, 4, 6, 12 | done; 13 and 14 are not read |
 | Metrics, underline placement, rasterization | done |
 | Unicode normalization (UAX #15) | done |
 | Bidirectional paragraphs (UAX #9) | done |
@@ -30,6 +30,8 @@ comes with them.
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read; the attachment itself is not written |
 | Line breaking (UAX #14) | partial: no dictionary, strict level, or CJK |
+| Line options beyond a feature list | absent: no line height, alignment, or spacing |
+| Rasterized glyph reuse | absent: no cache, and no atlas despite what `v.mod` says |
 
 Eighteen test files, all passing, reading real fonts from the system. The cursive reader is the one
 piece with no font to test it against, so its tables are built from words in `gpos_cursive_test.v`
@@ -155,6 +157,67 @@ wrong but not visibly so. Reading it is a matter of applying a table of
 adjustments by pixels-per-em, and a variable font's version needs the variation
 store.
 
+### Line options, and measuring a run at a width
+
+`LayoutOptions` is one field. It should be the place a caller reaches for
+everything that is a choice rather than a fact: line height, alignment, the
+fallback order, the feature set, the direction when the text does not imply one,
+letter and word spacing. A caller should be able to do everything the library
+can do through it, and nothing should need a separate function that only works
+for one script. This is written down in phase 2 as an API question and it belongs
+in phase 1 as an engine question, because line height in particular changes what
+a line is: at a line height below the font's natural one the line box is shorter
+than the glyphs, and the caller has to be able to say so.
+
+The other half is measurement without committing to a layout. `wrap_paragraph`
+already shapes a paragraph once and slices the result, so the same call answers
+a question it was not written for: the width of the text at the narrowest it can
+be (every word on its own line) and the width at the widest without any break
+at all. A caller doing box layout needs both before it needs a rendered line.
+What is missing is that neither is expressed in the API — a caller has to know
+the slicing rule to derive them — and that they are not cheap to compute at an
+arbitrary font size, which means no cache across sizes.
+
+### A glyph cache
+
+Rasterizing is a tree walk, a curve evaluation and a scanline fill. Doing that
+per glyph per frame is the difference between a page that scrolls and one that
+does not, and nothing in the library currently keeps a rasterized glyph around.
+The key is `(font, gid, em_px, sub_x, sub_y)`, and the last two are quarters of
+a pixel — they are there so that a glyph rasterized at a fractional position
+does not have to be rounded to whole pixels to be reused, and getting that
+conversion wrong is a sixteen-times error that is very hard to see.
+
+Note what this is not. `v.mod` and the doc comment on `Context` both describe a
+glyph atlas, and there is no atlas in the library; both statements are
+aspirational and have been for a while. An atlas is a GPU texture with a
+shelf packer, and a caller rasterizing into its own buffer needs a map from key
+to bitmap, not an atlas. If someone does want an atlas it should be a separate
+type the caller owns, built from these bitmaps, not something the shaping engine
+allocates for a display backend it does not have.
+
+### cmap formats 13 and 14
+
+Formats 13 and 14 are read by nothing: `cmap.v` reaches them and drops them, so
+a font that uses only those subtables reports a codepoint it cannot map. Format
+14 matters because it is how a text presentation is asked to become an emoji
+presentation — U+FE0F is a variation selector and is only meaningful through a
+format 14 subtable — so an emoji family renders as text, or as nothing.
+
+This is not only a lookup that returns a different glyph id, which is the
+tempting way to write it, and getting it that way is how it goes wrong. A
+variation sequence is a base codepoint followed by a selector, and the selector
+is consumed by the format 14 lookup rather than looked up itself, so the shape
+of the question changes from "which glyph is this codepoint" to "which glyph is
+this codepoint given the selectors that follow it". `FontSet.glyph_in` takes a
+single rune and has no place to put a selector. Whichever way it is done, the
+glyph lookup stops being a pure function of one rune, and everything that caches
+or compares glyph ids has to know that. Budget for that rather than treating it
+as a twenty-line addition to `cmap.v`.
+
+Format 13 is many-to-one range mappings, which Apple uses for variant pairs. It
+is the same shape of problem and can be read the same way.
+
 ### Vertical text
 
 The metrics are there. Everything else is not: the vertical origin, the writing
@@ -174,11 +237,12 @@ every claim made after it is a claim about a platform nobody has run.
 
 ### The public API, settled
 
-`LayoutOptions` is one field. It should be the place a caller reaches for
-everything that is a choice rather than a fact: line height, alignment, the
-fallback order, the feature set, the direction when the text does not imply
-one. A caller should be able to do everything the library can do through it,
-and nothing should need a separate function that only works for one script.
+`LayoutOptions` is one field, and phase 1 says what it needs to grow into. Once
+it has grown, the question is whether it is enough: a caller should be able to
+do everything the library can do through it, and nothing should need a separate
+function that only works for one script. `Face`, `Sfnt` and `Cmap` are still
+private, and whether a font inspection API belongs to the shaping engine or to
+its caller is a question this library has not answered.
 
 ### Documentation
 
@@ -545,3 +609,14 @@ Worth writing down so that these do not come back as questions.
   specifications.
 - Variable font instancing. Reading the variation store is in phase 1 because
   the hints depend on it; generating new instances is not.
+
+The last of those is now the load-bearing boundary. There is a caller: a
+from-scratch HTML and CSS engine (`../vweb`) that uses this library as its only
+text layer, and it is why the three gaps in phase 1 above are written down as
+gaps rather than left for later. The division holds as long as it stays this
+way: boxes, the cascade and painting are the caller's, and this library ends at
+a positioned glyph with a coverage bitmap. The one place the boundary is
+genuinely awkward is glyph reuse, because a caller rasterizing into its own
+buffer needs a cache and a caller rasterizing into a GPU texture needs an
+atlas, and only the first is text. The cache belongs here for that reason; the
+atlas does not, and should not arrive as one.
