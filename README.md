@@ -304,11 +304,13 @@ v run tools/run_tests.v gpos   # one area, matched as a substring of the file na
 v fmt -verify .                # formatting
 ```
 
-`run_tests.v` builds one file at a time on purpose. `v test a.v b.v c.v` builds concurrently and enough of
-them collide in the compiler's own temporary build directory that a run fails with "CreateDirectory returned:
-The operation completed successfully", which says the directory already existed rather than that creating it
-failed. It retries a failure that mentions that phrase and does not retry a real one, and says so when a
-pass needed a retry.
+`run_tests.v` builds one file at a time and gives the compiler a `TMPDIR` of its own, and both are needed.
+`v test a.v b.v c.v` builds concurrently and enough of them collide in the compiler's own temporary build
+directory that a run fails with "CreateDirectory returned: The operation completed successfully", which says
+the directory already existed rather than that creating it failed. Serial alone is not enough: the compiler
+puts its build directory at `<temp>/v_<uid>`, which is shared with every other V build on the machine,
+including another session building the compiler itself. It retries a failure that mentions the build
+directory and does not retry a real one, and says so when a pass needed a retry.
 
 ```sh
 v run tools/run.v tools/fontdump.v -- C:/Windows/Fonts/segoeui.ttf
@@ -397,19 +399,45 @@ the iteration, so the struct gets a copy. `parse_mark_to_ligature` does this for
 ## Layout
 
 ```
-reader.v     bounds-checked big-endian byte reading
-sfnt.v       the font file: tables, collections, offsets
-tables.v     shared table directory handling
-cmap.v       codepoint to glyph
-face.v       loads GDEF, GSUB and GPOS for a font
-glyph.v      fallback chain, joining forms, glyph metrics
-normalize.v  UAX #15
-bidi.v       UAX #9
-joining.v    UAX #53
-gsub.v       OpenType substitution
-gpos.v       OpenType positioning
-layout.v     the pipeline, and mark placement
-properties.v the UCD lookup tables
+reader.v        bounds-checked big-endian byte reading
+sfnt.v          the font file: tables, collections, offsets
+tables.v        shared table directory handling
+cmap.v          codepoint to glyph
+face.v          loads GDEF, GSUB and GPOS for a font
+glyph.v         fallback chain, joining forms, glyph metrics
+normalize.v     UAX #15
+bidi.v          UAX #9
+joining.v       UAX #53
+gsub.v          OpenType substitution
+gpos.v          OpenType positioning
+layout.v        the pipeline, and mark placement
+properties.v    the UCD lookup tables
+linebreak.v     UAX #14
+stbtt.c.v       the stb_truetype rasteriser, vendored and public domain
+
+inspect.v       reporting what a font contains: tables, features, scripts, coverage
+trace_api.v     the pipeline's stages, reached one at a time for shapetrace
+
+ucd_*.v         generated from the UCD by the tools in tools/, committed so a build needs no fetch
+ucd_names.v     codepoint names, front coded: the suffixes and the shared prefix lengths
 ```
+
+The tools are in `tools/`, the examples in `examples/`, and `ucd/` holds the Unicode Character Database
+files that are redistributed here. See `LICENSE` for which licence covers what.
+
+## Licence
+
+Two licences, because the tree holds two kinds of thing.
+
+The source is MIT. The seven Unicode Character Database files under `ucd/` are Unicode, Inc.'s and are
+redistributed unchanged under UNICODE LICENSE V3, whose text is in `ucd/LICENSE-UNICODE.txt`. That licence
+grants redistribution only on the condition that the notice travels with the files, which is why the licence
+is committed rather than downloaded: `tools/fetch_ucd.v` does not fetch it, and a `ucd/*` ignore without an
+exception for it would publish the data with no terms at all.
+
+The generated tables in `ucd_*.v` are derived from those files and are covered by the MIT licence above. A
+derivative of the data would have to carry the data's terms for the same reason, so those tables are kept
+out of the MIT grant rather than quietly inside it; the notice travels with the sources they came from, in
+the same directory tree and in the same commit.
 
 `ucd_*.v` are generated character data and are not edited by hand.

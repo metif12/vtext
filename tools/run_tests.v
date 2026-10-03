@@ -14,7 +14,14 @@ module main
 // rather than that creating it failed, and clearing the cache does not help because the next run collides
 // somewhere else.
 //
-// Retry, narrowly. That collision is an environment failure rather than a test failure and it is
+// A private TMPDIR, which is what actually ends the collisions. Serial alone does not: this repository shares
+// %TEMP%\v_0 with every other V build on the machine, including another session building the compiler itself,
+// and five concurrent compilers lose that race often enough to fail four of twenty-one tests. Measured on
+// 2026-10-03 with the competitors left running: 17 passed and 4 failed, every one of the four green when run
+// alone, and 21 passed with no collision at all once TMPDIR pointed somewhere of this runner's own. os.temp_dir
+// reads TMPDIR before TEMP, so setting it for the child is sufficient.
+//
+// Retry, narrowly. A collision is an environment failure rather than a test failure and it is
 // distinguishable: only it mentions the build directory. So a failing run whose output mentions that phrase
 // is retried and a genuine failure is not. A retried pass is announced, because a suite that is only green
 // after retries is not the same as one that is green, and a silent retry hides a machine under memory or
@@ -58,6 +65,7 @@ fn main() {
 	}
 
 	env_setup()
+	private_tmpdir()
 	mut files := test_files(filter)
 	if files.len == 0 {
 		if filter == '' {
@@ -113,6 +121,34 @@ fn env_setup() {
 	os.setenv('PATH', 'C:\\Users\\MR\\scoop\\apps\\gcc\\current\\bin;' + os.getenv('PATH'), true)
 	os.setenv('VMODULES', 'C:\\Users\\MR\\Projects', true)
 	os.setenv('VEXE', 'C:\\Users\\MR\\v\\v.exe', true)
+}
+
+// private_tmpdir points the compiler's build directory somewhere of this run's own.
+//
+// The compiler puts it at <temp>/v_<uid>, and <temp> comes from os.temp_dir(), which reads TMPDIR before
+// TEMP. So setting TMPDIR is enough to get out of the shared %TEMP%\v_0 that every V build on the machine
+// contends for. Left unset, this runner fails about one test in five whenever anything else is compiling, and
+// the failure names a directory rather than a test, so it reads as a real one.
+//
+// It is set for this process and therefore inherited by the children, rather than passed per call, because
+// os.exec_opt takes no environment argument to pass it in. That also means it is inherited by anything else
+// this process runs, which here is only the compiler.
+//
+// The path is built from the user profile rather than from os.temp_dir or os.vtmp_dir, because both of those
+// land inside the very directory being avoided: vtmp_dir is <temp>/v_<uid> unless VTMP says otherwise, and
+// nesting a private build directory under the shared one reproduces the collision it was added to fix.
+fn private_tmpdir() {
+	profile := os.getenv('USERPROFILE')
+	if profile == '' {
+		eprintln('USERPROFILE is not set, so there is nowhere private to build')
+		exit(1)
+	}
+	dir := os.join_path(profile, '.cache', 'vtext-test-build')
+	os.mkdir_all(dir) or {
+		eprintln('cannot create a private build directory at ${dir}: ${err.msg()}')
+		exit(1)
+	}
+	os.setenv('TMPDIR', dir, true)
 }
 
 // test_files lists the test files to run, filtered by a substring of the name.

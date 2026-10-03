@@ -16,6 +16,12 @@ examples/**/*.png
 # The generated tables in ucd_*.v are committed, so a build never needs these.
 # The small derived files are kept so the UCD comparison tests can run without a
 # network fetch.
+#
+# The licence is kept with them, and that is not optional: UNICODE LICENSE V3 grants
+# redistribution only on the condition that the notice travels with the files. A
+# `ucd/*` ignore without a `!` for the licence publishes the data with no terms at
+# all, which is the one thing that licence forbids. tools/fetch_ucd.v does not
+# fetch it, so it is committed by hand.
 ucd/*
 !ucd/DerivedBidiClass.txt
 !ucd/DerivedJoiningType.txt
@@ -24,3 +30,4 @@ ucd/*
 !ucd/Scripts.txt
 !ucd/PropertyValueAliases.txt
 !ucd/ArabicShaping.txt
+!ucd/LICENSE-UNICODE.txt
