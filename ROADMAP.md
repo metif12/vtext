@@ -33,6 +33,7 @@ comes with them.
 | Line options beyond a feature list | absent: no line height, alignment, or spacing |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
+| Vertical extent of a line | done: was twice the ink, found by `tools/metrics` |
 
 Twenty-two test files, all passing, reading real fonts from the system. The cursive reader is the one
 piece with no font to test it against, so its tables are built from words in `gpos_cursive_test.v`
@@ -780,11 +781,47 @@ It checks the outlines, the lookup kinds, features no script reaches, the cursiv
 variable fonts, mark attachment, and per-script coverage. What it does **not** check is a cmap format
 this engine cannot read, which is the finding a format 13 or 14 implementation should add.
 
-### `tools/metrics`
+### The vertical extent of a line was twice what it should have been
 
-Report a font's metrics at a given size: ascent, descent, line height, the
-advance of every glyph, and the side bearings. Useful on its own for anyone
-laying out a page, and the tool that makes a wrong `hhea` table visible.
+**Found by `tools/metrics`, which is the argument for writing the tool before it was needed.**
+
+`measure_line` computed the ascent as the top of a glyph's ink box **plus the height of that box**, and
+the descent as the top of the ink read as though it were a depth. The box spans from `top` above the
+baseline down to `top - height`, so `top` is already the distance above the baseline and adding the
+height to it counts the ink twice.
+
+Measured on Segoe UI at 16 pixels, `"Hxbdfpq"` reported **26 above the baseline and 13 below**, where
+the ink is **13 above and 4 below**. A line box two and a third times the em it was drawn at. Every
+example in this repository sizes its canvas from `ascent + descent`, so every one of them had been
+drawing into a canvas roughly twice as tall as it needed, and a caller laying out a page from these
+numbers would have reserved the space and known it.
+
+Two things are worth recording about how it survived. It was not caught by any test, because
+`layout_test.v` only asserted `ascent > 0 && descent > 0`, and because
+`gpos_test.v`'s assertion that a mark counts towards the line height **passed for the wrong reason** —
+the mark did reach past Arial's ascender, and it also reached about twice as far. A test can be right
+about what it says and wrong about why it passes.
+
+And it is the kind of bug that a smaller number would have hidden. Every example draws its baseline and
+its glyphs from `Glyph.y` and the font's own metrics, and both of those were already correct, so the
+pictures looked right. Only `Line.ascent` was wrong, and nothing drew with it.
+
+### ~~tools/metrics~~
+
+**Done**, in `tools/metrics.v`.
+
+```
+v run tools/metrics.v <font.ttf> [--size N] [--glyphs N] [--glyph N]
+```
+
+Vertical metrics at a size, the shape of the font's advances, and the metrics of a glyph you name. The
+part that earns it is a line of ink: the tool lays out a real string and prints what the engine reports
+the ink's extent to be, beside the font's own ascender and descender. That comparison is what found the
+fault above, and it is not a comparison any single number in the library invites — `Font.ascent` is the
+font's number and `Line.ascent` is the ink's, and the interesting case is when they disagree.
+
+It also prints how many glyphs have zero advance, which is the cheapest way to see whether a font's
+space is a real space.
 
 ### `tools/glyphdump`
 

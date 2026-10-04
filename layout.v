@@ -303,29 +303,22 @@ fn measure_line(mut line &Line, em_px f64, options &LayoutOptions) {
 			line.ascent = larger(line.ascent, f.ascent(em_px))
 			line.descent = larger(line.descent, f.descent(em_px))
 			natural = larger(natural, f.line_height(em_px))
-			// A mark's own glyph sits above or below its position, so the extent of the line has
-			// to include where the mark reaches to, not just where its origin is. The bitmap's
-			// top is how far the ink reaches above the baseline and its left how far it reaches
-			// left of the pen, both of which the mark's y and x shift.
+			// The bitmap's top is how far the ink reaches ABOVE the baseline and its height is how
+			// tall the box is, so the box spans from `top` above the baseline down to
+			// `top - height` — which is below it exactly when the glyph has a descender.
 			//
-			// This asks for the box and not for the pixels. Measuring a line needs two numbers per
-			// glyph, and getting them by rasterizing ran a scanline fill and allocated a
-			// width*height buffer for every glyph of every paragraph, then threw all of it away.
+			// This used to add the two, so the ascent was the top of the ink plus the whole height
+			// of it, and the descent was the top of the ink read as though it were a depth. Measured on
+			// Segoe UI at 16 pixels, "Hxbdfpq" reported 26 above the baseline and 13 below when the
+			// ink is 13 above and 4 below: a line box two and a third times the size of the em it was
+			// drawn at, and every example in this repository sizes its canvas from it.
 			//
-			// It was not the bottleneck, and the first version of this comment said that it was.
-			// Measured on Segoe UI at 16 pixels one rasterization costs 3.9 microseconds, so a
-			// 264 character paragraph spent about a millisecond of a seven millisecond layout in
-			// here. It is kept because it drops an allocation and a fill per glyph, not because it
-			// made layout measurably faster: what made layout slow was in the substitution pass, and
-			// a controlled before and after of this file could not resolve a difference this size
-			// against the run-to-run variance of a machine with other builds on it.
-			//
-			// The values are identical rather than close, which is the only thing that makes it safe.
-			// See Face.box_only.
+			// A glyph whose ink stops above the baseline gives a negative depth, which is harmless
+			// because the descent starts at zero and only ever grows.
 			bmp := f.face.box_only(g.gid, em_px)
 			if !bmp.is_empty() {
-				line.ascent = larger(line.ascent, g.y + f64(bmp.top + bmp.height))
-				line.descent = larger(line.descent, -g.y + f64(bmp.top))
+				line.ascent = larger(line.ascent, g.y + f64(bmp.top))
+				line.descent = larger(line.descent, f64(bmp.height) - g.y - f64(bmp.top))
 			}
 		}
 	}

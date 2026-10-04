@@ -58,6 +58,7 @@ it.
 - Line breaking per UAX #14, and wrapping to a width.
 - Measuring a paragraph: min-content and max-content width, vertical extent, resolved line height.
 - Line height, letter spacing and word spacing as caller options.
+- A line's vertical extent as the ink actually reaches, which can exceed the font's own metrics.
 - Glyph rasterization through a bundled stb_truetype.
 
 ### Emoji and variation sequences

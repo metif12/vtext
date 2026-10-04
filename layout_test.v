@@ -675,6 +675,153 @@ fn test_measurement_of_empty_text_is_all_zeroes() {
 	assert m.ascent == 0.0 && m.descent == 0.0
 }
 
+// The vertical extent of a line is the ink, and the ink is what the glyphs actually reach.
+//
+// It used to be the top of each glyph's ink box plus the height of that box, which is twice the
+// distance for a letter that sits on the baseline and worse for one that does not. Measured on Segoe UI
+// at 16 pixels, "Hxbdfpq" reported 26 above the baseline and 13 below, where the ink is 13 above and 4
+// below — a line box two and a third times the em it was drawn at, and every example in this repository
+// sizes its canvas from it.
+//
+// The assertion is recomputed from the font's own boxes rather than written down, so it stays true if a
+// font's metrics change and fails if the formula does.
+fn test_line_extent_is_the_ink_each_glyph_reaches() {
+	ctx := new_context()
+	f := font_from('segoeui.ttf')
+	fs := new_font_set_of(f)
+	cps := 'Hxbdfpq'.runes()
+	line := layout_paragraph(ctx, cps, .ltr, fs, 16.0)
+
+	mut want_ascent := f64(0)
+	mut want_descent := f64(0)
+	for g in line.glyphs {
+		gf := g.font or { continue }
+		bmp := gf.rasterize(g.gid, 16.0, 0, 0)
+		if bmp.is_empty() {
+			continue
+		}
+		// The box spans from `top` above the baseline down to `top - height`, so the depth below the
+		// baseline is the height less the top.
+		high := g.y + f64(bmp.top)
+		if high > want_ascent {
+			want_ascent = high
+		}
+		deep := f64(bmp.height) - g.y - f64(bmp.top)
+		if deep > want_descent {
+			want_descent = deep
+		}
+	}
+	assert approx(line.ascent, want_ascent, 0.001), 'ascent ${line.ascent} against the glyphs own ${want_ascent}'
+	assert approx(line.descent, want_descent, 0.001), 'descent ${line.descent} against the glyphs own ${want_descent}'
+}
+
+// The measured numbers, because the test above would pass if the engine and the test agreed on the
+// same wrong reading of the box. These are what the glyphs actually reach, read off the font.
+fn test_line_extent_matches_the_measured_ink_of_a_latin_line() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	line := layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, 16.0)
+	// At 16 pixels: f reaches 13 above the baseline and stops there, and p and q reach 4 below.
+	assert line.ascent == 13.0, 'the tallest ink here is the f at 13, got ${line.ascent}'
+	assert line.descent == 4.0, 'the deepest ink here is the descender of p and q at 4, got ${line.descent}'
+}
+
+// A line whose glyphs all stop at the baseline descends no further than the font says it does, and
+// reporting the height of their ink as a depth is the other half of the same mistake.
+//
+// The descent is floored at the font's own rather than at zero, because that is what a caller wants: a
+// line of Latin with no descenders still needs the room the font asked for, or a line of mixed text
+// would change height as a descender scrolled past it.
+fn test_a_line_with_no_descenders_reports_no_descent_from_them() {
+	ctx := new_context()
+	f := font_from('segoeui.ttf')
+	fs := new_font_set_of(f)
+	// H and x both sit on the baseline at 16 pixels, so their ink reaches 0 below it.
+	line := layout_paragraph(ctx, 'Hx'.runes(), .ltr, fs, 16.0)
+	assert line.descent == f.descent(16.0), 'nothing here descends, so the descent is the font own ${f.descent(16.0)}, got ${line.descent}'
+	assert line.ascent == 12.0, 'the H reaches 12 above, got ${line.ascent}'
+
+	// And with a descender the number becomes that descender rather than the whole line's height.
+	with_p := layout_paragraph(ctx, 'Hxp'.runes(), .ltr, fs, 16.0)
+	assert with_p.descent == 4.0, 'the p reaches 4 below, got ${with_p.descent}'
+}
+
+// The ink can reach past the font's own declared metrics, and that is the whole reason the line reports
+// an extent at all rather than the caller reading the font's.
+//
+// This is what gpos_test.v's assertion about a mark counting towards the line height is really about, and
+// it has to keep holding after the extent was corrected: before, it passed because the extent was
+// roughly double what it should be.
+fn test_the_ink_can_reach_past_the_font_own_metrics() {
+	ctx := new_context()
+	f := font_from('segoeui.ttf')
+	fs := new_font_set_of(f)
+	line := layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, 16.0)
+	assert line.ascent > f.ascent(16.0), '${line.ascent} against the font own ${f.ascent(16.0)}: the f is taller than the ascender'
+	assert line.descent > f.descent(16.0), '${line.descent} against the font own ${f.descent(16.0)}: p and q descend further than the descender'
+	// And both stay inside a plausible multiple of the em, which is the cheap check that would have
+	// caught this without a font at all: no line of 16 pixel text has 26 pixels above its baseline.
+	assert line.ascent < 16.0 * 1.5, 'a 16 pixel line cannot have ${line.ascent} above its baseline'
+	assert line.ascent + line.descent < 16.0 * 1.5, 'the whole line is ${line.ascent + line.descent} tall at an em of 16'
+}
+
+// A mark sits above its base, and the extent has to account for where the mark was placed rather than
+// only for how far its own glyph would reach sitting on the baseline.
+//
+// The assertion is about the two glyphs' own ink rather than about the line, because whether a fatha
+// clears the font's ascender is the font's business and Tahoma's says it does not at 48 pixels. What is
+// not the font's business is where the engine put the mark, and that is what this pins.
+fn test_a_mark_is_measured_where_it_was_placed_and_not_where_it_would_sit() {
+	ctx := new_context()
+	f := font_from('tahoma.ttf')
+	fs := new_font_set_of(f)
+	size := 48.0
+	marked := layout_paragraph(ctx, [rune(0x0628), rune(0x064E)], .rtl, fs, size)
+	base := glyph_at_cluster(marked.glyphs, 0) or { panic('no glyph for the beh') }
+	mut mark := Glyph{}
+	for g in marked.glyphs {
+		if g.is_mark {
+			mark = g
+		}
+	}
+	assert mark.gid != 0, 'there should be a mark on this pair'
+	assert mark.advance == 0.0, 'a mark has no advance'
+	// A mark shares the base's place in the run, which means it has no advance of its own and does not
+	// move the pen. It does not share the base's x: the font's anchor puts it where the letter wants the
+	// mark, which on an Arabic letter is to one side of the stroke rather than centred on it.
+	off := f.mark_offset(mark.gid, base.gid, false) or { panic('tahoma should anchor this fatha') }
+	scale := size / f64(f.units_per_em())
+	assert approx(mark.x, base.x + f64(off.x) * scale, 0.01), 'the mark sits at the anchor: ${mark.x} against ${base.x} + ${f64(off.x) * scale}'
+
+	base_box := f.rasterize(base.gid, size, 0, 0)
+	mark_box := f.rasterize(mark.gid, size, 0, 0)
+	// The base's own ink, sitting where the pen put it.
+	base_high := base.y + f64(base_box.top)
+	// The mark's ink, sitting where the engine put it.
+	mark_high := mark.y + f64(mark_box.top)
+	assert mark_high > base_high, 'the mark reaches above the letter: ${mark_high} against ${base_high}'
+	// And if the mark had been left on the baseline instead, it would not have. That difference is the
+	// whole of what position_marks buys, and it is what the extent has to be measuring.
+	if mark_box.top > base_box.top {
+		assert mark_high > base_box.top, 'and only because it was moved: on the baseline its top would be ${mark_box.top}'
+	}
+}
+
+// The extent has to survive being measured through the box query rather than the pixels, which is what
+// measure_line uses and what the equivalence test in stbtt_test.v proves produces the same numbers.
+fn test_line_extent_is_the_same_at_every_size() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	cps := 'Hxp'.runes()
+	// The ratio of ink to em is roughly constant, so a doubling of the size should roughly double both
+	// numbers. A formula that added the box height to the top would still pass this, which is why the
+	// test above recomputes the extent instead.
+	small := layout_paragraph(ctx, cps, .ltr, fs, 16.0)
+	large := layout_paragraph(ctx, cps, .ltr, fs, 32.0)
+	assert approx(large.ascent, small.ascent * 2.0, 1.5), '${small.ascent} at 16 and ${large.ascent} at 32 should be about double'
+	assert approx(large.descent, small.descent * 2.0, 1.5), '${small.descent} at 16 and ${large.descent} at 32 should be about double'
+}
+
 // Wrapping and measuring have to agree about the features they were given. wrap_paragraph used to take no
 // options at all, so a paragraph wrapped with liga on was measured without it and every width it reported
 // was of a line nobody would draw.
