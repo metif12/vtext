@@ -260,7 +260,8 @@ pub fn (fs &FontSet) covers(cp rune) bool {
 // shapes in a GSUB table, so the form codepoint is .notdef in every font of the chain. Dubai
 // on Windows is exactly such a font, and a line shaped against it would otherwise be nothing
 // but .notdef boxes. So when no font has the form, the base letter is drawn and the font's
-// own positional features pick the shaped variant of it.
+// own joining features pick the shaped variant of it, which happens over the whole run in
+// substitute_glyphs rather than here.
 //
 // A ligature is the one case that produces more than one glyph, because it stood for two
 // letters and both have to be drawn. The lam takes the shape the ligature had. The alef
@@ -299,24 +300,7 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 			fs.glyph_variation_in(ctx, cp, selectors, em_px)
 		}
 		g.form = form
-		reshape(mut g, form, sg.script, em_px)
 		out << g
 	}
 	return out
-}
-
-// reshape asks the font for the variant of a base glyph that carries a shape.
-//
-// The advance has to be re-read afterwards, because a shaped Arabic glyph is a different
-// glyph with its own width: a final form is usually narrower than the isolated one, and using
-// the base letter's advance would leave the line the wrong width. When the font has no rule
-// for the shape the glyph is left as the base letter, which renders correctly but unjoined.
-fn reshape(mut g Glyph, form JoiningForm, script string, em_px f64) {
-	f := g.font or { return }
-	shaped := f.shaped_glyph_index(g.gid, form, script)
-	if shaped == g.gid {
-		return
-	}
-	g.gid = shaped
-	g.advance = f.glyph_advance(shaped, em_px)
 }

@@ -337,6 +337,13 @@ pub mut:
 	// original glyph a fused one came from by counting. It is the first glyph of the run, whose
 	// font, shape and mark flag are the ones the fused glyph inherits.
 	source int
+	// form is the joining shape this glyph is drawn in, or isolated when nothing has said otherwise.
+	//
+	// It rides here rather than being passed alongside the list because a rule that turns one glyph
+	// into several changes the length of the list, so anything indexing it by position goes stale
+	// the moment a substitution fires. Travelling with the glyph is the only way a mask stays
+	// aligned with the run it is masking.
+	form JoiningForm
 }
 
 // LigatureMatch is the outcome of a fusion: the glyph that replaces the run, and how many glyphs
@@ -418,6 +425,16 @@ fn (s &Substitution) span() ?EditSpan {
 	for e in s.edits {
 		first = imin(first, e.start)
 		last = imax(last, e.start + e.consumed)
+		// The output has to be in the span as well as the input, because the walk resumes from here and a
+		// resume that lands on a glyph this substitution just produced re-substitutes it. A MultipleSubst
+		// that replaces one glyph with three ends up covering three run positions, not one, and resuming at
+		// start+consumed walks straight back onto its own output: the piece is in the rule's coverage
+		// because it is the same shaped form, so it expands again, and again, and the run grows without end.
+		//
+		// Taking the larger of the two extents is right for every shape: a fusion consumes more than it
+		// produces and the input extent is the one that matters, a substitution produces more than it
+		// consumes and the output extent is, and a 1:1 is the same number either way.
+		last = imax(last, e.start + e.glyphs.len)
 	}
 	return EditSpan{
 		first: first
@@ -438,6 +455,20 @@ mut:
 // order a font's rules are written against. Reordering for display comes later and does not
 // change which glyphs were substituted with which.
 pub fn (g &Gsub) substitute(lookups []u16, items []Ligatable) []Ligatable {
+	return g.substitute_forms(lookups, items, none)
+}
+
+// substitute_forms is substitute with the run restricted to the glyphs in one joining shape.
+//
+// This exists because the four joining features cannot be applied by calling substitute four times over
+// the same run. Each of them is written against the base letters, so unmasked, `init` would claim every
+// letter and turn the run entirely initial before `medi` ever ran. Passing the shape restricts the run to
+// the glyphs that shape applies to, and each rule then finds the base letter it was written against.
+//
+// It has to be a parameter and not a separate entry point that pre-filters the list, because a MultipleSubst
+// rule changes the length of the list as it runs: 46 of Noto Nastaliq's 68 `init` rules turn one glyph into
+// several, so a mask built from the input list would be addressing the wrong glyphs a few rules in.
+pub fn (g &Gsub) substitute_forms(lookups []u16, items []Ligatable, want ?JoiningForm) []Ligatable {
 	if lookups.len == 0 || items.len == 0 {
 		return items
 	}
@@ -449,7 +480,7 @@ pub fn (g &Gsub) substitute(lookups []u16, items []Ligatable) []Ligatable {
 		if !lookup_substitutes(g.lookups[li]) {
 			continue
 		}
-		out = g.substitute_one(li, mut out)
+		out = g.substitute_one(li, mut out, want)
 	}
 	return out
 }
@@ -475,11 +506,11 @@ fn lookup_substitutes(l &Lookup) bool {
 // glyph and the walk continues past all of them, so the run index under the walk strictly
 // increases and the loop ends at the end of the run. A font whose rules do not reach a fixed
 // point is a font this handles in one pass, which is the same contract every shaper works to.
-fn (g &Gsub) substitute_one(li u16, mut items []Ligatable) []Ligatable {
+fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm) []Ligatable {
 	lookup := g.lookups[li]
 	rtl := lookup.flag & gsub_flag_right_to_left != 0
 	mut step := 1
-	mut eff := g.effective(items, lookup.flag, lookup.mark_set)
+	mut eff := g.effective(items, lookup.flag, lookup.mark_set, want)
 	mut walk := 0
 	if rtl {
 		step = -1
@@ -496,7 +527,7 @@ fn (g &Gsub) substitute_one(li u16, mut items []Ligatable) []Ligatable {
 		if sub := g.apply_at(li, items, eff, walk, 0) {
 			if span := sub.span() {
 				items = splice(items, sub)
-				eff = g.effective(items, lookup.flag, lookup.mark_set)
+				eff = g.effective(items, lookup.flag, lookup.mark_set, want)
 				walk = eff.len - 1
 				if !rtl {
 					walk = eff_at_or_after(eff, span.last)
@@ -516,9 +547,18 @@ fn (g &Gsub) substitute_one(li u16, mut items []Ligatable) []Ligatable {
 // rule, which is why "letter, mark, letter" can match a pattern of two letters. That is what
 // lets an Arabic font write a composition rule over letters at all, since a mark almost always
 // sits between the letters whose combination it changes.
-fn (g &Gsub) effective(items []Ligatable, flag u16, mark_set u16) []int {
+fn (g &Gsub) effective(items []Ligatable, flag u16, mark_set u16, want ?JoiningForm) []int {
 	mut out := []int{cap: items.len}
 	for i, item in items {
+		// A masked run only lets through the glyphs in one joining shape, which is what makes the four
+		// joining features safe to apply one after another over the same run. Without it, `init` turns
+		// every covered letter into its initial form and `medi` then looks up an initial form in a
+		// coverage that holds base letters, finds nothing, and leaves the letter stuck initial.
+		if w := want {
+			if item.form != w {
+				continue
+			}
+		}
 		if g.skipped(flag, mark_set, item.gid) {
 			continue
 		}
@@ -810,6 +850,7 @@ fn ligatables(seq []u16, from Ligatable) []Ligatable {
 			gid:     gid
 			cluster: from.cluster
 			source:  from.source
+			form:    from.form
 		}
 	}
 	return out

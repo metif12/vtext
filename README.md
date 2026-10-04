@@ -233,8 +233,21 @@ counting them by hand.
 
 ### Features
 
-Every line gets `ccmp` and `rlig`, in that order, because a line missing its mark composition is not
-the text that was asked for. Anything else is a presentation choice and stays with the caller.
+Every line gets `ccmp`, the four Arabic joining features, then `rlig`, in that order, because a line missing
+its mark composition or its letter shapes is not the text that was asked for. Anything else is a
+presentation choice and stays with the caller.
+
+The joining features are `isol`, `init`, `medi` and `fina`, and each is applied only to the letters in its
+own shape — the ones that join forward, the ones that join both ways, and so on. That masking is not an
+optimisation. Each rule is written against the *base* letters, so applying `init` to a whole run would turn
+every letter initial, and `medi` would then look up an initial form in a coverage of base letters, find
+nothing, and leave the letter stuck initial.
+
+This matters for fonts that keep their Arabic shapes in GSUB rather than in the cmap, which is most modern
+ones. A font that maps the Unicode presentation forms is answered from the cmap and never reaches these
+rules. Noto Nastaliq Urdu is one that does not, and it draws letters whose joining rules replace a single
+glyph with two or three: `سلام دنیا` is 18 glyphs from 9 characters. A glyph at a time cannot express that,
+which is why the features run over the run.
 
 ```v
 // liga is what Persian letter pairs need, and it changes the width of the text, so it is opt-in.

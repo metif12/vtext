@@ -186,9 +186,29 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 			gid:     glyph.gid
 			cluster: glyph.cluster
 			source:  i
+			form:    glyph.form
 		}
 	}
-	for feature in ['ccmp', 'rlig'] {
+	for feature in ['ccmp'] {
+		out = g.substitute(g.lookups_for(script, feature), out)
+	}
+	// The four joining features come next and in the specification's order, each masked to the glyphs in
+	// its own shape. They are on for every line for the same reason ccmp is: a line whose letters are all
+	// in the isolated shape is not the text.
+	//
+	// They were absent until 2026-10-04, which is why this is worth a paragraph. They cannot be reached by
+	// calling substitute over the whole run once each, because every rule is written against the base
+	// letters: unmasked, `init` claims every letter and the run is entirely initial before `medi` runs. Nor
+	// can they be reached one glyph at a time, because 46 of Noto Nastaliq's 68 `init` rules turn one glyph
+	// into several and a call that returns a single glyph id cannot express that. The run-level path with a
+	// mask is the only route that is correct for both.
+	//
+	// A glyph that a font already gave as a Unicode presentation form is not re-shaped by this. Its form is
+	// set but its glyph is a shaped one, and these coverages hold base letters, so there is nothing to match.
+	for form in [JoiningForm.isolated, JoiningForm.initial, JoiningForm.medial, JoiningForm.final] {
+		out = g.substitute_forms(g.lookups_for(script, feature_tag_for(form)), out, form)
+	}
+	for feature in ['rlig'] {
 		out = g.substitute(g.lookups_for(script, feature), out)
 	}
 	for feature in extra {
@@ -334,12 +354,16 @@ pub fn (f &Font) stacks_marks() bool {
 	return gpos.has_mark_to_mark()
 }
 
-// shaped_glyph_index applies the font's positional features to a base glyph and returns the
-// glyph that carries the shape.
+// shaped_glyph_index asks the font which glyph carries a joining shape for one glyph.
 //
-// This is the step a font needs when it keeps its Arabic shapes in GSUB rather than in the
-// cmap. A font with no such table, or no rule for this letter, returns the base glyph, which
-// renders the letter correctly but unjoined.
+// This is a question, not a step: the pipeline shapes a run through substitute_glyphs, which can
+// apply a rule that turns one glyph into several. This cannot, because it returns one glyph id. In
+// Noto Nastaliq Urdu, 46 of the 68 rules under `init` replace one glyph with two or three, so for
+// that font this answers nothing useful and the run-level path is the one that shapes the text. It
+// remains for a caller that wants to ask about one glyph, and for the fonts whose joining rules are
+// all one-for-one.
+//
+// A font with no such table, or no rule for this letter, returns the base glyph.
 //
 // script is the script of the letter, so a font offering the same feature tag for several
 // scripts resolves the right rule.

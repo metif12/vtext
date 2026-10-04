@@ -311,6 +311,54 @@ computes which items take part, from the lookup's flag and mark set — so the f
 That change alters Arabic shaping for every font, so it wants its own unit and its own before-and-after
 rather than riding along on this one.
 
+### ~~Arabic joining through GSUB~~ — done 2026-10-04
+
+The four joining features now run over the run, each masked to the glyphs in its own shape, between `ccmp`
+and `rlig` as the specification orders them. `Ligatable` carries the shape and `effective` filters on it.
+
+**What it fixed.** Noto Nastaliq Urdu drew its letters as unjoined base letters, because that font keeps its
+shapes in GSUB and its cmap has no presentation forms, so the fallback branch ran a per-glyph call that
+could not apply the rule. `سلام دنیا` is now **18 glyphs from 9 characters** and renders as Nastaliq, with
+the descending letterforms and joined strokes; before, every letter was the base glyph. Amiri and Noto Naskh
+are unchanged, because they map the presentation forms and take the cmap route: Amiri still gives 8 glyphs
+from those 9 characters, one fusion being the lam-alef.
+
+Two things had to be true for this and neither was obvious.
+
+**The mask cannot be a filtered list.** A MultipleSubst changes the length of the list as it runs — 46 of
+Nastaliq's 68 `init` rules turn one glyph into two or three — so a mask built from the input goes stale
+within a few rules. The shape therefore rides on `Ligatable` and `ligatables` copies it to the pieces, which
+is the only arrangement that stays aligned. Removing the mask is not a slower version of this: it produces 4
+glyphs where the correct answer is 8, because unmasked `init` claims every letter and the run is entirely
+initial before `medi` runs.
+
+**A latent loop, in code that was already shipped.** `Substitution.span` measured only what a substitution
+*consumed*, and the walk resumes from it. For a 1:1 that is right. For a 1:3 the resume lands on the second
+of the three pieces, which is in the same rule's coverage because it is the same shaped form, so it expands
+again. Nastaliq hung for over twenty minutes on a four-letter word before this was found; the run grows
+without bound. `span` now takes the larger of the input and output extents, which is correct for a fusion
+(consumes more), an expansion (produces more) and a 1:1 (the same number either way). The single-substitution
+branch had a guard against substituting a glyph to itself and the multiple branch never did; the span is the
+fix that matters, because the guard would only have hidden one way to loop.
+
+**Three versions of the main test were green against a broken build.** Worth writing down, because it is the
+part that would have shipped:
+
+1. Compare the first and last letter of a word. Proves nothing — a *different* letter in the same shape is
+   still a different glyph.
+2. Assert the two occurrences are merely *different*. Also proves nothing — a letter left as its base glyph
+   differs from every shaped form, and removing `medi` leaves exactly that. Still green.
+3. The test that holds: put **the same letter** in two positions (`سسل`), then assert each occurrence was
+   substituted away from the base glyph **and** that the two are not the same form. That fails on a build
+   with `medi` removed, naming the base glyph id.
+
+A test that passes when the feature is removed is not testing the feature. Each version was checked by
+removing the feature and watching it stay green, which is the only way to find out.
+
+The `reshape` helper went with it. It applied one glyph at a time, so leaving it in place would shape a
+letter per-glyph and then miss the run-level rule, because a shaped glyph is no longer in a coverage written
+against base letters. `Font.shaped_glyph_index` stays, as a question, with its limits written down.
+
 ---
 
 
