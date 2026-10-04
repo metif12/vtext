@@ -16,7 +16,7 @@ comes with them.
 | Stage | State |
 | --- | --- |
 | SFNT and TTC containers, table directory | done |
-| cmap formats 0, 4, 6, 12 | done; 13 and 14 are not read |
+| cmap formats 0, 4, 6, 12, 13, 14 | done |
 | Metrics, underline placement, rasterization | done |
 | Unicode normalization (UAX #15) | done |
 | Bidirectional paragraphs (UAX #9) | done |
@@ -287,43 +287,65 @@ backend. The claims that this library had one — in `v.mod` and in the module c
 rather than implemented. The roadmap had attributed the comment to `Context`; it was in the module
 comment at the top of `vtext.v`.
 
-### cmap formats 13 and 14
+### ~~cmap formats 13 and 14~~
 
-Formats 13 and 14 are read by nothing: `cmap.v` reaches them and drops them, so
-a font that uses only those subtables reports a codepoint it cannot map. Format
-14 matters because it is how a text presentation is asked to become an emoji
-presentation — U+FE0F is a variation selector and is only meaningful through a
-format 14 subtable — so an emoji family renders as text, or as nothing.
+**Done, and it turned up two bugs that were not about cmap at all.**
 
-This is not only a lookup that returns a different glyph id, which is the
-tempting way to write it, and getting it that way is how it goes wrong. A
-variation sequence is a base codepoint followed by a selector, and the selector
-is consumed by the format 14 lookup rather than looked up itself, so the shape
-of the question changes from "which glyph is this codepoint" to "which glyph is
-this codepoint given the selectors that follow it". `FontSet.glyph_in` takes a
-single rune and has no place to put a selector. Whichever way it is done, the
-glyph lookup stops being a pure function of one rune, and everything that caches
-or compares glyph ids has to know that. Budget for that rather than treating it
-as a twenty-line addition to `cmap.v`.
+Both formats are read. Format 13 is format 12 with the one difference that matters — a whole span of
+codepoints is a single glyph, so the glyph does not advance with the codepoint. Format 14 is what an
+emoji actually needs, and the interface question the old version of this section raised is real and was
+answered by splitting the lookup rather than by adding a parameter: `Font.glyph_index_variation(cp,
+selectors)` sits beside `Font.glyph_index(cp)` rather than inside it, because everything else in the
+library is built on a glyph lookup being a pure function of one rune and a parameter would have
+undone that quietly.
 
-Format 13 is many-to-one range mappings, which Apple uses for variant pairs. It
-is the same shape of problem and can be read the same way.
+**The three layout facts in this format are each one a table that reads as empty rather than as
+broken**, which is why all three had to be found by dumping bytes rather than by reading the
+specification carefully. Segoe UI Emoji's subtable starts like this:
 
-Two things found while surveying this, on 2026-10-04, that were not in the section above:
+```
+00 0E | 00 00 02 E5 | 00 00 00 01 | 00 FE 0F | 00 00 00 15 | 00 00 00 00
+format  length 741   language 1    selector   defaultUVS=21  nonDefault=0
+```
 
-**No font on this machine has a format 13 subtable.** All 352 of the `.ttf`, `.otf` and `.ttc` files
-in `C:\Windows\Fonts` were scanned by reading each subtable's format field directly. Ten have a
-format 14: `seguiemj.ttf` (the ideal fixture — 179 default-UVS ranges under U+FE0F covering 354
-codepoints), `mmrtext.ttf` and `phagspa.ttf` (non-default only), `msgothic.ttc` (supplementary
-selectors), and the four `YuGoth*.ttc`. So format 13 needs a table built as bytes, the way
-`gpos_cursive_test.v` builds its tables, and there is no precedent in this repository for that yet.
+The length is a **uint32** where every other format's is a uint16. The records begin at offset 10,
+immediately after the header, and **there is no count of them** — so a reader expecting the count every
+other format has reads the selector U+FE0F as sixteen million records. And each record is **11** bytes,
+not 12, because the two uint32 offsets after a uint24 selector are aligned to nothing. A `UnicodeValueRange`
+is 4 bytes and a `NonDefaultUVSRecord` is 5, neither of which is what you get by adding the fields as
+4-byte words.
 
-**A variation selector does not survive shaping today.** `joining.v`'s `attach_marks` treats a
-transparent, zero-combining-class character as an invisible format character and discards it, which
-is right for a ZWNJ and wrong for U+FE0F: the selector has ccc 0 and JoiningType T, so it is dropped
-before anything can act on it. A run now draws the text presentation of an emoji and no way to ask
-for the other one. That is a smaller defect than the section implies and it is fixed by the same
-change, since both need `ShapedGlyph` to carry the selectors.
+With no count to read, the scan ends on the first record whose table offsets point outside the
+subtable, which is the only signal available and is unambiguous. For a font with one record the second
+"record" is the default table's own bytes, so a reader that does not stop there takes a length of
+several hundred million out of a count field and then tries to allocate it.
+
+Measured: Segoe UI Emoji reports **354** bases it can vary, which is the 179 spans in its default table
+counted out, and `tools/fontdump` prints it. Before this it printed zero, because the table answers
+nothing about any bare codepoint and was being counted by asking.
+
+**The bug that mattered more was not in the cmap.** A variation selector was being dropped during
+shaping, before any font was consulted, and the reason is worth recording because it looks like a
+correct decision. `attach_marks` treated a transparent character with no combining class as an invisible
+format character and gave it no glyph. That is right for a ZWNJ and wrong for U+FE0F, which changes
+which glyph the character in front of it draws as.
+
+The second bug was worse and was not about selectors at all. The pass-through branch of the shaping
+loop — the one for characters that take no joining shape — stepped over the character and continued,
+so **nothing after a non-joining letter was ever attached to it**. For Arabic that never showed,
+because every Arabic letter has a joining type that takes a shape and falls through to the branch
+below. For a script whose letters are transparent it means every mark after every letter was silently
+dropped: Myanmar, Thai and Lao text drew without its vowels. The variation-sequence work found it
+because a Myanmar letter was the fixture.
+
+`ShapedGlyph` therefore carries `selectors`, and its fields are now split into what is known before the
+glyph exists and what the engine fills in while walking the run, which is what let the leftover
+selector at the end of a run reach the letter in front of it.
+
+No font on this machine has a format 13 subtable, so that half is tested against a table built in the
+test file rather than read from disk. Ten have a format 14 and the fixtures are real:
+`seguiemj.ttf` for a default table, `mmrtext.ttf` for 29 non-default mappings, `phagspa.ttf`,
+`msgothic.ttc` for supplementary selectors, and the four `YuGoth*.ttc` for both table kinds at once.
 
 ### Vertical text
 

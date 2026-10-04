@@ -47,7 +47,7 @@ it.
 ## Supported
 
 - TrueType and CFF outlines, and font collections (TTC).
-- cmap subtable formats 0, 4, 6 and 12.
+- cmap subtable formats 0, 4, 6, 12, 13 and 14, including variation sequences.
 - Arabic joining forms, and the isolated, initial, medial and final shapes.
 - GSUB single, multiple, alternate, ligature and contextual substitutions.
 - GPOS mark-to-base, mark-to-ligature and mark-to-mark attachment.
@@ -58,6 +58,31 @@ it.
 - Measuring a paragraph: min-content and max-content width, vertical extent, resolved line height.
 - Line height, letter spacing and word spacing as caller options.
 - Glyph rasterization through a bundled stb_truetype.
+
+### Emoji and variation sequences
+
+A variation selector changes which glyph the character in front of it draws as: a heart with U+FE0F
+after it is an emoji and without it is text, and those are different glyphs with different outlines.
+The selector is not looked up as a character — U+FE0F has no glyph of its own in any font — so the
+lookup that answers the question takes a pair rather than a codepoint.
+
+```v
+// Both forms exist. With no selector this is exactly glyph_index.
+gid := font.glyph_index_variation(0x2764, [rune(0xFE0F)])
+
+// A font can cover a base and still have no opinion about the sequence, which is a result
+// rather than a miss, and this is how a fallback chain tells them apart.
+if font.has_variation_sequence(0x2764, 0xFE0F) {
+	// this font knows the pair
+}
+```
+
+The layout pass does this for you: text containing a selector draws the emoji, and the selector never
+becomes a glyph of its own or takes width. A selector with no character in front of it draws nothing,
+because a request about nothing is not a character.
+
+**A variation sequence is not a character**, which is the one rule everything else follows from. The
+base on its own still draws as text; only the pair draws as emoji.
 
 ## Performance
 

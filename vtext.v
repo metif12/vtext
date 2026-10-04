@@ -125,6 +125,29 @@ pub fn (f &Font) has_glyph(cp rune) bool {
 	return f.face.has_glyph(cp)
 }
 
+// glyph_index_variation maps a codepoint to a glyph index with variation selectors after it.
+//
+// This is the form to use for text that may contain a variation sequence, because it is the only one
+// that can reach a cmap format 14 subtable. With an empty selector list it is exactly `glyph_index`,
+// so a caller with no emoji in its text can use either.
+//
+// The selectors are consumed by this lookup rather than looked up themselves. U+FE0F has no glyph of
+// its own in any font, and asking for one is the mistake this function's existence makes impossible: a
+// selector is a question about the character in front of it, not a character.
+pub fn (f &Font) glyph_index_variation(cp rune, selectors []rune) u16 {
+	return f.face.glyph_index_variation(cp, selectors)
+}
+
+// has_variation_sequence reports whether the font says anything about this base and selector
+// together, as opposed to what it says about the base alone.
+//
+// A font can cover a base and still have no opinion about the sequence, in which case the caller draws
+// the base's text presentation. That is a result rather than a miss, and this is how a fallback chain
+// tells the two apart.
+pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
+	return f.face.has_variation_sequence(cp, selector)
+}
+
 // substitute_glyphs applies the font's substitution features to a run of glyphs.
 //
 // This is what the joining pass cannot do on its own. It knows that a lam and an alef are one

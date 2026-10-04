@@ -282,6 +282,30 @@ fn (f &Face) has_glyph(cp rune) bool {
 	return f.glyph_index(cp) != 0
 }
 
+// glyph_index_variation maps a base codepoint with variation selectors after it.
+//
+// selectors is the list that followed the base in the text, in order, and it is a list rather than one
+// selector because the specification allows several and because a caller that has lost track of them
+// should get the base's plain glyph rather than a guess about which one mattered.
+//
+// With no selectors this is exactly glyph_index, which is the property that makes the rest of the
+// pipeline able to ignore variation sequences entirely: a caller that never passes one gets the old
+// answer.
+fn (f &Face) glyph_index_variation(cp rune, selectors []rune) u16 {
+	for sel in selectors {
+		if f.has_variation_sequence(cp, sel) {
+			return glyph_index_variation_for(f.cmaps, u32(cp), u32(sel))
+		}
+	}
+	return f.glyph_index(cp)
+}
+
+// has_variation_sequence reports whether the font has anything to say about this base and selector
+// together, as opposed to what it says about the base on its own.
+fn (f &Face) has_variation_sequence(cp rune, selector rune) bool {
+	return has_variation_sequence(f.cmaps, u32(cp), u32(selector))
+}
+
 // glyph_advance_units returns the horizontal advance in design units.
 fn (f &Face) glyph_advance_units(gid u16) u16 {
 	if int(gid) < f.advances.len {

@@ -33,6 +33,11 @@ const zero_width_non_joiner = rune(0x200C)
 const zero_width_joiner = rune(0x200D)
 
 // ShapedGlyph is one letter after joining, and the characters it stands for.
+//
+// The fields split into two groups because they are written at two different times. What the letter
+// is — its codepoints, its shape, its script — is decided before the glyph exists and is read-only
+// afterwards. What the engine learns while walking the run, which includes where the letter starts and
+// whether a selector followed it, is filled in afterwards and is mutable so that it can be.
 pub struct ShapedGlyph {
 pub:
 	// cps is the presentation form, or the base character when the UCD has no
@@ -51,6 +56,7 @@ pub:
 	// resolves its positional features under. A font may offer 'fina' for more than one
 	// script, and the rules differ.
 	script string
+pub mut:
 	// start and end index the run of input characters this glyph covers, which is more
 	// than one for a lam-alef ligature.
 	start int
@@ -59,6 +65,17 @@ pub:
 	// follows and adds no advance of its own, so the layout pass has to know which
 	// glyphs to place without moving the pen and to draw last so they land on top.
 	is_mark bool
+	// selectors are the variation selectors written immediately after this glyph's character, in
+	// order. They are not glyphs and are never drawn; they are carried because the font lookup that
+	// follows needs them, and because there is nowhere else for them to be.
+	//
+	// They used to be dropped here. A variation selector has combining class zero and joining type
+	// Transparent, which is exactly the shape of an invisible format character, so attach_marks
+	// treated it as one and gave it no glyph. That is right for a ZWNJ and wrong for U+FE0F, which
+	// changes which glyph the character in front of it draws as: a heart with the selector draws as
+	// an emoji and without it draws as text, and the two are different glyphs with different
+	// outlines and usually different widths.
+	selectors []rune
 }
 
 // ShapedRun is a whole run of text after joining, in logical order. Reordering it is the
@@ -171,9 +188,26 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 			continue
 		}
 
+		// A variation selector with nothing in front of it has no glyph to select. It reaches here
+		// only when the run begins with one or a non-joining character separates it from its base, and
+		// the honest answer is to drop it rather than draw .notdef in its place: a selector is a
+		// request about another character, and a request about nothing is not a character.
+		if p.is_variation_selector(cp) {
+			i++
+			continue
+		}
+
 		// Anything else that cannot connect to either side is passed through as itself:
 		// a space, a mark on its own, a letter that is not part of a word. A mark that
 		// lands here has no letter to attach to, so it is still positioned as one.
+		//
+		// It still collects what follows it, which is the part that was missing. This branch used to
+		// step over the character and continue, so nothing after a non-joining letter was ever
+		// attached to it: not its marks and not its variation selectors. For Arabic that never showed,
+		// because every Arabic letter has a joining type that takes a shape and so falls through to
+		// the branch below. For a script whose letters are transparent — Myanmar, Thai, Lao — every
+		// letter took this branch and every mark after one was silently dropped, which for a script
+		// that stacks its vowels means the text drew without them.
 		if !jt.takes_a_shape() {
 			out.glyphs << ShapedGlyph{
 				cps:     [cp]
@@ -184,7 +218,7 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 				end:     i + 1
 				is_mark: p.combining_class_of(cp) != 0
 			}
-			i++
+			i = attach_marks(p, cps, i + 1, mut out)
 			continue
 		}
 
@@ -215,27 +249,48 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 // places it from is_mark.
 fn attach_marks(p &Properties, cps []rune, from int, mut out &ShapedRun) int {
 	mut i := from
+	mut selectors := []rune{}
 	for i < cps.len {
 		// Transparent is the joining type that covers a mark, and it is what decided
 		// where the letter's run of characters stopped, so the two agree on the boundary.
 		if !p.joining_type_of(cps[i]).is_transparent() {
 			break
 		}
+		// A variation selector belongs to the character in front of it and is not drawn at all, so
+		// it gets no glyph — but unlike a ZWNJ it is not invisible, and throwing it away is how
+		// every emoji in a text came out as its text presentation. It is collected here and handed
+		// to the letter instead.
+		//
+		// Collected rather than attached afterwards because by this point the letter has already been
+		// pushed, and reaching back for it would mean a second pass over the run to find it.
+		if p.is_variation_selector(cps[i]) {
+			selectors << cps[i]
+			i++
+			continue
+		}
 		// A transparent character with no combining class is an invisible format
 		// character such as ZWSP. It belongs to the letter it follows and is not
 		// drawn at all, so it gets no glyph.
 		if p.combining_class_of(cps[i]) != 0 {
 			out.glyphs << ShapedGlyph{
-				cps:     [cps[i]]
-				base:    [cps[i]]
-				form:    .isolated
-				script:  p.script_tag_of(cps[i])
-				start:   i
-				end:     i + 1
-				is_mark: true
+				cps:       [cps[i]]
+				base:      [cps[i]]
+				form:      .isolated
+				script:    p.script_tag_of(cps[i])
+				start:     i
+				end:       i + 1
+				is_mark:   true
+				selectors: selectors.clone()
 			}
+			selectors = []rune{}
 		}
 		i++
+	}
+	// Any selector left over belonged to the last letter, which is this loop's own glyph. A run that
+	// ends in a selector with no letter after it puts it on whatever the last glyph was, which is the
+	// only reading available and the one the text meant.
+	if selectors.len > 0 && out.glyphs.len > 0 {
+		out.glyphs[out.glyphs.len - 1].selectors << selectors
 	}
 	return i
 }

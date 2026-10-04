@@ -353,3 +353,21 @@ pub fn (p &Properties) is_arabic_script(cp rune) bool {
 pub fn (p &Properties) is_mark(cp rune) bool {
 	return p.combining_class_of(cp) != 0
 }
+
+// is_variation_selector reports whether cp is a variation selector, which selects one of the glyphs a
+// font offers for the character in front of it.
+//
+// There are 256 of them in two blocks, U+FE00 to U+FE0F and U+E0100 to U+E01EF. The ranges are
+// written out rather than taken from a generated table because they have not changed since Unicode
+// 4.0 and are named by the specification itself; adding a table for them would be a lookup table with
+// one row that can never gain another.
+//
+// This exists because a selector is the one character this library's shaping used to throw away, and
+// the reason it was thrown away is instructive. A selector has combining class zero and joining type
+// Transparent, which is exactly the shape of an invisible format character like a ZWNJ: transparent
+// so it does not break the join, and zero so it is not a mark that needs placing on the letter. So
+// attach_marks discarded it without a glyph, correctly for a ZWNJ and wrongly for a selector. Nothing
+// about a selector is invisible — it changes which glyph is drawn.
+pub fn (p &Properties) is_variation_selector(cp rune) bool {
+	return (cp >= 0xFE00 && cp <= 0xFE0F) || (cp >= 0xE0100 && cp <= 0xE01EF)
+}

@@ -71,6 +71,23 @@ fn (r &Reader) u32_at(off int) u32 {
 	return u32_be(r.data, off)
 }
 
+// u24_at reads a big-endian 24-bit value at off.
+//
+// cmap formats 13 and 14 store codepoints as uint24, which is a specification quirk rather than a
+// space-saving one: a codepoint fits in 21 bits and the format's own authors still wrote three bytes.
+// Both formats are read through here.
+//
+// The width matters more than it looks. A uint24 read as a uint32 picks up the following byte as its
+// low byte, so a codepoint at the end of a table reads as a different and much larger codepoint — one
+// that is not in the table and therefore answers "no opinion" instead of an error. Reading it as a
+// uint16 instead loses the top eight bits and collides codepoints a quarter of a million apart.
+fn (r &Reader) u24_at(off int) u32 {
+	if !r.has(off, 3) {
+		return 0
+	}
+	return (u32(r.u8_at(off)) << 16) | (u32(r.u8_at(off + 1)) << 8) | u32(r.u8_at(off + 2))
+}
+
 fn (r &Reader) i32_at(off int) i32 {
 	v := i64(r.u32_at(off))
 	return i32(if v >= 0x80000000 { v - 0x100000000 } else { v })

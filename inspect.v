@@ -356,6 +356,26 @@ fn sort_tags(list []string) []string {
 // distinction `glyph_grid` draws, and it is why a font's coverage number and its mapped number are two
 // different numbers.
 fn (c &Cmap) mapped_count() int {
+	// A format 14 subtable has no opinion about any bare codepoint, so counting by asking would report
+	// zero for a table that names several hundred bases. It is counted from its own tables instead: the
+	// span each default entry covers, plus the bases the non-default table names that no span already
+	// covers.
+	//
+	// Counting the two lists without the overlap check would be simpler and would over-report by one for
+	// every base in both, and a font whose default and non-default tables overlap is the normal case
+	// rather than a corner.
+	if c.format == 14 {
+		mut n := 0
+		for span in c.vs_ranges {
+			n += int(span.length) + 1
+		}
+		for m in c.vs_maps {
+			if !vs_covers(c.vs_ranges, m.base) {
+				n++
+			}
+		}
+		return n
+	}
 	mut n := 0
 	for cp in 0 .. 0x10000 {
 		gid := c.lookup_glyph(u32(cp)) or { continue }

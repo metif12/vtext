@@ -201,8 +201,32 @@ pub fn (fs &FontSet) pick_in(ctx &Context, cp rune) ?&Font {
 
 // glyph_in is glyph through the script-aware lookup.
 pub fn (fs &FontSet) glyph_in(ctx &Context, cp rune, em_px f64) Glyph {
+	return fs.glyph_variation_in(ctx, cp, []rune{}, em_px)
+}
+
+// glyph_variation_in is glyph_in with variation selectors after the codepoint.
+//
+// A chain has to answer a different question when there is a selector. Asking each font "do you have
+// this codepoint" is not enough, because a font can cover the base and still have no opinion about
+// the sequence — and then the right answer is the base's text presentation, which is a result rather
+// than a miss. So a font that knows the sequence is asked first and takes it, and the chain falls
+// through to the ordinary base lookup for every font that does not, including the first one.
+//
+// The fallback chain is unchanged in shape: the selector does not add a stage, it changes which
+// question the first stage asks.
+pub fn (fs &FontSet) glyph_variation_in(ctx &Context, cp rune, selectors []rune, em_px f64) Glyph {
 	f := fs.pick_in(ctx, cp) or { return Glyph{} }
-	return f.glyph_for(cp, em_px)
+	return f.glyph_variation_for(cp, selectors, em_px)
+}
+
+// glyph_variation_for looks a codepoint with variation selectors up in one font.
+fn (f &Font) glyph_variation_for(cp rune, selectors []rune, em_px f64) Glyph {
+	gid := f.glyph_index_variation(cp, selectors)
+	return Glyph{
+		gid:     gid
+		advance: f.glyph_advance(gid, em_px)
+		font:    f
+	}
 }
 
 // glyph looks cp up through the chain and returns the glyph with the font that produced it.
@@ -256,7 +280,7 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 		mut g := if sg.is_mark {
 			fs.mark_glyph(form_cp, em_px)
 		} else {
-			fs.glyph_in(ctx, form_cp, em_px)
+			fs.glyph_variation_in(ctx, form_cp, sg.selectors, em_px)
 		}
 		g.form = sg.form
 		return [g]
@@ -265,10 +289,14 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 	mut out := []Glyph{cap: sg.base.len}
 	for i, cp in sg.base {
 		form := if i == 0 || sg.form == .isolated { sg.form } else { JoiningForm.final }
+		// The selectors belong to the character as a whole, so every glyph it was split into gets
+		// them. A format 13 subtable is exactly the case where it happens: one glyph standing for
+		// two codepoints, and the selector that came after the second belongs to both.
+		selectors := if i == 0 { sg.selectors } else { []rune{} }
 		mut g := if sg.is_mark {
 			fs.mark_glyph(cp, em_px)
 		} else {
-			fs.glyph_in(ctx, cp, em_px)
+			fs.glyph_variation_in(ctx, cp, selectors, em_px)
 		}
 		g.form = form
 		reshape(mut g, form, sg.script, em_px)
