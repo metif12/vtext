@@ -241,6 +241,19 @@ pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Off
 	return gpos.mark_offset(mark_gid, base_gid, base_is_mark)
 }
 
+// cursive_anchors returns where one glyph's joining stroke enters and leaves, in design units, with y
+// positive upwards as the font's own coordinates run.
+//
+// Joining two glyphs is placing one glyph's entry anchor on the previous glyph's exit anchor, so a caller
+// walking a run in text order needs the exit of the glyph it has just placed and the entry of the one it
+// is about to place, and each of those may be absent. A letter at the start of a word has an entry and no
+// exit; a letter at the end is the other way round. A font that gives a glyph neither has no opinion
+// about it, and none is returned.
+pub fn (f &Font) cursive_anchors(gid u16, script string) ?CursiveAnchors {
+	gpos := f.face.gpos or { return none }
+	return gpos.cursive_anchors(gid, script)
+}
+
 // kern_offset returns how far to move one glyph when another follows it, in design units, with y
 // positive upwards as the font's own coordinates run.
 //

@@ -23,6 +23,20 @@ pub:
 	y i32
 }
 
+// CursiveAnchors are the two ends of one glyph's joining stroke, in design units.
+//
+// The two are separately optional, because a font says what a letter needs rather than what it has: the
+// first letter of a word has an entry and no exit, the last has an exit and no entry, and a letter in the
+// middle of a word has both. `entry_exists` and `exit_exists` say which a font actually gave, rather than
+// a caller having to treat an absent anchor as the origin and attach a stroke that does not exist.
+pub struct CursiveAnchors {
+pub:
+	entry        Offset2
+	exit         Offset2
+	entry_exists bool
+	exit_exists  bool
+}
+
 // GPOS lookup types, from the OpenType specification.
 const gpos_lookup_single_position = 1
 const gpos_lookup_pair = 2
@@ -628,6 +642,32 @@ pub fn (g &Gpos) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Off
 		for rule in lookup.mark_bases {
 			if off := rule.offset_for(mark_gid, base_gid) {
 				return Offset2{ x: off.x, y: off.y }
+			}
+		}
+	}
+	return none
+}
+
+// cursive_anchors returns where a glyph's joining stroke enters and leaves, in design units.
+//
+// A glyph the font gives no anchors for returns none rather than a pair of absent anchors, because a
+// font that does not describe a glyph's joining is not making a statement the caller can act on.
+//
+// y is positive upwards, as in the rest of the table's output. A renderer working in screen
+// coordinates has to flip it.
+pub fn (g &Gpos) cursive_anchors(gid u16, script string) ?CursiveAnchors {
+	for li in g.lookups_for(script, 'curs') {
+		if li >= g.lookups.len {
+			continue
+		}
+		for rule in g.lookups[li].cursives {
+			if ee := rule.offset_for(gid) {
+				return CursiveAnchors{
+					entry:        Offset2{ x: ee.entry.x, y: ee.entry.y }
+					exit:         Offset2{ x: ee.exit.x, y: ee.exit.y }
+					entry_exists: ee.entry.exists
+					exit_exists:  ee.exit.exists
+				}
 			}
 		}
 	}
@@ -1401,19 +1441,17 @@ fn (rule &Cursive) offset_for(gid u16) ?EntryExit {
 
 // parse_cursive reads one CursivePos subtable, and refuses anything that is not one.
 //
-// Lookup type 1 is two different tables under one number: a single positioning and a cursive
-// attachment. Both declare format 1, both write a coverage in the same place, and the bytes after the
-// coverage are a list either way, so nothing in the first few words says which one this is. Guessing by
-// reading anchors and falling back is not good enough, because a single positioning's value record read
-// as an offset can land on something that looks like an anchor: Andalus's lookup 21 writes a
-// valueFormat of 3 in the word a cursive rule reads as its first anchor offset, and 3 is a valid
-// anchor format. Guessing that way takes a real kerning rule out of the font.
+// The lookup type already answers this — a cursive rule is type 3 and a single positioning is type 1 — so
+// nothing here has to guess from the bytes. It does not guess anyway, because a font can wrap either in an
+// extension that names its real type wrongly, and a reader that trusts that without looking is a reader
+// that reads mark attachment as a joining rule.
 //
-// So this asks the question the layout can answer. In a cursive rule the anchors are a separate table
-// written after the records, so every offset in the records points past the end of the records
-// themselves. In a single positioning the word in that place is the value format, which is a small
-// bitmask and cannot point past a value array that is already there. One test separates the two, and a
-// table that fails it is read as the positioning rule it then must be.
+// The check is structural rather than lucky. In a cursive rule the anchors are a separate table written
+// after the records, so every offset in the records points past the end of the records themselves, and
+// what it points at declares itself an anchor. In a single positioning the word in that place is the
+// value format, which is a small bitmask and cannot point past a value array that is already there. That
+// is what Andalus's lookup 21 fails: its valueFormat of 3 is a valid anchor format, so the format alone
+// does not separate the two tables and an offset read as a point lands in the middle of the value array.
 fn parse_cursive(r &Reader, at int) ?Cursive {
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {

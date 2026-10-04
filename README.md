@@ -133,11 +133,14 @@ Named here so that a caller is not surprised by them.
   every character rather than at the word boundaries a reader expects.
 - **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
   Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
-- **Cursive attachment.** Read, in both formats, from real rules — Amiri, Noto Nastaliq Urdu and Dubai all
-  carry one, and this engine finds them. It is **not applied**: the rules are parsed and then ignored, so
-  a font that relies on `curs` joins only as far as its substitutions take it. Arabic joining in the
-  Windows fonts comes entirely from GSUB substitution, which this engine does do, which is why the absence
-  is not obvious there.
+- **Cursive attachment.** The rules are read correctly from real fonts — Amiri, Noto Nastaliq Urdu and
+  Dubai all carry one and `Font.cursive_anchors` returns their anchors. They are **not applied**, and the
+  reason is not that the pass is missing: a cursive rule covers particular glyphs, and this engine's
+  Arabic shaping selects its glyphs by resolving the presentation form through the cmap rather than by
+  running the font's `init`, `medi` and `fina` features, so it lands on glyphs the rule does not cover.
+  Every one of Amiri's 288 covered glyphs is GSUB-only and has no codepoint at all. Arabic joining in the
+  Windows fonts comes entirely from GSUB substitution, which this engine does do, which is why the
+  absence is not obvious there.
 - **Device and variation tables.** A hint that a pair is tighter at one size than another is skipped,
   so a kern is the same at every size.
 - **Justification and kashida.**

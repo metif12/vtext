@@ -231,10 +231,42 @@ What is still missing is the attachment itself, which is not a positioning rule 
 the pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter can end up
 wider or narrower than its advance says. There is now a font for it to be written against.
 
-### ~~Cursive attachment: the attachment itself~~ — unblocked 2026-10-04, now the next piece of work
+### ~~Cursive attachment: the attachment itself~~ — written, measured, and withdrawn 2026-10-04
 
-Not blocked. The reader is correct against real fonts and the corpus is in the tree under licences that
-permit redistribution (`testdata/fonts/`). What remains is applying the rules.
+**The reader is unblocked and the attachment is still not applied, because a cursive rule covers glyphs
+that this engine's Arabic shaping never selects.** The pass was written, and it is the measurement rather
+than the code that is worth keeping.
+
+The rule covers particular glyphs, and a letter only reaches one of them if shaping picked it. What the
+three corpus fonts show:
+
+| font | entry only | exit only | both | covered glyphs the layout actually selects |
+| --- | --- | --- | --- | --- |
+| Amiri-Regular | 52 | 236 | 0 | none |
+| NotoNastaliqUrdu | 38 | 182 | 158 | one, and it has no exit |
+| NotoNaskhArabic | — | — | — | has no rule at all |
+
+Every covered glyph in Amiri is reachable only through GSUB: all 288 have no codepoint in the cmap. The
+layout of `سلا` produces gids 1004, 1039 and 1060, none of which the rule covers, because the joining
+pass here resolves a letter's shape through the **presentation form in the cmap** rather than by running
+the font's own `init`, `medi` and `fina` features. Nastaliq has 158 glyphs carrying both ends, which is
+where a join would come from, and the layout selects almost none of them for the same reason.
+
+So the pass was withdrawn rather than committed. A feature that cannot be shown to change a single
+advance on any font available is not a feature, and shipping it with a passing test would have been the
+same mistake in a new place: a fixture that measures nothing is green.
+
+What is landed instead is the honest half. `Font.cursive_anchors` returns a glyph's entry and exit
+anchors, in design units, with each end reported separately because a font uses both patterns — Nastaliq
+gives 158 glyphs both ends and Amiri gives none, so a reader treating one as implying the other drops half
+of one font and most of the other. It is tested against the corpus, and it is the access a caller needs to
+do the attachment itself.
+
+**The next piece of work is Arabic joining through GSUB.** Requesting `isol`, `init`, `medi` and `fina`
+does move Nastaliq onto covered glyphs — gid 435 becomes 436 and picks up an entry anchor — so the
+mechanism works and the gap is that the engine does not ask for those features by default. That change
+alters Arabic shaping for every font, so it wants its own unit and its own before-and-after rather than
+riding along on this one.
 
 ---
 

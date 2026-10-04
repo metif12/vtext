@@ -1,0 +1,10 @@
+# This repository is text with LF line endings, and a V compiler, a hex dump and a diff all
+# agree on that. Leaving it to core.autocrlf means a fresh checkout can hand back CRLF, which
+# `v fmt` then reports as unformatted while `git diff` shows nothing, because git normalises
+# the difference away on the way out. That is a confusing failure to debug twice.
+* text=auto eol=lf
+
+# Fonts are read as bytes. Normalising them would corrupt every offset in the file, which for a
+# font is the difference between a table that parses and one that does not.
+*.ttf binary
+*.otf binary
