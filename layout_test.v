@@ -448,3 +448,252 @@ fn test_layout_a_mark_reports_its_own_character_after_reordering() {
 	assert seen[1] == shadda, 'the shadda reports the character it was written for'
 	assert seen[2] == fatha, 'the fatha reports the character it was written for'
 }
+
+// Letter spacing goes onto advances, not onto positions, so the line's width and the positions have to
+// come out of the same number. That is the whole assertion: a spacing pass that moved x instead of
+// advance would make these two disagree and the line would still draw correctly.
+fn test_letter_spacing_adds_to_every_letter_advance() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	cps := [`a`, `b`, `c`]
+	plain := layout_paragraph(ctx, cps, .ltr, fs, 32)
+	mut opts := LayoutOptions{}
+	opts.letter_spacing = 2.0
+	spaced := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+
+	assert spaced.glyphs.len == plain.glyphs.len, 'spacing must not change how many glyphs there are'
+	for i in 0 .. spaced.glyphs.len {
+		assert approx(spaced.glyphs[i].advance, plain.glyphs[i].advance + 2.0, 0.001), 'letter ${i}: advance ${spaced.glyphs[i].advance} should be ${plain.glyphs[i].advance} + 2'
+	}
+	// Three letters and three additions, including the last: letter spacing trails every character,
+	// which is what CSS says and what makes a caller's own arithmetic agree with this engine's.
+	assert approx(spaced.width, plain.width + 6.0, 0.001), 'width ${spaced.width} should be ${plain.width} + 3 * 2'
+	// And the advances still add up to the width, which is the invariant a spacing pass on x would break.
+	mut sum := f64(0)
+	for g in spaced.glyphs {
+		sum += g.advance
+	}
+	assert approx(sum, spaced.width, 0.001), 'the advances must still account for the whole width'
+}
+
+// Negative spacing tightens rather than failing, because that is what a caller setting a negative value
+// is asking for and a text engine that refused would force them to scale the font instead.
+fn test_letter_spacing_can_be_negative() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	cps := [`a`, `b`, `c`, `d`, `e`, `f`]
+	plain := layout_paragraph(ctx, cps, .ltr, fs, 32)
+	mut opts := LayoutOptions{}
+	opts.letter_spacing = -1.5
+	spaced := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+	assert approx(spaced.width, plain.width - 9.0, 0.001), 'six letters tightened by 1.5 each'
+	assert spaced.width < plain.width
+}
+
+// A mark is not a letter. It shares its base's position and has no advance, so paying it letter spacing
+// would charge one character twice and push everything after it along by a spacing nobody asked for.
+fn test_a_combining_mark_does_not_take_letter_spacing() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('tahoma.ttf'))
+	cps := [rune(0x0628), rune(0x064E)] // beh with a fatha
+	plain := layout_paragraph(ctx, cps, .rtl, fs, 32)
+	mut opts := LayoutOptions{}
+	opts.letter_spacing = 2.0
+	spaced := layout_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
+
+	mut marks := 0
+	for g in spaced.glyphs {
+		if g.is_mark {
+			marks++
+			assert g.advance == 0.0, 'a mark has no advance whatever the spacing'
+		}
+	}
+	assert marks == 1, 'there should be one mark on this pair, got ${marks}'
+	// One letter paid the spacing once. Two would mean the mark was counted as a letter.
+	assert approx(spaced.width, plain.width + 2.0, 0.001), 'width ${spaced.width} should be ${plain.width} + 2, not + 4'
+}
+
+// Word spacing is on top of letter spacing and only on the spaces. Charging it to every character would
+// make it indistinguishable from letter spacing, which is the difference between a property and a second
+// name for one.
+fn test_word_spacing_moves_only_the_spaces() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	cps := [`a`, ` `, `b`, ` `, `c`] // two spaces
+	plain := layout_paragraph(ctx, cps, .ltr, fs, 32)
+	mut opts := LayoutOptions{}
+	opts.word_spacing = 3.0
+	spaced := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+	assert approx(spaced.width, plain.width + 6.0, 0.001), 'two spaces widened by 3 each'
+
+	mut with_both := LayoutOptions{}
+	with_both.letter_spacing = 1.0
+	with_both.word_spacing = 3.0
+	// Three letters, two spaces: five characters for the letter spacing and two more for the word spacing.
+	both := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &with_both)
+	assert approx(both.width, plain.width + 5.0 + 6.0, 0.001), 'letter spacing applies to all five characters and word spacing to the two spaces'
+}
+
+// The font's own line height is the default, and it is the largest among the fonts that contributed
+// rather than the first one's, because a paragraph that fell back mid-line is spaced for the tallest face
+// in it.
+fn test_line_height_defaults_to_the_font_and_takes_an_override() {
+	ctx := new_context()
+	f := font_from('segoeui.ttf')
+	fs := new_font_set_of(f)
+	cps := [`a`, `b`, `c`]
+	line := layout_paragraph(ctx, cps, .ltr, fs, 32)
+	assert approx(line.line_height, f.line_height(32.0), 0.001), 'line height ${line.line_height} should be the font own ${f.line_height(32.0)}'
+
+	mut opts := LayoutOptions{}
+	opts.line_height = 50.0
+	tall := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+	assert tall.line_height == 50.0, 'the caller asked for 50 and got ${tall.line_height}'
+	// The box moved and the ink did not. This is the distinction the field exists to make: ascent and
+	// descent are how far the ink reaches, and shrinking them to fit a smaller box would be reporting an
+	// extent this engine never measured.
+	assert approx(tall.ascent, line.ascent, 0.001), 'a taller box must not change the ink'
+	assert approx(tall.descent, line.descent, 0.001), 'a taller box must not change the ink'
+}
+
+// Every wrapped line reports the paragraph's line height, because a caller stacking them by one number
+// has to get the same answer from each. A line that reported its own would make the stack drift.
+fn test_wrapped_lines_all_report_the_same_line_height() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	cps := 'the quick brown fox jumps over the lazy dog'.runes()
+	mut opts := LayoutOptions{}
+	opts.line_height = 44.0
+	runs := wrap_paragraph_with(ctx, cps, .ltr, fs, 32, 200.0, &opts)
+	assert runs.len > 2, 'this text should wrap into several lines at 200, got ${runs.len}'
+	for w in runs {
+		assert w.line.line_height == 44.0, 'every line reports the same box, got ${w.line.line_height}'
+	}
+}
+
+// The narrowest width is the widest unbreakable unit, measured without the space that ends its line.
+//
+// The comparison is computed rather than hardcoded so the test says what it means: if the font happened
+// to make the first word the widest one tomorrow, this would still be the right assertion.
+fn test_min_content_width_is_the_widest_word_without_its_space() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	cps := 'the quick brown fox'.runes()
+	m := measure_paragraph(ctx, cps, .ltr, fs, 32)
+
+	words := [[`t`, `h`, `e`], [`q`, `u`, `i`, `c`, `k`], [`b`, `r`, `o`, `w`, `n`], [`f`, `o`,
+		`x`]]
+	mut widest := f64(0)
+	for w in words {
+		x := layout_paragraph(ctx, w, .ltr, fs, 32).width
+		if x > widest {
+			widest = x
+		}
+	}
+	assert approx(m.min_content_width, widest, 0.001), 'narrowest ${m.min_content_width} should be the widest word ${widest}'
+	assert m.min_content_width < m.max_content_width, 'the narrowest is narrower than the widest'
+}
+
+// This is the mistake the function exists to remove, so it is pinned rather than described. The widest
+// wrapped line carries the space that ended it, so taking the number from wrap_paragraph gives a minimum
+// width one space too wide on every word.
+fn test_min_content_width_excludes_the_trailing_space_a_wrapped_line_carries() {
+	ctx := new_context()
+	f := font_from('segoeui.ttf')
+	fs := new_font_set_of(f)
+	cps := 'the quick brown fox'.runes()
+	m := measure_paragraph(ctx, cps, .ltr, fs, 32)
+
+	runs := wrap_paragraph(ctx, cps, .ltr, fs, 32, 0.0)
+	mut from_wrapped := f64(0)
+	for w in runs {
+		if w.line.width > from_wrapped {
+			from_wrapped = w.line.width
+		}
+	}
+	space := f.glyph_advance(f.glyph_index(` `), 32.0)
+	assert from_wrapped > m.min_content_width, 'a wrapped line is ${from_wrapped} and the minimum is ${m.min_content_width}'
+	assert approx(from_wrapped - m.min_content_width, space, 0.5), 'the difference is one space of ${space} and nothing else, got ${from_wrapped - m.min_content_width}'
+}
+
+// A paragraph of spaces has no unbreakable unit in it, so it collapses to nothing. Charging it one space
+// would mean a paragraph that is entirely whitespace reports a non-zero minimum width.
+fn test_a_paragraph_of_spaces_collapses_to_nothing() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	m := measure_paragraph(ctx, '   '.runes(), .ltr, fs, 32)
+	assert m.min_content_width == 0.0, 'spaces alone are not content, got ${m.min_content_width}'
+	assert m.max_content_width > 0.0, 'the space still has a width when it is laid out'
+}
+
+// Both widths come out of one shaping, and the widest is the same number layout_paragraph reports. If
+// these two could disagree, a caller measuring a box and a caller drawing into it would be sizing
+// different lines.
+fn test_measurement_agrees_with_layout() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	cps := 'the quick brown fox'.runes()
+	m := measure_paragraph(ctx, cps, .ltr, fs, 32)
+	line := layout_paragraph(ctx, cps, .ltr, fs, 32)
+	assert approx(m.max_content_width, line.width, 0.001), 'measured ${m.max_content_width} against laid out ${line.width}'
+	assert approx(m.ascent, line.ascent, 0.001)
+	assert approx(m.descent, line.descent, 0.001)
+	assert approx(m.line_height, line.line_height, 0.001)
+	// The total of the per-character advances is the furthest the pen reached, because place_glyphs
+	// accumulates x as a running sum from zero. That is what lets the segments of a paragraph be summed
+	// back up, and it is a property of the positioner rather than of this function.
+	mut sum := f64(0)
+	for g in line.glyphs {
+		sum += g.advance
+	}
+	assert approx(sum, line.width, 0.001), 'the advances must account for the whole line'
+}
+
+// The same holds in the other direction, where visual order is the reverse of the writing and a
+// measurement that indexed glyphs by position would report the wrong segment widths.
+fn test_measurement_works_for_a_right_to_left_paragraph() {
+	ctx := new_context()
+	fs := persian_fonts()
+	cps := 'سلام دنیا'.runes()
+	m := measure_paragraph(ctx, cps, .rtl, fs, 32)
+	line := layout_paragraph(ctx, cps, .rtl, fs, 32)
+	assert approx(m.max_content_width, line.width, 0.001), 'measured ${m.max_content_width} against laid out ${line.width}'
+	assert m.min_content_width > 0.0, 'there is content'
+	assert m.min_content_width < m.max_content_width, 'two words break, so the narrowest is smaller'
+	mut sum := f64(0)
+	for g in line.glyphs {
+		sum += g.advance
+	}
+	assert approx(sum, line.width, 0.001), 'the same invariant holds when the run is reversed'
+}
+
+fn test_measurement_of_empty_text_is_all_zeroes() {
+	ctx := new_context()
+	fs := new_font_set_of(font_from('segoeui.ttf'))
+	m := measure_paragraph(ctx, []rune{}, .ltr, fs, 32)
+	assert m.min_content_width == 0.0 && m.max_content_width == 0.0
+	assert m.ascent == 0.0 && m.descent == 0.0
+}
+
+// Wrapping and measuring have to agree about the features they were given. wrap_paragraph used to take no
+// options at all, so a paragraph wrapped with liga on was measured without it and every width it reported
+// was of a line nobody would draw.
+fn test_wrapping_and_measuring_agree_about_features() {
+	ctx := new_context()
+	fs := persian_fonts()
+	cps := 'فارسی'.runes()
+	mut opts := LayoutOptions{}
+	opts.features = ['liga']
+
+	laid := layout_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
+	measured := measure_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
+	assert approx(measured.max_content_width, laid.width, 0.001), 'measured ${measured.max_content_width} against laid out ${laid.width}'
+
+	runs := wrap_paragraph_with(ctx, cps, .rtl, fs, 32, 10000.0, &opts)
+	assert runs.len == 1, 'the whole paragraph fits, got ${runs.len} lines'
+	assert approx(runs[0].line.width, laid.width, 0.001), 'wrapped ${runs[0].line.width} against laid out ${laid.width}'
+
+	// And the feature is doing something, or agreeing about it would be untested.
+	plain := measure_paragraph(ctx, cps, .rtl, fs, 32)
+	assert laid.width < plain.max_content_width, 'liga should narrow this line: ${laid.width} against ${plain.max_content_width}'
+}

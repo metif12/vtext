@@ -384,11 +384,16 @@ fn test_break_opportunity_fields_are_readable_from_outside() { // BreakOpportuni
 	// Every field is readable, which is the whole point of the change: a caller laying out two lines
 	// needs to know where the second one starts, and a caller walking a paragraph needs to know which
 	// breaks it may not skip.
+	//
+	// start is the input index and there is no second index beside it. There used to be an `at`
+	// documented as a glyph index in visual order, and it was assigned start's value at every place it was
+	// built, so it could not have been a glyph index: this function is handed text and never sees a shaped
+	// line. A caller splitting an already-shaped line filters on the cluster instead, which is the rule
+	// slice_for_range uses.
 	mut saw_space := false
 	for op in break_opportunities(ctx, inspect_runes(['61', '20', '62']), false) {
 		assert op.start >= 0, 'a break starts somewhere'
-		assert op.at <= op.start, 'the glyph index is not ahead of the input index'
-		if op.at == 2 {
+		if op.start == 2 {
 			saw_space = true
 			assert !op.is_mandatory, 'a space is not a mandatory break'
 		}
@@ -410,9 +415,9 @@ fn test_mandatory_breaks_are_marked() {
 	mut other := []int{}
 	for op in break_opportunities(ctx, inspect_runes(['61', '0A', '62']), true) {
 		if op.is_mandatory {
-			mandatory_at = op.at
+			mandatory_at = op.start
 		} else {
-			other << op.at
+			other << op.start
 		}
 	}
 	assert mandatory_at == 2, 'the newline ends the paragraph, so the mandatory break is at 2, got ${mandatory_at}'
@@ -423,7 +428,7 @@ fn test_mandatory_breaks_are_marked() {
 	// every space as a paragraph end.
 	mut space_mandatory := false
 	for op in break_opportunities(ctx, inspect_runes(['61', '20', '62']), true) {
-		if op.at == 2 {
+		if op.start == 2 {
 			space_mandatory = op.is_mandatory
 		}
 	}

@@ -389,9 +389,15 @@ fn emit_ranges(mut t Text, name string, comment string, ranges []CodeRange) {
 }
 
 // emit_writes writes the accumulated text to out_dir/name.
+//
+// The body ends with exactly one newline whatever the emitters left, because the emitters close a const
+// string with `'` followed by a blank line to separate it from whatever comes next, and at the end of a
+// file there is no next thing. That trailing blank line is what `v fmt` reports as a file needing
+// formatting, on all seven generated tables at once, and a generated file that cannot pass the formatter
+// is a file whose formatting nobody can check.
 fn emit_writes(name string, mut t Text) {
 	path := os.join_path(out_dir, name)
-	body := t.text()
+	body := t.text().trim_right('\n') + '\n'
 	os.write_file(path, body) or { panic('cannot write ${path}: ${err}') }
 	println('wrote ${path} (${body.len} bytes)')
 }

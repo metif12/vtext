@@ -6,18 +6,14 @@ module vtext
 // taste: a closing bracket may not start a line, a letter and the accent on it
 // are one unit, and a newline is a newline.
 
+// A backtick in V is one character, so a word cannot be written as a literal the way it can be in a
+// test written in any other language.
 fn word(cps ...int) []rune {
 	mut out := []rune{cap: cps.len}
 	for c in cps {
 		out << rune(c)
 	}
 	return out
-}
-
-// word builds a string from codepoints. A backtick in V is one character, so a word cannot be
-// written as a literal the way it can be in a test written in any other language.
-fn lb_font() &Font {
-	return load_font_file('C:\\Windows\\Fonts\\segoeui.ttf') or { panic(err) }
 }
 
 // A space is a break, which is the rule everything else is measured against.

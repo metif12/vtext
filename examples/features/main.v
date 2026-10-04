@@ -52,7 +52,7 @@ const cases = [
 		feature: 'liga'
 		about:   'five glyphs stay five and the line gets narrower'
 		font:    persian_font
-	}
+	},
 ]
 
 const em_px = 64.0
@@ -77,7 +77,7 @@ fn main() {
 		lines << off
 		lines << on
 
-		println('${c.text}   ${c.font.split("/").last()}   ${c.about}')
+		println('${c.text}   ${c.font.split('/').last()}   ${c.about}')
 		println('  without ${c.feature}: ${off.glyphs.len} glyphs, width ${off.width:.2f}')
 		println('  with    ${c.feature}: ${on.glyphs.len} glyphs, width ${on.width:.2f}')
 		println('  change: ${on.glyphs.len - off.glyphs.len} glyphs, ${on.width - off.width:+.2f} px')

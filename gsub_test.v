@@ -1404,3 +1404,59 @@ fn test_a_plain_ligature_still_fuses_a_pair_on_real_text() {
 	second := glyph_at_cluster(plain.glyphs, 1) or { panic('no second glyph') }
 	assert fused.glyphs[0].gid != first.gid && fused.glyphs[0].gid != second.gid, 'the fused glyph is one of its own'
 }
+
+// A ligature has to fuse wherever in the run it falls, including at the very end and in a run long
+// enough that "the rest of the run" is no longer a small thing to copy.
+//
+// This is the guard on the bound apply_ligature puts on how much of the run it copies. It used to copy
+// every glyph after the position it was trying, which made it quadratic in the length of the run; it now
+// copies only the longest ligature rule's worth. That is only safe if a rule at the end of a long run is
+// still matched, and the case below is the one that would break if the bound were off by one: the pair
+// sits at the end, so the copy has to stop exactly at the last glyph rather than short of it.
+fn test_a_ligature_still_fuses_at_the_end_of_a_long_run() {
+	at := gsub_font('ARABTYPE.TTF')
+	fs := fs_of(at)
+	ctx := new_context()
+	opt := &LayoutOptions{
+		features: ['liga']
+	}
+
+	// The pair alone, then the same pair behind a run of filler long enough that a quadratic copy of
+	// the tail would show up as a difference in the answer if the bound were wrong.
+	alone := layout_paragraph_with(ctx, [calt_meem, calt_meem], .rtl, fs, 32, opt)
+	assert alone.glyphs.len == 1, 'the pair fuses on its own, got ${alone.glyphs.len}'
+
+	mut filler := []rune{cap: 400}
+	for _ in 0 .. 398 {
+		filler << rune(0x0628) // beh, which takes no part in this ligature
+	}
+	filler << calt_meem
+	filler << calt_meem
+
+	// The same run without the feature, as the control: it has to come out one glyph longer, or the
+	// difference below would be the filler's doing rather than the ligature's.
+	plain := layout_paragraph(ctx, filler, .rtl, fs, 32)
+	assert plain.glyphs.len == 400, 'the run should be one glyph per character to begin with, got ${plain.glyphs.len}'
+
+	buried := layout_paragraph_with(ctx, filler, .rtl, fs, 32, opt)
+	assert buried.glyphs.len == 399, 'the pair at the end should fuse, got ${buried.glyphs.len} glyphs for 400 characters'
+
+	// Exactly which clusters survive is the sharper half of the assertion. A bound that truncated a
+	// ligature rule would still leave 399 glyphs here, but it would be a different pair that folded or
+	// a different glyph that came out, and this is where that shows: the only input character left
+	// without a glyph of its own is the first of the two that fused.
+	mut seen := map[int]bool{}
+	for g in buried.glyphs {
+		seen[g.cluster] = true
+	}
+	mut unrepresented := []int{}
+	for i in 0 .. 400 {
+		if i !in seen {
+			unrepresented << i
+		}
+	}
+	assert unrepresented == [398], 'only the first of the fused pair should lose its cluster, got ${unrepresented}'
+	// And every other character kept one, so nothing else in the long run was disturbed by the pair
+	// sitting at its end.
+	assert seen.len == 399, 'every character but the fused one should be represented, got ${seen.len}'
+}

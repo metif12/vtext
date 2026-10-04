@@ -28,16 +28,26 @@ enum BreakKind {
 
 // A BreakOpportunity is a position in the input where a line may end.
 //
-// The two indices are the two things a caller needs and they are not the same
-// index. Start is where the next line begins in the caller's text, which is
-// what the next layout call needs. The glyph index is where in the shaped line
-// the break falls, which is what the caller needs to split the glyphs it has
-// already got without shaping the text twice.
+// There is one position and one flag, and both are in the caller's own text rather than in a shaped line.
+// That is a deliberate change: this struct used to carry a second field, `at`, documented as "the index in
+// a shaped line's glyphs that the break falls before" and as being in visual order. It was assigned the
+// input index at all three places it was built, so it always equalled `start`, and a caller reading it as
+// the documentation said would have split a right-to-left line at the wrong place. It could not have been a
+// glyph index: break_opportunities is handed text, not glyphs, so there was no line to take an index of.
 //
-// The glyph index is where the break falls in visual order, which for a
-// right-to-left paragraph is not the order the text was written in. A caller
-// that wants to keep a caret position uses start, and a caller that wants to
-// draw two lines uses the glyph index.
+// The capability it claimed is real and does not need the field. A glyph's `cluster` is the index of the
+// input character it came from, so the glyphs belonging to the line starting at `start` are the ones with
+// `g.cluster >= start`, and a caller that already has the shaped line filters on that rather than shaping
+// the text again:
+//
+//	for g in line.glyphs {
+//		if g.cluster >= op.start {
+//			draw(g)
+//		}
+//	}
+//
+// That is also the rule this module's own slicing uses, which is why width_of_range and slice_for_range
+// agree with it in both directions.
 //
 // The struct is public because `break_opportunities` is, and a public function
 // returning a private struct leaves its caller able to count the results and
@@ -48,8 +58,6 @@ pub struct BreakOpportunity {
 pub:
 	// start is the input index the next line would begin at.
 	start int
-	// at is the index in a shaped line's glyphs that the break falls before.
-	at int
 	// is_mandatory says the text requires a break here, which is a paragraph end
 	// or a newline. A mandatory break is not a choice, so a caller may not skip it
 	// the way it skips the others.
@@ -89,7 +97,6 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 		if is_break_after_hyphen_break(props, cps, classes, i) {
 			out << BreakOpportunity{
 				start:        i + 1
-				at:           i + 1
 				is_mandatory: is_mandatory_break_at(classes, i + 1, n, mandatory_first)
 			}
 			continue
@@ -106,7 +113,6 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 		_ = kind
 		out << BreakOpportunity{
 			start:        i + 1
-			at:           i + 1
 			is_mandatory: is_mandatory_break_at(classes, i + 1, n, mandatory_first)
 		}
 	}
@@ -114,7 +120,6 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 	// means the caller does not have to special-case the last line.
 	out << BreakOpportunity{
 		start:        n
-		at:           n
 		is_mandatory: is_mandatory_break_at(classes, n, n, mandatory_first)
 	}
 	return out
@@ -405,15 +410,28 @@ pub mut:
 //
 // A text with no break opportunity in it returns one line, however narrow the width. Squeezing it
 // anyway would mean breaking inside a word.
+//
+// No discretionary features are applied. Use wrap_paragraph_with to ask for any.
 pub fn wrap_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64,
 	max_width f64) []WrappedLine {
+	return wrap_paragraph_with(ctx, cps, base_dir, fs, em_px, max_width, &LayoutOptions{})
+}
+
+// wrap_paragraph_with is wrap_paragraph with the caller's options applied.
+//
+// This exists rather than an extra argument on wrap_paragraph because a caller that cannot pass features
+// cannot pass anything, and the paragraph was then shaped without the features the caller asked for while
+// the same text laid out with layout_paragraph_with was shaped with them. The two disagreed about the width
+// of the same text, which is the one thing a text engine must never do.
+pub fn wrap_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64,
+	max_width f64, options &LayoutOptions) []WrappedLine {
 	if cps.len == 0 {
 		return []WrappedLine{}
 	}
 	// The paragraph is shaped once. Everything below measures slices of the result, which is the
 	// point: shaping is the expensive part, and a paragraph is shaped the same way whether it ends
 	// up on one line or ten.
-	full := layout_paragraph(ctx, cps, base_dir, fs, em_px)
+	full := layout_paragraph_with(ctx, cps, base_dir, fs, em_px, options)
 	ops := break_opportunities(ctx, cps, true)
 
 	mut out := []WrappedLine{}
@@ -531,8 +549,9 @@ fn width_of_range(full &Line, from int, to int) f64 {
 // of the base it sits on, so it moves with it and needs nothing of its own.
 fn slice_for_range(full &Line, from int, to int) Line {
 	mut line := Line{
-		ascent:  full.ascent
-		descent: full.descent
+		ascent:      full.ascent
+		descent:     full.descent
+		line_height: full.line_height
 	}
 	mut kept := []Glyph{}
 	for g in full.glyphs {
@@ -563,4 +582,157 @@ fn slice_for_range(full &Line, from int, to int) Line {
 	}
 	line.width = width
 	return line
+}
+
+// TextMetrics is what a caller needs about a piece of text before it draws any of it.
+//
+// The two widths are a pair because no single number answers the question. The widest is the text on one
+// line with no break taken, which is what a caller laying out without wrapping needs. The narrowest is
+// every unbreakable unit on a line of its own, which is what a caller collapsing text to its smallest
+// possible size needs. They differ by however much the break opportunities are worth, so a caller that
+// only ever learns one of them is wrong by an amount it cannot see.
+pub struct TextMetrics {
+pub:
+	// min_content_width is the narrowest the text can be without a glyph breaking out of it: the
+	// width of its widest unbreakable unit.
+	//
+	// Trailing spaces are not counted, and that is the difference between this and taking the number
+	// from a wrapped line. A break opportunity falls after a space, so the space ends the line before
+	// the break rather than starting the one after it, and a line measured as laid out includes one
+	// space's width. At a 16 pixel size a space is about a twentieth of a line, so a caller copying
+	// the number out of wrap_paragraph over-reports by a space on every word.
+	min_content_width f64
+	// max_content_width is the width of the text with no line break taken at all, which is the same
+	// number layout_paragraph reports as its width.
+	//
+	// The two are computed from one shaping and are required to agree: the total of every glyph's
+	// advance is the same as the furthest the pen reached, because place_glyphs accumulates x as a
+	// running sum of advances from zero. If they ever disagreed, one of them would be measuring a
+	// different paragraph from the other.
+	max_content_width f64
+	// ascent and descent are how far the ink reaches above and below the baseline, in pixels. They
+	// are the extent of what was drawn rather than of the font, so a mark that reaches above its
+	// font's own ascent makes them larger than the font's metrics.
+	ascent  f64
+	descent f64
+	// line_height is the resolved baseline-to-baseline distance: the caller's
+	// LayoutOptions.line_height when there was one, and otherwise the largest natural line height
+	// among the fonts that contributed a glyph.
+	line_height f64
+}
+
+// measure_paragraph reports what a caller needs to know about cps before it draws any of it.
+//
+// It is a separate function rather than a field on Line because the common caller of it never wants a
+// Line: a caller measuring a paragraph to choose a width, or to collapse text to its narrowest form, has
+// no use for 400 positioned glyphs and would have to throw them away.
+//
+// No discretionary features are applied. Use measure_paragraph_with to ask for any.
+pub fn measure_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64) TextMetrics {
+	return measure_paragraph_with(ctx, cps, base_dir, fs, em_px, &LayoutOptions{})
+}
+
+// measure_paragraph_with is measure_paragraph with the caller's options applied.
+//
+// The point of the _with form is that both widths have to agree with what layout_paragraph_with would
+// produce for the same text and the same options. A measurement taken without the features, or taken with
+// a different line height, is a measurement of a different line, and a caller that sizes a box from it
+// has sized the box for something it will not draw.
+pub fn measure_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64,
+	options &LayoutOptions) TextMetrics {
+	if cps.len == 0 {
+		return TextMetrics{}
+	}
+	// The paragraph is shaped once and both widths come out of that one shaping. This is the whole
+	// reason this is a function rather than a loop over wrap_paragraph: a caller hunting for the width
+	// it wants pays for the shaping once however many widths it tries, which is what makes it
+	// affordable to measure at all.
+	full := layout_paragraph_with(ctx, cps, base_dir, fs, em_px, options)
+	cum := cluster_prefix(full, cps.len)
+	// The narrowest width is collected into a local and the struct is built once at the end, because
+	// every field here is read-only to a caller and a value that is filled in afterwards would have to
+	// declare them mutable to do it.
+	mut narrowest := f64(0)
+	mut from := 0
+	for o in break_opportunities(ctx, cps, true) {
+		to := if o.start > cps.len { cps.len } else { o.start }
+		if to <= from {
+			continue
+		}
+		w := segment_width(ctx.properties, cps, cum, from, to)
+		if w > narrowest {
+			narrowest = w
+		}
+		from = to
+	}
+	return TextMetrics{
+		min_content_width: narrowest
+		max_content_width: full.width
+		ascent:            full.ascent
+		descent:           full.descent
+		line_height:       full.line_height
+	}
+}
+
+// cluster_prefix turns a shaped line's advances into running totals by input character.
+//
+// cum[i] is the total advance of every glyph whose cluster is below i, so the width of a half-open range
+// of characters is cum[to] - cum[from].
+//
+// It exists to keep this linear. Asking width_of_range once per break opportunity instead walks every
+// glyph of the paragraph once per opportunity, which is quadratic in the length of a text whose words are
+// short, and short words are most of the text anyone measures.
+//
+// Advances are gathered per input character rather than in visual order because the question is about a
+// range of the caller's text, and a range of text is a range of clusters. A ligature puts its whole
+// advance on its first character and a mark puts none anywhere, and both are right here: neither widens
+// a line that is cut at its edge, which is what keeps the segments of a right-to-left paragraph summing to
+// the same total as the paragraph.
+fn cluster_prefix(line &Line, n int) []f64 {
+	mut by_cluster := []f64{len: n}
+	for g in line.glyphs {
+		// A cluster outside the caller's text is not expected, and is not worth trusting: the
+		// alternative to skipping it is an out-of-bounds write on untrusted input.
+		if g.cluster < 0 || g.cluster >= n {
+			continue
+		}
+		by_cluster[g.cluster] += g.advance
+	}
+	mut cum := []f64{len: n + 1}
+	for i in 0 .. n {
+		cum[i + 1] = cum[i] + by_cluster[i]
+	}
+	return cum
+}
+
+// segment_width is the width of the characters in [from, to) with the trailing spaces left out.
+//
+// The spaces are left out because a break falls after a space. The space is therefore the last thing on
+// the line being measured rather than the first thing on the next one, and counting it would make every
+// unbreakable unit one space wider than the characters in it.
+//
+// A segment that is entirely spaces has no width at all, which is right rather than an edge case: a run
+// of spaces is not an unbreakable unit a caller has to be able to fit on a line, and giving it the width
+// of one space would make a paragraph of spaces report a non-zero minimum.
+fn segment_width(props &Properties, cps []rune, cum []f64, from int, to int) f64 {
+	mut end := to
+	for end > from && is_line_end_space(props, cps[end - 1]) {
+		end--
+	}
+	if end <= from {
+		return 0.0
+	}
+	return cum[end] - cum[from]
+}
+
+// is_line_end_space reports whether a character ends a line without being content the caller measures.
+//
+// A space is the ordinary case. A newline is here because a segment that ends at a mandatory break has
+// it on its end, and a caller measuring a paragraph it is going to wrap again should not be charged for a
+// character that draws nothing and that its own line breaker will discard. The classes are named rather
+// than tested for two characters because a carriage return is a line end on its own account and U+0085
+// is one too, and a caller that had to remember which is which would eventually get it wrong.
+fn is_line_end_space(props &Properties, cp rune) bool {
+	c := props.line_break_of(cp)
+	return c == .sp || c == .lf || c == .bk || c == .cr || c == .nl
 }

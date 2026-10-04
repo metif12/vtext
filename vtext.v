@@ -3,10 +3,18 @@ module vtext
 // vtext is a text shaping and rendering engine written in V.
 //
 // The pipeline is: normalization -> Unicode itemisation -> bidirectional
-// reordering -> OpenType shaping -> font fallback -> line layout -> glyph atlas ->
+// reordering -> OpenType shaping -> font fallback -> line layout -> rasterize ->
 // draw. Everything is V except the outline rasteriser, which reuses the
 // public-domain stb_truetype header that already ships inside V's own thirdparty
 // tree, so importing this module adds no new external dependency.
+//
+// This list said "glyph atlas" where it now says "rasterize", and the difference is a decision rather than
+// a rewording. An atlas is a GPU texture with a shelf packer, which is a display backend's concern and not
+// a text engine's, and one that rasterizing into its own buffer has no use for. What that caller wants is a
+// cache from a key to a bitmap, which it can hold itself: a cache is a memoisation of a pure function of
+// (font, gid, size, subpixel offset), so it is a few dozen lines and no shared mutable state, whereas an
+// atlas inside the engine would make every loaded font's rasterizer state global to the engine and give
+// Font a thread-safety contract it deliberately does not have.
 
 import os
 

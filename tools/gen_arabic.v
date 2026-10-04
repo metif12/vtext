@@ -89,7 +89,7 @@ struct Pair {
 // The letters a lam pairs with. ALEF is U+0627, and the other three are its forms with a
 // madda, a hamza above and a hamza below.
 const lam = u32(0x0644)
-const alef_forms = [u32(0x0627), 0x0622, 0x0623, 0x0625, ]
+const alef_forms = [u32(0x0627), 0x0622, 0x0623, 0x0625]
 
 // is_lam_alef reports whether a two codepoint base is one of the lam-alef ligatures.
 fn is_lam_alef(first u32, second u32) bool {

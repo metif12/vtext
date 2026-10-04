@@ -902,4 +902,3 @@ pub const joining_group_ranges_data = '0620 0620 1
 10eed 10eed 115
 10eee 10eee 106
 '
-

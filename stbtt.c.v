@@ -33,14 +33,6 @@ fn C.stbtt_InitFont(voidptr, &u8, int) int
 
 fn C.stbtt_GetFontOffsetForIndex(&u8, int) int
 
-fn C.stbtt_FindGlyphIndex(voidptr, int) int
-
-fn C.stbtt_GetGlyphHMetrics(voidptr, int, &int, &int)
-
-fn C.stbtt_ScaleForPixelHeight(voidptr, f32) f32
-
-fn C.stbtt_GetFontVMetrics(voidptr, &int, &int, &int)
-
 fn C.stbtt_GetGlyphBitmapBox(voidptr, int, f32, f32, &int, &int, &int, &int)
 
 fn C.stbtt_GetGlyphBitmapBoxSubpixel(voidptr, int, f32, f32, f32, f32, &int, &int, &int, &int)
@@ -142,27 +134,37 @@ fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitm
 	return out
 }
 
-// glyph_bitmap_box reports the tight pixel box of a glyph without rendering it.
-// The box is returned in the same baseline-relative, y-up convention as
-// GlyphBitmap: x0 is left of the pen, y0 is the negated ink top, and x1/y1 are
-// the exclusive right and bottom edges.
-fn (f &Face) glyph_bitmap_box(gid u16, em_px f64) (int, int, int, int) {
+// box_only reports a glyph's ink box without rendering it.
+//
+// The bitmap it returns carries left, top, width and height and no coverage, which is everything a caller
+// measuring an extent needs and nothing a caller drawing would want. This is the difference between
+// measuring a line and drawing one: rasterize_glyph runs a scanline fill over the whole box and allocates
+// a width*height buffer to do it, and a layout pass that wants to know how tall a line is throws all of
+// that away. Asking for the box instead skips the fill, skips the allocation, and is what makes measuring
+// a paragraph cheap enough to do for every candidate width.
+//
+// The numbers are the same ones rasterize_glyph would report, and provably so rather than approximately:
+// stbtt_GetGlyphBitmapBox is defined in the header as a call to the subpixel form with a shift of zero
+// (stb_truetype.h:2739), which is the shift this engine's own no-subpixel path passes.
+fn (f &Face) box_only(gid u16, em_px f64) GlyphBitmap {
+	mut out := GlyphBitmap{}
 	if !f.stb_ok {
-		return 0, 0, 0, 0
+		return out
 	}
 	scale := f.px_scale(em_px)
+	if scale <= 0 {
+		return out
+	}
 	mut x0 := 0
 	mut y0 := 0
 	mut x1 := 0
 	mut y1 := 0
 	C.stbtt_GetGlyphBitmapBox(f.stb_ptr(), int(gid), scale, scale, &x0, &y0, &x1, &y1)
-	return x0, -y0, x1, y1
-}
-
-// scale_for_pixel_height returns the factor stb would use to reach this height.
-fn (f &Face) scale_for_pixel_height(height_px f64) f32 {
-	if !f.stb_ok {
-		return 0
-	}
-	return C.stbtt_ScaleForPixelHeight(f.stb_ptr(), f32(height_px))
+	out.width = x1 - x0
+	out.height = y1 - y0
+	out.left = x0
+	// The same sign flip as rasterize_glyph: stb's y points up and this struct's top is a distance
+	// above the baseline, so a caller only ever deals with the second convention.
+	out.top = -y0
+	return out
 }

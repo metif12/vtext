@@ -28,6 +28,20 @@ pub mut:
 	// paragraph_level is the resolved direction as a level: even is left to right, odd is
 	// right to left.
 	paragraph_level u8
+	// line_height is the resolved baseline-to-baseline distance in pixels: the caller's
+	// LayoutOptions.line_height when there is one, and otherwise the largest natural line height
+	// among the fonts that contributed a glyph.
+	//
+	// It is a field because the caller stacks lines by it and there was no way to ask for it. The two
+	// were separate numbers before, which is how every example in this repository ended up stacking by
+	// `line.ascent + line.descent` and calling it line height: that is the ink's extent, not the
+	// distance between two baselines, and the two differ by the font's line gap.
+	//
+	// It is deliberately not folded into ascent and descent. Those are the extent of the ink and of the
+	// font's own metrics, and they stay that way: a caller asking for a line height below the glyphs
+	// gets the smaller number here and clips the ink itself, because an engine that shrank the ascent to
+	// fit a request would be reporting a box it cannot measure.
+	line_height f64
 }
 
 // LayoutOptions are the choices about a line that belong to the caller rather than to the engine.
@@ -36,12 +50,36 @@ pub mut:
 // is the text. Anything that changes the width of what is drawn is a presentation decision, and a
 // text engine that made it on the caller's behalf would be a text engine that could not be relied
 // on to measure text.
+//
+// What is not here is a direction. That is the base_dir argument of layout_paragraph and its
+// siblings, and adding it here as well would leave two sources for one decision with no stated
+// precedence, which is the kind of thing that works until a caller sets the one that is ignored.
 pub struct LayoutOptions {
 pub mut:
 	// features are the discretionary OpenType features to apply after the required ones, which
 	// the engine always applies. liga is the one a Persian line usually wants, since several
 	// letter pairs have ligature forms the text itself does not spell.
 	features []string
+	// line_height is the baseline-to-baseline distance in pixels. Zero takes the font's own, which
+	// is the largest natural line height among the fonts that contributed a glyph.
+	//
+	// A value smaller than the glyphs are tall does not shrink them. It reports the smaller box and
+	// the caller decides what to clip, which is the same answer every layout engine gives and the
+	// only one that can be right without knowing what the caller will draw.
+	line_height f64
+	// letter_spacing is added to the advance of every letter, in pixels. It can be negative, which
+	// is how a caller tightens a line.
+	//
+	// A combining mark is not a letter and gets nothing: it shares its base's position and has no
+	// advance of its own, so spacing one as well would apply the same letter spacing twice to one
+	// character.
+	letter_spacing f64
+	// word_spacing is added to the advance of every space, in pixels, on top of letter_spacing.
+	//
+	// Only the line break class UAX #14 calls a space counts, which is U+0020 and the space
+	// separators, not a tab or a newline. A newline ends the paragraph and a tab is rare enough in
+	// running text that treating it as a word separator would be a surprise.
+	word_spacing f64
 }
 
 // layout_paragraph runs normalization, the bidirectional algorithm and Arabic joining over
@@ -125,13 +163,55 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 		}
 	}
 
+	// Spacing goes onto the advances before anything is positioned, rather than onto the positions
+	// afterwards. place_glyphs walks the run accumulating advances into x, and measure_line takes
+	// the line's width from those same positions, so a pass that changed advances alone is picked up
+	// by both with no second walk and no chance of the width and the positions disagreeing.
+	apply_spacing(mut placed, ctx.properties, cps, options.letter_spacing, options.word_spacing)
+
 	mut line := Line{
 		glyphs:          place_glyphs(placed, bidi)
 		paragraph_level: bidi.paragraph_level
 	}
 	position_marks(mut line, em_px)
-	measure_line(mut line, em_px)
+	measure_line(mut line, em_px, options)
 	return line
+}
+
+// apply_spacing adds the caller's letter and word spacing to the run's advances.
+//
+// It runs on the shaped run before place_glyphs, and it edits advance rather than x. See the comment at
+// the call site for why the order and the choice of field are the two that matter.
+fn apply_spacing(mut glyphs []Glyph, props &Properties, cps []rune, letter_spacing f64,
+	word_spacing f64) {
+	if letter_spacing == 0.0 && word_spacing == 0.0 {
+		return
+	}
+	for mut g in glyphs {
+		// A mark is not a letter. It sits on its base and has no advance, so adding one would not
+		// move the mark and would push everything after it along by the letter spacing of a
+		// character the base has already been paid for.
+		if g.is_mark {
+			continue
+		}
+		g.advance += letter_spacing
+		if word_spacing != 0.0 && is_space_at(props, cps, g.cluster) {
+			g.advance += word_spacing
+		}
+	}
+}
+
+// is_space_at reports whether the input character at index i is one word spacing applies to.
+//
+// The test is the pipeline's own line break class rather than a hard-coded rune, for the same reason
+// pick_in uses the pipeline's script table: one answer to "which characters are spaces" is worth more
+// than two that can drift. The cluster is an index into the caller's own text, not into the
+// decomposed one, because layout mapped it back through the decomposition when it set it.
+fn is_space_at(props &Properties, cps []rune, i int) bool {
+	if i < 0 || i >= cps.len {
+		return false
+	}
+	return props.line_break_of(cps[i]) == .sp
 }
 
 // substitute_in_fonts hands each stretch of the run that came from one font to that font.
@@ -210,37 +290,50 @@ fn place_glyphs(placed []Glyph, bidi BidiResult) []Glyph {
 // are, so the extent is the largest of the contributors rather than the first one's. A mark
 // that has been moved up onto its letter can reach above the font's own ascent, which is what
 // makes a fatha stick out of the line box, so the marks are measured too.
-fn measure_line(mut line &Line, em_px f64) {
+//
+// The line height is resolved here rather than left to the caller because it depends on which fonts
+// contributed, and only this loop knows that. The caller's value wins outright when there is one; the
+// natural value is the largest over the contributors, so a paragraph that fell back mid-line is
+// spaced for the tallest face in it rather than the first.
+fn measure_line(mut line &Line, em_px f64, options &LayoutOptions) {
+	mut natural := f64(0)
 	for g in line.glyphs {
 		line.width = larger(line.width, g.x + g.advance)
 		if f := g.font {
 			line.ascent = larger(line.ascent, f.ascent(em_px))
 			line.descent = larger(line.descent, f.descent(em_px))
+			natural = larger(natural, f.line_height(em_px))
 			// A mark's own glyph sits above or below its position, so the extent of the line has
 			// to include where the mark reaches to, not just where its origin is. The bitmap's
 			// top is how far the ink reaches above the baseline and its left how far it reaches
 			// left of the pen, both of which the mark's y and x shift.
-			bmp := f.rasterize(g.gid, em_px, 0, 0)
+			//
+			// This asks for the box and not for the pixels. Measuring a line needs two numbers per
+			// glyph, and getting them by rasterizing ran a scanline fill and allocated a
+			// width*height buffer for every glyph of every paragraph, then threw all of it away.
+			//
+			// It was not the bottleneck, and the first version of this comment said that it was.
+			// Measured on Segoe UI at 16 pixels one rasterization costs 3.9 microseconds, so a
+			// 264 character paragraph spent about a millisecond of a seven millisecond layout in
+			// here. It is kept because it drops an allocation and a fill per glyph, not because it
+			// made layout measurably faster: what made layout slow was in the substitution pass, and
+			// a controlled before and after of this file could not resolve a difference this size
+			// against the run-to-run variance of a machine with other builds on it.
+			//
+			// The values are identical rather than close, which is the only thing that makes it safe.
+			// See Face.box_only.
+			bmp := f.face.box_only(g.gid, em_px)
 			if !bmp.is_empty() {
 				line.ascent = larger(line.ascent, g.y + f64(bmp.top + bmp.height))
 				line.descent = larger(line.descent, -g.y + f64(bmp.top))
 			}
 		}
 	}
+	line.line_height = if options.line_height > 0.0 { options.line_height } else { natural }
 }
 
-// mark_indices_by_cluster lists the line's marks, ordered so that a mark comes before the mark it
-// stacks on.
-//
-// The order is by ascending input position, not by position on the line, because a right to left
-// line is drawn in the opposite order to the one it was written in and stacking order is a property
-// of the writing. Two marks of one character are left in line order between themselves, which is the
-// one case where there is no writing order to go by.
-//
-// It is a function rather than a closure inside position_marks because a comparison closure cannot
-// reach the line, and putting the order here keeps the sort where it can see what it is comparing.
-// mark_indices_by_cluster lists the line marks, ordered so that a mark comes before the mark it
-// stacks on.
+// mark_indices_by_cluster lists the line's marks, from the last cluster backwards,
+// which is the order a stack is built in.
 //
 // The order is by descending input position, not by position on the line, because a right to left
 // line is drawn in the opposite order to the one it was written in and stacking order is a property
@@ -250,6 +343,11 @@ fn measure_line(mut line &Line, em_px f64) {
 // The sort is written out rather than handed to a comparison closure because a closure cannot reach
 // the glyphs it would be comparing, and this is the only place in the module that needs an order
 // defined against them.
+//
+// This used to carry two stacked copies of this comment, the first of which said the order was by
+// ascending input position. The code sorts descending and always did, so the first copy described the
+// opposite of what happened and the second copy described it correctly; two comments, one of them
+// wrong, is worse than one.
 fn mark_indices_by_cluster(glyphs []Glyph) []int {
 	mut marks := []int{}
 	for i in 0 .. glyphs.len {
