@@ -262,11 +262,54 @@ gives 158 glyphs both ends and Amiri gives none, so a reader treating one as imp
 of one font and most of the other. It is tested against the corpus, and it is the access a caller needs to
 do the attachment itself.
 
-**The next piece of work is Arabic joining through GSUB.** Requesting `isol`, `init`, `medi` and `fina`
-does move Nastaliq onto covered glyphs — gid 435 becomes 436 and picks up an entry anchor — so the
-mechanism works and the gap is that the engine does not ask for those features by default. That change
-alters Arabic shaping for every font, so it wants its own unit and its own before-and-after rather than
-riding along on this one.
+**The next piece of work is Arabic joining through GSUB, and the reason is not the one first written here.**
+
+The first account of this said the engine does not ask for `isol`, `init`, `medi` and `fina` by default, and
+that asking would fix it. Asking does work — passing them as extra features moves Nastaliq's letters onto
+glyphs the cursive rule covers. But the default behaviour is not the blocker, and believing it was would
+have sent the next person to add four feature names to a list.
+
+The real blocker is that **joining shapes are applied one glyph at a time, and in these fonts they cannot
+be.** `reshape` calls `Font.shaped_glyph_index`, which takes a glyph id and returns a glyph id, and that
+signature cannot express a rule that turns one glyph into several. Measured over the four joining features
+of all three corpus fonts:
+
+| font | feature | lookup | kind | single rules | multiple rules |
+| --- | --- | --- | --- | --- | --- |
+| Amiri | init / medi / fina | 10 / 11 / 12 | 2, MultipleSubst | 0 | 1 |
+| NotoNastaliqUrdu | isol / init / medi / fina | 36 / 35 / 39 / 32 | 2, MultipleSubst | 0 | 1 |
+| NotoNaskhArabic | init / medi / fina | 23 / 24 / 25 | 2, MultipleSubst | 0 | 1 |
+| NotoNaskhArabic | init / medi / fina | 4 | 1, SingleSubst | 1 | 0 |
+
+**Every joining rule in the corpus is a MultipleSubst**, with one exception that is not understood yet:
+Noto Naskh Arabic names lookup 4, a single-rule SingleSubst, from `init`, `medi` and `fina` alike. A font
+may reuse one lookup across features, but one rule serving all three shapes is not what that is for. It is
+recorded as measured and not explained, because a plausible story about it would be a guess.
+
+`Gsub.apply`, the single-glyph path, only reads a lookup's `singles`, so it declines a `multiples` rule and
+returns the base glyph unchanged. Asking for the features on a whole *run* goes through `substitute_one`,
+which handles the same rule and does substitute: gid 170 becomes 188, 395 becomes 414. Same feature, same
+lookup list, same coverage — one entry point applies it and the other cannot.
+
+Two things follow, and only the first is obvious:
+
+1. The per-glyph joining path is dead for these fonts. It is not slow or imprecise; it is structurally
+   unable to apply the rule, and it reports success while doing nothing. `shaped_glyph_index` on the letter
+   U+0633 returns the base glyph unchanged for all four shapes in all three fonts.
+2. **Amiri never reaches it at all**, because Amiri's cmap maps the Unicode presentation forms. `shaped_glyphs`
+   takes its first branch when any font in the chain covers the form codepoint and returns that glyph
+   directly, so `reshape` is not called. Nastaliq does not map them, so it falls through to the branch
+   that calls `reshape`, and that branch is the one that cannot work.
+
+So the fix is to apply the joining features to the run, masked by each glyph's `form`, and let the run-level
+path do it. The masking is the part with real work in it: applying `init` to a whole run turns every
+covered letter into its initial form, and `medi` then looks up an initial form in a coverage that holds base
+letters and finds nothing, leaving the letter stuck initial. Each feature therefore has to see only the
+glyphs whose form it names. `substitute_one` already has the mechanism for exactly this — `effective`
+computes which items take part, from the lookup's flag and mark set — so the form belongs there beside it.
+
+That change alters Arabic shaping for every font, so it wants its own unit and its own before-and-after
+rather than riding along on this one.
 
 ---
 
