@@ -35,9 +35,10 @@ comes with them.
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
 | Vertical extent of a line | done: was twice the ink, found by `tools/metrics` |
 
-Twenty-two test files, all passing, reading real fonts from the system. The cursive reader is the one
-piece with no font to test it against, so its tables are built from words in `gpos_cursive_test.v`
-rather than opened from disk.
+Twenty-four test files, all passing. The cursive reader is tested twice over: from words in
+`gpos_cursive_test.v` for the byte shapes, and against real cursive rules in the licensed corpus under
+`testdata/fonts/`, because a fixture written to match the reader cannot catch a reader that is wrong about
+where the records start. That is not hypothetical — it is how the record-offset bug survived.
 
 ## Performance: what was actually slow
 
@@ -175,80 +176,68 @@ refused by either check, and a test using one would pass with the count check de
 by mutating the code and finding the test still green.
 
 ### ~~Cursive attachment: what it actually needs~~
+### ~~Cursive attachment: what it actually needs~~ — the premise was wrong, and so was the survey
 
-**The premise was wrong, and it is worth writing down how.** I had recorded that Traditional Arabic
-carries 7 cursive lookups, Simplified Arabic 57 and Majalla 54, and that this is what makes a cursive
-script look cursive. Those counts are GPOS lookup type 1, and lookup type 1 is two tables under one
-number: a single positioning and a cursive attachment. All of them are single positionings. The same
-mistake twice in one session, after the compiler bug: a number counted, then given a meaning it did
-not have.
+**The reader had two bugs and the survey was built to hide both. Both are fixed; cursive attachment is
+now read, and it was never a font-availability problem.**
 
-Counting properly means unwrapping extensions first, because a font that reaches its positioning
-through an extension stores the real type in the extension header. Walking every font on this machine
-that way finds no cursive attachment at all. The one `curs` feature, in Dubai, names an extension whose
-header says type 3 — a mark attachment — and fontTools calls that subtable a CursivePos because it
-reads the bytes' shape rather than the header that names the type. Its mark array offset happens to land
-on something shaped like an anchor, which is how one table looks like the other.
+What this section previously claimed is worth recording because it was confidently wrong twice. It said
+the engine read the rule and refused it, that unwrapping extensions found no cursive attachment on any
+font on this machine, and that the blocker was finding a font that has one. Every one of those was a
+consequence of a reader that could not see a cursive rule even when handed one.
 
-So Arabic joining in these fonts is entirely GSUB substitution, which this engine already does. What
-remains is the reader, and it is written:
+The two bugs:
 
-- `Cursive` and `EntryExit` in `gpos.v`, in both formats, with a record found through the coverage.
-- A refusal that matters. A single positioning's valueFormat sits exactly where a cursive rule's first
-  anchor offset sits, and 3 is a valid anchor format, so reading anchors first takes real kerning rules
-  out of the font — it did, and the kerning tests failed. The test now fixes that shape as bytes.
-- The guard is structural rather than lucky: in a cursive rule the anchors are a table after the
-  records, so every offset points past the records, while a value format is a bitmask of a few hundred
-  and cannot point past a value array that is already there.
-- What is still missing is the attachment itself, which is not a positioning rule but a change to
-  advance: the pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter
-  can end up wider or narrower than its advance says. That needs a font with a cursive attachment to be
-  worth writing, and there is none here.
+1. **The dispatch never looked.** `parse_cursive` was only called when a lookup resolved to GPOS type 1.
+   Cursive attachment is **type 3**. So the reader ran exclusively against single positionings, always
+   failed, and the failure was then interpreted as "this table is a positioning, not a cursive rule".
+   The comment saying "type 1 is two different tables under one number, a single positioning and a cursive
+   attachment" was the belief that produced it. There is no such ambiguity in GPOS: type 1 is SinglePos and
+   type 3 is CursivePos.
+2. **The record array was read from the wrong offset.** Both cursive formats have an identical six-byte
+   header — `posFormat`, `coverageOffset`, `entryExitCount` — so the records start six bytes in and the
+   count is *stated*, never inferred from the coverage. The reader started at four, the offset of a
+   SinglePos header, which put it two bytes early and shifted every record. The code asserted the opposite
+   in a comment, and the hand-built fixtures in `gpos_cursive_test.v` were written to match the reader, so
+   they agreed with it.
 
-### ~~Cursive attachment: the attachment itself~~ — re-confirmed blocked, 2026-10-04
+Bug 2 is the one that made bug 1 invisible. Reading two bytes early turns a record into its neighbour's
+fields; the resulting "anchors" fail the plausibility check and the rule is refused, which is exactly what
+a single positioning should do. So the reader was behaving correctly for the wrong reason, on the right
+tables, and the survey built on it reported zero everywhere.
 
-**The reader is right and this engine is right to find nothing. The premise was checked again against
-fontTools and the check nearly went the other way.**
+What the corrected reader finds:
 
-The earlier survey in this file stands: unwrapping extensions and reading the type each one *declares*
-finds no cursive attachment on this machine. That was re-run, and it is still what the declared types
-say. What happened is that a second survey, using fontTools instead of reading the bytes, reported nine
-fonts with a `CursivePos` — Dubai, Arabic Typesetting, Urdu Typesetting, Aldhabi — and every one of
-them is a false positive:
+| font | cursive rules | glyphs covered | entry anchors | exit anchors |
+| --- | --- | --- | --- | --- |
+| Amiri-Regular.ttf | 1 | 288 | 52 | 236 |
+| NotoNastaliqUrdu-Regular.ttf | 1 | 378 | 196 | 340 |
+| NotoNaskhArabic-Regular.ttf | 0 | — | — | — |
+| DUBAI-REGULAR.TTF | 1 | via `curs` | — | — |
 
-| font | lookup | declared | fontTools class |
-| --- | --- | --- | --- |
-| arabtype.ttf | 15 | extension, `extensionLookupType` = **3** | CursivePos, 1542 glyphs |
-| UrdType.ttf | 0 | **3** (not an extension at all) | CursivePos, ten subtables |
+Noto Naskh is the negative control and matters as much as the positive rows: it joins with substitutions
+alone and has no cursive rule, so a reader that accepted every type 3 subtable would fail there rather
+than pass quietly. Amiri declares its rule directly and Noto Nastaliq reaches one through an extension, so
+both dispatch paths are covered.
 
-Both are **mark attachment** by declaration. fontTools reports them as `CursivePos` because it
-classifies the subtable from the bytes' shape — one coverage followed by N pairs of anchor offsets and
-then an anchor table — and that shape is exactly a cursive rule's. A mark attachment is supposed to
-have two coverages, and these have one.
+**On fontTools.** The earlier note in this file held that fontTools reports `CursivePos` for subtables that
+are really mark attachments, and that a conformant consumer should follow `extensionLookupType`. That
+observation was correct — fontTools does classify from shape — and the conclusion drawn from it was wrong.
+Dubai's extension really does resolve to type 3 and really does carry a cursive rule; the shape had been
+read from two bytes out of position. The general rule still stands and is the one worth keeping: **read the
+header that names the type, not the bytes that resemble it.** It was applied in the wrong direction here.
 
-So the roadmap's earlier note was right and has now been confirmed with a specific instance to point
-at: **fontTools calls a subtable a CursivePos by reading its shape rather than the header that names
-its type.** A conformant consumer follows `extensionLookupType`, and this engine does.
+What is still missing is the attachment itself, which is not a positioning rule but a change to advance:
+the pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter can end up
+wider or narrower than its advance says. There is now a font for it to be written against.
 
-The engine's own guard agrees independently, which is the part worth having. It visits all 54 type-1
-lookups in arabtype and refuses every one, and the 54 refusals are all the same shape: the word where a
-cursive rule's first anchor offset would be holds a number like 5 or 7, which is a value format, and a
-value format cannot point past a value array that is already there. Not one refusal involves a
-plausible anchor offset, because there is not one in the font.
+### ~~Cursive attachment: the attachment itself~~ — unblocked 2026-10-04, now the next piece of work
 
-**This stays blocked, and the blocker is font availability rather than OpenType.** Amiri, Scheherazade
-or a Nastaliq face would settle it. Writing the attachment against a mark attachment's bytes would be
-worse than not writing it: it would produce a line that joins plausibly and is wrong, and the join is
-the one thing an Arabic reader notices immediately.
+Not blocked. The reader is correct against real fonts and the corpus is in the tree under licences that
+permit redistribution (`testdata/fonts/`). What remains is applying the rules.
 
-Two things did come out of the exercise and are kept:
+---
 
-- The reader handles format 1 and format 2, so a font that brings its own attachment is a reader away
-  from working. `gpos_cursive_test.v` builds both formats as bytes and checks the guard refuses a single
-  positioning whose value format lands where an anchor offset would be — which is a real failure that
-  happened, taking Andalus's lookup 21 out of the font and failing the kerning tests.
-- `ResolvedSubtable` now carries the extension's length, which is what a format that runs to the end of
-  its subtable needs and which nothing wanted until SinglePos format 2.
 
 ### Device and variation tables
 

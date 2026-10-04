@@ -295,7 +295,12 @@ fn place_glyphs(placed []Glyph, bidi BidiResult) []Glyph {
 // contributed, and only this loop knows that. The caller's value wins outright when there is one; the
 // natural value is the largest over the contributors, so a paragraph that fell back mid-line is
 // spaced for the tallest face in it rather than the first.
-fn measure_line(mut line &Line, em_px f64, options &LayoutOptions) {
+// A `mut` value receiver, not `mut line &Line`. V 0.5.2 computes the argument for a
+// pointer parameter as `&&Line` at a call site written `measure_line(mut line, ...)`, and
+// refuses the pair outright: "cannot use `vtext.Line` as `&&vtext.Line`". A value
+// receiver is what the rest of this file already uses (`fn (mut lx Lexer) next`) and it
+// does propagate the mutation to the caller's `mut` local.
+fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {
 	mut natural := f64(0)
 	for g in line.glyphs {
 		line.width = larger(line.width, g.x + g.advance)
@@ -381,7 +386,9 @@ fn larger(a f64, b f64) f64 {
 // backwards in visual order would attach the mark to the letter after it rather than the one it
 // follows. A mark with no letter before it in its run, which happens at the start of a word
 // carrying a stray vowel, is left at the pen position.
-fn position_marks(mut line &Line, em_px f64) {
+// A `mut` value receiver for the reason given on measure_line: `mut line &Line` as a
+// parameter is a pair V 0.5.2 will not accept at a `position_marks(mut line, ...)` call.
+fn position_marks(mut line Line, em_px f64) {
 	// Two passes, and the order matters. The line is in visual order, and in a right-to-left
 	// line a mark comes before the letter it belongs to, so collecting the letters and then
 	// placing the marks in one pass would find the mark's base already behind it. Collecting

@@ -300,14 +300,16 @@ fn test_lookup_type_counts_says_what_the_engine_will_not_read() {
 	assert gpos_total == 137, 'and every lookup is counted once, got ${gpos_total}'
 
 	// Dubai is the other half: its GPOS is 3 pair, 4 mark to base, 1 mark to ligature, 4 mark to mark, and one
-	// extension this engine cannot unwrap. The `curs` feature reaches that last one, which is why the
-	// cursive finding in fontcheck names both.
+	// cursive lookup reached through an extension. The `curs` feature names it, so it is counted under the kind
+	// its rules are rather than as an extension, which is what makes the pair of numbers here a check that the
+	// extension was unwrapped.
 	dubai := inspect_font('DUBAI-REGULAR.TTF')
 	dgpos := dubai.lookup_type_counts('GPOS')
 	assert dgpos[2] == 3, 'expected 3 pair positioning lookups in Dubai, got ${dgpos[2]}'
+	assert dgpos[3] == 1, 'expected 1 cursive positioning lookup in Dubai, got ${dgpos[3]}'
 	assert dgpos[4] == 4, 'expected 4 mark to base lookups in Dubai, got ${dgpos[4]}'
 	assert dgpos[6] == 4, 'expected 4 mark to mark lookups in Dubai, got ${dgpos[6]}'
-	assert dgpos[9] == 1, 'and 1 extension this engine cannot unwrap, got ${dgpos[9]}'
+	assert dgpos[9] == 0, 'and nothing left that this engine cannot unwrap, got ${dgpos[9]}'
 	assert 'curs' in dubai.features('GPOS'), 'and Dubai declares the feature that reaches it'
 
 	// Tahoma does not wrap its lookups, so its counts are the kinds themselves and every one of them is

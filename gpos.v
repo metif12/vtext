@@ -1190,16 +1190,12 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 					lookup.chains << rule
 				}
 			}
-			if resolved.kind == gpos_lookup_single_position {
-				// Type 1 is two different tables under one number, a single positioning and a cursive
-				// attachment, and they write the same first words. The cursive reader is the one that
-				// knows how to tell them apart, so it goes first and refuses anything whose offsets
-				// point back into its own records. What it refuses is then read as a positioning rule,
-				// which is what it is.
+			if resolved.kind == gpos_lookup_cursive {
 				if rule := parse_cursive(r, resolved.at) {
 					lookup.cursives << rule
-					continue
 				}
+			}
+			if resolved.kind == gpos_lookup_single_position {
 				if rule := parse_single_position(r, resolved) {
 					lookup.singles << rule
 				}
@@ -1427,29 +1423,24 @@ fn parse_cursive(r &Reader, at int) ?Cursive {
 	if ranges.len == 0 {
 		return none
 	}
-	// The coverage's number of glyphs is what decides how many records there are, and it is the sum of
-	// the range widths rather than the length of the range list: a coverage of five glyphs written as
-	// one range still has five records.
+	// The coverage decides which glyphs the rule applies to, and its glyph count is the sum of the range
+	// widths rather than the length of the range list: a coverage of five glyphs written as one range still
+	// covers five glyphs.
 	mut glyphs := 0
 	for cr in ranges {
 		glyphs += int(cr.last - cr.first) + 1
 	}
-	mut count := glyphs
-	if format == 2 {
-		count = int(r.u16_at(at + 4))
+	// Both cursive formats are laid out the same way: posFormat, coverageOffset, entryExitCount, then the
+	// records. The formats differ only in what entryExitCount is allowed to be. Format 1 demands one record
+	// per covered glyph, format 2 lets the trailing covered glyphs go unrecorded. So the count is always read
+	// rather than inferred from the coverage, and the records always start six bytes in.
+	mut count := int(r.u16_at(at + 4))
+	if count > glyphs {
 		// A font that names more records than it has coverage is claiming glyphs it does not cover, so
 		// only the covered ones are read.
-		if count > glyphs {
-			count = glyphs
-		}
+		count = glyphs
 	}
-	// Where the records stop. Format 1 writes one record per covered glyph without saying how many,
-	// format 2 writes the count first and so starts its records two bytes later. Every anchor has to be
-	// past this, which is what tells the two tables apart.
-	mut first_record := at + 4
-	if format == 2 {
-		first_record = at + 6
-	}
+	first_record := at + 6
 	records_end := first_record + 4 * count
 	mut marks := []EntryExit{cap: glyphs, len: 0}
 	mut p := first_record

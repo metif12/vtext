@@ -86,6 +86,23 @@ because a request about nothing is not a character.
 **A variation sequence is not a character**, which is the one rule everything else follows from. The
 base on its own still draws as text; only the pair draws as emoji.
 
+## Test fonts
+
+The suite reads the fonts in `testdata/fonts/`, so it does not depend on what is installed:
+
+| Font | Why it is here |
+| --- | --- |
+| `Amiri-Regular.ttf` | A naskh face with a real cursive attachment, declared directly rather than through an extension. |
+| `NotoNaskhArabic-Regular.ttf` | Joins with substitutions alone, so it has **no** cursive rule. It is the negative control: a reader that accepted every type 3 subtable would fail here. |
+| `NotoNastaliqUrdu-Regular.ttf` | Nastaliq, whose positioning reaches the cursive rule through an extension. |
+| `NotoNaskhArabic-Variable.ttf` | A variable font, for the device and variation tables. |
+
+All three families are under the SIL Open Font License, which permits redistribution; the licence text
+sits beside each font. They are here because a cursive attachment is rare in Windows fonts, and a
+hand-built fixture written to match the reader cannot catch a reader that is wrong about where the record
+array starts. That is not hypothetical — it is exactly how a two-byte offset error survived several
+rounds of testing.
+
 ## Performance
 
 `layout_paragraph` is linear in the length of the text. Measured on Segoe UI at 16 pixels, best of
@@ -116,13 +133,11 @@ Named here so that a caller is not surprised by them.
   every character rather than at the word boundaries a reader expects.
 - **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
   Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
-- **Cursive attachment (GPOS type 1).** Read, in both formats, but the reader refuses a table whose
-  offsets point back into its own records, which is what tells a cursive rule from a single
-  positioning. No font on this machine has one, so nothing here exercises the attachment itself: Arabic
-  joining in the Windows fonts comes entirely from GSUB substitution, which this engine does do. The
-  one `curs` feature here, in Dubai, reaches a mark attachment lookup, and fontTools calls that
-  subtable a CursivePos because it reads the shape rather than the extension header that names the
-  type.
+- **Cursive attachment.** Read, in both formats, from real rules — Amiri, Noto Nastaliq Urdu and Dubai all
+  carry one, and this engine finds them. It is **not applied**: the rules are parsed and then ignored, so
+  a font that relies on `curs` joins only as far as its substitutions take it. Arabic joining in the
+  Windows fonts comes entirely from GSUB substitution, which this engine does do, which is why the absence
+  is not obvious there.
 - **Device and variation tables.** A hint that a pair is tighter at one size than another is skipped,
   so a kern is the same at every size.
 - **Justification and kashida.**

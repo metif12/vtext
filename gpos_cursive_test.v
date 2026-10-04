@@ -1,13 +1,14 @@
 module vtext
 
-// The two tables under GPOS lookup type 1: a single positioning, which moves one glyph on its own, and
-// a cursive attachment, which says where a glyph's stroke enters and leaves. They share a number, both
-// declare format 1, and both write a coverage at the same place, so a reader has to tell them apart
-// from the bytes or it will read one as the other.
+import os
+
+// Cursive attachment under GPOS lookup type 3: a rule says where each covered glyph's stroke enters and
+// leaves, and consecutive glyphs are joined by placing one entry anchor on the previous exit anchor.
 //
-// No font on this machine has a cursive attachment, so these build the two tables by hand. That is the
-// point: the ambiguity is only visible in bytes, and a font that happens to have one is not available
-// to test the refusal with.
+// The hand-built tables below exist because the ambiguity is only visible in bytes. Reading a cursive
+// record array from the wrong offset turns a rule into something that looks like a single positioning and
+// then refuses it, so a font carrying a real one is the only thing that catches a reader which is
+// confidently wrong in both directions at once.
 //
 // Every field in all of these is sixteen bits, so each table is written as the words a hex dump would
 // show and converted once. Writing them this way keeps the layout next to the offsets that depend on it.
@@ -46,15 +47,16 @@ fn single_pos_bytes() []u8 {
 // cursive_format1_bytes builds a CursivePos format 1 subtable covering one glyph whose entry anchor is
 // at (0, 23) and which has no exit anchor at all.
 //
-// Format 1 writes one record per covered glyph with no count, so the records sit directly after the
-// header and the coverage follows them, which is why the anchor offset is 14 rather than the 8 the
-// coverage starts at.
+// Both cursive formats write the same six-word header of posFormat, coverageOffset and entryExitCount, so
+// the records start six bytes in and the count is read rather than counted from the coverage. The anchor
+// offset is 16 rather than the 10 the coverage starts at because the anchor follows the coverage.
 fn cursive_format1_bytes() []u8 {
 	return bytes_of([
 		1,
-		8, // posFormat, coverage offset
-		14,
-		0, // entry anchor, no exit anchor
+		10, // posFormat, coverage offset
+		1,
+		16, // entryExitCount, entry anchor offset
+		0, // exit anchor offset
 		1,
 		1,
 		3, // coverage format 1, one glyph, glyph 3
@@ -65,8 +67,8 @@ fn cursive_format1_bytes() []u8 {
 }
 
 // cursive_format2_bytes builds a CursivePos format 2 subtable covering one glyph whose exit anchor is at
-// (95, 77) and which has no entry anchor. Format 2 writes a count first, so its records start two bytes
-// later than format 1's.
+// (95, 77) and which has no entry anchor. The two formats are laid out identically; format 2 only lets the
+// count fall short of the coverage, which is what its own test covers.
 fn cursive_format2_bytes() []u8 {
 	return bytes_of([
 		2,
@@ -93,15 +95,12 @@ fn cursive_format2_bytes() []u8 {
 fn cursive_range_bytes() []u8 {
 	return bytes_of([
 		1,
-		16, // posFormat, coverage offset
-		26,
-		0, // glyph 10: entry anchor, no exit
-		0,
-		32, // glyph 11: no entry, exit anchor
-		0,
-		0,
-		// The coverage sits between the records and the anchors here, which is legal and is why the
-		// anchor offsets are not simply the record's own position plus four.
+		14, // posFormat, coverage offset
+		2, // entryExitCount
+		24, // glyph 10: entry anchor
+		0, // and no exit anchor
+		0, // glyph 11: no entry anchor
+		30, // and an exit one
 		2,
 		1,
 		10,
@@ -135,8 +134,8 @@ fn test_gpos_cursive_reader_refuses_a_single_position() {
 	assert got.x == -120, 'and it moves it by the font number'
 }
 
-// A cursive rule is one record per covered glyph with no count, and its offsets point past the records
-// to anchors that declare themselves anchors.
+// A cursive rule is one record per named glyph, and its offsets point past the records to anchors that
+// declare themselves anchors.
 fn test_gpos_cursive_reader_reads_format_one() {
 	r := new_reader(cursive_format1_bytes())
 	rule := parse_cursive(r, 0) or { panic('a cursive rule with an anchor was refused') }
@@ -147,7 +146,8 @@ fn test_gpos_cursive_reader_reads_format_one() {
 	assert !got.exit.exists, 'and an absent exit anchor stays absent rather than becoming a zero'
 }
 
-// Format 2 writes the count first, so its records start two bytes later.
+// Format 2 is laid out exactly like format 1, and what it adds is that the count may fall short of the
+// coverage so that trailing covered glyphs take no part in the joining.
 fn test_gpos_cursive_reader_reads_format_two() {
 	r := new_reader(cursive_format2_bytes())
 	rule := parse_cursive(r, 0) or { panic('a cursive rule with an exit anchor was refused') }
@@ -171,22 +171,95 @@ fn test_gpos_cursive_reader_counts_the_coverage_in_glyphs() {
 	assert !second.entry.exists, 'a record only says what it says'
 }
 
-// Dubai is the one font here with a curs feature, and it is worth knowing what that feature really is,
-// because fontTools calls the subtable a CursivePos and the bytes say otherwise. The extension header
-// names type 3, so it places marks on a base glyph. Read by shape alone, its mark array and base array
-// offsets happen to land on something shaped like an anchor, which is how a mark attachment table comes
-// to look like a cursive one.
-fn test_gpos_dubai_curs_feature_places_marks_rather_than_joining_strokes() {
+// Dubai reaches its cursive rule through an extension, and it is the font that made the rule worth
+// testing: fontTools reads the extension as a mark attachment whose base and mark offsets happen to land
+// on something shaped like an anchor, which is how a cursive table came to be dismissed as a mark
+// attachment twice. Reading the record array from the six-byte header rather than four makes every one of
+// its anchors declare itself an anchor, and the lookup resolves to a cursive rule.
+fn test_gpos_dubai_curs_feature_reaches_a_cursive_rule() {
 	f := load_font_file('C:\\Windows\\Fonts\\DUBAI-REGULAR.TTF') or { panic(err) }
 	gpos := f.face.gpos or { panic('no GPOS') }
 	mut cursive := 0
+	mut covered := 0
 	for script in ['arab', 'latn'] {
 		for li in gpos.lookups_for(script, 'curs') {
-			if int(li) < gpos.lookups.len && gpos.lookups[li].cursives.len > 0 {
-				cursive++
+			if int(li) < gpos.lookups.len {
+				cursive += gpos.lookups[li].cursives.len
+				for rule in gpos.lookups[li].cursives {
+					covered += rule.marks.len
+				}
 			}
 		}
 	}
-	assert cursive == 0, 'the lookup the curs feature names is a mark attachment, not a cursive rule'
-	assert gpos.has_mark_attachment(), 'and the marks are placed, which is what that lookup is for'
+	assert cursive > 0, 'the curs feature names a rule with anchors in it'
+	assert covered > 0, 'and it covers glyphs rather than only naming a lookup'
+}
+
+// Amiri and Noto Nastaliq Urdu both carry a real cursive attachment, and both were read as having none
+// until the record array was read from six bytes into the subtable rather than four. They are the
+// regression guard for that, because a hand-built table cannot catch a reader that is wrong about where
+// the records start: a fixture written to match the reader passes on any offset it agrees with.
+//
+// Amiri declares the rule directly and Noto Nastaliq through an extension, so both paths are covered.
+fn test_gpos_cursive_is_read_from_real_fonts() {
+	mut found := map[string]int{}
+	for name in ['Amiri-Regular.ttf', 'NotoNaskhArabic-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf'] {
+		f := load_font_file(os.join_path('testdata', 'fonts', name)) or {
+			panic('cannot load ${name}: ${err}')
+		}
+		gpos := f.face.gpos or { panic('${name} has no GPOS') }
+		mut rules := 0
+		mut entry_anchors := 0
+		mut exit_anchors := 0
+		for l in gpos.lookups {
+			for rule in l.cursives {
+				rules++
+				for m in rule.marks {
+					if m.entry.exists {
+						entry_anchors++
+					}
+					if m.exit.exists {
+						exit_anchors++
+					}
+				}
+			}
+		}
+		found[name] = rules
+		if rules > 0 {
+			// A rule with no entry anchor has nothing to join onto, and one with no exit anchor has
+			// nothing to join from. A font that has both counted hundreds of times over a rule read
+			// from the wrong offset, so both have to be substantial for the read to mean anything.
+			assert entry_anchors > 10, '${name}: ${entry_anchors} entry anchors is too few to be a cursive rule'
+			assert exit_anchors > 10, '${name}: ${exit_anchors} exit anchors is too few to be a cursive rule'
+		}
+	}
+	assert found['Amiri-Regular.ttf'] > 0, 'Amiri declares its cursive rule directly, got ${found['Amiri-Regular.ttf']}'
+	assert found['NotoNastaliqUrdu-Regular.ttf'] > 0, 'Noto Nastaliq reaches its rule through an extension, got ${found['NotoNastaliqUrdu-Regular.ttf']}'
+	// The negative control. Noto Naskh joins with substitutions alone and has no cursive rule, so a
+	// reader that accepts every type 3 subtable would fail here rather than pass quietly.
+	assert found['NotoNaskhArabic-Regular.ttf'] == 0, 'Noto Naskh has no cursive rule, got ${found['NotoNaskhArabic-Regular.ttf']}'
+}
+
+// The anchors have to be in the font's own coordinates, which for these faces means well inside a
+// thousand-unit em. A record array read from the wrong offset produces anchors that are plainly not
+// points, so this is the check that separates a rule from a plausible-looking mistake.
+fn test_gpos_cursive_anchors_are_points_in_font_units() {
+	f := load_font_file(os.join_path('testdata', 'fonts', 'Amiri-Regular.ttf')) or { panic(err) }
+	gpos := f.face.gpos or { panic('no GPOS') }
+	mut checked := 0
+	for l in gpos.lookups {
+		for rule in l.cursives {
+			for m in rule.marks {
+				for a in [m.entry, m.exit] {
+					if !a.exists {
+						continue
+					}
+					assert a.x > -2000 && a.x < 2000, 'entry or exit x out of range: ${a.x}'
+					assert a.y > -2000 && a.y < 2000, 'entry or exit y out of range: ${a.y}'
+					checked++
+				}
+			}
+		}
+	}
+	assert checked > 50, 'only ${checked} anchors were checked, which is too few to be meaningful'
 }
