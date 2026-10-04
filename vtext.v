@@ -119,6 +119,17 @@ pub fn (f &Font) glyph_index(cp rune) u16 {
 	return f.face.glyph_index(cp)
 }
 
+// codepoint_for maps a glyph index back to the character the font draws it for, or none when the font
+// does not say.
+//
+// This is the direction cmap lookup does not do, and a caller needs it to name anything it did not type:
+// a tool listing a font's glyphs, a subsetter reporting what it kept, a caller mapping a glyph id that
+// came back from a substitution. It is genuinely many-to-one — a font may map several codepoints to one
+// glyph — so the lowest is returned, and glyph 0 has no answer at all because it is .notdef.
+pub fn (f &Font) codepoint_for(gid u16) ?rune {
+	return f.face.codepoint_for(gid)
+}
+
 // has_glyph reports whether the font really covers cp. Font fallback needs this
 // distinction: a font that maps cp to .notdef is not a candidate for it.
 pub fn (f &Font) has_glyph(cp rune) bool {

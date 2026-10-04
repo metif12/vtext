@@ -282,6 +282,16 @@ fn (f &Face) has_glyph(cp rune) bool {
 	return f.glyph_index(cp) != 0
 }
 
+// codepoint_for maps a glyph index back to a character, or none when the font does not say which.
+//
+// The forward direction is a table and this is a search, because a font may map several codepoints to one
+// glyph and the table does not record which came first. The lowest is returned, so a glyph is named the
+// same way everywhere in this library.
+fn (f &Face) codepoint_for(gid u16) ?rune {
+	cp := codepoint_for(f.cmaps, gid) or { return none }
+	return rune(cp)
+}
+
 // glyph_index_variation maps a base codepoint with variation selectors after it.
 //
 // selectors is the list that followed the base in the text, in order, and it is a list rather than one

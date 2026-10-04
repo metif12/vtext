@@ -196,6 +196,41 @@ A per-script set with no primary and no general is exactly a flat set, so the tw
 `pick_in` and `pick` agree in that case. The script test is the same generated table the joining pass
 uses, so the set cannot disagree with the shaper about which characters are Arabic.
 
+`glyph_index` maps a character to a glyph, and `codepoint_for` maps it back:
+
+```v
+gid := font.glyph_index('س')   // u16, zero for .notdef
+cp := font.codepoint_for(gid)  // ?rune
+```
+
+The reverse direction is a search rather than a table, because a font may map several characters to one
+glyph and the forward table does not record which came first. The lowest is returned, so a glyph is named
+the same way everywhere in this library. Glyph 0 has no answer at all: it is `.notdef`, and naming it
+would answer "what character draws nothing" with the lowest control character the font happens to
+reference.
+
+Arabic fonts rely on this being many-to-one. Noto Naskh Arabic draws U+0633 ARABIC LETTER SEEN and
+U+FEB3 ARABIC LETTER SEEN INITIAL FORM as one glyph, so `codepoint_for` on that glyph answers U+0633.
+
+### Tools
+
+`tools/glyphdump.v` writes a font out as images, and lays a string out so the shaping result can be looked
+at rather than inferred.
+
+```sh
+v run tools/glyphdump.v C:/Windows/Fonts/tahoma.ttf --size 32 --count 256 --boxes
+v run tools/glyphdump.v C:/Windows/Fonts/tahoma.ttf --each out/glyphs --count 64
+v run tools/glyphdump.v testdata/fonts/NotoNaskhArabic-Regular.ttf --text 'سلام'
+```
+
+`--sheet` draws a grid of glyphs on one page, on a shared baseline, which is how you see what a font
+contains and eyeball a rasteriser across a whole font at once. `--each` writes one image per glyph sized
+to that glyph's own ink box, which is the form to diff against another rasteriser: the box is the font's
+answer. `--text` draws the run a string shapes into and tabulates it, and that table is the point —
+`سلام` reports four characters becoming three glyphs, each one naming the character it came from and
+saying which substitution replaced it, which is otherwise only answerable by printing glyph ids and
+counting them by hand.
+
 ### Features
 
 Every line gets `ccmp` and `rlig`, in that order, because a line missing its mark composition is not

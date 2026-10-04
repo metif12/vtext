@@ -619,6 +619,69 @@ fn vs_covers(ranges []VsRange, base u32) bool {
 	return false
 }
 
+// codepoint_for returns the lowest codepoint this subtable maps to a glyph, or none when it does not
+// map that glyph at all.
+//
+// The reverse direction is what a caller needs to name a glyph, and it is genuinely ambiguous: a font may
+// map several codepoints to one glyph, which is what happens with a compatibility ideograph, a control
+// picture, and every ligature a font also exposes as a presentation form. The lowest codepoint is the
+// answer, because it is the one a person typing the character would reach for, and because a glyph named
+// by two different codepoints in two tools is worse than one named consistently.
+//
+// This is a walk of the subtable's own coverage rather than a search, because the segment and group
+// arrays are sorted by codepoint and a reverse index would have to be built and kept in step with the
+// forward one. A font has at most 65536 codepoints in a format 4 subtable and this runs once per glyph
+// that a caller asks about, so the walk is the cheaper kind of wrong.
+fn (c &Cmap) codepoint_for(gid u16) ?u32 {
+	match c.format {
+		0, 6 {
+			// A flat array from first_code upwards, so the lowest codepoint for a glyph is the
+			// lowest index holding it.
+			for i, g in c.glyph_ids {
+				if g == gid && g != 0 {
+					return u32(c.first_code) + u32(i)
+				}
+			}
+		}
+		4 {
+			for seg in 0 .. c.start_code.len {
+				// The loops are written as an explicit counter rather than as a range because a
+				// segment is inclusive of its end and V's range is not, and losing the last
+				// codepoint of every segment is a bug that shows up as one character per segment
+				// quietly getting the wrong name.
+				mut cp := u32(c.start_code[seg])
+				last := u32(c.end_code[seg])
+				for cp <= last {
+					// The last segment of a format 4 subtable is conventionally 0xFFFF..0xFFFF, and it
+					// terminates the array rather than covering a character.
+					if cp != 0xFFFF {
+						if g := c.lookup_format4(cp) {
+							if g == gid {
+								return cp
+							}
+						}
+					}
+					cp++
+				}
+			}
+		}
+		12 {
+			for gr in c.groups {
+				mut cp := gr.start_cp
+				for cp <= gr.end_cp {
+					g := gr.start_gid + (cp - gr.start_cp)
+					if g <= 0xFFFF && u16(g) == gid {
+						return cp
+					}
+					cp++
+				}
+			}
+		}
+		else {}
+	}
+	return none
+}
+
 fn (c &Cmap) lookup_format4(cp u32) ?u16 {
 	if cp > 0xFFFF {
 		return none
@@ -679,6 +742,27 @@ fn glyph_index_for(cmaps []Cmap, cp u32) u16 {
 		}
 	}
 	return 0
+}
+
+// codepoint_for maps a glyph back to the lowest codepoint any subtable gives it, or none when no subtable
+// does.
+//
+// Glyph 0 is .notdef, and every font maps something to it, so it is deliberately not found: a caller
+// asking what character this glyph stands for has a glyph that draws nothing, and the useful answer is
+// that there isn't one rather than the lowest control character the font happens to reference.
+//
+// Subtables are asked in the same order the forward direction uses, so a glyph named here is named by the
+// subtable that would have produced it.
+fn codepoint_for(cmaps []Cmap, gid u16) ?u32 {
+	if gid == 0 {
+		return none
+	}
+	for c in cmaps {
+		if cp := c.codepoint_for(gid) {
+			return cp
+		}
+	}
+	return none
 }
 
 // glyph_index_variation_for maps a base codepoint with a variation selector after it.

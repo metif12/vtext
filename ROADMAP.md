@@ -844,11 +844,24 @@ font's number and `Line.ascent` is the ink's, and the interesting case is when t
 It also prints how many glyphs have zero advance, which is the cheapest way to see whether a font's
 space is a real space.
 
-### `tools/glyphdump`
+### ~~`tools/glyphdump`~~ — done 2026-10-04
 
-Write a font's glyphs to a directory of images, and a specimen sheet. The tool
-for checking a rasterizer against a reference, and for seeing what a substitution
-actually produced.
+Three modes, because they answer three questions. `--sheet` draws a grid of glyphs on one page on a
+shared baseline, so a whole font can be eyeballed at once and two letters can be compared for sitting at
+the same height. `--each DIR` writes one image per glyph sized to that glyph's own ink box, which is the
+form to diff against another rasteriser. `--text STR` draws the run a string shapes into and tabulates
+it: four characters becoming three glyphs, each naming the character it came from and the substitution
+that replaced it.
+
+Writing it needed one thing the library did not have, which is the other half of this entry: a glyph id
+cannot be named without mapping it back to a character, and nothing in the public API did that.
+`Font.codepoint_for` does now, returning the lowest codepoint that maps to the glyph.
+
+That direction is a search, not a table, and the first version of it had a bug that the first test found:
+V's `..` range is exclusive and a cmap segment is inclusive of its end, so every segment was losing its
+last codepoint. It showed up as a letter answering with its presentation form instead of itself, which is
+a plausible-looking wrong answer rather than a failure. The loops are written as explicit counters now,
+with the reason in a comment.
 
 ### `tools/subset`
 
