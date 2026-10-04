@@ -52,6 +52,7 @@ it.
 - GSUB single, multiple, alternate, ligature and contextual substitutions.
 - GPOS mark-to-base, mark-to-ligature and mark-to-mark attachment.
 - GPOS pair adjustment (kerning), in both the per-pair and per-class forms.
+- GPOS single positioning, in both the per-glyph and the shared-value-plus-exceptions forms.
 - GPOS chaining-context positioning (lookup type 8, format 3).
 - Right-to-left lines, mixed-direction paragraphs, and bidi mirroring.
 - Line breaking per UAX #14, and wrapping to a width.
@@ -114,9 +115,6 @@ Named here so that a caller is not surprised by them.
   every character rather than at the word boundaries a reader expects.
 - **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
   Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
-- **SinglePos format 2.** Format 1 is read, which is what every font here uses. Format 2 has one value
-  for a whole coverage and a second array of exceptions, and reading it as format 1 takes the valueCount
-  as a count and then reads coverage indices as records.
 - **Cursive attachment (GPOS type 1).** Read, in both formats, but the reader refuses a table whose
   offsets point back into its own records, which is what tells a cursive rule from a single
   positioning. No font on this machine has one, so nothing here exercises the attachment itself: Arabic
@@ -502,9 +500,16 @@ kern feature reaches, 186 name a single positioning and 12 name a pair. Assuming
 and answers nothing on a font whose rules are working perfectly.
 
 **A SinglePos format 1 value comes straight after the format that says how wide it is.** There is no
-count of the values, because the coverage already says how many there are. Reading the first value as a
-count turns a value of -120 into a count of 65416, and the pair tables beside it in the same table do
+count of the values, because the coverage already says how many there are. Reading the first value as
+a count turns a value of -120 into a count of 65416, and the pair tables beside it in the same table do
 have a count, which is what makes the two easy to confuse.
+
+**A SinglePos format 2 exception is a coverage index, not a glyph id.** That is the one difference
+between the formats and it is enough to make reading one as the other produce numbers rather than an
+error. The exception list also runs to the end of the subtable, which a lookup's subtables do not
+state; the scan is bounded by the extension's length where there is one, and always by the coverage,
+because an exception cannot name more glyphs than the coverage covers.
+
 
 **A rule with a backtrack is about one glyph with a condition.** Its pattern names the glyph being
 placed and reaches back to what makes it different, so the two glyphs a caller asks about are a glyph

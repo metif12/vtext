@@ -1200,7 +1200,7 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 					lookup.cursives << rule
 					continue
 				}
-				if rule := parse_single_position(r, resolved.at) {
+				if rule := parse_single_position(r, resolved) {
 					lookup.singles << rule
 				}
 			}
@@ -1241,6 +1241,16 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 struct ResolvedSubtable {
 	kind u16
 	at   int
+	// length is the subtable's own length in bytes, or zero when nothing states one.
+	//
+	// Only an extension states one: ExtensionPos writes a uint32 extensionLength after its offset, and
+	// the reader had no use for it until a format that runs to the end of its subtable. A lookup's
+	// own subtable offsets carry no length, so a subtable reached directly has none and a parser that
+	// needs a bound has to find another.
+	length int
+	// wrapper is where that length is measured from, which is the start of the extension rather than
+	// the start of the subtable it points at.
+	wrapper int
 }
 
 // resolve_gpos_subtable follows an extension lookup to the table it wraps.
@@ -1254,12 +1264,19 @@ fn resolve_gpos_subtable(r &Reader, kind u16, at int) ResolvedSubtable {
 			at:   at
 		}
 	}
-	if !r.has(at, 8) {
+	//	ExtensionPosFormat1
+	//	    uint16   format            = 1
+	//	    uint16   extensionLookupType
+	//	    uint32   extensionOffset
+	//	    uint32   extensionLength
+	if !r.has(at, 12) {
 		return ResolvedSubtable{ kind: 0, at: 0 }
 	}
 	return ResolvedSubtable{
-		kind: r.u16_at(at + 2)
-		at:   at + int(r.u32_at(at + 4))
+		kind:    r.u16_at(at + 2)
+		at:      at + int(r.u32_at(at + 4))
+		length:  int(r.u32_at(at + 8))
+		wrapper: at
 	}
 }
 
@@ -1516,24 +1533,55 @@ mut:
 	// values is indexed by the glyph's coverage index, so a record is found through the coverage
 	// rather than by an offset the caller would have to know about.
 	values []PairValue
+	// base is format 2's single value, which every covered glyph takes unless an override names it.
+	// It is an Option because format 1 has no such thing, and a rule that has a base of zero would
+	// otherwise be indistinguishable from one that has none.
+	base ?PairValue
+	// overrides are format 2's exceptions, keyed by the glyph's *coverage index* rather than by glyph
+	// id, which is the whole reason format 2 cannot be read as format 1.
+	overrides []PosOverride
+}
+
+// PosOverride is one format 2 exception: a set of coverage indices and the value they take instead of
+// the rule's single value.
+struct PosOverride {
+	index int
+	value PairValue
 }
 
 // offset_for finds the adjustment for one glyph within a single rule.
 fn (rule &SinglePos) offset_for(gid u16) ?Offset2 {
 	idx := coverage_index(rule.ranges, gid) or { return none }
+	// Format 2 asks the exceptions first and the shared value second, and a rule cannot have both, so
+	// which pair of these is live is decided by whether base is set rather than by a format number. That
+	// keeps one lookup path for both formats instead of two that can disagree.
+	if rule.base != none {
+		for o in rule.overrides {
+			if o.index == int(idx) {
+				return placement_of(o.value)
+			}
+		}
+		return placement_of(rule.base or { return none })
+	}
 	if idx >= rule.values.len {
 		return none
 	}
-	v := rule.values[idx]
-	// A rule that says nothing about either placement is no rule, and answering it with a zero would
-	// look like a font that had decided the glyph was already in the right place.
+	return placement_of(rule.values[idx])
+}
+
+// placement_of turns a value record into an offset, or reports that the record says nothing about
+// where the glyph goes.
+//
+// A rule that says nothing about either placement is no rule, and answering it with a zero would look
+// like a font that had decided the glyph was already in the right place.
+fn placement_of(v PairValue) ?Offset2 {
 	if v.format & 0x0003 == 0 {
 		return none
 	}
 	return Offset2{ x: i32(v.x_placement), y: i32(v.y_placement) }
 }
 
-// parse_single_position reads one SinglePos subtable, in format 1.
+// parse_single_position reads one SinglePos subtable, in either format.
 //
 // Format 1 has one value for every covered glyph, and the value comes straight after the format that
 // says how wide it is. There is no count of the values: the coverage already says how many glyphs there
@@ -1542,11 +1590,23 @@ fn (rule &SinglePos) offset_for(gid u16) ?Offset2 {
 // produced were the wrong ones rather than merely noisy ones, and it is a mistake worth naming because
 // the pair tables beside it do have a count and the two sit next to each other in the same table.
 //
-// Format 2 has one value for the whole coverage and a second array naming the glyphs that want
-// something else. It is not read here: no font on this machine uses it, and reading it as format 1 takes
-// the valueCount as a count and then reads coverage indices as records.
-fn parse_single_position(r &Reader, at int) ?SinglePos {
-	if r.u16_at(at) != 1 {
+// Format 2 has one value for the whole coverage, a count of it, and then a run of exceptions to the end
+// of the subtable. The count is read and must be 1; reading format 2 as format 1 takes that count as
+// the number of per-glyph values, walks `glyphs` values out of a table that has one, and then reads the
+// exception list's coverage indices as though they were records.
+//
+// The exceptions run "to the end of the subtable", which is the awkward part: a lookup's subtables
+// carry no length of their own unless they came through an extension, and one that did does. So the
+// scan is bounded twice — by the extension's length when there is one, and always by the coverage.
+//
+// The second bound is the one that matters and it is structural rather than a guess: an exception names
+// *coverage indices*, so it cannot name more glyphs than the coverage covers. A count larger than that
+// is not a badly-aligned record, it is the end of this table and the beginning of whatever follows, and
+// stopping there is what keeps a format 2 subtable from reading the next lookup's bytes as exceptions.
+fn parse_single_position(r &Reader, resolved ResolvedSubtable) ?SinglePos {
+	at := resolved.at
+	format := r.u16_at(at)
+	if format != 1 && format != 2 {
 		return none
 	}
 	ranges := parse_coverage(r, at + int(r.u16_at(at + 2)))
@@ -1561,17 +1621,88 @@ fn parse_single_position(r &Reader, at int) ?SinglePos {
 	for cr in ranges {
 		glyphs += int(cr.last - cr.first) + 1
 	}
+	if format == 1 {
+		step := pair_value_size(value_format)
+		mut values := []PairValue{cap: glyphs, len: 0}
+		mut p := at + 6
+		for _ in 0 .. glyphs {
+			values << read_pair_value(r, p, value_format)
+			p += step
+		}
+		return SinglePos{
+			ranges: ranges
+			format: value_format
+			values: values
+		}
+	}
+	//	SinglePosFormat2
+	//	    uint16   posFormat               = 2
+	//	    Offset16 coverageOffset
+	//	    uint16   valueFormat
+	//	    uint16   valueCount              (must be 1)
+	//	    Value   value1[valueCount]
+	//	    PosRule posRuleSet[]             (to the end of the subtable)
+	if !r.has(at + 6, 2) {
+		return none
+	}
+	value_count := int(r.u16_at(at + 6))
+	if value_count != 1 {
+		// The specification says one. A count of anything else is a table this reader does not
+		// understand, and guessing how many values follow would be guessing where the exceptions
+		// start.
+		return none
+	}
 	step := pair_value_size(value_format)
-	mut values := []PairValue{cap: glyphs, len: 0}
-	mut p := at + 6
-	for _ in 0 .. glyphs {
-		values << read_pair_value(r, p, value_format)
-		p += step
+	base := read_pair_value(r, at + 8, value_format)
+
+	mut p := at + 8 + step
+	// The extension's length is measured from the start of the extension, so the bound is relative to
+	// the extension's own offset rather than to the subtable it points at.
+	mut limit := r.len()
+	if resolved.length > 0 {
+		mut from_wrapper := resolved.wrapper + resolved.length
+		if from_wrapper > 0 && from_wrapper < limit {
+			limit = from_wrapper
+		}
+	}
+	mut overrides := []PosOverride{}
+	for p + 2 <= limit {
+		glyph_count := int(r.u16_at(p))
+		// The bound that does not depend on knowing where the subtable ends.
+		if glyph_count == 0 || glyph_count > glyphs {
+			break
+		}
+		if p + 2 + glyph_count * 2 + step > limit {
+			break
+		}
+		// Every index named has to be one the coverage has, or the record is not this table's.
+		mut indices := []int{cap: glyph_count}
+		mut bad := false
+		for k in 0 .. glyph_count {
+			at_index := int(r.u16_at(p + 2 + k * 2))
+			if at_index >= glyphs {
+				bad = true
+				break
+			}
+			indices << at_index
+		}
+		if bad {
+			break
+		}
+		v := read_pair_value(r, p + 2 + glyph_count * 2, value_format)
+		for ix in indices {
+			overrides << PosOverride{
+				index: ix
+				value: v
+			}
+		}
+		p += 2 + glyph_count * 2 + step
 	}
 	return SinglePos{
-		ranges: ranges
-		format: value_format
-		values: values
+		ranges:    ranges
+		format:    value_format
+		base:      base
+		overrides: overrides
 	}
 }
 

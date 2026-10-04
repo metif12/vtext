@@ -141,10 +141,37 @@ tables beside it in the same table do have a count, which is what makes the two 
 
 ### ~~SinglePos format 2~~
 
-**Not done, and nothing here uses it.** Format 2 has one value for a whole coverage and a second array
-naming the glyphs that want something else, each by its coverage index. No font on this machine uses it,
-and reading it as format 1 takes the valueCount as a count and then reads coverage indices as records,
-which is worse than refusing it.
+**Done**, and the refusal the old version of this section asked for turned out to be the wrong shape of
+answer. Refusing is right for a table a reader cannot bound and wrong for a table a reader can bound a
+different way.
+
+The awkward part of the format is that its exception list runs *to the end of the subtable*, and a
+lookup's subtables carry no length of their own. So the question is what stops the scan. Two things do,
+and only one of them is available in general:
+
+- **The extension's length**, when the subtable came through one. `ExtensionPos` writes a uint32
+  `extensionLength` that the reader had no use for until now, and it is plumbed through
+  `ResolvedSubtable`. Nearly every real positioning rule arrives through an extension, so this is the
+  bound that usually applies.
+- **The coverage**, always. An exception names *coverage indices*, so it cannot name more glyphs than
+  the coverage covers. A count larger than that is not a badly aligned record; it is the end of this
+  table and the start of whatever follows.
+
+The second is the one that matters, because it is structural rather than a hope about the font, and
+because it is what stops a format 2 subtable read without a wrapper from eating the next lookup's
+bytes as exceptions.
+
+What the format actually is: one value for the whole coverage, a `valueCount` that must be 1, and then
+exceptions keyed by coverage index. `offset_for` asks the exceptions first and the shared value second,
+and which pair of those is live is decided by whether the shared value is set rather than by a format
+number — so there is one lookup path for both formats instead of two that can disagree.
+
+No font on this machine uses it, so all eight tests build the subtable as bytes. That is not a
+shortcut: a parser that is correct on the specification and never executed is not a parser. The test
+that pins the count check uses a record whose four indices are **all valid** for a two glyph coverage,
+so that removing the count check is what makes it fail — a record with an out-of-range index would be
+refused by either check, and a test using one would pass with the count check deleted. That was caught
+by mutating the code and finding the test still green.
 
 ### ~~Cursive attachment: what it actually needs~~
 

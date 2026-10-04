@@ -126,7 +126,10 @@ fn test_gpos_cursive_reader_refuses_a_single_position() {
 	r := new_reader(single_pos_bytes())
 	assert parse_cursive(r, 0) == none, 'a value format is not an anchor offset'
 	// The same bytes still have to read as the positioning rule they are.
-	rule := parse_single_position(r, 0) or { panic('a single positioning is not a cursive rule') }
+	rule := parse_single_position(r, ResolvedSubtable{
+		kind: gpos_lookup_single_position
+		at:   0
+	}) or { panic('a single positioning is not a cursive rule') }
 	assert rule.ranges.len == 1, 'and it covers the one glyph'
 	got := rule.offset_for(3) or { panic('no value for the glyph') }
 	assert got.x == -120, 'and it moves it by the font number'
