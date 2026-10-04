@@ -359,6 +359,49 @@ The `reshape` helper went with it. It applied one glyph at a time, so leaving it
 letter per-glyph and then miss the run-level rule, because a shaped glyph is no longer in a coverage written
 against base letters. `Font.shaped_glyph_index` stays, as a question, with its limits written down.
 
+### ~~Cursive attachment: the attachment itself~~ — reachable now, and still not written 2026-10-04
+
+**This section has been rewritten twice. The first account said no font on this machine has a cursive rule,
+which was wrong twice over; the second said the rules were unreachable because shaping did not select the
+glyphs they cover, which was right and is now fixed. What is left is a third thing, and it is not a font
+availability problem any more.**
+
+The joining fix made the rules reachable. Noto Nastaliq Urdu's shaped letters now come out as glyphs its
+cursive rule covers, where before they were base letters the rule said nothing about. So the question moved
+from "can this be reached" to "what does the rule mean", and the measurement says the obvious reading is
+wrong.
+
+**The attachment is not the adjacent exit-to-entry pairing.** Nastaliq's `سلام` shapes to eight glyphs, two
+per letter, and the anchors look like this in reading order:
+
+| glyph | cluster | entry | exit |
+| --- | --- | --- | --- |
+| 964 | م | — | — |
+| 437 | م | (438, 573) | — |
+| 952 | ا | — | — |
+| 5 | ا | (263, 0) | — |
+| 959 | ل | — | — |
+| 398 | ل | (848, 384) | — |
+| 951 | س | — | — |
+| 188 | س | — | (0, 0) |
+
+Two things are wrong with the naive reading. The exit at (0, 0) and the following entry at (848, 384) are
+848 units apart, so joining them would move the lam **backwards** by most of an em, and Nastaliq's whole
+point is that the letters are set far apart. And the two are not even adjacent: glyph 959 sits between them,
+carrying no anchors at all, so a pass that requires the pair to be neighbours joins nothing, and a pass that
+skips glyphs with no anchors would skip the connector in a word as readily as a space between two words.
+
+**And the fonts that shape through the cmap cannot demonstrate it at all.** Dubai, Traditional Arabic and
+Amiri all map their shaped glyphs to glyph ids their own cursive rules do not cover — every glyph of
+`سلام` in all three comes back with no anchors, despite all three carrying a cursive rule. Reaching a rule
+on those fonts needs the pipeline to prefer GSUB joining over the presentation-form codepoint, which is a
+bigger architectural question than this entry is.
+
+So the attachment is written last, after two things are settled: that a rule's pair is identified correctly
+when an expansion puts a glyph between the exit and the entry, and whether GSUB joining should win over the
+cmap. Both are answerable and neither is a guess, which is the difference from the last two attempts at this
+entry.
+
 ---
 
 
