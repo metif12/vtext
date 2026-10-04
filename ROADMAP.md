@@ -204,14 +204,50 @@ remains is the reader, and it is written:
   can end up wider or narrower than its advance says. That needs a font with a cursive attachment to be
   worth writing, and there is none here.
 
-### Cursive attachment: the attachment itself
+### ~~Cursive attachment: the attachment itself~~ — re-confirmed blocked, 2026-10-04
 
-The reader for a cursive rule is done. The attachment is not, and it is not a positioning rule: the
-pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter can end up wider
-or narrower than its advance says, and the whole line has to be placed in two passes rather than one.
-It needs a font that has a cursive attachment to be measured against, and none of the fonts on this
-machine has one. Bringing one in — Amiri or Scheherazade, or a Nastaliq face — is the first thing this
-needs, and it is a question about which fonts the library is expected to open rather than about OpenType.
+**The reader is right and this engine is right to find nothing. The premise was checked again against
+fontTools and the check nearly went the other way.**
+
+The earlier survey in this file stands: unwrapping extensions and reading the type each one *declares*
+finds no cursive attachment on this machine. That was re-run, and it is still what the declared types
+say. What happened is that a second survey, using fontTools instead of reading the bytes, reported nine
+fonts with a `CursivePos` — Dubai, Arabic Typesetting, Urdu Typesetting, Aldhabi — and every one of
+them is a false positive:
+
+| font | lookup | declared | fontTools class |
+| --- | --- | --- | --- |
+| arabtype.ttf | 15 | extension, `extensionLookupType` = **3** | CursivePos, 1542 glyphs |
+| UrdType.ttf | 0 | **3** (not an extension at all) | CursivePos, ten subtables |
+
+Both are **mark attachment** by declaration. fontTools reports them as `CursivePos` because it
+classifies the subtable from the bytes' shape — one coverage followed by N pairs of anchor offsets and
+then an anchor table — and that shape is exactly a cursive rule's. A mark attachment is supposed to
+have two coverages, and these have one.
+
+So the roadmap's earlier note was right and has now been confirmed with a specific instance to point
+at: **fontTools calls a subtable a CursivePos by reading its shape rather than the header that names
+its type.** A conformant consumer follows `extensionLookupType`, and this engine does.
+
+The engine's own guard agrees independently, which is the part worth having. It visits all 54 type-1
+lookups in arabtype and refuses every one, and the 54 refusals are all the same shape: the word where a
+cursive rule's first anchor offset would be holds a number like 5 or 7, which is a value format, and a
+value format cannot point past a value array that is already there. Not one refusal involves a
+plausible anchor offset, because there is not one in the font.
+
+**This stays blocked, and the blocker is font availability rather than OpenType.** Amiri, Scheherazade
+or a Nastaliq face would settle it. Writing the attachment against a mark attachment's bytes would be
+worse than not writing it: it would produce a line that joins plausibly and is wrong, and the join is
+the one thing an Arabic reader notices immediately.
+
+Two things did come out of the exercise and are kept:
+
+- The reader handles format 1 and format 2, so a font that brings its own attachment is a reader away
+  from working. `gpos_cursive_test.v` builds both formats as bytes and checks the guard refuses a single
+  positioning whose value format lands where an anchor offset would be — which is a real failure that
+  happened, taking Andalus's lookup 21 out of the font and failing the kerning tests.
+- `ResolvedSubtable` now carries the extension's length, which is what a format that runs to the end of
+  its subtable needs and which nothing wanted until SinglePos format 2.
 
 ### Device and variation tables
 
