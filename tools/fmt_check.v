@@ -36,8 +36,8 @@ import os
 // exempt" and the next person adds to it; a skip list with reasons attached says "these are exempt because
 // of this, which you should go and confirm is still true".
 const excluded = {
-	'stbtt.c.v':    'the formatter reports it unformatted, writes identical bytes, and shows no diff'
-	'ucd_names.v':  'v fmt -w rewrites 429,652 lines of a 1.8 MB generated table and is not reversible by inspection'
+	'stbtt.c.v':   'the formatter reports it unformatted, writes identical bytes, and shows no diff'
+	'ucd_names.v': 'v fmt -w rewrites 429,652 lines of a 1.8 MB generated table and is not reversible by inspection'
 }
 
 struct Checked {
@@ -59,7 +59,9 @@ fn main() {
 
 	mut all := collect(filter)
 	if all.len == 0 {
-		eprintln(if filter == '' { 'no V files found' } else {
+		eprintln(if filter == '' {
+			'no V files found'
+		} else {
 			'no V files matching "${filter}"'
 		})
 		exit(1)
@@ -110,21 +112,41 @@ fn main() {
 
 // collect lists the V files to check.
 //
-// The generated tables are included and the build outputs are not. A .v file under a directory this
-// repository builds into is a build artefact with a source extension, and formatting one is how a stale
-// copy of the library ends up committed.
+// The walk is recursive, because a gate that reads only the top directory is a gate over half the
+// repository: tools/ and examples/ hold thirty-two files between them, and an unformatted one of them
+// would pass this gate silently. It prints its own count, so a walk that stopped early shows up in the
+// total rather than only in the absence of complaints.
+//
+// Build outputs are not a concern here because there are none to confuse for sources: the examples write
+// .exe and .png beside their .v files and every one of those is ignored. A hidden directory is skipped,
+// which keeps the walk out of .git and out of any editor's state directory.
 fn collect(filter string) []string {
 	mut out := []string{}
-	entries := os.ls('.') or { [] }
-	for e in entries {
-		if e.ends_with('.v') && !e.starts_with('.') {
-			if filter == '' || e.contains(filter) {
-				out << e
-			}
-		}
-	}
+	walk('.', filter, mut out)
 	out.sort()
 	return out
+}
+
+// walk adds every V file under dir to out, building paths with forward slashes so a printed name matches
+// what a person would type.
+fn walk(dir string, filter string, mut out []string) {
+	entries := os.ls(dir) or { return }
+	for e in entries {
+		if e.starts_with('.') {
+			continue
+		}
+		full := if dir == '.' { e } else { dir + '/' + e }
+		if os.is_dir(full) {
+			walk(full, filter, mut out)
+			continue
+		}
+		if !e.ends_with('.v') {
+			continue
+		}
+		if filter == '' || full.contains(filter) {
+			out << full
+		}
+	}
 }
 
 // exclusion returns the reason this path is not checked, or an empty string when it is.

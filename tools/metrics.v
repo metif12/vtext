@@ -108,6 +108,7 @@ fn main() {
 
 	print_vertical(font, size)
 	print_widths(font, size)
+	print_glyphs(font, size, parses(option('--glyphs', '0'), 0))
 	print_selected(font, size)
 }
 
@@ -202,19 +203,60 @@ fn print_widths(f &vtext.Font, size f64) {
 	println('')
 }
 
+// print_glyphs lists the first n glyphs by id, which is the question behind "why is this letter the
+// wrong width" once the extremes above have said the font is not the problem.
+//
+// The ink box is included per glyph because the advance and the ink disagree in most fonts, and a caller
+// laying out a page cares about where the ink lands rather than where the pen does. Rasterizing n glyphs
+// is why n is the caller's to choose rather than the tool's.
+//
+// The codepoint is deliberately absent: nothing in the public API maps a glyph id back to a character, and
+// a tool that built its own reverse table would be the second reader this file says it does not have. The
+// character a glyph stands for is what tools/glyphdump is for.
+fn print_glyphs(f &vtext.Font, size f64, n int) {
+	if n <= 0 {
+		return
+	}
+	total := f.num_glyphs()
+	if total == 0 {
+		return
+	}
+	mut shown := n
+	if shown > total {
+		shown = total
+	}
+	println('${shown} glyph${if shown == 1 { '' } else { 's' }} by id at ${size:.0} pixels')
+	for gid in 0 .. u16(shown) {
+		w := f.glyph_advance(gid, size)
+		mut flags := []string{}
+		if f.is_mark_glyph(gid) {
+			flags << 'mark'
+		}
+		if w == 0.0 {
+			flags << 'no advance'
+		}
+		mut ink := ''
+		bmp := f.rasterize(gid, size, 0, 0)
+		if !bmp.is_empty() {
+			ink = 'ink ${bmp.width}x${bmp.height} at ${bmp.left},${bmp.top}'
+		} else {
+			ink = 'no ink'
+		}
+		println('  gid ${gid:5}  advance ${w:7.2f}  ${ink:22}  ${flags.join(' ')}')
+	}
+	if n > total {
+		println('  the font has ${total} glyphs, so ${n} were asked for and ${total} exist')
+	}
+	println('')
+}
+
 // print_selected prints the numbers for glyphs a caller named, which is the question behind most of
 // "why is this letter the wrong width".
 //
 // A glyph is named by id, and a codepoint is the more useful thing to name, so both are accepted: a
 // value that is a glyph id and also a codepoint prints both readings rather than choosing one.
 fn print_selected(f &vtext.Font, size f64) {
-	// The value follows --glyph, so it is read by position rather than by scanning for the name alone.
-	mut value := ''
-	for i, a in os.args {
-		if a == '--glyph' && i + 1 < os.args.len {
-			value = os.args[i + 1]
-		}
-	}
+	value := option('--glyph', '')
 	if value == '' {
 		return
 	}
