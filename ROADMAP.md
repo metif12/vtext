@@ -31,11 +31,48 @@ comes with them.
 | GPOS: cursive attachment, format 1 and 2 | read; the attachment itself is not written |
 | Line breaking (UAX #14) | partial: no dictionary, strict level, or CJK |
 | Line options beyond a feature list | absent: no line height, alignment, or spacing |
-| Rasterized glyph reuse | absent: no cache, and no atlas despite what `v.mod` says |
+| Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
+| Glyph box measurement | done: the layout pass asks for the box, not the pixels |
 
-Eighteen test files, all passing, reading real fonts from the system. The cursive reader is the one
+Twenty-two test files, all passing, reading real fonts from the system. The cursive reader is the one
 piece with no font to test it against, so its tables are built from words in `gpos_cursive_test.v`
 rather than opened from disk.
+
+## Performance: what was actually slow
+
+This section was not here before 2026-10-04, and it is here because the section below it was wrong.
+The argument for a glyph cache was that rasterizing per glyph per frame "is the difference between a
+page that scrolls and one that does not". That is true, and it was not where the time went.
+
+Measured on this machine, Segoe UI at 16 pixels, best of five batches, with eight other V builds
+running — so treat the absolutes as carrying that variance and the ratios as the finding:
+
+| Paragraph | Before | After | Cost per character |
+| --- | --- | --- | --- |
+| 128 characters | 1835 us | 656 us | 5.1 us, flat |
+| 256 characters | 5630 us | 1218 us | 4.8 us |
+| 512 characters | 18910 us | 2190 us | 4.3 us |
+| 1024 characters | **72190 us** | **4060 us** | 4.0 us |
+
+The cost per character climbing from 11 to 69 microseconds as the text got longer was the signature:
+`layout_paragraph` was quadratic. It is linear now, and 1024 characters went from 72 milliseconds to
+4.
+
+The cause was not rasterization. One rasterization of a 16 pixel glyph is **3.9 microseconds**, so a
+264 character paragraph spent about a millisecond of a seven millisecond layout inside
+`measure_line`. It is now a box query instead of a fill (`Face.box_only`), which removes an
+allocation and a scanline pass per glyph, and that is the whole of what that change is worth.
+
+The cause was `apply_ligature` in `gsub.v`, which built a view of the entire rest of the run before
+trying a ligature at one position. `match_ligature` only ever reads as far as the longest rule's
+components, so trying it at each of *n* positions copied O(n) each time: 524,000 element copies per
+lookup per layout at 1024 glyphs. The bound is now computed once when the lookup is parsed. Measured
+on its own, `Font.substitute_glyphs` over 1024 glyphs went from 65883 us to 1550 us.
+
+What this changes about the rest of the roadmap: glyph reuse is worth having and is the caller's to
+have, and it is not the difference between scrolling and not. Nothing else in the list is a
+performance item, so there is no longer a performance argument for any of them.
+
 
 ## Phase 1: the engine's remaining gaps
 
@@ -157,44 +194,98 @@ wrong but not visibly so. Reading it is a matter of applying a table of
 adjustments by pixels-per-em, and a variable font's version needs the variation
 store.
 
-### Line options, and measuring a run at a width
+### ~~Line options, and measuring a run at a width~~
 
-`LayoutOptions` is one field. It should be the place a caller reaches for
-everything that is a choice rather than a fact: line height, alignment, the
-fallback order, the feature set, the direction when the text does not imply one,
-letter and word spacing. A caller should be able to do everything the library
-can do through it, and nothing should need a separate function that only works
-for one script. This is written down in phase 2 as an API question and it belongs
-in phase 1 as an engine question, because line height in particular changes what
-a line is: at a line height below the font's natural one the line box is shorter
-than the glyphs, and the caller has to be able to say so.
+**Done, in two halves, and one of them is a live bug fixed in the caller.**
 
-The other half is measurement without committing to a layout. `wrap_paragraph`
-already shapes a paragraph once and slices the result, so the same call answers
-a question it was not written for: the width of the text at the narrowest it can
-be (every word on its own line) and the width at the widest without any break
-at all. A caller doing box layout needs both before it needs a rendered line.
-What is missing is that neither is expressed in the API — a caller has to know
-the slicing rule to derive them — and that they are not cheap to compute at an
-arbitrary font size, which means no cache across sizes.
+`LayoutOptions` has `line_height`, `letter_spacing` and `word_spacing`, and `Line` has
+`line_height`. Direction did not move into it, and that was a decision rather than an omission: the
+`base_dir` argument already carries it, and a second source for one decision with no stated precedence
+is worse than a slightly awkward signature. Alignment is absent for a different reason — aligning
+inside a margin needs a container width the engine does not have, and `Line.glyphs` is already
+mutable, so the knob would have been a field that does nothing.
 
-### A glyph cache
+Spacing is added to **advances**, before `place_glyphs`, not to positions afterwards. The running sum
+in `place_glyphs` and the width in `measure_line` then both account for it with no second walk and no
+way for the width and the positions to disagree. A combining mark is skipped: it shares its base's
+position and has no advance, so spacing both would charge one character twice. That is the whole of
+the implementation and the only non-obvious decision in it.
 
-Rasterizing is a tree walk, a curve evaluation and a scanline fill. Doing that
-per glyph per frame is the difference between a page that scrolls and one that
-does not, and nothing in the library currently keeps a rasterized glyph around.
-The key is `(font, gid, em_px, sub_x, sub_y)`, and the last two are quarters of
-a pixel — they are there so that a glyph rasterized at a fractional position
-does not have to be rounded to whole pixels to be reused, and getting that
-conversion wrong is a sixteen-times error that is very hard to see.
+`line_height` resolves to the caller's value when there is one and otherwise to the largest natural
+line height among the fonts that contributed a glyph. `ascent` and `descent` are deliberately left as
+the ink's extent rather than made to fit the box, and `gpos_test.v`'s assertion that a mark counts
+towards the line height is what pins that. A caller asking for a line height below the glyphs gets the
+smaller number and clips the ink itself, which is the only answer that can be right without knowing
+what the caller will draw. The question `ROADMAP.md` raised about this — what happens below the
+font's natural line height — is answered by that split rather than by a new field.
 
-Note what this is not. `v.mod` and the doc comment on `Context` both describe a
-glyph atlas, and there is no atlas in the library; both statements are
-aspirational and have been for a while. An atlas is a GPU texture with a
-shelf packer, and a caller rasterizing into its own buffer needs a map from key
-to bitmap, not an atlas. If someone does want an atlas it should be a separate
-type the caller owns, built from these bitmaps, not something the shaping engine
-allocates for a display backend it does not have.
+`measure_paragraph` and `measure_paragraph_with` report the two widths a caller needs before it draws
+anything, out of one shaping. The widest is `layout_paragraph`'s width. The narrowest is the width of
+the widest unbreakable unit, **excluding trailing spaces**.
+
+That exclusion is the reason the function exists rather than a refinement of it. A break opportunity
+falls *after* a space, so the space ends the line before the break rather than starting the one after
+it, and a number copied out of `wrap_paragraph` is one space too wide on every word. Measured at 32
+pixels on Segoe UI that is **8.77 pixels**, which at a 16 pixel size is about a twentieth of a line.
+
+The caller has this bug today. `../vweb/text/shape.v` computes a min-content width by calling
+`wrap_paragraph` with a width of zero and taking the widest line, which is the same number with the
+space still in it. It can call `measure_paragraph` instead; that change is in that repository and is
+not in this one.
+
+Two things about the measurement that are worth knowing rather than re-deriving:
+
+`max(advances)` and `sum(advances)` agree, because `place_glyphs` accumulates `x` as a running sum
+from zero, so for any contiguous run of glyphs the furthest the pen reached equals the total of the
+advances. They diverge only when a logical range spans more than one bidi run, which is what makes
+the per-cluster prefix sum in `cluster_prefix` correct rather than merely convenient.
+
+And it is O(n). Asking `width_of_range` once per break opportunity walks every glyph once per
+opportunity, which is quadratic in the length of a text whose words are short — and short words are
+most of the text anyone measures.
+
+`wrap_paragraph` also grew a `_with` form, which was a bug rather than a feature: it took no options
+at all, so it shaped without the caller's features while `layout_paragraph_with` shaped with them,
+and the two disagreed about the width of the same text.
+
+### ~~A glyph cache~~ — settled, and not in this library
+
+**The cache stays with the caller, and the atlas was never going to arrive.** This reverses what the
+rest of this document said for a year, so the reasoning is worth having in one place.
+
+There is a caller on disk, `../vweb`, and it already has a cache: `GlyphKey` packed into a `u64`, the
+size quantised to a 64th of a pixel, the subpixel offset to a quarter, and about 22 KB of tests for
+it. Both projects had written down that the cache belonged here. It lives there now, which is the only
+honest way to record a decision that was already made by other means.
+
+Keeping it there is also the better answer on the merits, which is not what either document said:
+
+- The cache key needs the **font**, and the font is resolved by the caller's own font library, not by
+  this engine. `vweb` keys on a font *id* it assigned; this engine's key would need a pointer, and a
+  pointer is not comparable across a fallback chain that reloads.
+- A cache on `Font` makes every loaded font's face mutable. Nineteen public methods currently take
+  `&Font`, and `Context` is documented as shareable between threads; a cache would silently reverse
+  that for every caller who took the documentation at face value. `v -race` cannot check the fix here,
+  because Windows is not a supported target for it.
+- A cache is a memoisation of a pure function of (font, gid, size, subpixel offset). That is a few
+  dozen lines of the caller's own code, with no shared mutable state and nothing for the engine to
+  keep compatible.
+
+What arrived here instead is the half of the problem that *was* the engine's: `measure_line`
+rasterized every glyph of every paragraph to read two integers out of the result and threw the pixels
+away. It now asks for the ink box (`Face.box_only`), which is the same two numbers with no fill and
+no allocation. `stbtt_test.v` sweeps all 7000-odd glyphs of Segoe UI and six sizes in Tahoma to prove
+the two paths report identical boxes, because the argument that they do is one step from the
+rasterizer header's own definition of `stbtt_GetGlyphBitmapBox`.
+
+Note that this is not the same as saying it is fast. Rasterization is 3.9 microseconds per glyph and
+was never the bottleneck; see the performance section at the top.
+
+An atlas, if anyone wants one, should be a separate type the caller owns, built from these bitmaps.
+A GPU texture with a shelf packer is a display backend's concern, and this engine has no display
+backend. The claims that this library had one — in `v.mod` and in the module comment — were removed
+rather than implemented. The roadmap had attributed the comment to `Context`; it was in the module
+comment at the top of `vtext.v`.
 
 ### cmap formats 13 and 14
 
@@ -217,6 +308,22 @@ as a twenty-line addition to `cmap.v`.
 
 Format 13 is many-to-one range mappings, which Apple uses for variant pairs. It
 is the same shape of problem and can be read the same way.
+
+Two things found while surveying this, on 2026-10-04, that were not in the section above:
+
+**No font on this machine has a format 13 subtable.** All 352 of the `.ttf`, `.otf` and `.ttc` files
+in `C:\Windows\Fonts` were scanned by reading each subtable's format field directly. Ten have a
+format 14: `seguiemj.ttf` (the ideal fixture — 179 default-UVS ranges under U+FE0F covering 354
+codepoints), `mmrtext.ttf` and `phagspa.ttf` (non-default only), `msgothic.ttc` (supplementary
+selectors), and the four `YuGoth*.ttc`. So format 13 needs a table built as bytes, the way
+`gpos_cursive_test.v` builds its tables, and there is no precedent in this repository for that yet.
+
+**A variation selector does not survive shaping today.** `joining.v`'s `attach_marks` treats a
+transparent, zero-combining-class character as an invisible format character and discards it, which
+is right for a ZWNJ and wrong for U+FE0F: the selector has ccc 0 and JoiningType T, so it is dropped
+before anything can act on it. A run now draws the text presentation of an emoji and no way to ask
+for the other one. That is a smaller defect than the section implies and it is fixed by the same
+change, since both need `ShapedGlyph` to carry the selectors.
 
 ### Vertical text
 
@@ -563,21 +670,30 @@ because this engine asks one language system and none of them names them. A repo
 feature tag would say the font can isolate a letter and that the font cannot, which is the same sentence
 pointing both ways.
 
-### `tools/shapetrace`
+### ~~`tools/shapetrace`~~
 
-Print the pipeline for one string, step by step: what normalization did, what
-bidi decided, which joining form each letter took, which substitution rule
-fired and replaced what, which positioning rule answered and with what. Every
-debugging session on this engine ended by writing a version of this and reading
-it, so it should exist.
+**Done**, in `tools/shapetrace.v`, and it works by calling each stage separately rather than by
+instrumenting `layout_paragraph`. That is what `trace_api.v` is for, and it is why that module is
+`pub`: a trace has to be able to stop between the passes, and the alternative was a build of the
+engine with prints in it.
 
-### `tools/fontcheck`
+```
+v run tools/shapetrace.v "سلام" C:/Windows/Fonts/segoeui.ttf
+```
 
-Validate a font against the library and report what it cannot use. Not
-whether the font is valid: whether this library can shape with it, which is a
-different question and the one that matters. A font whose GSUB references a
-glyph its cmap never produces is valid and unusable, and that is a report
-rather than a crash.
+It prints the input, what normalization did, the resolved levels, the joining form each letter took,
+the shaped glyphs, and the laid-out result with its width and vertical extent.
+
+### ~~`tools/fontcheck`~~
+
+**Done**, in `tools/fontcheck.v`. Validate a font against the library and report what it cannot use.
+Not whether the font is valid: whether this library can shape with it, which is a different question
+and the one that matters. A font whose GSUB references a glyph its cmap never produces is valid and
+unusable, and that is a report rather than a crash.
+
+It checks the outlines, the lookup kinds, features no script reaches, the cursive reader's refusal,
+variable fonts, mark attachment, and per-script coverage. What it does **not** check is a cmap format
+this engine cannot read, which is the finding a format 13 or 14 implementation should add.
 
 ### `tools/metrics`
 
@@ -615,8 +731,9 @@ from-scratch HTML and CSS engine (`../vweb`) that uses this library as its only
 text layer, and it is why the three gaps in phase 1 above are written down as
 gaps rather than left for later. The division holds as long as it stays this
 way: boxes, the cascade and painting are the caller's, and this library ends at
-a positioned glyph with a coverage bitmap. The one place the boundary is
-genuinely awkward is glyph reuse, because a caller rasterizing into its own
-buffer needs a cache and a caller rasterizing into a GPU texture needs an
-atlas, and only the first is text. The cache belongs here for that reason; the
-atlas does not, and should not arrive as one.
+a positioned glyph with a coverage bitmap. Glyph reuse is the one place the
+boundary was genuinely awkward, and it has been settled against this document's
+earlier reading: the caller rasterizes into its own buffer, so it needs a cache
+and not an atlas, and **the cache is the caller's**. See the glyph cache section
+for why that is also the better answer on the merits rather than only the one
+that was already in force.

@@ -55,7 +55,27 @@ it.
 - GPOS chaining-context positioning (lookup type 8, format 3).
 - Right-to-left lines, mixed-direction paragraphs, and bidi mirroring.
 - Line breaking per UAX #14, and wrapping to a width.
+- Measuring a paragraph: min-content and max-content width, vertical extent, resolved line height.
+- Line height, letter spacing and word spacing as caller options.
 - Glyph rasterization through a bundled stb_truetype.
+
+## Performance
+
+`layout_paragraph` is linear in the length of the text. Measured on Segoe UI at 16 pixels, best of
+five batches of repetitions:
+
+| Paragraph | Cost | Per character |
+| --- | --- | --- |
+| 128 characters | 656 us | 5.1 us |
+| 512 characters | 2190 us | 4.3 us |
+| 1024 characters | 4060 us | 4.0 us |
+
+It was quadratic until 2026-10-04 and cost 72 milliseconds for 1024 characters. The cause was a
+ligature substitution that copied the rest of the run before trying one position; see `ROADMAP.md`.
+
+**Glyph reuse is the caller's business, not this library's.** `Font.rasterize` is a pure function of
+(font, gid, size, subpixel offset) and is cheap enough at 3.9 microseconds per glyph that a caller
+rasterizing to its own buffer should cache it itself. It is not a GPU atlas and will not become one.
 
 ## Not supported
 
@@ -147,6 +167,64 @@ opts.features = ['liga']
 line := vtext.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 ```
 
+### Line options
+
+`LayoutOptions` is where the choices that are the caller's rather than the engine's live. Three of
+them change measurements, so anything that sizes a box has to use the same options the line is drawn
+with.
+
+```v
+mut opts := vtext.LayoutOptions{}
+opts.features = ['liga']
+opts.line_height = 28.0       // 0 takes the font's own
+opts.letter_spacing = 0.5
+opts.word_spacing = 2.0
+
+line := vtext.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
+next_baseline := baseline + line.line_height
+```
+
+`line.line_height` is resolved for you: the value you asked for, or the largest natural line height
+among the fonts that contributed a glyph, so a paragraph that fell back mid-line is spaced for the
+tallest face in it.
+
+Spacing is added to each letter's advance, not between letters, and a **combining mark is not
+spaced**. A mark shares its base's position and has no advance of its own, so spacing one as well
+would apply the same letter spacing twice to one character.
+
+`line_height` does not shrink `ascent` and `descent`. Those are how far the ink reaches, and they
+stay that way: a value below the glyphs' own height reports a smaller box and leaves the clipping to
+you, because this engine will not report an extent it did not measure. `line.ascent` is larger than
+the font's own ascent whenever a mark reaches above it, and that is deliberate — it is what stops a
+caller clipping a fatha.
+
+**Direction is not here.** It is the `base_dir` argument, and putting it in both places would leave
+two sources for one decision with no stated precedence.
+
+### Measuring
+
+The two widths a layout engine needs before it draws anything, from one shaping pass.
+
+```v
+m := vtext.measure_paragraph(ctx, text.runes(), .rtl, fs, 32.0)
+m.min_content_width   // narrowest: the widest unbreakable unit
+m.max_content_width   // widest: no break taken at all
+m.ascent, m.descent, m.line_height
+```
+
+`min_content_width` is the narrowest the text can be without a glyph breaking out of it. **It excludes
+trailing spaces**, which is the one thing to know about it: a break falls *after* a space, so the
+space ends the line before the break, and a width taken from a wrapped line includes one space per
+line. At 32 pixels that is 8.77 pixels, about a twentieth of a line at a readable size. Deriving the
+number from `wrap_paragraph` gives a minimum width one space too wide on every word.
+
+`max_content_width` is the same number `layout_paragraph` reports as `line.width`, and it is required
+to agree with it: both come out of one shaping, and the total of the advances is the furthest the pen
+reached because `x` is accumulated as a running sum.
+
+Use `measure_paragraph_with` when the box and the line have to be sized with the same features and the
+same spacing. A measurement taken with different options is a measurement of a different line.
+
 ### Glyphs
 
 `line.glyphs` is in visual order, left to right, ready to draw back to front.
@@ -180,8 +258,30 @@ Three rules are handled rather than left to the caller: a space never ends a lin
 the margin goes on a line of its own rather than being split, and a newline ends the paragraph
 whatever the width is.
 
+No discretionary features are applied. `wrap_paragraph_with` takes the same `LayoutOptions` as
+`layout_paragraph_with`, and it has to: a paragraph wrapped without the features you asked for was
+shaped without them while the same text laid out with them was shaped with them, and the two
+disagreed about the width of the same text.
+
 `break_opportunities` is the lower half of this, for a caller that wants to decide the width itself
 or to draw the opportunities.
+
+`BreakOpportunity` carries one position and one flag, both in your own text. To split a line you
+already have, filter its glyphs on the cluster rather than on a glyph index:
+
+```v
+for g in line.glyphs {
+	if g.cluster >= op.start {
+		draw(g)
+	}
+}
+```
+
+`g.cluster` is the index of the input character the glyph came from, so this works in both
+directions. It used to be joined by a second field documented as a glyph index in visual order, which
+was assigned the input index and so always equalled the first; it was removed rather than corrected,
+because a function handed text cannot compute a glyph index and two fields carrying one value is the
+same defect as a comment that contradicts the code.
 
 ### Contextual positioning
 
@@ -282,8 +382,7 @@ cannot isolate a letter, which is false. What a *run of text* can reach is asked
 `substitute_glyphs`, and that is a separate question on purpose.
 
 `glyph_class_counts` puts every glyph in `unclassified` when there is no GDEF, so the counts add up to
-the glyph count either way. `BreakOpportunity` is public too: it was not, and `break_opportunities` was,
-which left a caller able to count its results and read none of them.
+the glyph count either way.
 
 These are what `tools/fontdump`, `tools/fontcheck` and `tools/shapetrace` are written against, and they
 are public because a library that cannot be inspected from outside cannot be diagnosed from outside.
@@ -301,8 +400,17 @@ and a bug in the runner is then not a bug in anything it was checking. Two of th
 v run tools/env.v              # prints the build environment and checks the compiler is there
 v run tools/run_tests.v        # runs every _test.v file
 v run tools/run_tests.v gpos   # one area, matched as a substring of the file name
-v fmt -verify .                # formatting
+v run tools/fmt_check.v        # formatting
 ```
+
+Use `tools/fmt_check.v` rather than `v fmt -verify .`. Two files in this tree cannot be formatted by
+the compiler, and both fail in a way that looks like an ordinary unformatted file. `stbtt.c.v` is
+reported unformatted and `v fmt -w` on it answers "Reformatted file" while writing byte-identical
+content, so there is nothing to fix and no diff to read. `ucd_names.v` is a 1.8 MB generated table
+that `v fmt -w` rewrites by 429,652 lines; it was reverted with `git checkout` and the committed file
+was intact. Both are excluded by the checker **with the reason attached**, so the exclusion is
+visible rather than looking like a preference. The other generated tables are checked, because their
+real defect — a trailing blank line at end of file — is fixed at the source in `tools/gen_tables.v`.
 
 `run_tests.v` builds one file at a time and gives the compiler a `TMPDIR` of its own, and both are needed.
 `v test a.v b.v c.v` builds concurrently and enough of them collide in the compiler's own temporary build
@@ -378,6 +486,21 @@ placed and reaches back to what makes it different, so the two glyphs a caller a
 and its context rather than two the pattern both names. A reader that insists the pattern covers both
 discards every rule shaped like this one, and most rules under kern are shaped like it.
 
+**A ligature matcher reads a bounded prefix, and copying the run to give it one is quadratic.**
+`match_ligature` only ever looks as far as the longest rule's components, so `apply_ligature` used to
+copy the entire rest of the run before trying one position. Tried at every position of a run of *n*
+glyphs that is O(n²) in copying: 524,000 element copies per lookup per layout at 1024 glyphs, and it
+was 95% of the cost of laying out a paragraph. The bound is `Lookup.longest_ligature`, computed once
+when the lookup is parsed. It is exact rather than generous — the matcher's own test that a rule fits
+inside what is left of the run still passes for every rule — and `gsub_test.v` guards it with a
+ligature at the end of a 400 character run, which is what an off-by-one would break.
+
+**A pattern that will fail should be tested before it allocates.** `match_chain_at` collected the
+positions it had matched into a slice before its first coverage check, so a rule that did not match —
+which is nearly every attempt, since one is made at every position of every run — allocated in order
+to discover that the first glyph was not in the coverage. Same answers either way; one allocation per
+match instead of one per attempt.
+
 ## Working with this compiler
 
 Three things this codebase ran into, written down because each one costs an hour to find again and none
@@ -412,7 +535,7 @@ gsub.v          OpenType substitution
 gpos.v          OpenType positioning
 layout.v        the pipeline, and mark placement
 properties.v    the UCD lookup tables
-linebreak.v     UAX #14
+linebreak.v     UAX #14, wrapping, and measuring a paragraph's two widths
 stbtt.c.v       the stb_truetype rasteriser, vendored and public domain
 
 inspect.v       reporting what a font contains: tables, features, scripts, coverage
