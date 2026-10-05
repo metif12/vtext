@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **13,090 of 19,346 (67.6%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **13,402 of 19,346 (69.3%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -97,7 +97,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 13,090 of 19,346 — 67.6%.**
+**Measured, because "done" above was a description and not a number. 13,402 of 19,346 — 69.3%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -120,17 +120,42 @@ has that break suppressed by the mark on top of it. The one-sided check that cat
 mark is what is left, and it is the smaller loss. The comment on `effective_class` says so, so the next
 person does not spend the measurement again.
 
-What the remaining 6,256 are, in the order the test reports them, is worth writing down before anyone
+What the remaining 5,944 are, in the order the test reports them, is worth writing down before anyone
 starts:
 
-- **The break after a combining mark.** Every case of the form `× 2757 × 0308 × 2757 ÷` fails at index 2,
-  the break *after* the mark. The class is right (`.cm`) and the rule is missing rather than wrong.
 - **SA and CJ characters.** `× 2757 ÷ 1B05 ÷` should break and does not, so a complex-context or
   conditional-starter character is being treated as something that must not break away.
 
-None of the three are Arabic or Persian, which is why the library is usable without them and why they are
+None of them are Arabic or Persian, which is why the library is usable without them and why they are
 listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
 the wrong unit of work for one of them.
+
+### A combining mark may no longer end a line, and that is a Persian trade-off
+
+The biggest single gain available was one rule: **a line may not end on a combining mark.** It is worth
+**312** cases, from 13,090 to 13,402, and it is the largest jump in this whole line of work.
+
+It was found by going after the gap the conformance test reported first, which was every case of the form
+`× 2757 × 0308 × 2757 ÷` failing at the index *after* the mark. The engine already refused a break *before*
+one, and the comment said the mark "glues one side only, which is deliberate".
+
+**That is now reversed, and the reason is U+200C.** A zero width non-joiner is class CM in the UCD, so it
+is a combining mark as far as line breaking goes, and a grapheme cluster member is indivisible from both
+sides. The Unicode committee's own test settles it: its single case containing U+200C reads `× 200C ×`.
+There is no interpretation left to argue about, and the spec has one answer.
+
+**The trade-off is real and this is a library for Persian.** A ZWNJ-separated pair is two words —
+`نیم‌فاصله` — and a line may no longer end between them. To break there the text has to carry a word
+joiner. The previous behaviour was deliberate and documented, so it was not an oversight, but it was a
+choice made without the 312 cases in front of it, and the conformance test says it is wrong.
+
+Two things are worth recording about how it was done. The first attempt gave the mark its base's *class*,
+which is what LB9 reads like across both sides; that measured **10,912**, a fall of 2,178, because a base
+that is allowed to break away has its break suppressed by the mark in front of it. Refusing the break *at* a
+mark is a narrower change — one position rather than a class every later rule reads — and it gets all 312.
+And the broken test that followed the first attempt was not a bug in the change: it was the ZWNJ test
+asserting the old behaviour, which is what finally showed the trade-off existed rather than being a free
+correction.
 
 ### ~~Numeric breaking: two rules, and the comment that hid one~~ — done 2026-10-04
 

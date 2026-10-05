@@ -274,14 +274,23 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 	if left == .hy && right == .al {
 		return BreakKind.allowed
 	}
-	// LB9: a combining mark takes the behaviour of the character before it, so a run of them
-	// cannot be split from their base and behaves as the base does.
-	//
-	// This is what glues an accent to its letter and a zero width non-joiner to the Persian letter
-	// in front of it. It glues one side only, which is deliberate: the mark belongs to what comes
-	// before it, and a line may still end between the mark and what follows. A caller who needs
-	// both sides held together wants a word joiner, not a combining mark.
+	// LB9: a combining mark is indivisible from the character before it, so it may not end a line.
 	if is_markish(right) {
+		return BreakKind.no
+	}
+	// ...and, since 2026-10-04, from the character after it either.
+	//
+	// The rule above has always covered the left side of a mark only, and the comment claimed the pair was
+	// glued on purpose. It is not: a line ending between an accent and its letter is as wrong as one ending
+	// between the letter and the accent, and every conformance case of the form `× 2757 × 0308 × 2757 ÷`
+	// failed at exactly the index after the mark.
+	//
+	// This is a narrow rule rather than the class change that was tried first. Giving the mark its base's
+	// class fixes the same case and every other one, but a base that is allowed to break away — a space, or
+	// a character whose own class permits a break — has that break suppressed by the mark in front of it,
+	// and the score fell from 13,090 to 10,912. Refusing the break *at* a mark is the smaller change: it
+	// affects one position instead of rewriting the class every rule after it reads.
+	if is_markish(left) {
 		return BreakKind.no
 	}
 	// LB31, and the default of LB31 in the specification's own table: break

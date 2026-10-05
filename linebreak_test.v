@@ -145,18 +145,25 @@ fn test_line_break_finds_the_spaces_in_arabic() {
 }
 
 // A zero width non-joiner is a combining mark as far as line breaking goes, and the specification
-// says what that means: the sequence takes the behaviour of the character before it, so no break
-// falls between the letter and the joiner.
+// says what that means: the mark is indivisible from the characters on both sides of it.
 //
-// The other side is not glued, and this test is here because it is counter-intuitive. A ZWNJ stops
-// two Persian letters from joining to each other, so a reader might expect it to also stop a line
-// from breaking there. It does not, and the reason is that the line breaking rules never see the
-// joiner as a joiner: they see a mark, and a mark belongs to what comes before it. A line may end
-// between the joiner and the letter that follows it, which is a line ending inside a word.
+// **Both** sides, which reverses what this test used to assert on purpose. It held that a line may end
+// between the joiner and the letter after it, on the reasoning that a ZWNJ stops two letters joining and so
+// cannot also be what stops a line breaking there. The reasoning was about the joiner; the line breaker
+// never sees it as a joiner. It sees a mark — U+200C is class CM in the UCD — and a mark is a grapheme
+// cluster member.
 //
-// That is correct, and it is also why a caller that does not want it has to ask for a word joiner
-// rather than relying on the non-joiner.
-fn test_line_break_glues_the_joiner_to_the_letter_before_it() {
+// The Unicode committee's own test agrees, and this is where the answer came from: its one case containing
+// U+200C reads `× 200C ×`, no break on either side. Following it is worth **312** conformance cases, from
+// 13,090 to 13,402, because every case of the form `× 2757 × 0308 × 2757 ÷` failed at exactly the index
+// after the mark.
+//
+// **This is a trade-off for a library aimed at Persian and is recorded as one.** A ZWNJ-separated pair is
+// two words in Persian — `نیم‌فاصله` — and a reader may expect a line to end between them. It no longer can,
+// at the joiner. Breaking there needs a word joiner, which the text has to carry. The alternative was
+// measured and costs 312 cases. `ROADMAP.md` carries the decision so it can be argued with rather than
+// discovered by someone wrapping Persian text and wondering.
+fn test_line_break_glues_the_joiner_on_both_sides() {
 	ctx := new_context()
 	// space, peh, ZWNJ, alef, space: five characters.
 	mut cps := []rune{}
@@ -170,13 +177,12 @@ fn test_line_break_glues_the_joiner_to_the_letter_before_it() {
 	for o in ops {
 		starts << o.start
 	}
-	// After the first space at one, after the joiner at three, and at the end at five. What is
-	// absent is a break at two, which would have split the peh from the joiner that acts on it.
+	// After the first space at one, and at the end at five. Nothing inside the pair: a break at two would
+	// split the peh from the joiner acting on it, and a break at three would split the joiner from the alef.
 	//
-	// There is no break at four either, and that is the other half of the rule: a space is never
-	// left at the end of a line, so the break that follows the trailing space is the end of the text
-	// rather than a position inside it.
-	assert starts == [1, 3, 5], 'glued on the left, not on the right'
+	// There is no break at four either, and that is unchanged: a space is never left at the end of a line,
+	// so the break that follows the trailing space is the end of the text rather than a position inside it.
+	assert starts == [1, 5], 'a joiner is indivisible from both sides'
 }
 
 // A word joiner is a different thing from a non-joiner and it is what actually forbids a break,
