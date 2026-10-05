@@ -39,8 +39,36 @@ fn test_line_break_does_not_split_a_word() {
 	assert ops[0].start == 8
 }
 
-// A closing bracket may not begin a line, and a line ending in an opening one
-// is just as wrong: the bracket would be separated from the thing it encloses.
+// A letter and a digit do not part. "H2O" and "COVID19" are single names written with a digit in the
+// middle, and a break at the letter-digit boundary leaves a line ending in a digit with the next starting
+// on a letter, which reads as a hyphenation nobody asked for.
+//
+// This is LB28's other two pairs, which were implemented only for two letters. It is a Latin case, not a
+// CJK one, which is the part worth noticing: the rule was missing for the script this library is best at.
+fn test_line_break_does_not_split_a_word_at_a_letter_digit_boundary() {
+	ctx := new_context()
+	// H 2 O
+	ops := break_opportunities(ctx, word(0x48, 0x32, 0x4F), true)
+	assert ops.len == 1, 'only the end of the text is a break, got ${ops.len}'
+	assert ops[0].start == 3, 'and it is after the last character'
+
+	// The other direction: a digit followed by a letter, as in "19C".
+	ops2 := break_opportunities(ctx, word(0x31, 0x39, 0x43), true)
+	assert ops2.len == 1, 'a digit then a letter is the same pair the other way round, got ${ops2.len}'
+}
+
+// An infix separator holds to the letter after it, which is what makes "1,000" and "3.14" one thing each.
+//
+// A full stop between two digits is LB23b's business and is already handled; this is the separator
+// followed by a letter, which is the pair a version number like "v1.2" is made of.
+fn test_line_break_keeps_an_infix_separator_with_the_letter_after_it() {
+	ctx := new_context()
+	// 1 , 0 0 0  — the comma is U+002C, class IS.
+	ops := break_opportunities(ctx, word(0x31, 0x2C, 0x30, 0x30, 0x30), true)
+	assert ops.len == 1, 'a thousands separator does not open a break, got ${ops.len}'
+	assert ops[0].start == 5, 'and the only break is the end of the text'
+}
+
 //
 // "ab (cd)" is seven characters, and the two opportunities are after the space at
 // index three and at the end of the text. Neither is inside the brackets.

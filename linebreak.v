@@ -212,10 +212,19 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 	// LB23a and LB23b: two of the same class that must not be split, which is
 	// Hangul syllables and a numeric run's own continuation. They come before
 	// LB28 so that a run of numbers stays whole when the class says so.
+	//
+	// The numeric half was missing while the comment claimed it, and the comment is what hid it: a run of
+	// digits could break between any two of them, so "12345" wrapped as "12" / "345". Nothing about the
+	// output looked wrong — a number split across two lines is still a number-looking thing — which is why
+	// it survived until the conformance test was run. "19C" was the case that showed it: the letter after
+	// the digits was correctly held on by LB28 while the digits themselves parted.
 	if left == .jl || left == .jv || left == .jt {
 		if right == .jl || right == .jv || right == .jt {
 			return BreakKind.no
 		}
+	}
+	if left == .nu && right == .nu {
+		return BreakKind.no
 	}
 	if left == .ri && right == .ri {
 		// LB30a: a pair of regional indicators is one flag, so the run between
@@ -232,6 +241,22 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 	// what lets "well-known" break after its hyphen. The hyphen is handled by
 	// LB21 below, so by the time this runs neither side is one.
 	if left == .al && right == .al {
+		return BreakKind.no
+	}
+	// LB28's other two pairs: a letter and a digit, in either order. These were missing and the
+	// conformance test is what showed it — they are the cases that let "H2O" and "COVID19" split at the
+	// letter-digit boundary, which is a Latin problem and not a CJK one.
+	//
+	// A hexadecimal-looking name is the common case, and a break inside one leaves a line ending in a
+	// digit and the next starting with a letter, which reads as a hyphenation the writer never asked for.
+	if (left == .al && right == .nu) || (left == .nu && right == .al) {
+		return BreakKind.no
+	}
+	// LB29: an infix separator — the full stop or comma of a decimal or thousands — holds to the
+	// alphabetic character that follows it. "1,000" and "3.14" are one thing each, and this is the rule
+	// that says so. It is separate from LB28 because the separator is a different class from the digit, and
+	// a pair of digits is already held together by LB23b above.
+	if left == .insp && (right == .al || right == .hl) {
 		return BreakKind.no
 	}
 	// LB29: the same for a pair of Hangul syllables that are not part of the same

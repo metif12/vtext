@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **13,074 of 19,346 (67.6%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **13,090 of 19,346 (67.6%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -97,7 +97,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 13,074 of 19,346 — 67.6%.**
+**Measured, because "done" above was a description and not a number. 13,090 of 19,346 — 67.6%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -120,12 +120,9 @@ has that break suppressed by the mark on top of it. The one-sided check that cat
 mark is what is left, and it is the smaller loss. The comment on `effective_class` says so, so the next
 person does not spend the measurement again.
 
-What the remaining 6,272 are, in the order the test reports them, is worth writing down before anyone
+What the remaining 6,256 are, in the order the test reports them, is worth writing down before anyone
 starts:
 
-- **LB28's numeric cases.** Only `AL × AL` is implemented; `AL × NU` and `NU × AL` are not, so `H2O` and
-  `COVID19` may split at the letter-digit boundary. This affects Latin, not only CJK, and is the
-  cheapest remaining rule.
 - **The break after a combining mark.** Every case of the form `× 2757 × 0308 × 2757 ÷` fails at index 2,
   the break *after* the mark. The class is right (`.cm`) and the rule is missing rather than wrong.
 - **SA and CJ characters.** `× 2757 ÷ 1B05 ÷` should break and does not, so a complex-context or
@@ -134,6 +131,41 @@ starts:
 None of the three are Arabic or Persian, which is why the library is usable without them and why they are
 listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
 the wrong unit of work for one of them.
+
+### ~~Numeric breaking: two rules, and the comment that hid one~~ — done 2026-10-04
+
+**This entry first said the cheapest remaining rule was LB28's numeric cases. That was half right, and the
+half that was wrong was the one that mattered.**
+
+LB28's other two pairs — `AL × NU` and `NU × AL` — were genuinely missing, and adding them took the score
+from 13,074 to 13,084. Sixteen cases became ten, which is small, and I wrote a test expecting `19C` to hold
+together and it failed. The reason was not in LB28 at all:
+
+| text | before | after |
+| --- | --- | --- |
+| `H2O` | one break at the end | one break at the end |
+| `19C` | breaks at **1** and 3 | breaks at 3 |
+| `1,000` | breaks at 3, 4, 5 | breaks at 5 |
+| `a1b` | one break at the end | one break at the end |
+
+**A run of digits was not held together at all.** `12345` could break between any two digits. The code at
+that point carried the comment "LB23a and LB23b: two of the same class that must not be split, which is
+Hangul syllables and a numeric run's own continuation" and implemented only the Hangul half — **a comment
+claiming a rule is not the rule**, and the comment is what kept it from looking absent. Nothing about the
+output said wrong either: a number split across two lines is still a number-shaped thing, and a phone number
+or an account id wrapping as `12` / `345` reads as ordinary wrapping.
+
+`NU × NU` is now implemented, worth six cases on the conformance score and rather more than six in text.
+The score is a poor proxy here for the same reason it was a poor proxy in the cursive case: a percentage
+counts cases, and the cases a rule is *about* are not a random sample of the corpus.
+
+`AL × NU` and `NU × AL` matter for the same reason and are Latin, not CJK: `H2O` and `COVID19` are single
+names with a digit in the middle, and a break there leaves a line ending in a digit and the next starting
+with a letter, which reads as a hyphenation nobody asked for.
+
+LB29 — an infix separator holding to what follows — turned out to be already handled for the digit case,
+which the same table showed; only `IS × AL` was added, and the tests cover `1,000`, `1.5x` and `H2O`
+because each failed for a different reason.
 
 ### ~~Chaining-context positioning (GPOS type 8)~~
 

@@ -18,10 +18,10 @@ import os
 
 // conformance_floor is the score this engine must not fall below.
 //
-// Measured against UCD 18.0.0's LineBreakTest.txt: 13,074 of 19,346 cases, so 67.6%. It was 13,058 before
-// ambiguous characters were resolved to letters, and that change was worth sixteen cases on its own. The
-// rules still missing are listed in the roadmap with what each one is.
-const conformance_floor = 13074
+// Measured against UCD 18.0.0's LineBreakTest.txt: 13,090 of 19,346 cases, so 67.6%. It was 13,058
+// before ambiguous characters were resolved to letters, worth sixteen cases, and 13,084 after LB28's
+// numeric pairs. The rules still missing are listed in the roadmap with what each one is.
+const conformance_floor = 13090
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.
