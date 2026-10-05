@@ -411,13 +411,64 @@ spent treating this as a parser mystery.
 ---
 
 
-### Device and variation tables
+### Device and variation tables — measured before building, 2026-10-04
 
 A GPOS value record can point at a table that says the value is different at a
 different size. Skipping it means a kern is the same at every size, which is
 wrong but not visibly so. Reading it is a matter of applying a table of
 adjustments by pixels-per-em, and a variable font's version needs the variation
 store.
+
+**The reader for this was written and then thrown away, because the machine could no longer compile anything
+and unbuilt code is worse than none.** What survived is the measurement and one real bug, which is the part
+that would otherwise be paid for twice.
+
+**How much is actually out there.** Scanning every GPOS value record in the 337 Windows fonts and the four in
+`testdata/fonts/`, with fontTools:
+
+| | |
+| --- | --- |
+| value records carrying a Device table | **1** |
+| value records carrying a VariationIndex | **0** |
+
+The single record is in `SitkaVF.ttf`. So the per-size half of this item is one record in one font, and the
+variable-font half has no fixture on this machine at all. That is the answer to whether this is worth building
+blind, and it is the reason it should not be.
+
+**The first scan said zero across all 341 fonts, and that was wrong.** fontTools was opened with `lazy=True`,
+which does not decompile subtables, so the walk over the lookup list never reached a single value record and
+had nothing to find. Tahoma's GPOS holds **13,539** of them. A scanner that reports nothing everywhere is
+indistinguishable from a scanner that is broken, so it needs a positive control: set the Device bit on one
+real record and confirm the walk counts it. It does, and that is the only reason the 341-font number above can
+be believed. **This is the same mistake as a fixture written to match the reader** — a measurement that
+cannot fail is not a measurement — and it is the second time in this repository that a probe has needed
+proving before its result was allowed to mean anything.
+
+**The bug this found, which is worth fixing before anything else here.** `pair_value_size` decides how many
+bytes a value record occupies so the reader can step to the next one, and it counted only
+`0x0001 0x0002 0x0004 0x0008 0x0010 0x0020 0x0040 0x0080` — the four values, two placement device offsets and
+two advance device offsets. The four **VariationIndex** offsets, `0x0100` `0x0200` `0x0400` `0x0800`, are
+missing. A value record carrying one is therefore mis-stepped, and **every pair record after it is read from
+the wrong place**. The read would land in the middle of a neighbouring record and produce plausible small
+numbers, so nothing would look wrong.
+
+No font here uses a VariationIndex, so nothing caught it. That is the honest reason it survived: not because
+the case is unreachable, but because no available font exercises it. Adding the four bits is a one-line fix
+and needs no font to be correct.
+
+**What implementing it would take, for whoever does it with a machine that compiles.** A Device table is
+`startSize`, `endSize`, `deltaFormat` and one delta per pixel size in four encodings — int16, uint16, int8,
+uint8 — of which only the two placement offsets are worth reading, since this engine applies a kern as an
+advance. `read_device` has to take the encoding from the table rather than infer it, and has to clamp the
+stated count to the bytes actually present, because a table that overruns itself is read as far as it goes.
+The size then has to reach the engine: `kern_offset` has no size parameter and changing its signature breaks
+the API, so the shape is a `kern_offset_at(left, right, script, ppem)` with the old one delegating at ppem
+zero, where zero means "no device adjustment" rather than "size zero". The adjustment is added in design
+units, because everything this library returns is in design units and the caller scales once.
+
+The variation half is a different and much larger piece of work than this entry suggests. `VariationIndex`
+points into a delta-set index that adjusts a *value* along an axis, which is tractable; making the engine
+honour a variable font's `gvar` outlines is not, and is a different feature with its own entry.
 
 ### ~~Line options, and measuring a run at a width~~
 
