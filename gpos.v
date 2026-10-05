@@ -1941,10 +1941,17 @@ fn read_pair_value(r &Reader, at int, format u16) PairValue {
 // pair_value_size is how many bytes a ValueRecord of this format occupies. The size comes from the
 // format rather than from what was read, because a value can be present and zero, and the reader
 // has to be stepped over to reach the next record.
+//
+// All eight fields are counted, including the four VariationIndex offsets a variable font's value record may
+// carry. Those four were missing until 2026-10-04, which meant every record after one of them was read from
+// the wrong place: a font with a variable-font kern had its second pair read out of the middle of the first,
+// and the words it landed on are small numbers, so nothing looked wrong. No font on this machine sets one —
+// measured across all 341 available, with a positive control on the scan — so nothing caught it either. See
+// `gpos_valuesize_test.v`, which is written as bytes for that reason.
 fn pair_value_size(format u16) int {
 	mut n := 0
-	// The four value fields, then the device and variation offsets, which are read past.
-	for bit in [0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080] {
+	for bit in [0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200,
+		0x0400, 0x0800] {
 		if format & bit != 0 {
 			n += 2
 		}
