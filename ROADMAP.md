@@ -402,6 +402,56 @@ when an expansion puts a glyph between the exit and the entry, and whether GSUB 
 cmap. Both are answerable and neither is a guess, which is the difference from the last two attempts at this
 entry.
 
+### ~~Should GSUB joining win over the cmap?~~ — tried, measured, and reverted 2026-10-04
+
+**No, not yet, and the measurement is a picture rather than a number.**
+
+The argument for preferring the font's own joining features is the one OpenType makes: they are written
+against the base letters, the glyphs they select are the ones the font's own cursive and mark rules are
+written against, and a cmap lookup of a presentation form bypasses all of it. The change was small — take
+the presentation form only when no font in the chain has the four features — and it worked in the sense that
+the routing moved: Amiri's shaped gids all changed, to the font's own, and Noto Naskh began expanding
+letters into the several glyphs its rules ask for.
+
+What it did not do was make the cursive rules reachable, which was the reason for trying it. Measured after
+the change, over `سلام`:
+
+| font | glyphs with a cursive anchor | adjacent exit+entry pairs |
+| --- | --- | --- |
+| Dubai | 0 | 0 |
+| Amiri | 0 | 0 |
+| NotoNaskhArabic | 0 | 0 |
+| NotoNastaliqUrdu | 4 | 0 |
+
+So the rules those fonts carry cover glyphs that are neither the presentation forms nor the joining
+results. The preference bought nothing and cost the rendering:
+
+- **Amiri** is visually identical either way, which is what a well-made font should be when asked to shape
+  its own letters.
+- **Noto Naskh Arabic is visibly broken.** `سلام دنیا` renders as mangled letters where it previously read
+  correctly. Its joining rules are 20 one-for-one and 8 one-to-two per feature, and they also all name one
+  shared SingleSubst lookup, which is the unexplained entry below. Whatever that lookup is doing, running
+  these rules as the primary route is not safe yet.
+
+Reverted, with the joining features still in place for the fonts that need them — Nastaliq, which has no
+presentation forms and was being drawn as unjoined base letters before.
+
+One thing the attempt did settle, and it is the part the lam-alef depends on: **the two routes are not
+interchangeable for a ligature.** A shaped letter standing for two characters is a different question from
+one standing for a single character, because the presentation form codepoint *is* the fusion — the cmap maps
+it to one glyph and no rule is needed. Letting GSUB at it expands the pair back into two letters, and three
+layout and mark attachment tests noticed the extra glyph at once. A ligature has to keep the cmap. Which is
+the order the two mechanisms compose in: the shaper fuses what it recognises as one shape, the font shapes
+what it recognises as one letter.
+
+### Why Noto Naskh names one SingleSubst lookup from init, medi and fina
+
+Measured and still not explained. All three features of that font name lookup 4, which holds a single
+SingleSubst rule. A font may reuse one lookup across features, and this may be that — but one rule serving
+all three shapes is not what a reuse would normally be for, and it is also the lookup most likely to be
+responsible for the broken rendering in the entry above. It is the first thing to read when the joining
+route for that font is retried.
+
 ---
 
 
