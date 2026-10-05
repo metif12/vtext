@@ -38,30 +38,72 @@ fn test_cursive_anchors_are_read_from_real_fonts() {
 	assert ends > with_anchors, 'and on both ends of many of them, got ${ends} ends for ${with_anchors} glyphs'
 }
 
-// The two ends are genuinely independent, and a font uses both patterns. Nastaliq gives 158 glyphs both
-// ends and Amiri gives none, so a reader that treated one as implying the other would silently drop half
-// of one font and most of the other.
-fn test_cursive_anchors_report_each_end_separately() {
-	nastaliq := corpus_font('NotoNastaliqUrdu-Regular.ttf')
-	amiri := corpus_font('Amiri-Regular.ttf')
-	mut n_both := 0
-	mut a_both := 0
-	for gid in u16(0) .. u16(nastaliq.num_glyphs()) {
-		if a := nastaliq.cursive_anchors(gid, 'arab') {
-			if a.entry_exists && a.exit_exists {
-				n_both++
+// The reader agrees with an independent implementation, glyph for glyph.
+//
+// These are fontTools' numbers for Noto Nastaliq Urdu's one cursive lookup, taken glyph by glyph rather
+// than in aggregate: 378 records, 38 carrying an entry anchor only, 182 an exit anchor only and 158 both.
+// No glyph has neither. An earlier entry in the roadmap recorded this font as a parser mystery, and it was
+// not one — it was a measurement nobody had compared against anything. Pinning the counts means a reader
+// that quietly loses the 158 both-ended glyphs, or shifts the record array and reshuffles which end a glyph
+// claims, fails here instead of looking plausible.
+//
+// The shape of the data is also what a cursive rule should look like, and that is worth asserting rather
+// than assuming: a letter that joins both ways carries both ends, and a letter at the end of a word carries
+// one.
+fn test_cursive_anchor_counts_match_an_independent_reader() {
+	f := corpus_font('NotoNastaliqUrdu-Regular.ttf')
+	gpos := f.face.gpos or { panic('no GPOS') }
+	mut entry_only := 0
+	mut exit_only := 0
+	mut both := 0
+	mut neither := 0
+	for l in gpos.lookups {
+		for rule in l.cursives {
+			for m in rule.marks {
+				if m.entry.exists && m.exit.exists {
+					both++
+				} else if m.entry.exists {
+					entry_only++
+				} else if m.exit.exists {
+					exit_only++
+				} else {
+					neither++
+				}
 			}
 		}
 	}
-	for gid in u16(0) .. u16(amiri.num_glyphs()) {
-		if a := amiri.cursive_anchors(gid, 'arab') {
-			if a.entry_exists && a.exit_exists {
-				a_both++
+	assert both == 158, 'glyphs carrying both ends, got ${both}'
+	assert entry_only == 38, 'glyphs carrying an entry only, got ${entry_only}'
+	assert exit_only == 182, 'glyphs carrying an exit only, got ${exit_only}'
+	assert neither == 0, 'and none carrying neither, got ${neither}'
+	assert both + entry_only + exit_only + neither == 378, 'over 378 glyphs in total'
+}
+
+// Amiri gives no glyph both ends, which is the other shape a font can have and the reason the two ends are
+// reported independently rather than one being inferred from the other.
+fn test_cursive_anchors_agree_with_an_independent_reader_on_amiri() {
+	f := corpus_font('Amiri-Regular.ttf')
+	gpos := f.face.gpos or { panic('no GPOS') }
+	mut entry_only := 0
+	mut exit_only := 0
+	mut both := 0
+	for l in gpos.lookups {
+		for rule in l.cursives {
+			for m in rule.marks {
+				if m.entry.exists && m.exit.exists {
+					both++
+				} else if m.entry.exists {
+					entry_only++
+				} else if m.exit.exists {
+					exit_only++
+				}
 			}
 		}
 	}
-	assert n_both > 100, 'Nastaliq gives many glyphs both ends, got ${n_both}'
-	assert a_both == 0, 'Amiri gives none both ends, so the two are independent, got ${a_both}'
+	assert both == 0, 'Amiri gives no glyph both ends, got ${both}'
+	assert entry_only == 52, '52 entry only, got ${entry_only}'
+	assert exit_only == 236, '236 exit only, got ${exit_only}'
+	assert entry_only + exit_only == 288, 'over 288 glyphs in total'
 }
 
 // A glyph the rule does not cover returns nothing. Returning a pair of absent anchors instead would make

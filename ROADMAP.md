@@ -175,7 +175,6 @@ so that removing the count check is what makes it fail — a record with an out-
 refused by either check, and a test using one would pass with the count check deleted. That was caught
 by mutating the code and finding the test still green.
 
-### ~~Cursive attachment: what it actually needs~~
 ### ~~Cursive attachment: what it actually needs~~ — the premise was wrong, and so was the survey
 
 **The reader had two bugs and the survey was built to hide both. Both are fixed; cursive attachment is
@@ -231,85 +230,58 @@ What is still missing is the attachment itself, which is not a positioning rule 
 the pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter can end up
 wider or narrower than its advance says. There is now a font for it to be written against.
 
-### ~~Cursive attachment: the attachment itself~~ — written, measured, and withdrawn 2026-10-04
+### ~~Cursive attachment: the attachment itself~~ — the reader is verified; the attachment has no font
 
-**The reader is unblocked and the attachment is still not applied, because a cursive rule covers glyphs
-that this engine's Arabic shaping never selects.** The pass was written, and it is the measurement rather
-than the code that is worth keeping.
+**This entry has been rewritten three times and the reader has been right every time. What is left is not a
+gap in the engine.**
 
-The rule covers particular glyphs, and a letter only reaches one of them if shaping picked it. What the
-three corpus fonts show:
+The reader is now verified against an independent implementation, glyph for glyph. fontTools' counts for
+Noto Nastaliq Urdu's one cursive lookup are **378 records, 38 entry-only, 182 exit-only, 158 both, none with
+neither** — and this engine reports the same five numbers. Amiri's are 52 entry-only, 236 exit-only and none
+with both, which is also what this engine reports. Those counts are pinned in `cursive_anchors_test.v`, so a
+reader that loses the 158 both-ended glyphs, or shifts the record array and reshuffles which end a glyph
+claims, fails rather than looking plausible.
 
-| font | entry only | exit only | both | covered glyphs the layout actually selects |
-| --- | --- | --- | --- | --- |
-| Amiri-Regular | 52 | 236 | 0 | none |
-| NotoNastaliqUrdu | 38 | 182 | 158 | one, and it has no exit |
-| NotoNaskhArabic | — | — | — | has no rule at all |
+The glyph names show the rule is a conventional one, and that the entry/exit pattern is what a cursive rule
+should look like:
 
-Every covered glyph in Amiri is reachable only through GSUB: all 288 have no codepoint in the cmap. The
-layout of `سلا` produces gids 1004, 1039 and 1060, none of which the rule covers, because the joining
-pass here resolves a letter's shape through the **presentation form in the cmap** rather than by running
-the font's own `init`, `medi` and `fina` features. Nastaliq has 158 glyphs carrying both ends, which is
-where a join would come from, and the layout selects almost none of them for the same reason.
+```
+alef-ar.fina[E]              an alef at the end of a word: receives a stroke, emits none
+behDotless-ar.fina[E]        the same
+behDotless-ar.medi[EX]       a letter joining both ways: both ends
+behDotless-ar.medi.alef[EX]  the lam-alef ligature
+behDotless-ar.medi.cain[EX]  Nastaliq's own stacked two-letter forms
+```
 
-So the pass was withdrawn rather than committed. A feature that cannot be shown to change a single
-advance on any font available is not a feature, and shipping it with a passing test would have been the
-same mistake in a new place: a fixture that measures nothing is green.
+So the anchors are right, the pattern is right, and the attachment is still wrong to write — because the only
+font that reaches its own rule positions its letters with **pre-drawn ligature glyphs**, and on those the
+cursive rule is vestigial. `سلام` shapes to eight glyphs; the sin's exit sits at (0, 0) and the next letter's
+entry at (848, 384), in a face whose advances run about 540 units. Joining those would put the letter 848
+units to the *left*, on top of its neighbour. The font does not want it — it has already drawn the answer
+into the glyph names.
 
-What is landed instead is the honest half. `Font.cursive_anchors` returns a glyph's entry and exit
-anchors, in design units, with each end reported separately because a font uses both patterns — Nastaliq
-gives 158 glyphs both ends and Amiri gives none, so a reader treating one as implying the other drops half
-of one font and most of the other. It is tested against the corpus, and it is the access a caller needs to
-do the attachment itself.
+**The blocker is neither a reader nor reachability. It is that no font available here both carries a cursive
+rule and shapes its letters in a way the rule describes.** That is narrower and more honest than what this
+file carried for most of a week, and it took three attempts and one independent reader to reach.
 
-**The next piece of work is Arabic joining through GSUB, and the reason is not the one first written here.**
+### The two withdrawals, since the reasoning is worth keeping
 
-The first account of this said the engine does not ask for `isol`, `init`, `medi` and `fina` by default, and
-that asking would fix it. Asking does work — passing them as extra features moves Nastaliq's letters onto
-glyphs the cursive rule covers. But the default behaviour is not the blocker, and believing it was would
-have sent the next person to add four feature names to a list.
+Not headings of their own — this is the same entry, and the history is kept because each attempt is what the
+next one corrected.
 
-The real blocker is that **joining shapes are applied one glyph at a time, and in these fonts they cannot
-be.** `reshape` calls `Font.shaped_glyph_index`, which takes a glyph id and returns a glyph id, and that
-signature cannot express a rule that turns one glyph into several. Measured over the four joining features
-of all three corpus fonts:
+**First attempt — the pass was written and measured.** A cursive rule covers particular glyphs, and a letter
+only reaches one if shaping picked it. Every covered glyph in Amiri was unreachable: all 288 have no codepoint
+in the cmap, because the joining pass resolved a letter's shape through the presentation form rather than the
+font's own features. Nastaliq had 158 both-ended glyphs and the layout selected almost none. The pass was
+withdrawn rather than committed, because a feature that cannot be shown to change a single advance on any
+font available is not a feature, and shipping it behind a test that measures nothing would have been the same
+mistake in a new place.
 
-| font | feature | lookup | kind | single rules | multiple rules |
-| --- | --- | --- | --- | --- | --- |
-| Amiri | init / medi / fina | 10 / 11 / 12 | 2, MultipleSubst | 0 | 1 |
-| NotoNastaliqUrdu | isol / init / medi / fina | 36 / 35 / 39 / 32 | 2, MultipleSubst | 0 | 1 |
-| NotoNaskhArabic | init / medi / fina | 23 / 24 / 25 | 2, MultipleSubst | 0 | 1 |
-| NotoNaskhArabic | init / medi / fina | 4 | 1, SingleSubst | 1 | 0 |
-
-**Every joining rule in the corpus is a MultipleSubst**, with one exception that is not understood yet:
-Noto Naskh Arabic names lookup 4, a single-rule SingleSubst, from `init`, `medi` and `fina` alike. A font
-may reuse one lookup across features, but one rule serving all three shapes is not what that is for. It is
-recorded as measured and not explained, because a plausible story about it would be a guess.
-
-`Gsub.apply`, the single-glyph path, only reads a lookup's `singles`, so it declines a `multiples` rule and
-returns the base glyph unchanged. Asking for the features on a whole *run* goes through `substitute_one`,
-which handles the same rule and does substitute: gid 170 becomes 188, 395 becomes 414. Same feature, same
-lookup list, same coverage — one entry point applies it and the other cannot.
-
-Two things follow, and only the first is obvious:
-
-1. The per-glyph joining path is dead for these fonts. It is not slow or imprecise; it is structurally
-   unable to apply the rule, and it reports success while doing nothing. `shaped_glyph_index` on the letter
-   U+0633 returns the base glyph unchanged for all four shapes in all three fonts.
-2. **Amiri never reaches it at all**, because Amiri's cmap maps the Unicode presentation forms. `shaped_glyphs`
-   takes its first branch when any font in the chain covers the form codepoint and returns that glyph
-   directly, so `reshape` is not called. Nastaliq does not map them, so it falls through to the branch
-   that calls `reshape`, and that branch is the one that cannot work.
-
-So the fix is to apply the joining features to the run, masked by each glyph's `form`, and let the run-level
-path do it. The masking is the part with real work in it: applying `init` to a whole run turns every
-covered letter into its initial form, and `medi` then looks up an initial form in a coverage that holds base
-letters and finds nothing, leaving the letter stuck initial. Each feature therefore has to see only the
-glyphs whose form it names. `substitute_one` already has the mechanism for exactly this — `effective`
-computes which items take part, from the lookup's flag and mark set — so the form belongs there beside it.
-
-That change alters Arabic shaping for every font, so it wants its own unit and its own before-and-after
-rather than riding along on this one.
+**Second attempt — reachable, and still not writable.** The joining work fixed reachability, which was a real
+win on its own: Nastaliq went from unjoined base letters to proper Nastaliq. But reaching the rule showed the
+adjacent exit-to-entry pairing is not what it means. The measurements are in the entry on preferring GSUB:
+Dubai, Traditional Arabic and Amiri reach nothing at all, and Nastaliq reaches four anchors, which is enough
+to be worth writing and not enough to write correctly.
 
 ### ~~Arabic joining through GSUB~~ — done 2026-10-04
 
@@ -358,49 +330,6 @@ removing the feature and watching it stay green, which is the only way to find o
 The `reshape` helper went with it. It applied one glyph at a time, so leaving it in place would shape a
 letter per-glyph and then miss the run-level rule, because a shaped glyph is no longer in a coverage written
 against base letters. `Font.shaped_glyph_index` stays, as a question, with its limits written down.
-
-### ~~Cursive attachment: the attachment itself~~ — reachable now, and still not written 2026-10-04
-
-**This section has been rewritten twice. The first account said no font on this machine has a cursive rule,
-which was wrong twice over; the second said the rules were unreachable because shaping did not select the
-glyphs they cover, which was right and is now fixed. What is left is a third thing, and it is not a font
-availability problem any more.**
-
-The joining fix made the rules reachable. Noto Nastaliq Urdu's shaped letters now come out as glyphs its
-cursive rule covers, where before they were base letters the rule said nothing about. So the question moved
-from "can this be reached" to "what does the rule mean", and the measurement says the obvious reading is
-wrong.
-
-**The attachment is not the adjacent exit-to-entry pairing.** Nastaliq's `سلام` shapes to eight glyphs, two
-per letter, and the anchors look like this in reading order:
-
-| glyph | cluster | entry | exit |
-| --- | --- | --- | --- |
-| 964 | م | — | — |
-| 437 | م | (438, 573) | — |
-| 952 | ا | — | — |
-| 5 | ا | (263, 0) | — |
-| 959 | ل | — | — |
-| 398 | ل | (848, 384) | — |
-| 951 | س | — | — |
-| 188 | س | — | (0, 0) |
-
-Two things are wrong with the naive reading. The exit at (0, 0) and the following entry at (848, 384) are
-848 units apart, so joining them would move the lam **backwards** by most of an em, and Nastaliq's whole
-point is that the letters are set far apart. And the two are not even adjacent: glyph 959 sits between them,
-carrying no anchors at all, so a pass that requires the pair to be neighbours joins nothing, and a pass that
-skips glyphs with no anchors would skip the connector in a word as readily as a space between two words.
-
-**And the fonts that shape through the cmap cannot demonstrate it at all.** Dubai, Traditional Arabic and
-Amiri all map their shaped glyphs to glyph ids their own cursive rules do not cover — every glyph of
-`سلام` in all three comes back with no anchors, despite all three carrying a cursive rule. Reaching a rule
-on those fonts needs the pipeline to prefer GSUB joining over the presentation-form codepoint, which is a
-bigger architectural question than this entry is.
-
-So the attachment is written last, after two things are settled: that a rule's pair is identified correctly
-when an expansion puts a glyph between the exit and the entry, and whether GSUB joining should win over the
-cmap. Both are answerable and neither is a guess, which is the difference from the last two attempts at this
-entry.
 
 ### ~~Should GSUB joining win over the cmap?~~ — tried, measured, and reverted 2026-10-04
 
