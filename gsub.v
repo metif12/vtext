@@ -344,6 +344,9 @@ pub mut:
 	// the moment a substitution fires. Travelling with the glyph is the only way a mask stays
 	// aligned with the run it is masking.
 	form JoiningForm
+	// is_mark says this glyph is a combining mark, which takes no part in joining but does take part in
+	// the features that name a shape, because in Arabic those features double as mark composition.
+	is_mark bool
 }
 
 // LigatureMatch is the outcome of a fusion: the glyph that replaces the run, and how many glyphs
@@ -555,7 +558,13 @@ fn (g &Gsub) effective(items []Ligatable, flag u16, mark_set u16, want ?JoiningF
 		// every covered letter into its initial form and `medi` then looks up an initial form in a
 		// coverage that holds base letters, finds nothing, and leaves the letter stuck initial.
 		if w := want {
-			if item.form != w {
+			// A mark takes part in every shape. It has no joining shape of its own, and in Arabic fonts
+			// the joining features double as mark composition: Noto Naskh Arabic's lookup 4 turns a
+			// dot-centred mark into a dot-below one and is named by `init`, `medi` and `fina` alike,
+			// because a dot sits below the letter in one joining shape and above it in another. Excluding
+			// marks from the mask leaves the dots in the composition meant for a different shape and the
+			// text reads wrong — which is exactly what happened when this mask was first written.
+			if !item.is_mark && item.form != w {
 				continue
 			}
 		}
@@ -851,6 +860,7 @@ fn ligatables(seq []u16, from Ligatable) []Ligatable {
 			cluster: from.cluster
 			source:  from.source
 			form:    from.form
+			is_mark: from.is_mark
 		}
 	}
 	return out

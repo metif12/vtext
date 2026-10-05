@@ -94,23 +94,76 @@ fn test_joining_gives_the_same_letter_a_different_shape_in_a_different_position(
 	assert shapes[0] != shapes[1], 'the two س stand in different shapes: ${shapes[0]} against ${shapes[1]}'
 }
 
-// The other two corpus fonts map the Unicode presentation forms, so they take the cmap route and the joining
-// features have nothing to add. This is the control for the tests above: it says the change did not disturb
-// the route that already worked.
+// A mark takes part in every joining shape, and this is the test that says so.
+//
+// Noto Naskh Arabic's lookup 4 turns a dot-centred mark into a dot-below one — `dotcenterar` becomes
+// `dotbelowar` and ten more like it — and `init`, `medi` and `fina` all name that one lookup. A font does
+// that because a dot sits below the letter in one joining shape and above it in another, so the same mark
+// has to be composed differently per shape. The feature naming a letter's shape therefore also composes its
+// marks, and the two cannot be separated.
+//
+// Excluding marks from the mask is what broke this font's rendering: every dot stayed in the composition
+// meant for a different shape, and `سلام دنیا` came out as mangled letters. The test asks `effective`
+// directly rather than looking at a picture, so it fails on the cause and not on the symptom.
+fn test_the_shape_mask_excludes_letters_in_other_shapes_but_not_marks() {
+	f := corpus_font('NotoNastaliqUrdu-Regular.ttf')
+	g := f.face.gsub or { panic('no GSUB') }
+	letter := f.glyph_index(`س`)
+	mark := f.glyph_index(`َ`)
+	assert letter != 0 && mark != 0, 'the font covers both'
+
+	mut run := []Ligatable{}
+	run << Ligatable{
+		gid:     letter
+		cluster: 0
+		source:  0
+		form:    JoiningForm.medial
+	}
+	run << Ligatable{
+		gid:     mark
+		cluster: 1
+		source:  1
+		form:    JoiningForm.isolated
+		is_mark: true
+	}
+	// The final shape is asked for. The medial letter is the wrong shape and is held back; the mark is not a
+	// letter, has no shape of its own, and is let through, because a font's joining features compose its
+	// marks as well as its letters.
+	eff := g.effective(run, 0, 0, JoiningForm.final)
+	assert eff.len == 1, 'exactly one of the two takes part, got ${eff.len}'
+	assert eff[0] == 1, 'and it is the mark, not the letter'
+
+	// Both take part when no shape is being asked for, which is what every other feature does.
+	all := g.effective(run, 0, 0, none)
+	assert all.len == 2, 'an unmasked run keeps everything, got ${all.len}'
+}
+
+// The dot composition has to survive to the shaped run, not merely be permitted by the mask. This is the
+// end-to-end half: the letter is shaped and the mark beside it is still a mark with no advance.
+fn test_marks_survive_shaping_as_marks() {
+	f := corpus_font('NotoNaskhArabic-Regular.ttf')
+	line := laid_out(f, 'بَ')
+	mut marks := 0
+	for g in line.glyphs {
+		if g.is_mark {
+			marks++
+			assert approx_zero(g.advance), 'a mark never advances the pen, got ${g.advance}'
+		}
+	}
+	assert marks == 1, 'the fatha is still one mark, got ${marks}'
+}
+
+// The control for the whole masking idea: a font that maps the presentation forms takes the cmap route, and
+// the joining features must not disturb it.
 fn test_joining_leaves_a_font_that_maps_presentation_forms_alone() {
 	f := corpus_font('Amiri-Regular.ttf')
 	line := laid_out(f, 'سلام')
-	// Four letters and the lam-alef is one glyph, so three. Amiri resolves these through its cmap and the
-	// joining features must not fuse or split anything on top of that.
-	assert line.glyphs.len == 3, 'the cmap route still gives one glyph per shaped letter, got ${line.glyphs.len}'
-}
-
-// A font with no GSUB at all must be unaffected, and so must text in a script whose features are absent.
-fn test_joining_does_nothing_without_the_features() {
-	f := corpus_font('NotoNaskhArabic-Regular.ttf')
-	line := laid_out(f, 'سلام')
-	assert line.glyphs.len == 3, 'the lam-alef is still one glyph, got ${line.glyphs.len}'
+	assert line.glyphs.len == 3, 'four letters and the lam-alef is one glyph, got ${line.glyphs.len}'
 	for g in line.glyphs {
 		assert g.advance > 0.0, 'every letter still advances the pen'
 	}
+}
+
+fn approx_zero(w f64) bool {
+	return w > -0.001 && w < 0.001
 }

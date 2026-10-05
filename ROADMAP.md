@@ -429,28 +429,55 @@ results. The preference bought nothing and cost the rendering:
 - **Amiri** is visually identical either way, which is what a well-made font should be when asked to shape
   its own letters.
 - **Noto Naskh Arabic is visibly broken.** `سلام دنیا` renders as mangled letters where it previously read
-  correctly. Its joining rules are 20 one-for-one and 8 one-to-two per feature, and they also all name one
-  shared SingleSubst lookup, which is the unexplained entry below. Whatever that lookup is doing, running
-  these rules as the primary route is not safe yet.
+  correctly.
 
-Reverted, with the joining features still in place for the fonts that need them — Nastaliq, which has no
-presentation forms and was being drawn as unjoined base letters before.
+**And the cause was not the preference at all. It was the mask.** The mask restricted each joining feature to
+the glyphs in its own shape, and a combining mark has no joining shape, so no mark took part in any of them.
+Arabic joining features are also **mark composition**: a dot sits below the letter in one joining shape and
+above it in another, so a font composes its marks differently per shape, through the very feature that names
+the shape. Excluding marks left every dot in the composition meant for a different shape, and `سلام دنیا`
+came out mangled. Fixing the mask — a mark takes part in every shape — makes Noto Naskh render correctly with
+the preference in place. That is measured on the rendered image, not inferred.
 
-One thing the attempt did settle, and it is the part the lam-alef depends on: **the two routes are not
-interchangeable for a ligature.** A shaped letter standing for two characters is a different question from
-one standing for a single character, because the presentation form codepoint *is* the fusion — the cmap maps
-it to one glyph and no rule is needed. Letting GSUB at it expands the pair back into two letters, and three
-layout and mark attachment tests noticed the extra glyph at once. A ligature has to keep the cmap. Which is
-the order the two mechanisms compose in: the shaper fuses what it recognises as one shape, the font shapes
-what it recognises as one letter.
+So the preference was rejected on its own merits, not as the cause of the breakage:
 
-### Why Noto Naskh names one SingleSubst lookup from init, medi and fina
+| route | glyphs for `سلام دنیا` | width | dots | cursive anchors reached |
+| --- | --- | --- | --- | --- |
+| cmap presentation form | 9 | 186.2 px | correct | 0 |
+| GSUB joining, mask fixed | 12 | 186.2 px | correct | 0 |
 
-Measured and still not explained. All three features of that font name lookup 4, which holds a single
-SingleSubst rule. A font may reuse one lookup across features, and this may be that — but one rule serving
-all three shapes is not what a reuse would normally be for, and it is also the lookup most likely to be
-responsible for the broken rendering in the entry above. It is the first thing to read when the joining
-route for that font is retried.
+Same width, same rendering, **more glyphs**, and still no cursive rule reached. There is nothing to show for
+it, so it is not in. What landed instead is the mask fix, which is a bug fix in its own right and which
+Nastaliq needed before this was found.
+
+One thing the attempt did settle, and the lam-alef depends on it: **the two routes are not interchangeable
+for a ligature.** A shaped letter standing for two characters is a different question from one standing for a
+single character, because the presentation form codepoint *is* the fusion — the cmap maps it to one glyph and
+no rule is needed. Letting GSUB at it expands the pair back into two letters, and three layout and mark
+attachment tests noticed the extra glyph at once. A ligature has to keep the cmap. Which is the order the
+two mechanisms compose in: the shaper fuses what it recognises as one shape, the font shapes what it
+recognises as one letter.
+
+### ~~Why Noto Naskh names one SingleSubst lookup from init, medi and fina~~ — answered 2026-10-04
+
+**It is a mark composition rule, and this engine's reader was right all along.** fontTools agrees with it
+exactly: `init` names lookups [23, 4], `medi` names [24, 4], `fina` names [25], and lookup 4 is a SingleSubst
+with eleven rules that all do the same thing:
+
+```
+dotcenterar               -> dotbelowar
+twodotsverticalcenterar   -> twodotsverticalbelowar
+fourdotscenterar          -> fourdotsbelowar
+tahcenterar               -> tahbelowar
+```
+
+A dot-centred mark becomes a dot-below one. A font names that lookup from all three joining features because
+the same mark has to be composed differently depending on the letter's joining shape, and nothing in
+OpenType stops one lookup being named by several features. The reader read it correctly; the entry above was
+a measurement that had not been interpreted yet.
+
+The cost of not asking an independent reader first is now on record: two entries and one reverted change were
+spent treating this as a parser mystery.
 
 ---
 

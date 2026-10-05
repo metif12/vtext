@@ -187,6 +187,7 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 			cluster: glyph.cluster
 			source:  i
 			form:    glyph.form
+			is_mark: glyph.is_mark
 		}
 	}
 	for feature in ['ccmp'] {
