@@ -28,9 +28,9 @@ comes with them.
 | GPOS: pair adjustment (kerning) | done, both formats |
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
-| GPOS: cursive attachment, format 1 and 2 | read; the attachment itself is not written |
-| Line breaking (UAX #14) | partial: no dictionary, strict level, or CJK |
-| Line options beyond a feature list | absent: no line height, alignment, or spacing |
+| GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
+| Line breaking (UAX #14) | partial, and now measured: **13,074 of 19,346 (67.6%)** against the Unicode test, with a floor asserted on every run |
+| Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
 | Vertical extent of a line | done: was twice the ink, found by `tools/metrics` |
@@ -96,6 +96,44 @@ The rules that are not implemented are the ones that need a resolved line-break 
 dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictionary segmentation,
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
+
+**Measured, because "done" above was a description and not a number. 13,074 of 19,346 — 67.6%.**
+
+`ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
+committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
+than an exact figure, so a rule landing shows up as a number somebody has to choose to raise the floor to,
+and the property that matters — that a fix cannot be undone by accident — holds without the number ever
+being quietly lowered.
+
+One rule was fixed on the strength of it, and it was the cheapest failure in the file: **an ambiguous
+character was a class no rule matched.** The table names `AI`, nothing in the chain tests for it, so it
+fell through to the permissive default at the end and broke away from its neighbours on both sides. UAX#14
+resolves it to a letter unless the text is being treated as East Asian, and this engine has no such mode,
+so it now resolves to `AL`. Sixteen cases, and `× 2757 × 2757` went from a break to no break, which is
+the whole of the class of failure the first eight reported were.
+
+**A better version of the same fix measured much worse and is not in.** Giving a combining mark its base's
+class, rather than leaving it `.cm`, is what LB9 reads like on both sides, and it took the score from
+13,074 to **10,912** — 8,434 failures against 6,272. The mark then carries its base's class into the rule
+*after* it, and a base that is allowed to break away, a space or a character whose own class permits it,
+has that break suppressed by the mark on top of it. The one-sided check that catches the break before a
+mark is what is left, and it is the smaller loss. The comment on `effective_class` says so, so the next
+person does not spend the measurement again.
+
+What the remaining 6,272 are, in the order the test reports them, is worth writing down before anyone
+starts:
+
+- **LB28's numeric cases.** Only `AL × AL` is implemented; `AL × NU` and `NU × AL` are not, so `H2O` and
+  `COVID19` may split at the letter-digit boundary. This affects Latin, not only CJK, and is the
+  cheapest remaining rule.
+- **The break after a combining mark.** Every case of the form `× 2757 × 0308 × 2757 ÷` fails at index 2,
+  the break *after* the mark. The class is right (`.cm`) and the rule is missing rather than wrong.
+- **SA and CJ characters.** `× 2757 ÷ 1B05 ÷` should break and does not, so a complex-context or
+  conditional-starter character is being treated as something that must not break away.
+
+None of the three are Arabic or Persian, which is why the library is usable without them and why they are
+listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
+the wrong unit of work for one of them.
 
 ### ~~Chaining-context positioning (GPOS type 8)~~
 

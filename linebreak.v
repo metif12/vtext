@@ -346,10 +346,29 @@ fn effective_class(props &Properties, cps []rune, i int, so_far []LineBreakClass
 	// which is what keeps a line from ending between a letter and the accent on
 	// it. The table has most of these already, but not all, and the ones it misses
 	// are exactly the ones a Latin letter with a combining accent would use.
+	//
+	// Taking the *previous class* for a mark instead of .cm was tried, on the reading that LB9 makes a
+	// mark behave as the character before it in both directions. It measured much worse — 8,434 failures
+	// against 6,272 — because a mark then carries its base's class into the rule after it, and a base that
+	// must be allowed to break away (a space, or a character whose own class permits a break) has that
+	// break suppressed by the mark. The one-sided check at the end of the chain is what is left, and it is
+	// the smaller loss of the two.
 	if i > 0 && is_markish(raw) {
 		return .cm
 	}
 	_ = so_far
+	// The resolution of an ambiguous character, which is what UAX#14 calls AI. The table names it as a
+	// class of its own and no rule matches it, so an ambiguous character fell through to the permissive
+	// default at the end of the chain and broke away from its neighbours on both sides — which is why the
+	// conformance score was 67.5% and the first eight failures were all ambiguous characters.
+	//
+	// The default resolution is to a letter. An ambiguous character is one whose width depends on the
+	// script it is rendered as, and UAX#14 resolves it to a letter unless the text is being treated as
+	// East Asian, which this engine has no mode for. Resolving it to a letter is what makes LB28 hold
+	// across it, so two of them stay together instead of each breaking away.
+	if raw == .ai {
+		return .al
+	}
 	return raw
 }
 

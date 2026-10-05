@@ -131,6 +131,12 @@ Named here so that a caller is not surprised by them.
   (LB16b, LB17b) and the strict level rules are not implemented. Neither affects Arabic or Persian.
 - **CJK line breaking.** The ideographic rules are not implemented, so a Han or Kana run breaks at
   every character rather than at the word boundaries a reader expects.
+
+  Line breaking is measured against the Unicode committee's own test for this version, not described.
+  It passes **13,074 of 19,346 cases (67.6%)**, and `linebreak_conformance_test.v` asserts that as a
+  floor on every run, so the number cannot be quietly lowered. The gaps that remain are named in
+  `ROADMAP.md`; the cheapest of them is LB28's numeric cases, which means `H2O` may currently break at
+  the letter-digit boundary — that one is Latin, not only CJK.
 - **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
   Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
 - **Cursive attachment.** The rules are read correctly from real fonts — Amiri, Noto Nastaliq Urdu and Dubai
