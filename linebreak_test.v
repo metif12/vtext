@@ -69,6 +69,26 @@ fn test_line_break_keeps_an_infix_separator_with_the_letter_after_it() {
 	assert ops[0].start == 5, 'and the only break is the end of the text'
 }
 
+// An aksara is a base character, not a mark, and a line may end before one.
+//
+// U+1B05 BALINESE LETTER AKARA is class AK, and it was in the list of classes treated as combining
+// marks. That meant no line could end before it, which is the failure the conformance test reports as
+// `× 2757 ÷ 1B05 ÷` — a break the specification asks for and the engine refused. The class is its own
+// in the UCD and the rules treat it as a base, so it is not a mark.
+//
+// The distinction matters for the same reason the Devanagari case does: a prebase mark carries an accent
+// and belongs to what follows it, while an aksara is a letter in its own right.
+fn test_line_break_may_end_before_an_aksara() {
+	ctx := new_context()
+	// U+2757 U+1B05: an ambiguous character resolved to a letter, then an aksara.
+	cps := [rune(0x2757), rune(0x1B05)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [1, 2], 'a break falls between them and at the end, got ${starts}'
+}
+
 //
 // "ab (cd)" is seven characters, and the two opportunities are after the space at
 // index three and at the end of the text. Neither is inside the brackets.

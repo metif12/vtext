@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **13,402 of 19,346 (69.3%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **13,453 of 19,346 (69.5%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -97,7 +97,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 13,402 of 19,346 — 69.3%.**
+**Measured, because "done" above was a description and not a number. 13,453 of 19,346 — 69.5%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -120,15 +120,30 @@ has that break suppressed by the mark on top of it. The one-sided check that cat
 mark is what is left, and it is the smaller loss. The comment on `effective_class` says so, so the next
 person does not spend the measurement again.
 
-What the remaining 5,944 are, in the order the test reports them, is worth writing down before anyone
+What the remaining 4,893 are, in the order the test reports them, is worth writing down before anyone
 starts:
 
-- **SA and CJ characters.** `× 2757 ÷ 1B05 ÷` should break and does not, so a complex-context or
-  conditional-starter character is being treated as something that must not break away.
+- **CJ characters.** `× 2757 ÷ 11003 ÷` should break and does not, so a conditional Japanese starter is
+  being treated as something that must not break away.
 
 None of them are Arabic or Persian, which is why the library is usable without them and why they are
 listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
 the wrong unit of work for one of them.
+
+### An aksara is not a combining mark — done 2026-10-04
+
+Worth 51 cases, from 13,402 to 13,453, and it was the last item on the list above.
+
+`is_markish` named `.ak` among the classes it folds into a combining mark, so no line could end before an
+aksara. The conformance test reports it as `× 2757 ÷ 1B05 ÷` — a break the specification asks for and the
+engine refused. U+1B05 BALINESE LETTER AKARA is class AK, and the class is its own in the UCD and treated
+as a base by the rules.
+
+The comment on the function said the list came from "the ones called aksara and virama in older versions of
+the table", which is where the mistake came from: an older UAX #14 folded aksara into CM, and this engine
+carried the folding forward into a version of the table that no longer does it. `.ap` stays — an aksara
+*prebase* is a mark in the same sense a Devanagari prebase is, and it is the one carrying the accent-like
+behaviour. The distinction is the whole point of having two classes.
 
 ### A combining mark may no longer end a line, and that is a Persian trade-off
 

@@ -133,7 +133,7 @@ Named here so that a caller is not surprised by them.
   every character rather than at the word boundaries a reader expects.
 
   Line breaking is measured against the Unicode committee's own test for this version, not described.
-  It passes **13,402 of 19,346 cases (69.3%)**, and `linebreak_conformance_test.v` asserts that as a
+  It passes **13,453 of 19,346 cases (69.5%)**, and `linebreak_conformance_test.v` asserts that as a
   floor on every run, so the number cannot be quietly lowered. A run of digits holds together, and so
   does a letter-digit boundary, so `12345` and `H2O` do not split.
 

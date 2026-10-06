@@ -413,8 +413,15 @@ fn effective_class(props &Properties, cps []rune, i int, so_far []LineBreakClass
 // also folds in the ones called aksara and virama in older versions of the
 // table, which are .ak and .vi here, so a Devanagari cluster is treated as one
 // unit by the same rule as a Latin letter with an accent on it.
+//
+// .ak was in this list and is wrong. Aksara is a base character — a Balinese
+// letter — and treating it as a mark meant no line could end before one, which
+// is the failure the conformance test reports as `× 2757 ÷ 1B05 ÷`. The class
+// is its own in the UCD and the rules treat it as a base, so it is not a mark.
+// .ap stays: an aksara prebase is a mark in the same sense a Devanagari prebase
+// is, and it is the one that carries the accent-like behaviour.
 fn is_markish(c LineBreakClass) bool {
-	return c == .cm || c == .ak || c == .ap || c == .vi || c == .idcj || c == .h2 || c == .h3
+	return c == .cm || c == .ap || c == .vi || c == .idcj || c == .h2 || c == .h3
 }
 
 fn clamp_index(i int, n int) int {

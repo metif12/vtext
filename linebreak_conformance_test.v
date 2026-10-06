@@ -22,7 +22,7 @@ import os
 // before ambiguous characters were resolved to letters, worth sixteen cases, 13,090 after the numeric
 // pairs and a run of digits, and then 13,402 once a line may not also end on a combining mark. The rules
 // still missing are listed in the roadmap with what each one is.
-const conformance_floor = 13402
+const conformance_floor = 13453
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.
