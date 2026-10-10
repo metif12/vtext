@@ -89,6 +89,173 @@ fn test_line_break_may_end_before_an_aksara() {
 	assert starts == [1, 2], 'a break falls between them and at the end, got ${starts}'
 }
 
+// An aksara prebase and a virama final are not marks, and a line may end before one.
+//
+// Both were in `is_markish`, on the reading that a prebase is a mark in the same sense a Devanagari
+// prebase is. The committee's file disagrees from the right-hand side: of the 1112 positions whose
+// right-hand character is an AP or a VI, 497 ask for a break and 615 do not, so the class is not a mark
+// on that side at all. These three are its examples, and each one is tagged [31.01], the rule that
+// stops a line between an emoji base and the combining mark on it.
+//
+// `× 2757 ÷ 1B44 ÷` is the shape that changed, and so is the same shape with 11003, and with every
+// letter of the file in the first position. Worth 132 cases.
+fn test_line_break_may_end_before_an_aksara_prebase_and_a_virama() {
+	ctx := new_context()
+	// U+2757 is AI, resolved to a letter by LB1. U+11003 is AP, U+1B44 is VI.
+	mut wanted := [rune(0x2757), rune(0x11003), rune(0x1B44)]
+	// Each pair in turn, so a failure names the pair rather than the run.
+	for i in 0 .. 3 {
+		mut cps := []rune{}
+		for j in i .. i + 2 {
+			cps << wanted[j % 3]
+		}
+		mut starts := []int{}
+		for o in break_opportunities(ctx, cps, true) {
+			starts << o.start
+		}
+		assert starts == [1, 2], 'no mark rule holds 2757 to 11003 or to 1B44, got ${starts}'
+	}
+}
+
+// The same two from the other side, which is the half LB9 does answer.
+//
+// A virama follows the letter it belongs to, and a line may not end between
+// them — but that is the mark on the LEFT doing the work, and `.cm` is the class
+// that does it. `× 2757 × 0308 × 2757 ÷` is the shape, and `× 2757 × 11003 × 0308
+// ÷` is the one the aksara prebase and the virama leave behind: the break is
+// refused before the combining mark and allowed after it. Confirming the
+// prebase and the virama are still held *to* what precedes them is the same
+// test as the one above read backwards, so it is not written twice.
+fn test_line_break_keeps_a_mark_after_an_aksara_prebase() {
+	ctx := new_context()
+	// 2757 11003 0308, which is the file's own `× 2757 ÷ 11003 × 0308 ÷`: a break
+	// before the prebase, and none before the combining mark that follows it.
+	cps := [rune(0x2757), rune(0x11003), rune(0x0308)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [1, 3], 'a break before the prebase and none before the mark, got ${starts}'
+}
+
+// Hangul syllables are their own class and they break like letters.
+//
+// H2 and H3 were in `is_markish`, which folded a Hangul syllable into a combining
+// mark. A syllable is the letter itself — U+AC00 HANGUL SYLLABLE GA is H2 and U+AC01
+// HANGUL SYLLABLE GAG is H3 — so this meant a Korean syllable could not break
+// before another syllable and a run of them was one unbreakable word.
+//
+// The committee's file asks for exactly the opposite, 140 times: `× 3041 ÷ AC01 ÷` and
+// every other pair of Japanese and Korean characters on the same line. Removing the
+// two measured 3041 to 2914 failures, so it is worth 127 cases and 13 are broken,
+// all of them LB26 sub-rules this engine does not implement.
+fn test_line_break_breaks_between_two_hangul_syllables() {
+	ctx := new_context()
+	// U+CABD and U+C774: the committee's own case, and one such per syllable.
+	cps := [rune(0xCABD), rune(0xC774)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [1, 2], 'a break falls before a hangul syllable, got ${starts}'
+}
+
+// ...and in the other order, which is the direction the class rule actually covered.
+fn test_line_break_breaks_between_a_hangul_syllable_and_what_follows_it() {
+	ctx := new_context()
+	// U+AC00 HANGUL SYLLABLE GA (H2), U+0301 COMBINING ACUTE ACCENT (CM).
+	cps := [rune(0xAC00), rune(0x0301)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [2], 'the mark still holds the syllable, got ${starts}'
+}
+
+// A small kana is a non-starter, and a line may not begin with one.
+//
+// U+3041 HIRAGANA LETTER SMALL A is class CJ, and LB1 resolves CJ to NS — the
+// class this engine already holds at LB13 and LB17. `× 2757 × 3041 ÷` is the
+// committee's own shape and it is tagged [21.04], the same rule that answers
+// `× 2757 × 3005 ÷` at U+3005, a real non-starter. The two are the same answer
+// from the same rule, which is what makes the resolution that rather than AL.
+//
+// `× 007D × 3041 ÷` is the shape that proves it is NS and not AL: a closing
+// bracket and a non-starter are held together by LB16, and two alphabetics are
+// not. Both would refuse a break, but only NS does.
+fn test_line_break_keeps_a_small_kana_with_what_precedes_it() {
+	ctx := new_context()
+	// 2757 3041: no break at one, and the text ends at two.
+	cps := [rune(0x2757), rune(0x3041)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [2], 'a non-starter may not begin a line, got ${starts}'
+
+	// U+007D RIGHT CURLY BRACKET is class CL, and LB16 says `(CL | CP) SP* × NS`.
+	// Resolving CJ to AL would leave this pair to the permissive default.
+	cps2 := [rune(0x007D), rune(0x3041)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert starts2 == [2], 'a non-starter is held by LB16, got ${starts2}'
+
+	// A space in front is what LB18 answers, and the break goes before the kana.
+	// `× 2757 × 0020 ÷ 3041 ÷` is the committee's own case.
+	cps3 := [rune(0x2757), rune(0x0020), rune(0x3041)]
+	mut starts3 := []int{}
+	for o in break_opportunities(ctx, cps3, true) {
+		starts3 << o.start
+	}
+	assert starts3 == [2, 3], 'a space breaks before a non-starter, got ${starts3}'
+}
+
+// An unknown character breaks like a letter, and two of them stay together.
+//
+// U+EFFFD and U+1F8FF are class XX, which no rule matched before LB1 resolved it to
+// AL, so each fell through to the permissive default and broke away from its
+// neighbour in both directions. `× 2757 × EFFFD ÷` is the shape and it is tagged
+// [28.0] — two alphabetics, no break.
+fn test_line_break_keeps_two_unknown_characters_together() {
+	ctx := new_context()
+	// 2757 EFFFD: no break at one, and the text ends at two.
+	cps := [rune(0x2757), rune(0xEFFFD)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [2], 'an unknown character breaks like a letter, got ${starts}'
+
+	// And a digit after one is LB23, the letter-digit pair.
+	cps2 := [rune(0x30), rune(0xEFFFD), rune(0x30)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert starts2 == [3], 'an unknown character holds a letter-digit pair, got ${starts2}'
+}
+
+// A complex-context character breaks like a letter, which is what the annex
+// recommends when no dictionary is available.
+//
+// U+0E01 THAI CHARACTER KO KAI is class SA. The committee's file uses two SA
+// characters and they answer differently: this one answers `[28.0]` (an alphabetic)
+// and U+0E31 answers `[9.0]` (a combining mark). The distinction is General_Category,
+// which this engine's tables do not carry, so SA resolves to AL across the board.
+// That is worth 45 of the failures it was measured against.
+fn test_line_break_keeps_a_complex_context_character_with_a_letter() {
+	ctx := new_context()
+	// 2757 0E01: no break at one, and the text ends at two.
+	cps := [rune(0x2757), rune(0x0E01)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [2], 'a complex-context character breaks like a letter, got ${starts}'
+}
+
 //
 // "ab (cd)" is seven characters, and the two opportunities are after the space at
 // index three and at the end of the text. Neither is inside the brackets.

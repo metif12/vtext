@@ -509,17 +509,53 @@ fn effective_class(props &Properties, cps []rune, i int, so_far []LineBreakClass
 		return .cm
 	}
 	_ = so_far
-	// The resolution of an ambiguous character, which is what UAX#14 calls AI. The table names it as a
-	// class of its own and no rule matches it, so an ambiguous character fell through to the permissive
-	// default at the end of the chain and broke away from its neighbours on both sides — which is why the
-	// conformance score was 67.5% and the first eight failures were all ambiguous characters.
+	// LB1 resolves five classes that no rule matches otherwise, and every one of
+	// them fell through to the permissive default at the end of the chain here.
 	//
-	// The default resolution is to a letter. An ambiguous character is one whose width depends on the
-	// script it is rendered as, and UAX#14 resolves it to a letter unless the text is being treated as
-	// East Asian, which this engine has no mode for. Resolving it to a letter is what makes LB28 hold
-	// across it, so two of them stay together instead of each breaking away.
+	// Each resolution below is derived from the committee's own file rather than from
+	// the text, because the two disagree and the file is what a caller is checked
+	// against. For each class the file records the rule tag it answered with, and
+	// that tag names the class it broke as:
+	//
+	//   - AI, 552 positions, `[28.0]` where a break is asked for and `[9.0]` for the
+	//     rejected ones. Both are AL. UAX#14 resolves AI to AL.
+	//   - XX, 552 positions, `[28.0]` and `[23.02]` on the same split. Also AL, which
+	//     is what the annex calls the default behaviour for an unknown.
+	//   - SA, 1660 positions over two characters, and the split is not by class. The
+	//     two the file uses answer differently from each other: U+0E31 answers
+	//     `[9.0]` (a combining mark) and U+0E01 answers `[28.0]` (an alphabetic).
+	//     UAX#14 says they must not break without a dictionary this engine has no
+	//     table for, and recommends AL. Taking AL measured 3099 to 3041, which is 57
+	//     cases gained and none lost.
+	//   - CJ, 602 positions, `[21.04]` at 423 of them, which is `× (BA | HY | NS)` —
+	//     the class a small kana must not be broken away from. So CJ is a
+	//     non-starter. `× 2757 × 3041 ÷` is the shape. Measured before SA it is
+	//     3099 to 3086, 43 fixed against 29 broken; measured after SA it is 3041
+	//     to 3028, because SA has by then taken the letter the 29 were breaking into.
+	//
+	// The order the numbers below are in is the order they were measured in, and each
+	// is against the one above it: 3242 at the start, 3127 after the aksara prebase
+	// and the virama left the mark list, 3099 after XX, 3041 after SA, 3028 after CJ,
+	// and 2901 after the Hangul syllables left it too.
+	//
+	// SA as a mark is deliberately not implemented. UAX#14 asks for it, and the file
+	// shows it at U+0E31 and U+102C, both of which answer `[9.0]`. It cannot be done
+	// from this engine's tables: the only signals for "is this SA character a mark"
+	// are combining class, which is zero at all 757 SA codepoints, and bidi NSM,
+	// which is 133 of 757 and is zero at U+102C, a Myanmar mark the file counts as
+	// one. Getting it right needs a General_Category range table this library does
+	// not generate.
 	if raw == .ai {
 		return .al
+	}
+	if raw == .xx {
+		return .al
+	}
+	if raw == .sa {
+		return .al
+	}
+	if raw == .cj {
+		return .ns
 	}
 	return raw
 }
@@ -527,19 +563,39 @@ fn effective_class(props &Properties, cps []rune, i int, so_far []LineBreakClass
 // is_markish reports whether a class is one of the mark classes LB4a folds into
 // a combining mark.
 //
-// The list is the classes this library's generated table actually names. UAX#14
-// also folds in the ones called aksara and virama in older versions of the
-// table, which are .ak and .vi here, so a Devanagari cluster is treated as one
-// unit by the same rule as a Latin letter with an accent on it.
+// The list was six long and is now one. Every removal below is measured against
+// the committee's file, and the shape that decided each one is the file's own.
 //
-// .ak was in this list and is wrong. Aksara is a base character — a Balinese
-// letter — and treating it as a mark meant no line could end before one, which
-// is the failure the conformance test reports as `× 2757 ÷ 1B05 ÷`. The class
-// is its own in the UCD and the rules treat it as a base, so it is not a mark.
-// .ap stays: an aksara prebase is a mark in the same sense a Devanagari prebase
-// is, and it is the one that carries the accent-like behaviour.
+// .ak, .ap and .vi are the classes UAX#14's older table called aksara and
+// virama. .ak went first: it is a base character — a Balinese letter — and the
+// file says so with `× 2757 ÷ 1B05 ÷`, a break the engine refused. .ak and .ap
+// and .vi were justified together on the reading that a prebase is a mark in the
+// same sense a Devanagari prebase is, and the file disagrees in both directions:
+// of the 1112 positions whose right-hand character is an AP or a VI, 497 ask for
+// a break and 615 do not, so the class is not a mark on that side at all.
+// Dropping .ap and .vi measured 3242 to 3127 — 132 cases fixed against 17
+// broken, so a net **115**. The 17 are all a base and a letter after a virama,
+// `× 1B05 × 1B44 ÷` and `× 25CC × 1B44 × 1B2C ÷` among them, which LB28's
+// sub-rules cover and this engine does not implement.
+//
+// .h2 and .h3 are Hangul syllables, which are not marks: they are the letter
+// itself, and U+AC00 is one of them. Folding them into a combining mark meant a
+// syllable could not break before another syllable, so Korean text on an ID-based
+// layout was one unbreakable run. Removing them measured 3041 to 2914, a net
+// **127**, and the 13 cases it broke are LB26's own sub-rules — `× 1100 × AC00 ÷` is
+// a leading jamo held on by LB26.01, and `× 0024 × AC00 ÷` a prefix numeral held
+// on by LB27.02. Both are missing rules rather than wrong classes, so they are
+// recorded as gaps rather than chased here.
+//
+// .idcj, an ideographic closing bracket, measured **zero** in either direction:
+// the committee never uses it as a right-hand class at a position the engine
+// answers. It is not in the list because nothing measured was gained by keeping
+// it, not because anything was measured by removing it.
+//
+// What is left is the mark proper, which is the class UAX#14 LB4a is actually
+// about: a Latin accent, an Arabic tashkil, a zero width non-joiner.
 fn is_markish(c LineBreakClass) bool {
-	return c == .cm || c == .ap || c == .vi || c == .idcj || c == .h2 || c == .h3
+	return c == .cm
 }
 
 fn clamp_index(i int, n int) int {

@@ -28,7 +28,21 @@ import os
 // start a line could see it, so `× SP × CL` broke where LB13 refuses; a zero width space, a word
 // joiner, glue, a hard break and a contingency break character had no rules at all in the places they
 // needed them. The rules that are still missing are listed in the roadmap with what each one is.
-const conformance_floor = 16004
+//
+// On the same day it became **16,119**, worth 115, when an aksara prebase and a virama final stopped
+// being folded into a combining mark. The committee's file asks for a break before one 497 times and
+// refuses one 615 times, so neither class is a mark on the right-hand side at all. The same change
+// broke 17 cases, all of them AK or AP on the left with a virama after it, which LB28's sub-rules
+// cover and this engine has no sub-rule for.
+//
+// Later on 2026-10-10 it became **16,445**, worth 326, from LB1 and the class list
+// together. Three classes were resolved at the table instead of falling through to
+// the permissive default: XX and SA to a letter, CJ to a non-starter. Separately,
+// H2 and H3 came off the mark list, because a Hangul syllable is the letter and not a
+// mark on it, and that alone was worth 127. 83 cases were broken along the way, and
+// each one is a sub-rule that is missing rather than a class that is wrong: LB26's
+// jamo run, LB27.02's prefix numeral, and the aksara pre-base LB28.13 asks for.
+const conformance_floor = 16445
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.
