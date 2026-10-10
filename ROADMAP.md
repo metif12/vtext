@@ -35,7 +35,7 @@ comes with them.
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
 | Vertical extent of a line | done: was twice the ink, found by `tools/metrics` |
 
-Twenty-four test files, all passing. The cursive reader is tested twice over: from words in
+Twenty-six test files, all passing. The cursive reader is tested twice over: from words in
 `gpos_cursive_test.v` for the byte shapes, and against real cursive rules in the licensed corpus under
 `testdata/fonts/`, because a fixture written to match the reader cannot catch a reader that is wrong about
 where the records start. That is not hypothetical — it is how the record-offset bug survived.
@@ -1211,12 +1211,78 @@ last codepoint. It showed up as a letter answering with its presentation form in
 a plausible-looking wrong answer rather than a failure. The loops are written as explicit counters now,
 with the reason in a comment.
 
-### `tools/subset`
+### ~~`tools/subset`~~ — done 2026-10-10
 
-Produce a smaller font holding only the glyphs a given text needs. The tool
-that most affects what a caller can do with the library, and the one that
-depends on the engine being right: a subsetter that keeps a glyph the shaping
-pipeline needed and drops one it did not is worse than no subsetter at all.
+```
+v run tools/subset.v <font.ttf> --text "STRING" -o out.ttf [--file FILE] [--size N]
+```
+
+Verification always runs, and it is the point of the tool. The font it just wrote is loaded back, the
+same string is shaped through it, and every glyph it kept is rasterized beside its original at three
+sizes and two subpixel bins. A subset that shapes differently is an error, not a small success.
+
+| font | text | chars → glyphs | bytes before → after | glyphs kept |
+| --- | --- | --- | --- | --- |
+| segoeui.ttf | `office ffi difficulty` | 21 → 21 | 959752 → 348168 | 37 of 5394 |
+| tahoma.ttf | `The quick brown fox… Affluent flow office.` | 66 → 66 | 919260 → 311320 | 35 of 4498 |
+| arial.ttf | `efficient staff off shelf flour chaff` | 37 → 37 | 1045720 → 371112 | 50 of 4651 |
+| DUBAI-REGULAR.TTF | `لَآ أَهْلاً بِک` | 16 → 18 | 181484 → 110320 | 21 of 677 |
+| Amiri-Regular.ttf | `بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ` | 14 → 14 | 437780 → 162072 | 36 of 6710 |
+| NotoNaskhArabic-Regular.ttf | `سلام دنیا` | 9 → 8 | 291980 → 73092 | 18 of 1719 |
+| NotoNastaliqUrdu-Regular.ttf | `سلام دنیا` | 9 → **18** | 176600 → 80036 | 47 of 977 |
+| NotoNaskhArabic-Variable.ttf | `متن آزمایشی` | 11 → 13 | 253880 → 140768 | 22 of 1415 |
+| cambria.ttc | `office ffi difficulty` | 21 → 21 | 1792664 → 495412 | 35 of 7614 |
+
+Nastaliq is the number that carries the argument: 9 characters produce 18 glyphs through the
+pipeline, so the per-character cmap walk this tool refuses to use would have kept 9 and dropped 9 the
+run actually draws.
+
+**Glyph ids are preserved rather than renumbered, and that is the whole of the design.** Renumbering
+means rewriting every glyph id in cmap, hmtx, GSUB, GPOS and GDEF, and a wrong rewrite there is a font
+that loads fine and draws the wrong letter. Preserving them means those five tables are copied byte for
+byte and the only claim the tool makes is that the outlines it kept are the outlines it read. The
+price is in the table: the saving is glyf, and the reduction is 2–4x rather than the 10–20x a full
+renumbering subsetter would reach. `maxp.numGlyphs` is left alone for the same reason — lowering it
+buys almost nothing while making every GSUB, GPOS and GDEF reference above the new count point at a
+glyph the font no longer declares.
+
+**Two things had to be right before the tool could be trusted, and both were found by reading the
+output with a second reader rather than by the tool's own report.**
+
+The closure has to run to a fixed point. Running the glyf pass and then the GSUB pass, in that order,
+kept **0** glyphs from composite outlines on Segoe UI: every composite in that run arrived through a
+substitution, so the pass that would have closed over it had already finished. Segoe UI's `i` is gid
+3388, `glyph03315` plus `dotaccent`, and the subset that came out had the dotaccent reference intact
+and its outline empty. The word drawn was a dotless i. Restoring the two passes into a loop that runs
+until neither changes anything fixes it, and is the only ordering that cannot be wrong by accident.
+
+The verification has to cover every glyph the tool kept, not only the ones the shaped run named. The
+first version reported green on exactly that font, because gid 3388 is not in the run's own list — the
+substitution closure added it — so nothing compared it. It now compares every kept glyph, and both
+controls are worth recording: with the single-pass closure restored, the tool reports `gid 3388 at 16
+pixels rasterizes differently` and refuses to write a font at all, which is the behaviour the roadmap
+asked for. With the closure disabled entirely, it verifies on 12 glyphs and says nothing, which is
+the check being vacuous and is why the closure is not what makes the tool correct.
+
+**Independently checked, because the tool's own report is not evidence.** fontTools 4.66.1 reads
+every subset above, agrees the glyph order is unchanged, and reports that no glyph has ink in a subset
+it did not have in the original and that every glyph carrying ink carries identical coordinates. The
+whole-file checksum is `0xB1B0AFBA` on all of them. One real bug was found that way before these were
+written down: the checksum constant had been written in decimal, one digit out, producing fonts that
+every reader loaded and drew correctly while summing to `0xB1B180F2`.
+
+**Refused: CFF, untested.** There is no CFF or OpenType font on this machine, so the refusal path has
+never run. The reason is in the message rather than left to the reader: this rebuilds `glyf` and
+`loca`, and a charstring is a different language the library exposes no reader for. `gvar`, `hdmx`,
+`LTSH` and friends are copied whole for the same reason, which is why NotoNaskhArabic-Variable's
+subset is still 140768 bytes — 83204 of them `gvar` this cannot prune.
+
+**Three API gaps it hit, none of them blocking.** There is no closure API in `inspect.v`, so the tool
+walks `glyf` and the GSUB lookups itself over the raw bytes. `Font` exposes only `path()`, so the tool
+reads the file a second time with `os.read_bytes(font.path())` — which means a `Font` built with
+`load_font_bytes` cannot be subsetted at all, and a `Font.data()` is the single smallest addition that
+would help. And `Font.codepoint_for` cannot name a glyph after subsetting, because the ids are not
+contiguous.
 
 ## Explicitly not planned
 
