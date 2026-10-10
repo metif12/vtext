@@ -162,56 +162,68 @@ pub enum GraphemeClass {
 // LineBreakClass is the UAX#14 line break class. The names follow LineBreak.txt;
 // the ones that would collide with V keywords are spelled out.
 pub enum LineBreakClass {
-	xx    = 0 // unknown
-	cm    = 1 // combining mark
-	ba    = 2 // break after
-	lf    = 3
-	bk    = 4 // mandatory break
-	cr    = 5
-	sp    = 6 // space
-	ex    = 7 // exclamation
-	qu    = 8 // quotation
-	al    = 9 // alphabetic
-	pr    = 10 // prefix numeric
-	po    = 11 // postfix numeric
-	op    = 12 // open punctuation
-	cp    = 13 // close punctuation
-	insp  = 14 // inseparable
-	hy    = 15 // hyphen
-	sy    = 16 // symbols allowing a break after
-	nu    = 17 // numeric
-	cl    = 18 // close
-	nl    = 19 // newline
-	gl    = 20 // glue
-	ai    = 21 // ambiguous
-	hh    = 22 // hard hyphen
-	bb    = 23 // break before
-	hl    = 24 // Hebrew letter
-	sa    = 25 // complex context
-	jl    = 26 // Hangul jamo L
-	jv    = 27 // Hangul jamo V
-	jt    = 28 // Hangul jamo T
-	ns    = 29 // nonstarter
-	ak    = 30 // Aksara
-	vi    = 31 // virama final
-	idas  = 32 // ideographic
-	idcj  = 33 // ideographic close
-	vf    = 34 // virama final, ideographic
-	zw    = 35 // ZW space
-	zwj   = 36 // ZWJ
-	b2    = 37 // break opportunity before and after
-	wjoin = 38 // word joiner
-	wj    = 39 // WJ
-	eb    = 40 // emoji base
-	cj    = 41 // conditional Japanese starter
-	h2    = 42
-	h3    = 43
-	sg    = 44
-	cb    = 45
-	ap    = 46 // Aksara pre-base
-	ri    = 47 // regional indicator
-	em    = 48 // emoji modifier
+	xx   = 0 // unknown
+	cm   = 1 // combining mark
+	ba   = 2 // break after
+	lf   = 3
+	bk   = 4 // mandatory break
+	cr   = 5
+	sp   = 6 // space
+	ex   = 7 // exclamation
+	qu   = 8 // quotation
+	al   = 9 // alphabetic
+	pr   = 10 // prefix numeric
+	po   = 11 // postfix numeric
+	op   = 12 // open punctuation
+	cp   = 13 // close punctuation
+	insp = 14 // inseparable
+	hy   = 15 // hyphen
+	sy   = 16 // symbols allowing a break after
+	nu   = 17 // numeric
+	cl   = 18 // close
+	nl   = 19 // newline
+	gl   = 20 // glue
+	ai   = 21 // ambiguous
+	hh   = 22 // hard hyphen
+	bb   = 23 // break before
+	hl   = 24 // Hebrew letter
+	sa   = 25 // complex context
+	jl   = 26 // Hangul jamo L
+	jv   = 27 // Hangul jamo V
+	jt   = 28 // Hangul jamo T
+	ns   = 29 // nonstarter
+	ak   = 30 // Aksara
+	vi   = 31 // virama final
+	idas = 32 // ideographic
+	idcj = 33 // ideographic close
+	vf   = 34 // virama final, ideographic
+	zw   = 35 // ZW space
+	zwj  = 36 // ZWJ
+	b2   = 37 // break opportunity before and after
+	wj   = 39 // WJ
+	eb   = 40 // emoji base
+	cj   = 41 // conditional Japanese starter
+	h2   = 42
+	h3   = 43
+	sg   = 44
+	cb   = 45 // contingency break
+	ap   = 46 // Aksara pre-base
+	ri   = 47 // regional indicator
+	em   = 48 // emoji modifier
 }
+
+// infx is the inseparable numeric infix, U+2026 ONE DOT LEADER and the ellipsis, which LB22 holds to
+// what follows it. It is spelled out because `in` is a V keyword, the way `.insp` is for IS above.
+//
+// It is a separate member from `.insp` because the two classes are separate in the UCD and identical
+// in every rule this engine applies, so folding them would have been the smaller table and the
+// wrong one: a line may not begin with either, and a caller asking which class a character is gets
+// a different answer for a comma than for an ellipsis.
+//
+// The cast is unsafe for the same reason `line_break_of`'s own is, and for the same short while:
+// the ordinal comes from a generated table that `test_value_tables_match_the_enums` holds in step,
+// and 38 is inside it by construction rather than by hope.
+const infx = unsafe { LineBreakClass(38) }
 
 // str returns the UCD name of the class, e.g. 'AL'.
 pub fn (c LineBreakClass) str() string {

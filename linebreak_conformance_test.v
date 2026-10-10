@@ -18,11 +18,17 @@ import os
 
 // conformance_floor is the score this engine must not fall below.
 //
-// Measured against UCD 18.0.0's LineBreakTest.txt: 13,402 of 19,346 cases, so 69.3%. It was 13,058
-// before ambiguous characters were resolved to letters, worth sixteen cases, 13,090 after the numeric
-// pairs and a run of digits, and then 13,402 once a line may not also end on a combining mark. The rules
-// still missing are listed in the roadmap with what each one is.
-const conformance_floor = 13453
+// Measured against UCD 18.0.0's LineBreakTest.txt. The floor was 13,402 when the test was written,
+// 13,058 before ambiguous characters were resolved to letters, 13,090 after the numeric pairs and a
+// run of digits, 13,402 once a line may not also end on a combining mark, and 13,453 once an aksara
+// stopped being folded into one.
+//
+// On 2026-10-10 it became **16,004**, worth 2,551, from rules that had been missing rather than
+// wrong. A space was answered at the top of the chain, before any rule about which character may not
+// start a line could see it, so `× SP × CL` broke where LB13 refuses; a zero width space, a word
+// joiner, glue, a hard break and a contingency break character had no rules at all in the places they
+// needed them. The rules that are still missing are listed in the roadmap with what each one is.
+const conformance_floor = 16004
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.

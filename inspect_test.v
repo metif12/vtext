@@ -409,10 +409,16 @@ fn test_mandatory_breaks_are_marked() {
 	// A newline requires a break and a caller may not skip it the way it skips the others. The flag is
 	// the only way to tell the two apart from outside the module, which is why it became public.
 	//
-	// The break falls at index 2 rather than at 1, and that is the rules rather than an off-by-one. The
-	// newline is at index 1, LB7 forbids a break before it, so the opportunity the caller gets is the one
-	// after it: a paragraph break comes after the character that ends the paragraph, not before it. The
-	// break at 1 exists and is not mandatory, which is the case worth asserting alongside.
+	// The break falls at index 2 rather than at 1, and that is the rules rather than an off-by-one.
+	// LB5 forbids a break before a hard break, so the opportunity the caller gets is the one after
+	// it: a paragraph break comes after the character that ends the paragraph, not before it.
+	//
+	// The break at 1 does not exist, and that was asserted the other way round until 2026-10-10. LB5
+	// had never been implemented — `× AL × LF` fell through to the permissive default and produced a
+	// break the specification refuses — so a test asserting the break was there passed, and named
+	// LB7 while it did. LB7 is about spaces. The committee's own file asks `× 000B ÷ 000A ÷` and
+	// `× 000A ÷ 000A ÷`, 67 times out of 70 for a class in front of a newline, and every one of them
+	// is a break that must not happen.
 	mut mandatory_at := -1
 	mut other := []int{}
 	for op in break_opportunities(ctx, inspect_runes(['61', '0A', '62']), true) {
@@ -424,7 +430,7 @@ fn test_mandatory_breaks_are_marked() {
 	}
 	assert mandatory_at == 2, 'the newline ends the paragraph, so the mandatory break is at 2, got ${mandatory_at}'
 	assert other.len > 0, 'and there are breaks that are not mandatory'
-	assert 1 in other, 'LB7 forbids a break before the newline, so the one at 1 is not mandatory'
+	assert 1 !in other, 'LB5 forbids a break before a newline, so the one at 1 does not exist'
 
 	// A space is a break a caller may take or leave. Reporting it as mandatory would make a caller treat
 	// every space as a paragraph end.

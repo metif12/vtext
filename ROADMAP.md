@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **13,453 of 19,346 (69.5%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **16,004 of 19,346 (82.7%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -97,7 +97,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 13,453 of 19,346 — 69.5%.**
+**Measured, because "done" above was a description and not a number. 16,004 of 19,346 — 82.7%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -120,9 +120,56 @@ has that break suppressed by the mark on top of it. The one-sided check that cat
 mark is what is left, and it is the smaller loss. The comment on `effective_class` says so, so the next
 person does not spend the measurement again.
 
-What the remaining 4,893 are, in the order the test reports them, is worth writing down before anyone
+### The rules that were missing rather than wrong — 2,551 cases, 2026-10-10
+
+The remaining 4,893 were listed above as one bullet about CJ characters, and that bullet was the wrong
+shape of answer: 3,454 of them were five rules that were never written at all, and the bullet was
+describing their consequences rather than their cause. Each one was found by taking the committee's own
+test file and asking it a question directly rather than by reading the rule numbers.
+
+**A space was answering before anything could ask it a question.** `× SP × CL` broke where LB13 refuses
+it. The chain opened with `if left == .sp { return allowed }` — LB18 — which is correct for a space
+against a letter and wrong against everything in LB13. Moving it below those rules is worth **2,551**
+on its own, and it is the whole of the gain. The `.bk` that shared the early return was dead code every
+time it was reached: a mandatory break is answered above it, so no pair could carry one on the left.
+
+**`× SP × CL` is the question, and the answer has two halves.** The file asks `× A × 0020 ` for every
+class, and the set that refuses to break is not the set of prohibited starts. It is `BK CR LF NL SP ZW WJ
+CL CP EX IS SY` and a final quotation mark; `× SP × CM`, `× SP × B2`, `× SP × BB` and `× SP × QU_Pi` all
+break. So `is_prohibited_start` was carrying nine classes that belong *below* the space rule, and they
+are split into a second list, `is_prohibited_start_after_space`, that the space rule can answer first.
+
+**LB5 was missing and a test asserted its absence.** No rule handled a hard break on the *right*, so
+`× AL × LF` fell through to the permissive default and produced a break. The committee asks
+`× 000B ÷ 000A ÷` and `× 000A ÷ 000A ÷` — 67 of the 70 cases it writes for a class in front of a
+newline are breaks that must not happen. `inspect_test.v` asserted the opposite, that the break *exists*
+and is not mandatory, and named LB7 while doing it. LB7 is about spaces. The test now asserts the break
+does not exist, which is what LB5 says.
+
+**LB8, LB11 and LB20 were all shaped as the wrong rule.** LB8 is a break *after* a zero width space, and
+the engine had nothing on either side of one. LB11 was being applied to the left of a word joiner by
+accident — the word joiner sits in `is_prohibited_start`, which the CL branch consumed, so `WJ` on the
+right never reached the rule written for it. LB20 needed both of its halves *and* an LB19 in front of
+it, because `× FFFC × 00AB ÷` is a break that must not happen while `× FFFC ÷ 3000 ÷` is one that must.
+
+**The mark rules moved, and not to where the numbering suggests.** `× CM` is LB9, sixty places earlier
+than LB18, and its own test file answers `× 2757 × 0020 ÷ 302A ÷` with `[18.0]` — a break, on a space
+and a tone mark. And `× GL × 0308 × FFFC ÷` refuses a break decided by the glue *underneath* the mark,
+not by the mark. So a mark now looks through itself to its base for the two left-hand questions — LB12
+and `is_prohibited_end` — and that is the one place this engine does it. Giving the mark its base's
+*class* everywhere was tried in the entry above and cost 2,178 cases.
+
+What the remaining 3,342 are, in the order the test reports them, is worth writing down before anyone
 starts:
 
+- **Pi and Pf are one class here.** `× 00AB × 0020 × 2757 ÷` must break and `× 2757 × 0020 × 00BB ÷`
+  must not, and both are `.qu`. UAX #14 distinguishes initial from final quotation marks and the class
+  table has one ordinal for the pair. This needs a Pi/Pf distinction in the property data, and it is
+  worth **~260** cases on its own.
+- **A mark stands for its base in more places than the two above.** `× OP × 0308 × FFFC ÷` is a break
+  the engine grants; the open punctuation underneath is what decides it.
+- **The numeric matrix's own pairs** — `PR × ID`, `PR × PO`, `PO × NU` — are read as a table rather
+  than as rules here.
 - **CJ characters.** `× 2757 ÷ 11003 ÷` should break and does not, so a conditional Japanese starter is
   being treated as something that must not break away.
 

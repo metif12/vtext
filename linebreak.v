@@ -169,14 +169,35 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 		// than two.
 		return BreakKind.mandatory
 	}
-	if left == .sp || left == .bk {
-		// LB7: break after a space.
-		return BreakKind.allowed
-	}
 	if right == .sp {
 		// LB7, again from the other side: a space is not allowed to end a line
 		// on its own, and the break goes after it rather than before.
 		return BreakKind.no
+	}
+	// LB7, and the same rule's zero width space: a line may not begin with one.
+	if right == .zw {
+		return BreakKind.no
+	}
+	// LB5, LB6: a hard break may not be broken before. `× 000B` and `× 000D` are
+	// the shapes, and they are answered here rather than by the left-hand
+	// mandatory check above because a zero width space in front of one still
+	// breaks at the newline and not between the two.
+	if is_mandatory_break(right) {
+		return BreakKind.no
+	}
+	// LB8: a zero width space is a break of its own. The committee's test asks
+	// `× 200B ÷ X ÷` for every class and answers every one of them with [8.0] —
+	// break — including the classes LB13 forbids after a space and the ones LB11
+	// glues on either side. That is the whole of why this sits here and not
+	// below the word joiner: it is rule eight, and everything that follows it
+	// may not override it.
+	//
+	// It is not the same as saying a zero width space is a space. `× 0020 × 200B`
+	// and `× 200B × 0020` are both "no break", and `× 0020 × 232A` is "no break"
+	// while `× 200B ÷ 232A` is a break — LB13 comes between the two breaks, so
+	// the two classes differ in where they sit rather than in what they do.
+	if left == .zw {
+		return BreakKind.allowed
 	}
 	// LB11: a word joiner forbids a break on either side of it, and LB12 forbids one before it.
 	// The two are the same effect and one rule says it: a line may not end on a word joiner and
@@ -188,26 +209,110 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 	if left == .wj || right == .wj {
 		return BreakKind.no
 	}
+	// The rules below ask what the left-hand character *is* — what it glues, what it may not end a
+	// line on — and a mark standing on a character answers for that character. LB15a and LB15b read
+	// this way, and the committee's test is where it is visible: `× GL × 0308 × FFFC ÷` refuses a
+	// break and `× AL × 0308 × FFFC ÷` grants one, with the same mark and the same placeholder on
+	// both sides, so the mark is not what decided.
+	//
+	// This is deliberately not the same as changing the mark's class, which this chain tried once and
+	// measured 10,912 against 13,090. That version rewrote the class for every later rule, so a base
+	// that may break away had its break suppressed by the mark in front of it. This only reaches the
+	// two lookups below, where the question is the base's.
+	mut eff_left := left
+	if is_markish(left) {
+		mut j := i
+		for j > 0 && is_markish(classes[j]) {
+			j--
+		}
+		eff_left = classes[j]
+	}
 	// LB12: glue is not a break either. It is a letter's way of saying that what is on either side
 	// of it belongs together, which is what a zero width space inside a word means and what a
 	// joining control sequence leaves behind.
-	if left == .gl || right == .gl {
+	if eff_left == .gl {
+		return BreakKind.no
+	}
+	// LB12a: the same, from the other side, and it is not the same rule. A line may not begin with
+	// glue unless a space or a hyphen is in front of it, which is what keeps "word\u00A0word" whole
+	// while letting a space glue its own no-break space to the line after it.
+	//
+	// The exemption is a list of two, not three. UAX #14 writes it `[^SP BA HY]`, and its own test
+	// file asks `× 3000 × 16FE4 ÷` — an ideographic space in front of a glue — and answers with
+	// [12.1], a break that must not happen. So a break-after character is not exempt after all,
+	// and a reader that takes the character class at its word loses the pair. A soft hyphen is kept
+	// exempt, because it is on the same side of the question as a space: it is followed by what it
+	// is attached to.
+	if right == .gl && left != .sp && left != .hy && left != .hh {
 		return BreakKind.no
 	}
 	if is_prohibited_start(right) {
-		// LB8 through LB14, LB21b: the right-hand character may not start a line.
+		// LB13: the right-hand character may not start a line, and this is the set that holds even
+		// when a space is in front of it. See the split in `is_prohibited_start`.
 		return BreakKind.no
 	}
 	if is_prohibited_end(left) {
-		// LB15 through LB19, LB21: the left-hand character may not end a line.
+		// LB14 through LB17: the left-hand character may not end a line, including the forms that
+		// read across a run of spaces. This comes before LB18, which is what makes `× SP × X ÷`
+		// answer those rules rather than the space's own break.
 		return BreakKind.no
 	}
-	// LB20: a run of spaces, where only the last of them is a break and the rest
-	// are glued to it. LB18 already forbids a space ending a line, so reaching
-	// here with a space on the left is only possible through a class the pairs
-	// treated as a space.
+	// LB18: break after a space.
+	//
+	// This was answered at the very top of the chain, before any rule that says which character may
+	// not start a line, so all of them were silently disabled for the character after a space. The
+	// conformance test reports the result as `× 2757 × 0020 × FE56 ÷` — a break between a space and
+	// an exclamation mark, which LB13 forbids and a leading `SP ÷` permitted.
+	//
+	// Where it sits is a measurement rather than a reading of the specification, because the two
+	// disagree about a combining mark. UAX #14 lists `× CM` as LB9, sixty places earlier than LB18,
+	// and its own test file answers `× 2757 × 0020 ÷ 302A ÷` with [18.0] — a break, on a space and
+	// an ideographic tone mark. The committee's examples are the specification for this engine, so
+	// the mark rule stays below and the space wins.
+	//
+	// The classes that do NOT take part in this are the ones the table above names, and they are
+	// split into `is_prohibited_start` above and `is_prohibited_start_after_space` below. Measured
+	// one way at a time: leaving every prohibition above the space cost 204 cases, and moving all
+	// of them below it gained nothing until CL, CP, EX, IS, SY, WJ, ZW and the hard breaks were
+	// held back. `× 2757 × 0020 × 00BB ÷` and `× 2757 × 0020 ÷ 0022 ÷` are the two that decide
+	// where a quotation mark goes, and they need a Pi/Pf split this engine does not have.
 	if left == .sp {
 		return BreakKind.allowed
+	}
+	// LB9: a combining mark may not be separated from the character before it.
+	//
+	// This sits below LB18 and above LB20, and both of those positions are measurements rather than
+	// a reading of the rule numbers. UAX #14 lists `× CM` as LB9, which would put it above both;
+	// its own test file answers `× 2757 × 0020 ÷ 302A ÷` with [18.0] — a break, on a space and a
+	// tone mark — and `× FFFC × 0308 × 0020 ÷ 2757 ÷` with [9.0] on the mark — no break, on an object
+	// replacement character and one. The two answers pin the order between the three rules: LB18
+	// before LB9 before LB20. So the space wins over a mark and a mark wins over the placeholder.
+	if is_markish(right) {
+		return BreakKind.no
+	}
+	// LB19: a line may not begin with a quotation mark, and may not end with one either. This sits
+	// here, above LB20, because the committee's test asks `× FFFC × 00AB ÷` — a placeholder in front
+	// of an opening quote — and answers with [19.1], a break that must not happen. So the quotation
+	// rule beats the placeholder's own break, and the two cannot share a list.
+	if right == .qu {
+		return BreakKind.no
+	}
+	// LB20: a contingency break character is a break on both sides, which is the object replacement
+	// character's way of saying "something is here that has no text". It answers here, before the
+	// classes below, because those classes would otherwise refuse a break the object replacement
+	// character asks for: `× FFFC ÷ 3000 ÷` and `× FFFC ÷ FE19 ÷` are both breaks, and a
+	// break-after character or a numeric infix on the right is not enough to stop them.
+	if left == .cb {
+		return BreakKind.allowed
+	}
+	if right == .cb {
+		return BreakKind.allowed
+	}
+	// LB17, LB19, LB21, LB22 and the numeric matrix's own prohibitions, which all sit below LB18
+	// in the specification's order: a line may not begin with one of these unless a space is in
+	// front of it.
+	if is_prohibited_start_after_space(right) {
+		return BreakKind.no
 	}
 	// LB23a and LB23b: two of the same class that must not be split, which is
 	// Hangul syllables and a numeric run's own continuation. They come before
@@ -274,10 +379,6 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 	if left == .hy && right == .al {
 		return BreakKind.allowed
 	}
-	// LB9: a combining mark is indivisible from the character before it, so it may not end a line.
-	if is_markish(right) {
-		return BreakKind.no
-	}
 	// ...and, since 2026-10-04, from the character after it either.
 	//
 	// The rule above has always covered the left side of a mark only, and the comment claimed the pair was
@@ -336,20 +437,37 @@ fn is_mandatory_break(c LineBreakClass) bool {
 	return c == .lf || c == .bk || c == .cr || c == .nl
 }
 
-// is_prohibited_start reports whether a line may not begin with this class,
-// which is rules LB8 through LB14 and LB21b.
+// is_prohibited_start reports whether a line may not begin with this class even when a space comes
+// in front of it, which is LB7 for its zero width space, LB11 for a word joiner, and LB13.
 //
-// The inseparable class is spelled .insp here because .is is a V keyword, and
-// it matters: a character that cannot be separated from its neighbour is the one
-// case where a break on either side would put two marks on different lines.
+// The two halves of the old single list are split by LB18, and the split is measured rather than
+// assumed. `ucd/LineBreakTest.txt` asks `× A × 0020 ÷ B ÷` for every class B, which is the whole
+// question in one shape, and it answers it in two groups:
 //
-// The ambiguous class is not here. LB17a forbids a break before it, but only
-// under the resolved level, which this library does not carry a level for, and
-// treating it as forbidden would stop a line breaking before an em dash in a
-// language that does not use them to divide words.
+//	no break:  BK CR LF NL SP ZW WJ CL CP EX IS SY, and a final quotation mark
+//	break:     everything else — CM GL B2 BB HY BA NS PO PR QU_Pi IN NU OP and the rest
+//
+// So only the first group belongs here. The second is `is_prohibited_start_after_space`, and a
+// class that is in the wrong list fails in the direction the list says: a class held back here
+// loses the break a space asks for, and one moved down there gains a break the spec refuses.
+//
+// The inseparable class is spelled .insp here because .is is a V keyword, and it matters: a
+// character that cannot be separated from its neighbour is the one case where a break on either
+// side would put two marks on different lines.
 fn is_prohibited_start(c LineBreakClass) bool {
-	return c == .cl || c == .cp || c == .ex || c == .insp || c == .sy || c == .ns || c == .bb
-		|| c == .po || c == .pr || c == .hy || c == .qu || c == .b2
+	return c == .cl || c == .cp || c == .ex || c == .insp || c == .sy
+}
+
+// is_prohibited_start_after_space reports whether a line may not begin with this class once a
+// space is allowed to break in front of it, which is LB17 for a break-before-and-after, LB19 for
+// a quotation mark, LB21 for a break-before, a hyphen or a non-starter, LB22 for an inseparable
+// numeral infix, and the numeric matrix's prefix and postfix.
+//
+// LB12a's glue is here too, though not in this function: it is spelled out at its own site because
+// its exclusion list is the point of it.
+fn is_prohibited_start_after_space(c LineBreakClass) bool {
+	return c == .b2 || c == .qu || c == .ba || c == .hh || c == .hy || c == .ns
+		|| c == infx || c == .po || c == .pr
 }
 
 // is_prohibited_end reports whether a line may not end with this class, which
