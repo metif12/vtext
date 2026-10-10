@@ -335,6 +335,47 @@ pub fn (p &Properties) line_break_of(cp rune) LineBreakClass {
 	return unsafe { LineBreakClass(o) }
 }
 
+// QuoteRole is which of the three quotation classes a quotation mark belongs to.
+//
+// UAX #14 assigns one line break class, QU, to all of them, and then splits it back into
+// three the moment a rule has to tell them apart: an opening mark is not a closing one, and
+// a mark that can be either is neither. The test file writes them QU_Pi, QU_Pf and
+// QUmPimPf, and the split is what makes `SP × QU` break for U+00AB and refuse to break for
+// U+00BB. Unicode 18.0.0 has 39 codepoints the line break table calls QU: 12 open, 10 close
+// and 17 can do either.
+pub enum QuoteRole {
+	none = 0 // not a quotation mark at all
+	pi   = 1 // an opening mark: U+00AB, U+201C
+	pf   = 2 // a closing mark: U+00BB, U+201D
+	both = 3 // a mark that can be either: U+0022, U+0027
+}
+
+// str returns the ordinal's name from the generated table, which is what keeps this enum and
+// the ordinals tools/gen_tables.v writes in step with each other.
+pub fn (r QuoteRole) str() string {
+	return ucd_name(quote_role_names_data, int(r))
+}
+
+// quote_role_of returns the quotation role of cp.
+//
+// The line break table cannot carry this: LineBreak.txt has one QU for all three, so the
+// distinction is read from the general category by tools/gen_tables.v and written to
+// ucd_quote.v, exactly as the bidi class and the joining type are.
+fn quote_role_of(ranges []CodeRange, cp rune) QuoteRole {
+	o := lookup_range(ranges, u32(cp), 0)
+	return unsafe { QuoteRole(o) }
+}
+
+// quote_ranges decodes the generated quotation role table.
+//
+// It is decoded by the caller rather than held on Properties, and that is a choice about the size of
+// the table: 28 ranges, read by two rules, so a caller pays one small decode per call instead of
+// every Properties value in the library carrying a table whose other three values are almost never
+// asked for.
+fn quote_ranges() []CodeRange {
+	return parse_ranges(quote_ranges_data)
+}
+
 // line_break_name returns the UCD name of cp's line break class, e.g. 'AL'.
 pub fn (p &Properties) line_break_name(cp rune) string {
 	c := p.line_break_of(cp)

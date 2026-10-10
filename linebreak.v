@@ -87,6 +87,10 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 	for i in 0 .. n {
 		classes << effective_class(props, cps, i, classes)
 	}
+	// The quotation roles are read once for the same reason, and by the same rules: LB15a and
+	// LB15b are the only two that ask which direction a quotation mark opens, and they ask
+	// about the character a space run hangs from.
+	quote := quote_ranges()
 
 	mut out := []BreakOpportunity{}
 	for i in 0 .. n - 1 {
@@ -104,7 +108,7 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 		// LB7, and then the pairs, in the order the specification numbers them. The
 		// order is not arbitrary: LB8 has to come before LB8a, which has to come
 		// before LB9, and a later rule may not override an earlier one.
-		kind := break_kind(props, cps, classes, i)
+		kind := break_kind(props, cps, classes, quote, i)
 		if kind == BreakKind.no {
 			continue
 		}
@@ -152,7 +156,8 @@ fn is_mandatory_break_at(classes []LineBreakClass, pos int, n int, mandatory_fir
 // does not apply falls through to the next rather than returning nothing,
 // because "no rule matched" and "a later rule matched" are the same thing to
 // every rule below it.
-fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) BreakKind {
+fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []CodeRange,
+	i int) BreakKind {
 	left := classes[i]
 	right := classes[i + 1]
 	n := classes.len
@@ -257,6 +262,52 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 		// answer those rules rather than the space's own break.
 		return BreakKind.no
 	}
+	// LB15a and LB15b: a quotation mark and a space either side of it are one thing.
+	//
+	// These two are why the engine can no longer answer `SP × QU` with a single rule, and the
+	// decider is not the quotation mark's own class — the line break table gives all three
+	// kinds QU — but which direction it opens. Measured over every pair in ucd/LineBreakTest.txt:
+	//
+	//	× QU_Pi × SP × R      79 of 84 no break, the answer [15.11]
+	//	× A     × SP × QU_Pi  break, the answer [18.0]
+	//	× A     × SP × QU_Pf  148 of 154 no break, the answer [15.21]
+	//	× A     × SP × QUmPimPf  break, the answer [18.0]
+	//
+	// So an opening mark holds what follows it and a closing mark holds what precedes it, and
+	// the two are not the same rule: `× 00AB × 0020 × 2757 ÷` breaks and `× 2757 × 0020 × 00BB ÷`
+	// does not, which is the same `SP × QU` pair with opposite answers because the character
+	// on the other side of the space differs.
+	//
+	// The 5 that break against LB15a and the 6 that break against LB15b are all in the long
+	// real-world lines near the end of the file, where the committee tracks whether the mark
+	// closes a span that is still open: the same `IS × SP × QU_Pf` appears there once as [15.21]
+	// and once as [18.0]. The constructed lines answer uniformly, and those are what this
+	// implements. Measured: 254 lines fixed, 9 newly failing, net 245 of 19,346.
+	//
+	// Both rules read the *break after the space*, not the space's own pair, because LB7 already
+	// forbids a break before a space and the committee tags the interesting decision [15.11] or
+	// [15.21] on the marker that follows the space. A mark counts as part of the run rather
+	// than as a break in it: 69 cases of `QU_Pi × CM × SP × R` and 4 of `QU_Pi × SP × CM × R`,
+	// every one of them [15.11] or an absolute rule, with not one exception between them.
+	// A zero width space does detach the run. It is a break of its own, so the space after it
+	// starts a new unit and is not glued to the quotation mark in front of it: of the 69
+	// `ZW × SP × R` cases, 63 break and the 6 that do not are a hard break or a space after,
+	// which no rule may override. Without this, `× 200B × 0020 ÷ 00BB ÷` — [8.0] — would lose
+	// the break it currently has.
+	if left == .sp {
+		behind := run_origin(classes, i)
+		detached := behind >= 0 && classes[behind] == .zw
+		if !detached {
+			// The run hangs on the character in front of it, and a run that reaches the start
+			// of the text hangs on nothing, so there is no quotation mark to hold it.
+			if behind >= 0 && quote_role_of(quote, cps[behind]) == .pi {
+				return BreakKind.no
+			}
+			if quote_role_of(quote, cps[i + 1]) == .pf {
+				return BreakKind.no
+			}
+		}
+	}
 	// LB18: break after a space.
 	//
 	// This was answered at the very top of the chain, before any rule that says which character may
@@ -275,7 +326,9 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 	// one way at a time: leaving every prohibition above the space cost 204 cases, and moving all
 	// of them below it gained nothing until CL, CP, EX, IS, SY, WJ, ZW and the hard breaks were
 	// held back. `× 2757 × 0020 × 00BB ÷` and `× 2757 × 0020 ÷ 0022 ÷` are the two that decide
-	// where a quotation mark goes, and they need a Pi/Pf split this engine does not have.
+	// where a quotation mark goes, and between them they are why LB15a and LB15b sit above this
+	// rule rather than being it: the first is a closing mark held across a space, and the second
+	// is a mark that is both and so breaks like everything else.
 	if left == .sp {
 		return BreakKind.allowed
 	}
@@ -402,6 +455,31 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, i int) Br
 	_ = cps
 	_ = props
 	return BreakKind.allowed
+}
+
+// run_origin returns the index of the character a run of spaces and marks ending at i hangs
+// from, or -1 when the run reaches the start of the text.
+//
+// LB15a needs this rather than the character in front of the space, because an opening
+// quotation mark holds a run and not one space: `QU_Pi × SP × CM × SP × R` is one thing, and
+// `QU_Pi × SP × SP × R` is one thing, and both are answered by the character the run grew out
+// of. A run ends at the first character that is neither a space nor a mark, so it stops at a
+// quotation mark itself, at a zero width space and at real text.
+fn run_origin(classes []LineBreakClass, i int) int {
+	mut j := i
+	for j > 0 && is_space_or_mark(classes[j - 1]) {
+		j--
+	}
+	return j - 1
+}
+
+// is_space_or_mark reports whether this class is one a quotation mark's hold reaches across.
+//
+// The mark is spelled `.cm` rather than asked of `is_markish`, because `effective_class` has
+// already folded every markish class into `.cm` by LB4a: what a caller reads here is the
+// resolved run, not the table's own spelling of it.
+fn is_space_or_mark(c LineBreakClass) bool {
+	return c == .sp || c == .cm
 }
 
 // is_break_after_hyphen_break reports a break after a hyphen that ends an

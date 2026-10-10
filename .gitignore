@@ -23,6 +23,11 @@ shaped.png
 # The small derived files are kept so the UCD comparison tests can run without a
 # network fetch.
 #
+# DerivedGeneralCategory.txt is kept next to LineBreak.txt because the two are
+# read together: the line break class says a character is a quotation mark, and
+# the general category says which direction it opens, so ucd_quote.v cannot be
+# regenerated from either file alone.
+#
 # The licence is kept with them, and that is not optional: UNICODE LICENSE V3 grants
 # redistribution only on the condition that the notice travels with the files. A
 # `ucd/*` ignore without a `!` for the licence publishes the data with no terms at
@@ -30,6 +35,7 @@ shaped.png
 # fetch it, so it is committed by hand.
 ucd/*
 !ucd/DerivedBidiClass.txt
+!ucd/DerivedGeneralCategory.txt
 !ucd/DerivedJoiningType.txt
 !ucd/LineBreakTest.txt
 !ucd/GraphemeBreakProperty.txt

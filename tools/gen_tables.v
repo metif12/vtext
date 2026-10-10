@@ -145,6 +145,14 @@ const line_break_order = ['XX', 'CM', 'BA', 'LF', 'BK', 'CR', 'SP', 'EX', 'QU', 
 	'JT', 'NS', 'AK', 'VI', 'ID', 'ID_CJ', 'VF', 'ZW', 'ZWJ', 'B2', 'IN', 'WJ', 'EB', 'CJ', 'H2',
 	'H3', 'SG', 'CB', 'AP', 'RI', 'EM']
 
+// quote_role_order reserves one ordinal per quotation role the rules can tell apart.
+//
+// The first entry is never written into any range, and that is the point: a codepoint the
+// line break table does not call QU falls in no range at all, so the lookup returns 0 and
+// reads as "not a quotation mark". Reserving the default explicitly rather than inferring
+// it keeps that legible in the generated file, the way bidi_class_order's leading L is.
+const quote_role_order = ['qu_none', 'pi', 'pf', 'both']
+
 // BracketPair is one entry of the BidiBrackets table: a codepoint, the
 // codepoint it pairs with, and whether it opens or closes the pair.
 struct BracketPair {
@@ -415,6 +423,66 @@ fn emit_property(name string, out_file string, source string, value_field int,
 	emit_writes(out_file, mut t)
 }
 
+// ---------------------------------------------------------------- quotation roles
+
+// quote_roles builds the table that tells an opening quotation mark from a closing one.
+//
+// LineBreak.txt has a single class, QU, for all three of the committee's roles, so the
+// distinction has to be read from the general category: DerivedGeneralCategory.txt marks an
+// opening mark Pi and a closing one Pf, and a QU that is neither is the kind that can be
+// either — U+0022, the apostrophe, the heavy comma ornaments. Measured against Unicode
+// 18.0.0: 28 ranges in LineBreak.txt are QU, covering 39 codepoints, of which 12 are Pi, 10
+// are Pf and 17 can be either.
+//
+// Both the QU set and the Pi/Pf set are read from the UCD rather than written out here,
+// because the lists are the UCD's and not this file's. The comment column LineBreak.txt
+// puts beside each QU range names the general category too, but a comment is not a data
+// column, and reading one is how a generator starts producing tables from prose.
+fn quote_roles(lb_ranges []ParsedRange, gc_ranges []ParsedRange, reg &Registry) []CodeRange {
+	// Pi and Pf together span 22 codepoints in Unicode 18.0.0, so enumerating them costs
+	// nothing and every QU range is then a walk over the few marks that fall inside it.
+	mut marks := []u32{}
+	mut role := map[u32]string{}
+	for r in gc_ranges {
+		if r.value != 'Pi' && r.value != 'Pf' {
+			continue
+		}
+		name := if r.value == 'Pi' { 'pi' } else { 'pf' }
+		for cp in r.lo .. r.hi + 1 {
+			marks << cp
+			role[cp] = name
+		}
+	}
+	marks.sort()
+	mut pieces := []ParsedRange{}
+	for r in lb_ranges {
+		if r.value != 'QU' {
+			continue
+		}
+		// A range is cut at each mark that falls strictly inside it, so the pieces that come
+		// out carry one role each and the emitted table stays in the shape every other table
+		// here uses.
+		mut lo := r.lo
+		for m in marks {
+			if m <= lo || m > r.hi {
+				continue
+			}
+			pieces << ParsedRange{
+				lo:    lo
+				hi:    m - 1
+				value: role[lo] or { 'both' }
+			}
+			lo = m
+		}
+		pieces << ParsedRange{
+			lo:    lo
+			hi:    r.hi
+			value: role[lo] or { 'both' }
+		}
+	}
+	return coalesce(pieces, reg)
+}
+
 // ------------------------------------------------------------------------ main
 
 fn main() {
@@ -485,6 +553,22 @@ fn main() {
 	emit_property('LineBreak.txt', 'ucd_linebreak.v', 'LineBreak.txt', 1,
 		'line_break_names', 'line_break_ranges',
 		'the UAX#14 line break class of every codepoint', lb)
+
+	// The quotation roles, which are a second property derived from the same two files: the
+	// line break class says a character is a quotation mark and the general category says
+	// which kind. LB15a and LB15b are the only rules that tell them apart.
+	mut qr := new_registry()
+	intern_order(mut qr, quote_role_order)
+	lb_all := ucd_ranges(os.join_path(ucd_dir, 'LineBreak.txt'), 1)
+	gc_all := ucd_ranges(os.join_path(ucd_dir, 'DerivedGeneralCategory.txt'), 1)
+	qr_ranges := quote_roles(lb_all, gc_all, qr)
+	mut tq := Text{ parts: []string{} }
+	emit_header(mut tq, 'LineBreak.txt, extracted/DerivedGeneralCategory.txt')
+	emit_values(mut tq, 'quote_role_names', 'quotation role the UAX #14 rules can tell apart',
+		qr)
+	emit_ranges(mut tq, 'quote_ranges', 'quotation role the UAX #14 rules can tell apart',
+		qr_ranges)
+	emit_writes('ucd_quote.v', mut tq)
 
 	// Script, which decides which shaping features and joining rules apply. The
 	// values are ISO 15924 codes, mapped from the long names Scripts.txt uses.

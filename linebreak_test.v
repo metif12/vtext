@@ -402,6 +402,97 @@ fn test_line_break_of_empty_text_has_no_breaks() {
 	assert break_opportunities(ctx, word(0x61), true).len == 1
 }
 
+// starts_of is the break positions of a text as a sorted list, which is what every assertion below
+// is asked about.
+fn starts_of(ctx &Context, cps []rune) []int {
+	mut out := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		out << o.start
+	}
+	return out
+}
+
+// The quotation-role table is what makes the two rules below possible, so it is checked against the
+// three characters the committee's own test file uses to spell the whole distinction out: U+00AB is
+// opening, U+00BB is closing, and U+0022 is both.
+fn test_quote_roles_are_read_from_the_ucd() {
+	q := quote_ranges()
+	assert quote_role_of(q, rune(0x00AB)) == .pi, 'U+00AB opens'
+	assert quote_role_of(q, rune(0x00BB)) == .pf, 'U+00BB closes'
+	assert quote_role_of(q, rune(0x0022)) == .both, 'U+0022 can be either'
+	assert quote_role_of(q, rune(0x201C)) == .pi, 'U+201C is a left double quotation mark'
+	assert quote_role_of(q, rune(0x201D)) == .pf, 'U+201D is a right double quotation mark'
+	// The apostrophe is Po and not Pi or Pf, so it is both rather than an opening mark, and a
+	// character that is not a quotation mark at all is the default.
+	assert quote_role_of(q, rune(0x0027)) == .both, 'U+0027 is a quotation mark that is neither'
+	assert quote_role_of(q, `A`) == .none, 'a letter is not a quotation mark'
+	// The hand-written enum and the generated ordinals must not drift apart, or a regeneration
+	// against a newer UCD would silently reassign what every rule below asks for.
+	assert QuoteRole.pi.str() == 'pi', 'the ordinal the generated table uses for an opening mark'
+	assert QuoteRole.pf.str() == 'pf', 'and for a closing one'
+	assert QuoteRole.both.str() == 'both', 'and for one that can be either'
+	assert QuoteRole.none.str() == 'qu_none', 'and for the default, which no range ever names'
+}
+
+// LB15a: an opening quotation mark holds what follows it, space and marks included.
+//
+// `× 00AB × 0020 × 2757 ÷` is the test file's own shape, and the answer is [15.11] — no break — on
+// the marker between the space and the symbol. The pair with the space on the other side answers
+// the other way, which is why this cannot be one rule about a space and a quotation mark.
+fn test_an_opening_quotation_mark_holds_a_space_in_front_of_what_follows() {
+	ctx := new_context()
+	// « SP ×: the space is held, so there is no break before the symbol.
+	assert starts_of(ctx, word(0x00AB, 0x20, 0x2757)) == [3], 'LB15a: an opening mark does not let go across a space'
+	// The same with a combining mark standing in the space's place, and with both: 69 lines of each
+	// shape in the test file answer [15.11] with no exception.
+	assert starts_of(ctx, word(0x00AB, 0x0308, 0x2757)) == [3], 'and a mark is part of the run rather than a break in it'
+	assert starts_of(ctx, word(0x00AB, 0x20, 0x0308, 0x2757)) == [4], 'the run may hold both a space and a mark'
+	// Without the quotation mark in front, the space breaks as it always did.
+	assert starts_of(ctx, word(0x0061, 0x20, 0x2757)) == [2, 3], 'the same pair with a letter in front still breaks'
+	// A closing mark does not hold, and neither does one that is both: only QU_Pi opens.
+	assert starts_of(ctx, word(0x00BB, 0x20, 0x2757)) == [2, 3], 'LB15a is an opening mark, not a quotation mark'
+	assert starts_of(ctx, word(0x0022, 0x20, 0x2757)) == [2, 3], 'and a mark that can be either is not an opening one'
+}
+
+// LB15b: a closing quotation mark holds what precedes it, space included.
+//
+// `× 2757 × 0020 × 00BB ÷` is the test file's own shape and the answer is [15.21] — no break — on
+// the marker between the space and the mark. LB19 already forbids a break straight into one, so
+// this is the space that is being decided rather than the quotation mark.
+fn test_a_closing_quotation_mark_holds_a_space_in_front_of_it() {
+	ctx := new_context()
+	// SP × «: no break, so the closing mark stays on the line with the text before it.
+	assert starts_of(ctx, word(0x2757, 0x20, 0x00BB)) == [3], 'LB15b: a space before a closing mark does not break'
+	// The other two kinds do break, which is the same `SP × QU` pair answering both ways.
+	assert starts_of(ctx, word(0x2757, 0x20, 0x00AB)) == [2, 3], 'an opening mark breaks after a space'
+	assert starts_of(ctx, word(0x2757, 0x20, 0x0022)) == [2, 3], 'and a mark that is both breaks after a space too'
+	// A run of two spaces is one run, so it is the break after the last one that is decided.
+	assert starts_of(ctx, word(0x2757, 0x20, 0x20, 0x00BB)) == [4], 'a run of spaces hangs on the same quotation mark'
+}
+
+// A zero width space detaches the run, because it is a break of its own.
+//
+// The test file asks `× 200B × 0020 ÷ 00BB ÷` and answers [8.0] — break — so the space after a zero
+// width space starts a new unit and is not glued to the quotation mark in front of it. Without the
+// exception LB15b would eat that break.
+fn test_a_zero_width_space_detaches_the_space_from_the_quotation_mark() {
+	ctx := new_context()
+	assert starts_of(ctx, word(0x200B, 0x20, 0x00BB)) == [2, 3], 'a zero width space is a break of its own and the space after it breaks too'
+}
+
+// The four shapes together: an opening and a closing mark around a space are all one thing, which is
+// the case a caller laying out quoted speech actually has.
+//
+// The positions worth reading carefully are the two that are absent. The space after the opening mark
+// is held by LB15a, so there is no break between it and the first letter; and the space before the
+// closing mark is held by LB15b, so there is none between it and the mark. Every other space breaks
+// after itself, which is LB18 and is what the space in the middle does.
+fn test_a_quoted_run_with_spaces_inside_it_stays_whole() {
+	ctx := new_context()
+	// « SP a SP b SP »
+	assert starts_of(ctx, word(0x00AB, 0x20, 0x61, 0x20, 0x62, 0x20, 0x00BB)) == [4, 7], 'quoted speech is quoted, not split at its own quotation marks'
+}
+
 // Wrapping is the reason break opportunities exist, so these check the whole path: the rules pick
 // the positions and the measurement decides which of them is far enough along.
 
