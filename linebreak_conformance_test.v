@@ -57,7 +57,15 @@ import os
 // missing entirely — reads through it in the other direction. HL joined the other four pairs of
 // LB28, and an opening quotation mark's hold now reaches a run ending in a mark rather than only one
 // ending in a space.
-const conformance_floor = 17612
+//
+// Later the same day **17,972**, worth 360 with nothing broken, when the complex-context class
+// stopped being resolved to a letter for all 757 of its codepoints. The committee splits it: U+0E31
+// and U+102C answer `[9.0]` and are marks, U+0E01 answers `[28.0]` and is a letter, and the
+// difference is `General_Category`. The table was already fetched for the quotation work, so what
+// was missing was the generator and the plumbing rather than the data. Alongside it, four small
+// rules: LB24, LB23's prefix, LB27's prefix, and `.ns` leaving the prohibited-end list. That last
+// is worth 121, where the roadmap had carried a note saying 12.
+const conformance_floor = 17972
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.

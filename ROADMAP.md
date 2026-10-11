@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **17,612 of 19,346 (91.0%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **17,972 of 19,346 (92.9%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -103,7 +103,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 17,612 of 19,346 — 91.0%.**
+**Measured, because "done" above was a description and not a number. 17,972 of 19,346 — 92.9%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -168,11 +168,51 @@ distinction is the general category, so it could not be a codepoint list in the 
 `DerivedGeneralCategory.txt` is fetched, `tools/gen_tables.v` emits a `ucd_quote.v` in the same form as
 its siblings, and nothing was hand-written.
 
-**And the one rule that was invented rather than missing: a line may end on a combining mark.** A rule
-refusing a break *after* a mark was added on 2026-10-04 for 312 cases and was generalised from a single
-case — the file's only one containing U+200C, a zero width non-joiner — into "a line may not end on a
-combining mark". LB9 forbids a break *before* a mark. It says nothing about what follows one, and the
-default there is a break.
+### And the one rule that was invented rather than missing: a line may end on a combining mark. Worth 922 cases
+
+A rule refusing a break *after* a mark was added on 2026-10-04 for 312 cases and was generalised from
+a single case — the file's only one containing U+200C, a zero width non-joiner — into "a line may not
+end on a combining mark". LB9 forbids a break *before* a mark. It says nothing about what follows
+one, and the default there is a break.
+
+Removing it alone was 713 cases; the 768 it broke were `× 2757 × 0308 × 2757 ÷`, where LB28 reads
+through the mark to a pair of letters. Those are recovered by `pair_left`, which reaches the base for
+LB28 and LB23 and for nothing else — and **that is the whole shape of the change**. LB30 reads through
+a mark in the opposite direction: `× 2757 × 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not,
+because LB30 was missing entirely and is not one. An open punctuation may begin a line after a marked
+letter but not after a bare one, which is what a diacritic carrying word-final stress through to the
+next word looks like.
+
+Plus LB28's four pairs — it had one. `× 2757 × 0308 × 05D0 ÷` is annotated `[28.0]` at the Hebrew
+letter, so LB28 reads a Hebrew letter as the same kind of letter as a Latin one. And an opening
+quotation mark's hold now reaches a run ending in a mark as well as one ending in a space,
+`× 00AB × 0308 × 2757 ÷` [15.11], which the `left == .sp` gate had been refusing.
+
+### And the complex-context class is 757 characters, not one. Worth 360 cases
+
+LB1 resolved every SA codepoint to a letter, and the committee splits the class. U+0E31 and U+102C
+answer `[9.0]` and behave as combining marks; U+0E01 answers `[28.0]` and is a letter. The
+distinguishing property is `General_Category` — Lo for the letter, Mn or Mc for the marks — and
+`DerivedGeneralCategory.txt` had been fetched and committed two commits earlier for the quotation
+work, so what was missing was the generator and the plumbing rather than the data. `ucd_sa_mark.v`
+is 27 ranges covering the 191 SA codepoints that are marks, emitted by a `sa_marks` generator that
+mirrors the quotation `quote_roles` one exactly, with `sa_none` at ordinal 0 so an absent range reads
+"not a mark".
+
+The split is asked of a character that *follows* something, which is the same condition LB4a carries,
+and the reason is not a coincidence: an SA mark attaches to the character in front of it, so a leading
+one has nothing to attach to. Measured rather than assumed — resolving a leading SA mark to CM broke
+38 against the 4 it fixed. That leaves a leading mark unresolved in either direction, and the
+committee is inconsistent about a leading *ordinary* mark in exactly the same way, so it is the file
+disagreeing with itself rather than a gap in the engine.
+
+Four small rules landed with it, each measured alone and none breaking anything: LB24's prefix or
+postfix against a letter or Hebrew letter, LB23's prefix against an ideograph or emoji, LB27's prefix
+against a Hangul syllable, and `.ns` leaving the prohibited-end list. That last one is worth **121**
+where the roadmap had carried a note saying 12 — the note was written from a shape rather than from a
+count, which is the same failure as reading a rule number instead of the file.
+
+**The rule that was invented is worth the most instruction in this file.**
 
 Removing it alone was 713 cases; the 768 it broke were `× 2757 × 0308 × 2757 ÷`, where LB28 reads
 through the mark to a pair of letters. Those are recovered by `pair_left`, which reaches the base for
@@ -194,21 +234,19 @@ one that paid for it. A conformance score is a count of cases and cases are not 
 what the mark was for. The one-sided rule at the end of the chain is what is left, and it is the
 smaller one.
 
-What the remaining 1,734 are, worth writing down before anyone starts:
+What the remaining 1,374 are, worth writing down before anyone starts:
 
-- **An `SA` character is a mark for some of them and not others.** U+0E31 and U+102C answer `[9.0]`,
-  U+0E01 answers `[28.0]`, and the difference is `General_Category` — Lo for a letter, Mn or Mc for a
-  mark. `DerivedGeneralCategory.txt` is now fetched and committed for the quotation work, so the data
-  is here and the plumbing is not: `Properties` has no general-category ranges and `effective_class`
-  resolves `.sa` to a letter for all 757 codepoints. That is the largest single bucket left, and it is
-  roughly 190 cases.
+- **The leading mark, in either direction.** A mark with nothing in front of it is unresolved: the
+  committee breaks after a leading *ordinary* mark in some cases and not others —
+  `× 302A ÷ 1B05 ÷` breaks, `× 302A × 2757 ÷` does not — and gating the mark rule on the mark having
+  a predecessor measured 76 restored against 75 broken. UAX #14 has no rule for a mark that starts a
+  line, and the file has both answers, so this is the file disagreeing with itself rather than a gap
+  in the engine.
 - **LB19 is one rule where the committee has two.** `× QU_Pi × SP × QU_Pf ÷` is the pair both rules
   answer, and the long real-world lines at the end of the file track whether a closing quote closes a
   span that is still open, which no pair rule can reproduce. UAX #14 has no quotation-span state and
   this engine's pair chain cannot express one.
-- **The prefix and postfix numerals.** `PR × (ID|EB|EM)`, `(PR|PO) × (AL|HL)`, `PR × (JL|JV|JT|H2|H3)`
-  and the numeric matrix around them are each a small rule, and `.ns` still sits in
-  `is_prohibited_end`.
+- **LB28's aksara sub-rules**, the 17 cases already noted on `is_markish`, and LB26's jamo run.
 
 None of them are Arabic or Persian, which is why the library is usable without them and why they are
 listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
