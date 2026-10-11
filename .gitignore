@@ -36,6 +36,13 @@ shaped.png
 ucd/*
 !ucd/DerivedBidiClass.txt
 !ucd/DerivedGeneralCategory.txt
+
+# NormalizationTest.txt is the UCD's own test data for UAX#15, and normalize_test.v reads it
+# directly. It was missing from this list until 2026-10-12, which meant the file was ignored and
+# never committed, so normalize_test.v panicked on every checkout that had not fetched it — a suite
+# that is green only because the data is on the machine is the same failure as a fixture written to
+# match the reader.
+!ucd/NormalizationTest.txt
 !ucd/DerivedJoiningType.txt
 !ucd/LineBreakTest.txt
 !ucd/GraphemeBreakProperty.txt
