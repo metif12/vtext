@@ -42,7 +42,22 @@ import os
 // mark on it, and that alone was worth 127. 83 cases were broken along the way, and
 // each one is a sub-rule that is missing rather than a class that is wrong: LB26's
 // jamo run, LB27.02's prefix numeral, and the aksara pre-base LB28.13 asks for.
-const conformance_floor = 16445
+//
+// On 2026-10-11 an opening quotation mark and a closing one stopped being one class, worth 245, when
+// `DerivedGeneralCategory.txt` was fetched and `ucd_quote.v` was generated from it. The file asks
+// `× 00AB × 0020 × 2757 ÷` and `× 2757 × 0020 × 00BB ÷`, which are the same `SP × QU` pair with
+// opposite answers. `ucd/NormalizationTest.txt` was also committed that day: it had been ignored and
+// never excepted, so `normalize_test.v` panicked on any checkout that had not fetched it.
+//
+// On 2026-10-12 it became **17,612**, worth 922 in one change, and that change is the most instructive
+// in this file. A rule refusing a break *after* a combining mark — added on 2026-10-04 for 312 cases
+// and generalised from one case about a zero width non-joiner — was removed. LB9 forbids a break
+// before a mark and says nothing about what follows one. Removing it alone was 713 cases; the 768 it
+// broke are recovered by reading LB28 and LB23 through the mark to its base, and LB30 — which was
+// missing entirely — reads through it in the other direction. HL joined the other four pairs of
+// LB28, and an opening quotation mark's hold now reaches a run ending in a mark rather than only one
+// ending in a space.
+const conformance_floor = 17612
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.

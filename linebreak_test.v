@@ -616,3 +616,117 @@ fn test_wrap_of_empty_text_gives_one_empty_line() {
 	assert wrap_paragraph(ctx, []rune{}, .ltr, fs, 32.0, 100.0).len == 0
 	assert wrap_paragraph(ctx, word(0x61), .ltr, fs, 32.0, 100.0).len == 1
 }
+
+// A mark does not hold what comes after it, and that is the biggest single thing
+// this engine used to get wrong.
+//
+// The chain refused a break after a combining mark from 2026-10-04 to 2026-10-11,
+// which is 870 cases against the committee's file and was generalised from a
+// single case about a zero width non-joiner. LB9 forbids a break *before* a mark.
+// It says nothing about what follows one.
+//
+// `× 2757 × 0308 ÷ 1B05 ÷` is the committee's own case, tagged [31.01] at the
+// break: a letter, a mark, and then a Balinese letter, and the line may end
+// between the mark and the letter.
+fn test_line_break_breaks_after_a_mark() {
+	ctx := new_context()
+	// 2757 AI, 0308 CM, 1B05 AK.
+	cps := [rune(0x2757), rune(0x0308), rune(0x1B05)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert 2 in starts, 'a line may end between the mark and the letter, got ${starts}'
+}
+
+// ...and the side the rule did cover, which is why removing it was safe rather
+// than merely profitable. A line may not end *before* a mark, so a mark still
+// holds what is in front of it.
+fn test_line_break_still_holds_before_a_mark() {
+	ctx := new_context()
+	// 1B05 AK, 0308 CM.
+	cps := [rune(0x1B05), rune(0x0308)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [2], 'the mark still holds what is in front of it, got ${starts}'
+}
+
+// LB28 reads through a mark to a pair of letters, and that is what made the
+// removal above safe rather than a trade.
+//
+// `× 2757 × 0308 × 2757 ÷` is annotated [28.0] at the second letter, so the
+// committee reads the pair as two letters and not as a mark and a letter. This
+// is the 768 cases that removing the blanket rule broke.
+fn test_line_break_holds_two_letters_across_a_mark() {
+	ctx := new_context()
+	// 2757 AI, 0308 CM, 2757 AI.
+	cps := [rune(0x2757), rune(0x0308), rune(0x2757)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [3], 'two letters hold across the mark between them, got ${starts}'
+}
+
+// ...and the letter after a mark is held by a digit on the other side of the
+// mark too, which is LB23's letter-digit pair reading through the same way.
+fn test_line_break_holds_a_letter_and_a_digit_across_a_mark() {
+	ctx := new_context()
+	// 2757 AI, 0308 CM, 0030 NU.
+	cps := [rune(0x2757), rune(0x0308), rune(0x0030)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [3], 'a letter and a digit hold across the mark, got ${starts}'
+}
+
+// LB30 does not read through a mark, and the difference is the whole shape of
+// the change.
+//
+// `× 2757 × 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not. So an open
+// punctuation may begin a line after a marked letter but not after a bare one,
+// which is the one thing that distinguishes "the mark stands in for its base"
+// from "the mark is part of its base".
+fn test_line_break_allows_open_punctuation_after_a_mark_but_not_a_letter() {
+	ctx := new_context()
+	// 2757 AI, 0308 CM, 0028 OP.
+	cps := [rune(0x2757), rune(0x0308), rune(0x0028)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert 2 in starts, 'open punctuation may follow a mark, got ${starts}'
+	// And without the mark, the same pair is held.
+	cps2 := [rune(0x2757), rune(0x0028)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert 1 !in starts2, 'but not after a bare letter, got ${starts2}'
+}
+
+// LB28 is four pairs and this engine had one of them.
+//
+// `× 2757 × 0308 × 05D0 ÷` is annotated [28.0] at the Hebrew letter, so LB28
+// reads a Hebrew letter as the same kind of letter as a Latin one. HL was
+// missing from both sides of the rule.
+fn test_line_break_holds_a_hebrew_letter_like_a_latin_one() {
+	ctx := new_context()
+	// 2757 AI, 0308 CM, 05D0 HL.
+	cps := [rune(0x2757), rune(0x0308), rune(0x05D0)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert 2 !in starts, 'a Hebrew letter is held like a Latin one, got ${starts}'
+	// And the same two with no mark between them.
+	cps2 := [rune(0x2757), rune(0x05D0)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert 1 !in starts2, 'and directly as well, got ${starts2}'
+}

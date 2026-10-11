@@ -294,7 +294,15 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// `ZW × SP × R` cases, 63 break and the 6 that do not are a hard break or a space after,
 	// which no rule may override. Without this, `× 200B × 0020 ÷ 00BB ÷` — [8.0] — would lose
 	// the break it currently has.
-	if left == .sp {
+	// An opening quotation mark holds a run of spaces and marks, and the run may end in a mark
+	// rather than a space. This was keyed on `left == .sp` alone, which meant `× 00AB × 0308 ×
+	// 2757 ÷` — a quote, a mark, and a letter — broke, and the committee tags that position [15.11].
+	// A run is a run whether it ends in a space or a mark, so the hold now answers for both.
+	//
+	// It has to read through the mark to the character in front of the run, which is what
+	// `run_origin` already does, and it has to be checked here rather than at LB9's position so
+	// that the mark does not detach the run.
+	if left == .sp || is_markish(left) {
 		behind := run_origin(classes, i)
 		detached := behind >= 0 && classes[behind] == .zw
 		if !detached {
@@ -367,6 +375,19 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if is_prohibited_start_after_space(right) {
 		return BreakKind.no
 	}
+	// LB30: do not break before an open punctuation after a letter, a Hebrew letter or a digit.
+	//
+	// The rule was missing entirely, and `× 2757 × 0028 ÷` is the shape: the committee tags it
+	// [30.01], a break that must not happen. It was invisible until the mark rules moved, because
+	// the blanket rule after a mark had been refusing that position anyway.
+	//
+	// This uses `left` and not `pair_left`, and that is the one place the two differ. `× 2757 ×
+	// 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not, so an open punctuation may begin a
+	// line after a marked letter but not after a bare one. LB28 and LB23 read through a mark and
+	// LB30 does not.
+	if (left == .al || left == .hl || left == .nu) && right == .op {
+		return BreakKind.no
+	}
 	// LB23a and LB23b: two of the same class that must not be split, which is
 	// Hangul syllables and a numeric run's own continuation. They come before
 	// LB28 so that a run of numbers stays whole when the class says so.
@@ -376,12 +397,26 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// output looked wrong — a number split across two lines is still a number-looking thing — which is why
 	// it survived until the conformance test was run. "19C" was the case that showed it: the letter after
 	// the digits was correctly held on by LB28 while the digits themselves parted.
+	// A mark joins the character it sits on, so the pair that decides the break after it is the base
+	// and the character that follows — not the mark and the character that follows. `× 2757 × 0308 ×
+	// 2757 ÷` refuses the break, and the committee annotates that position [28.0]: LB28 reading the
+	// pair as two letters. `× 2757 × 0308 × 0030 ÷` annotates [23.02] the same way.
+	//
+	// It is not every rule, and the difference is measurable rather than argued. LB28 and LB23 hold
+	// across a mark, and LB30 does not: `× 2757 × 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷`
+	// does not. An open punctuation may start a line after a marked letter but not after a bare one,
+	// which is what a diacritic carrying word-final stress through to the next word looks like.
+	//
+	// This is NOT the class rewrite the chain tried first, which measured 10,912 against 13,090 and
+	// left the note on `effective_class`. That version replaced the class for every later rule; this
+	// reaches three lookups, all of which ask what the left-hand character is.
+	mut pair_left := eff_left
 	if left == .jl || left == .jv || left == .jt {
 		if right == .jl || right == .jv || right == .jt {
 			return BreakKind.no
 		}
 	}
-	if left == .nu && right == .nu {
+	if pair_left == .nu && right == .nu {
 		return BreakKind.no
 	}
 	if left == .ri && right == .ri {
@@ -390,7 +425,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 		// this looks at the pair rather than the run.
 		return BreakKind.no
 	}
-	// LB28: two alphabetic characters do not break between them. This is the rule
+	// LB28: two of the same kind of letter do not break between them. This is the rule
 	// that makes a word a word, and leaving it out turns every word into a
 	// letter run a caller may split anywhere.
 	//
@@ -398,7 +433,15 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// exception: the pair may break if either character is a hyphen, which is
 	// what lets "well-known" break after its hyphen. The hyphen is handled by
 	// LB21 below, so by the time this runs neither side is one.
-	if left == .al && right == .al {
+	//
+	// Four pairs, not one: `AL × AL`, `AL × HL`, `HL × AL` and `HL × HL`. The
+	// engine had the first and the conformance test is what showed the other
+	// three — `× 2757 × 0308 × 05D0 ÷` is annotated `[28.0]` at the Hebrew
+	// letter, so LB28 reads a Hebrew letter as the same kind of letter as a
+	// Latin one and this read it as a break.
+	hl_or_al_left := pair_left == .al || pair_left == .hl
+	hl_or_al_right := right == .al || right == .hl
+	if hl_or_al_left && hl_or_al_right {
 		return BreakKind.no
 	}
 	// LB28's other two pairs: a letter and a digit, in either order. These were missing and the
@@ -407,7 +450,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	//
 	// A hexadecimal-looking name is the common case, and a break inside one leaves a line ending in a
 	// digit and the next starting with a letter, which reads as a hyphenation the writer never asked for.
-	if (left == .al && right == .nu) || (left == .nu && right == .al) {
+	if (pair_left == .al && right == .nu) || (left == .nu && right == .al) {
 		return BreakKind.no
 	}
 	// LB29: an infix separator — the full stop or comma of a decimal or thousands — holds to the
@@ -432,21 +475,21 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if left == .hy && right == .al {
 		return BreakKind.allowed
 	}
-	// ...and, since 2026-10-04, from the character after it either.
+	// There was a rule here refusing a break after a combining mark, and it was wrong.
 	//
-	// The rule above has always covered the left side of a mark only, and the comment claimed the pair was
-	// glued on purpose. It is not: a line ending between an accent and its letter is as wrong as one ending
-	// between the letter and the accent, and every conformance case of the form `× 2757 × 0308 × 2757 ÷`
-	// failed at exactly the index after the mark.
+	// It was added on 2026-10-04 for 312 cases and was justified by a single one: the file's only case
+	// containing U+200C, a zero width non-joiner, reads `× 200C ×`. That was generalised into "a line
+	// may not end on a combining mark", which LB9 does not say. LB9 forbids a break *before* a mark; it
+	// says nothing about what follows one, and the default there is a break.
 	//
-	// This is a narrow rule rather than the class change that was tried first. Giving the mark its base's
-	// class fixes the same case and every other one, but a base that is allowed to break away — a space, or
-	// a character whose own class permits a break — has that break suppressed by the mark in front of it,
-	// and the score fell from 13,090 to 10,912. Refusing the break *at* a mark is the smaller change: it
-	// affects one position instead of rewriting the class every rule after it reads.
-	if is_markish(left) {
-		return BreakKind.no
-	}
+	// Removing it measured 2,656 to 1,943 — 713 cases gained. The 768 it broke were the committee's
+	// `× 2757 × 0308 × 2757 ÷` shape, where LB28 reads through the mark to a pair of letters, and those
+	// are recovered by `pair_left` above. Together the two are worth 870; the rule alone was worth
+	// nothing.
+	//
+	// The U+200C case that justified it is still handled and correctly so: a zero width non-joiner is
+	// class CM, so `× CM ×` holds it through the LB9 that holds every other mark, from the right-hand
+	// side. That is the one-sided rule, and it is the smaller one.
 	// LB31, and the default of LB31 in the specification's own table: break
 	// everywhere else. This is a permissive default, and it is why the rules
 	// above it matter: a permissive default is what draws the text, and the rules

@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **16,690 of 19,346 (86.3%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **17,612 of 19,346 (91.0%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -103,7 +103,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 16,690 of 19,346 — 86.3%.**
+**Measured, because "done" above was a description and not a number. 17,612 of 19,346 — 91.0%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -122,22 +122,20 @@ the whole of the class of failure the first eight reported were.
 class, rather than leaving it `.cm`, is what LB9 reads like on both sides, and it took the score from
 13,074 to **10,912** — 8,434 failures against 6,272. The mark then carries its base's class into the rule
 *after* it, and a base that is allowed to break away, a space or a character whose own class permits it,
-has that break suppressed by the mark on top of it. The one-sided check that catches the break before a
-mark is what is left, and it is the smaller loss. The comment on `effective_class` says so, so the next
-person does not spend the measurement again.
+has that break suppressed by the mark on top of it.
 
-### The rules that were missing rather than wrong — 3,237 cases, 2026-10-10 to 10-11
+### The rules that were missing, and the one that was invented — 4,159 cases
 
 The 4,893 that were left were listed as one bullet about CJ characters, and that bullet was the wrong
-shape of answer: most of them were rules that were never written at all, and the bullet was describing
-their consequences rather than their cause. Each was found by asking the committee's own test file a
-question directly, which is a better instrument than reading the rule numbers.
+shape of answer: most of them were rules that had never been written, and the bullet was describing their
+consequences rather than their cause. Each was found by asking the committee's own test file a question
+directly, which is a better instrument than reading the rule numbers.
 
 **A space was answering before anything could ask it a question.** `× SP × CL` broke where LB13 refuses
 it. The chain opened with LB18 as a leading return, which is right for a space against a letter and wrong
-against every rule that says which character may not start a line. That alone was 2,551, and the four
-other rules below were hiding behind it. `.bk` shared the return and was dead code: a mandatory break is
-answered above it, so no pair could carry one on the left.
+against every rule that says which character may not start a line. That alone was 2,551, and four other
+rules were hiding behind it. `.bk` shared the return and was dead code: a mandatory break is answered
+above it, so no pair could carry one on the left.
 
 **LB5 was missing and a test asserted its absence.** Nothing handled a hard break on the *right*, so
 `× AL × LF` fell through to the default and produced a break. 67 of the 70 cases the file writes for a
@@ -145,33 +143,21 @@ class in front of a newline are breaks that must not happen. `inspect_test.v` as
 the break *exists* and is not mandatory, and named LB7 while doing it. LB7 is about spaces.
 
 **LB8, LB11, LB12a and LB20 were all shaped as the wrong rule.** LB8 is a break *after* a zero width
-space, and there was nothing on either side of one — the committee answers `× 200B ÷ X ÷` with `[8.0]`
-for every class X, including the ones LB13 forbids after a space, which is the whole of why ZW and SP are
-different characters despite both being spaces. LB12a exempts two classes from its prohibition and the
-reader had three, because `[^SP BA HY]` reads as though a break-after character were exempt; the
-committee's own `× 3000 × 16FE4 ÷` [12.1] says it is not. LB20 needed both halves *and* an LB19 in front
-of them.
+space, and there was nothing on either side of one — the committee answers `× 200B ÷ X ÷` with `[8.0]` for
+every class X, which is the whole of why ZW and SP are different characters despite both being spaces.
+LB12a exempts two classes from its prohibition and the reader had three, because `[^SP BA HY]` reads as
+though a break-after character were exempt; `× 3000 × 16FE4 ÷` [12.1] says it is not. LB20 needed both
+halves *and* an LB19 in front of them.
 
-**`× SP × CL` is the question, and the answer has two halves.** The file asks `× A × 0020` for every
-class, and the set that refuses to break is not the set of prohibited starts. It is `BK CR LF NL SP ZW WJ
-CL CP EX IS SY` and a final quotation mark; `× SP × CM`, `× SP × B2`, `× SP × BB` and `× SP × QU_Pi` all
-break. `is_prohibited_start` was carrying nine classes that belong *below* the space rule, and they are
-split into a second list that the space rule can answer first.
+**Four classes were folded into a mark, and only one of them is one.** `is_markish` named `.ap`, `.vi`,
+`.idcj`, `.h2` and `.h3` alongside `.cm`. An aksara pre-base and a virama final are not combines; the
+committee asks for a break before one 497 times and refuses one 615. `.h2` and `.h3` were the surprise —
+Hangul syllables, kept on the strength of LB26's jamo rule, which is true and is not the same thing.
+`.idcj` measured zero and went anyway.
 
-**Four classes were being folded into a mark, and only one of them is one.** `is_markish` named `.ap`,
-`.vi`, `.idcj`, `.h2` and `.h3` alongside `.cm`. An aksara pre-base and a virama final are not combines;
-the committee answers `× 2757 ÷ 11003 ÷` and `× 2757 ÷ 1B44 ÷` with a break, and the engine refused
-both. `.h2` and `.h3` were the surprise — they are Hangul syllables, and the argument for keeping them
-was LB26's jamo rule, which is true and is not the same thing. Together those were 344, and `.idcj`
-measured zero and went anyway. `.ap` was kept by a comment that said a pre-base is "a mark in the same
-sense a Devanagari prebase is", which is the kind of sentence that survives because it sounds like a
-reason.
-
-**Three LB1 resolutions were missing** from a function that handled `.ai` alone: unknown, complex
-context and conditional Japanese starter all fell through to the default. `.sa` to a letter is 58, `.xx`
-28 and `.cj` to a non-starter 13 — and `.cj` is the one that exposes a coupling, because it resolves to a
-class this engine forbids a break before, so twelve of its forty-three come straight back out. They are
-waiting on the punctuation task below.
+**Three LB1 resolutions were missing** from a function that handled `.ai` alone: unknown, complex context
+and conditional Japanese starter all fell through to the default. `.sa` to a letter is 58, `.xx` 28 and
+`.cj` to a non-starter 13.
 
 **A quotation mark was one class, so an opening one and a closing one answered the same pair two
 different ways.** Derived from the file rather than recalled, over 1,753 quotation positions: a break
@@ -182,24 +168,47 @@ distinction is the general category, so it could not be a codepoint list in the 
 `DerivedGeneralCategory.txt` is fetched, `tools/gen_tables.v` emits a `ucd_quote.v` in the same form as
 its siblings, and nothing was hand-written.
 
-**The mark rules moved, and not to where the numbering suggests.** `× CM` is LB9, sixty places earlier
-than LB18, and the committee answers `× 2757 × 0020 ÷ 302A ÷` with [18.0] — a break, on a space and a
-tone mark. So LB18 beats LB9. But `× GL × 0308 × FFFC ÷` refuses a break decided by the glue
-*underneath* the mark, so a mark looks through itself to its base for the two left-hand questions, and
-only those.
+**And the one rule that was invented rather than missing: a line may end on a combining mark.** A rule
+refusing a break *after* a mark was added on 2026-10-04 for 312 cases and was generalised from a single
+case — the file's only one containing U+200C, a zero width non-joiner — into "a line may not end on a
+combining mark". LB9 forbids a break *before* a mark. It says nothing about what follows one, and the
+default there is a break.
 
-What the remaining 2,656 are, worth writing down before anyone starts:
+Removing it alone was 713 cases; the 768 it broke were `× 2757 × 0308 × 2757 ÷`, where LB28 reads
+through the mark to a pair of letters. Those are recovered by `pair_left`, which reaches the base for
+LB28 and LB23 and for nothing else — and **that is the whole shape of the change**. LB30 reads through
+a mark in the opposite direction: `× 2757 × 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not,
+because LB30 was missing entirely and is not one. An open punctuation may begin a line after a marked
+letter but not after a bare one, which is what a diacritic carrying word-final stress through to the
+next word looks like.
+
+Plus LB28's four pairs — it had one. `× 2757 × 0308 × 05D0 ÷` is annotated `[28.0]` at the Hebrew
+letter, so LB28 reads a Hebrew letter as the same kind of letter as a Latin one. And an opening
+quotation mark's hold now reaches a run ending in a mark as well as one ending in a space,
+`× 00AB × 0308 × 2757 ÷` [15.11], which the `left == .sp` gate had been refusing.
+
+**The rule that was invented is worth the most instruction in this file.** It was added for 312 cases,
+removed for 713, and the 768 that came back with LB28 reading through it are a different rule from the
+one that paid for it. A conformance score is a count of cases and cases are not a random sample: the
+312 were a shape the file asks often, and the shape it asks *about* — a letter, a mark, a letter — is
+what the mark was for. The one-sided rule at the end of the chain is what is left, and it is the
+smaller one.
+
+What the remaining 1,734 are, worth writing down before anyone starts:
 
 - **An `SA` character is a mark for some of them and not others.** U+0E31 and U+102C answer `[9.0]`,
-  U+0E01 answers `[28.0]`, and the difference is `General_Category`, which no table here carries. Of 757
-  SA codepoints 133 are bidi NSM and zero of both signals is true at U+102C, so neither candidate alone
-  decides it. It needs a GC table, and it is the same fetch the quotation work already did.
-- **The numeric and punctuation matrix.** `PR × (ID|EB|EM)`, `(PR|PO) × (AL|HL)`, `PR × (JL|JV|JT|H2|H3)`,
-  `(AL|HL|NU) × OP` and the RI run count are each a small rule, and `.ns` is sitting in
-  `is_prohibited_end` costing the CJ gain twelve cases.
-- **The committee's long real-world lines** track whether a closing quote closes a span that is still
-  open, which no pair rule can reproduce. UAX #14 has no quotation-span state and this engine's pair
-  chain cannot express one.
+  U+0E01 answers `[28.0]`, and the difference is `General_Category` — Lo for a letter, Mn or Mc for a
+  mark. `DerivedGeneralCategory.txt` is now fetched and committed for the quotation work, so the data
+  is here and the plumbing is not: `Properties` has no general-category ranges and `effective_class`
+  resolves `.sa` to a letter for all 757 codepoints. That is the largest single bucket left, and it is
+  roughly 190 cases.
+- **LB19 is one rule where the committee has two.** `× QU_Pi × SP × QU_Pf ÷` is the pair both rules
+  answer, and the long real-world lines at the end of the file track whether a closing quote closes a
+  span that is still open, which no pair rule can reproduce. UAX #14 has no quotation-span state and
+  this engine's pair chain cannot express one.
+- **The prefix and postfix numerals.** `PR × (ID|EB|EM)`, `(PR|PO) × (AL|HL)`, `PR × (JL|JV|JT|H2|H3)`
+  and the numeric matrix around them are each a small rule, and `.ns` still sits in
+  `is_prohibited_end`.
 
 None of them are Arabic or Persian, which is why the library is usable without them and why they are
 listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
