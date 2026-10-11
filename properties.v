@@ -376,6 +376,42 @@ fn quote_ranges() []CodeRange {
 	return parse_ranges(quote_ranges_data)
 }
 
+// SaMark is which of the two resolutions LB1 gives a complex-context character.
+//
+// LineBreak.txt has one class, SA, for a Thai letter and for the sign that sits above it, and the
+// committee does not answer them the same way: U+0E31 THAI CHARACTER MAI HAN-AKAT and U+102C
+// MYANMAR VOWEL SIGN AA answer `[9.0]`, which is a combining mark on either side, while U+0E01
+// THAI CHARACTER KO KAI answers `[28.0]`, which is a letter. The property that separates them is
+// General_Category, so it is read from DerivedGeneralCategory.txt by tools/gen_tables.v and written
+// to ucd_sa_mark.v, exactly as the quotation role is: neither of the two files answers the question
+// on its own.
+pub enum SaMark {
+	none = 0 // the letter resolution: U+0E01 THAI CHARACTER KO KAI
+	mark = 1 // the mark resolution: U+0E31 THAI CHARACTER MAI HAN-AKAT, U+102C MYANMAR VOWEL SIGN AA
+}
+
+// str returns the ordinal's name from the generated table, which is what keeps this enum and the
+// ordinals tools/gen_tables.v writes in step with each other.
+pub fn (m SaMark) str() string {
+	return ucd_name(sa_mark_names_data, int(m))
+}
+
+// sa_mark_of returns the LB1 resolution for cp.
+fn sa_mark_of(ranges []CodeRange, cp rune) SaMark {
+	o := lookup_range(ranges, u32(cp), 0)
+	return unsafe { SaMark(o) }
+}
+
+// sa_mark_ranges decodes the generated SA mark table.
+//
+// It is decoded by the caller rather than held on Properties, the way quote_ranges is and for the
+// same reason: 27 ranges over 191 codepoints, asked about once per complex-context character, so a
+// caller pays one small decode per call instead of every Properties value in the library carrying a
+// table nothing outside an SA character is ever asked about.
+fn sa_mark_ranges() []CodeRange {
+	return parse_ranges(sa_mark_ranges_data)
+}
+
 // line_break_name returns the UCD name of cp's line break class, e.g. 'AL'.
 pub fn (p &Properties) line_break_name(cp rune) string {
 	c := p.line_break_of(cp)

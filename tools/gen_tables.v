@@ -153,6 +153,14 @@ const line_break_order = ['XX', 'CM', 'BA', 'LF', 'BK', 'CR', 'SP', 'EX', 'QU', 
 // it keeps that legible in the generated file, the way bidi_class_order's leading L is.
 const quote_role_order = ['qu_none', 'pi', 'pf', 'both']
 
+// sa_mark_order reserves one ordinal per resolution LB1 can give a complex-context character.
+//
+// The first entry is never written into any range, for the same reason quote_role_order's is: a
+// codepoint that is neither SA nor a general-category mark falls in no range, so the lookup returns 0
+// and reads as "the letter resolution". The ordinal is then the whole answer, and there is no second
+// table to consult to learn whether a 0 meant "not asked" or "not a mark".
+const sa_mark_order = ['sa_none', 'sa_mark']
+
 // BracketPair is one entry of the BidiBrackets table: a codepoint, the
 // codepoint it pairs with, and whether it opens or closes the pair.
 struct BracketPair {
@@ -166,8 +174,13 @@ struct BracketPair {
 }
 
 // parse_brackets reads BidiBrackets.txt into bracket pairs.
+//
+// An unread file is fatal for the reason ucd_ranges documents: returning an empty list wrote three
+// empty tables without saying so.
 fn parse_brackets(path string) []BracketPair {
-	data := os.read_file(path) or { return []BracketPair{} }
+	data := os.read_file(path) or {
+		panic('cannot read ${path}: ${err.msg()}. Run tools/fetch_ucd.v first.')
+	}
 	mut out := []BracketPair{}
 	for line in data.split_into_lines() {
 		// The value is followed by " # name", so the comment goes first.
@@ -264,8 +277,18 @@ fn script_codes() map[string]string {
 
 // ucd_ranges reads a UCD data file, skipping comments and blank lines. Lines
 // look like `0621; ARABIC LETTER HAMZA; D; BEH` or `0041..005A; Lu`.
+//
+// A file that cannot be read, or that holds no ranges at all, is fatal rather than empty. Several of
+// these files are gitignored and fetched on demand, so a checkout that has not run
+// tools/fetch_ucd.v still runs this generator, and the read failure used to arrive as a silent
+// `pub const ... = ''`: combining class, joining group and the bracket pairs all came out empty and
+// the tables were written that way, because an unread file and a property with no ranges are the
+// same empty array to the caller. Nothing downstream can tell them apart, and a build against them
+// fails somewhere unrelated.
 fn ucd_ranges(path string, value_field int) []ParsedRange {
-	data := os.read_file(path) or { return []ParsedRange{} }
+	data := os.read_file(path) or {
+		panic('cannot read ${path}: ${err.msg()}. Run tools/fetch_ucd.v first.')
+	}
 	mut out := []ParsedRange{}
 	for line in data.split_into_lines() {
 		// A value is followed by " # comment" on the same line, so the comment
@@ -288,6 +311,9 @@ fn ucd_ranges(path string, value_field int) []ParsedRange {
 		}
 		name := fields[value_field].trim_space()
 		out << ParsedRange{ lo: lo_cp, hi: hi_cp, value: name }
+	}
+	if out.len == 0 {
+		panic('${path} held no data lines. Run tools/fetch_ucd.v first.')
 	}
 	return out
 }
@@ -483,6 +509,57 @@ fn quote_roles(lb_ranges []ParsedRange, gc_ranges []ParsedRange, reg &Registry) 
 	return coalesce(pieces, reg)
 }
 
+// sa_marks builds the table that tells an SA character LB1 must resolve to a combining mark from
+// one it must resolve to a letter.
+//
+// LineBreak.txt has one class, SA, for every complex-context character, and the committee does not
+// answer the class the same way for all of them: U+0E31 THAI CHARACTER MAI HAN-AKAT and U+102C
+// MYANMAR VOWEL SIGN AA answer `[9.0]`, which is a combining mark on either side, while U+0E01
+// THAI CHARACTER KO KAI answers `[28.0]`, which is a letter. The property that separates them is
+// General_Category — Mc and Mn against Lo, Lm and So — so this reads the same pair of files
+// quote_roles does and for the same reason: neither file answers the question alone.
+//
+// Only the intersection is emitted, because the engine asks the table about a character the line
+// break table has already called SA, and asking it about any other character would need the whole
+// Mn and Mc set for an answer that never changes. Every Mn and Mc codepoint outside the SA ranges
+// is a mark the other tables already carry a combining class for.
+fn sa_marks(lb_ranges []ParsedRange, gc_ranges []ParsedRange, reg &Registry) []CodeRange {
+	mut sa := []ParsedRange{}
+	for r in lb_ranges {
+		if r.value == 'SA' {
+			sa << r
+		}
+	}
+	// LineBreak.txt is sorted by codepoint already, but the sort is what the ranges are meant to be
+	// walked with and it costs nothing here, the way parse_brackets sorts above.
+	sa.sort_with_compare(fn (a &ParsedRange, b &ParsedRange) int {
+		if a.lo < b.lo {
+			return -1
+		}
+		if a.lo > b.lo {
+			return 1
+		}
+		return 0
+	})
+	mut pieces := []ParsedRange{}
+	for r in gc_ranges {
+		if r.value != 'Mn' && r.value != 'Mc' {
+			continue
+		}
+		// A mark range can straddle several SA ranges and the gaps between them, so it is cut at
+		// every SA range it meets and only the overlap is kept. Looping the few SA ranges this way
+		// keeps the intersection obvious, where a merged walk of two sorted lists would not.
+		for s in sa {
+			lo := if r.lo > s.lo { r.lo } else { s.lo }
+			hi := if r.hi < s.hi { r.hi } else { s.hi }
+			if lo <= hi {
+				pieces << ParsedRange{ lo: lo, hi: hi, value: 'sa_mark' }
+			}
+		}
+	}
+	return coalesce(pieces, reg)
+}
+
 // ------------------------------------------------------------------------ main
 
 fn main() {
@@ -569,6 +646,20 @@ fn main() {
 	emit_ranges(mut tq, 'quote_ranges', 'quotation role the UAX #14 rules can tell apart',
 		qr_ranges)
 	emit_writes('ucd_quote.v', mut tq)
+
+	// The SA marks, which are the third property derived from the same two files: the line break
+	// class says a character is complex context and the general category says whether LB1 resolves
+	// it to a letter or to a combining mark.
+	mut sm := new_registry()
+	intern_order(mut sm, sa_mark_order)
+	sm_ranges := sa_marks(lb_all, gc_all, sm)
+	mut tsm := Text{ parts: []string{} }
+	emit_header(mut tsm, 'LineBreak.txt, extracted/DerivedGeneralCategory.txt')
+	emit_values(mut tsm, 'sa_mark_names', 'resolution LB1 gives a complex-context character',
+		sm)
+	emit_ranges(mut tsm, 'sa_mark_ranges', 'resolution LB1 gives a complex-context character',
+		sm_ranges)
+	emit_writes('ucd_sa_mark.v', mut tsm)
 
 	// Script, which decides which shaping features and joining rules apply. The
 	// values are ISO 15924 codes, mapped from the long names Scripts.txt uses.

@@ -730,3 +730,40 @@ fn test_line_break_holds_a_hebrew_letter_like_a_latin_one() {
 	}
 	assert 1 !in starts2, 'and directly as well, got ${starts2}'
 }
+
+// The SA mark table is what lets LB1 split the complex-context class, so it is checked against the
+// marks and U+0E01 is a letter.
+fn test_sa_marks_are_read_from_the_general_category() {
+	m := sa_mark_ranges()
+	assert sa_mark_of(m, rune(0x0E31)) == .mark, 'U+0E31 THAI CHARACTER MAI HAN-AKAT is a mark'
+	assert sa_mark_of(m, rune(0x102C)) == .mark, 'U+102C MYANMAR VOWEL SIGN AA is a mark'
+	// Lao vowel sign mai kan, an Mn outside Thai, and the Tai Viet sign, the same property further out.
+	assert sa_mark_of(m, rune(0x0EB1)) == .mark, 'U+0EB1 LAO VOWEL SIGN MAI KAN is a mark'
+	assert sa_mark_of(m, rune(0xAAB0)) == .mark, 'U+AAB0 TAI VIET MAI KANG is a mark'
+	// A letter, and two non-mark marks that are still not SA at all.
+	assert sa_mark_of(m, rune(0x0E01)) == .none, 'U+0E01 THAI CHARACTER KO KAI is a letter'
+	assert sa_mark_of(m, rune(0x0E46)) == .none, 'U+0E46 THAI CHARACTER MAIYAMOK is a letter, not a mark'
+	assert sa_mark_of(m, rune(0x0308)) == .none, 'a combining accent is a mark but is not SA'
+	assert sa_mark_of(m, `A`) == .none, 'a letter that is not SA at all is the default'
+	// The hand-written enum and the generated ordinals must not drift apart, the way the quotation
+	// role's do not, or a regeneration against a newer UCD would silently reassign the answers.
+	assert SaMark.mark.str() == 'sa_mark', 'the ordinal the generated table uses for a mark'
+	assert SaMark.none.str() == 'sa_none', 'and for the default, which no range ever names'
+}
+
+// LB4a with an SA mark, which is the shape the split buys: a mark of any class that follows
+// something is held to the character in front of it.
+// `× FE6A × 0E31 ÷` and `× 1B05 × 102C ÷` are both from the committee's file, and the answer is a
+// refusal on the marker between the pair — no break — which is what LB4a says for a Latin accent
+// (`× 2757 × 0308 × 2757 ÷`) and now says for a Thai sign too.
+fn test_an_sa_mark_after_a_character_is_held_to_it() {
+	ctx := new_context()
+	assert starts_of(ctx, word(0xFE6A, 0x0E31)) == [2], 'a Thai sign is held to what precedes it'
+	assert starts_of(ctx, word(0x1B05, 0x102C)) == [2], 'and a Myanmar vowel sign is too'
+	// The letter one of the same class is not, which is the whole point of the split: U+0E01 is SA
+	// and resolves to a letter, so an Aksara letter in front of it breaks the way two letters would.
+	assert starts_of(ctx, word(0x1B05, 0x0E01)) == [1, 2], 'a Thai letter keeps every break it had'
+	// The mark keeps the letter resolution at the start of the text, which is what the committee
+	// answers with `[31.01]` and what the unresolved leading mark costs elsewhere.
+	assert starts_of(ctx, word(0x0E31, 0x1B05)) == [1, 2], 'a leading SA mark has nothing to attach to'
+}

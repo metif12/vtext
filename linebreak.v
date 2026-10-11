@@ -83,9 +83,15 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 	}
 	// The classes are read once. They are a lookup per character and the same
 	// character is asked about three times by the rules below.
+	//
+	// The SA table is decoded here and threaded through for the same reason the quotation roles
+	// are: LB1 asks at most once per complex-context character, and the answer is a per-character
+	// lookup. `Properties` has no field for it because `tables.v` owns that struct and the
+	// quotation work took the caller-decode route first; the note on `sa_mark_ranges` records why.
+	sa := sa_mark_ranges()
 	mut classes := []LineBreakClass{cap: n}
 	for i in 0 .. n {
-		classes << effective_class(props, cps, i, classes)
+		classes << effective_class(props, sa, cps, i, classes)
 	}
 	// The quotation roles are read once for the same reason, and by the same rules: LB15a and
 	// LB15b are the only two that ask which direction a quotation mark opens, and they ask
@@ -416,7 +422,32 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			return BreakKind.no
 		}
 	}
+	// LB27: a numeric prefix does not part from the Hangul syllable after it.
+	//
+	// `× 0024 × AC00 ÷` and `× 20A9 × 1100 ÷` are the committee's own shapes and the answer is
+	// [27.02] on both. Measured on 2026-10-12: **11 cases gained, none broken.**
+	//
+	// The committee names H3 here and the engine's own LB29 lets two H2s and two H3s break
+	// between each other, so the class is not held together as a run the way the jamo are.
+	if left == .pr && (right == .jl || right == .jv || right == .jt || right == .h2
+		|| right == .h3) {
+		return BreakKind.no
+	}
 	if pair_left == .nu && right == .nu {
+		return BreakKind.no
+	}
+	// LB24: a numeric prefix or postfix does not part from the letter or Hebrew letter after it.
+	//
+	// `× FE6A × 2757 ÷` and `× 0025 × 05D0 ÷` are the committee's own shapes and the answer is
+	// [24.02] on both.
+	if (left == .pr || left == .po) && (right == .al || right == .hl) {
+		return BreakKind.no
+	}
+	// LB23: a numeric prefix does not part from the ideograph or the emoji after it.
+	//
+	// `× 0024 × 231A ÷` and `× 20A9 × 270A ÷` are the committee's own shapes and the answer is
+	// [23.12] on both.
+	if left == .pr && (right == .idas || right == .eb || right == .em) {
 		return BreakKind.no
 	}
 	if left == .ri && right == .ri {
@@ -594,7 +625,7 @@ fn is_prohibited_start_after_space(c LineBreakClass) bool {
 // is_prohibited_end reports whether a line may not end with this class, which
 // is rules LB15 through LB19 and LB21.
 fn is_prohibited_end(c LineBreakClass) bool {
-	return c == .op || c == .qu || c == .cp || c == .insp || c == .ns || c == .ex || c == .hy
+	return c == .op || c == .qu || c == .cp || c == .insp || c == .ex || c == .hy
 		|| c == .bb
 }
 
@@ -610,7 +641,8 @@ fn is_prohibited_end(c LineBreakClass) bool {
 // own. A word joiner is left alone: it is already a class of its own, and it is the one that forbids
 // a break on both sides of it, which is what makes it the character a caller reaches for when a
 // word must not be split.
-fn effective_class(props &Properties, cps []rune, i int, so_far []LineBreakClass) LineBreakClass {
+fn effective_class(props &Properties, sa []CodeRange, cps []rune, i int,
+	so_far []LineBreakClass) LineBreakClass {
 	raw := props.line_break_of(cps[i])
 	if raw == .zwj {
 		return .cm
@@ -673,6 +705,18 @@ fn effective_class(props &Properties, cps []rune, i int, so_far []LineBreakClass
 		return .al
 	}
 	if raw == .sa {
+		// A mark becomes a combining mark and everything else stays a letter, and the two
+		// resolutions are what the committee's own file asks for at the two characters it
+		// names.
+		//
+		// It is asked of a character that follows something, which is the same condition
+		// LB4a is written on a few lines above, and the match is not an accident: an SA mark
+		// attaches to the character in front of it, so a mark with nothing in front of it has
+		// nothing to attach to. Measured rather than assumed. Resolving a leading SA mark to
+		// CM as well **broke 38 cases** against the 4 it fixed.
+		if i > 0 && sa_mark_of(sa, cps[i]) == .mark {
+			return .cm
+		}
 		return .al
 	}
 	if raw == .cj {
