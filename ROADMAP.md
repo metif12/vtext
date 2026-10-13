@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **17,972 of 19,346 (92.9%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **18,447 of 19,346 (95.3%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -103,7 +103,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 17,972 of 19,346 — 92.9%.**
+**Measured, because "done" above was a description and not a number. 18,447 of 19,346 — 95.3%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -234,19 +234,27 @@ one that paid for it. A conformance score is a count of cases and cases are not 
 what the mark was for. The one-sided rule at the end of the chain is what is left, and it is the
 smaller one.
 
-What the remaining 1,374 are, worth writing down before anyone starts:
+What the remaining **899** are, worth writing down before anyone starts:
 
 - **The leading mark, in either direction.** A mark with nothing in front of it is unresolved: the
   committee breaks after a leading *ordinary* mark in some cases and not others —
   `× 302A ÷ 1B05 ÷` breaks, `× 302A × 2757 ÷` does not — and gating the mark rule on the mark having
   a predecessor measured 76 restored against 75 broken. UAX #14 has no rule for a mark that starts a
   line, and the file has both answers, so this is the file disagreeing with itself rather than a gap
-  in the engine.
+  in the engine. The same contradiction accounts for **130 positions**: bare `SP × PO` is `[18.0]` and
+  `SP × CM × PO` is `[24.03]`, across all six of SP, ZW, BK, CR, LF and NL, and no rule answers both.
+- **`.insp`, `.ex`, `.hy` and `.bb` are still class lists where the committee has pairs.** The
+  `× 0029 ÷ 2757 ÷` / `× 0029 × 2757 ÷` split that took `.cp` out measured the same shape for each of
+  them, and it was measured rather than predicted: reading `eff_left` through them fixed 20 and broke
+  94, because it propagated the over-refusal into the mark rules. Each needs its own pass, and they
+  are the largest bucket left.
 - **LB19 is one rule where the committee has two.** `× QU_Pi × SP × QU_Pf ÷` is the pair both rules
   answer, and the long real-world lines at the end of the file track whether a closing quote closes a
   span that is still open, which no pair rule can reproduce. UAX #14 has no quotation-span state and
   this engine's pair chain cannot express one.
 - **LB28's aksara sub-rules**, the 17 cases already noted on `is_markish`, and LB26's jamo run.
+- **LB25's numeric matrix**, which this engine reads as pairs. It is what the one open `(4·)$` case
+  wants, and the currency symbol is a break at four other positions, so the pair cannot be widened.
 
 None of them are Arabic or Persian, which is why the library is usable without them and why they are
 listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
@@ -1123,6 +1131,30 @@ And `none` is not available as a variable name. It reads as the option's empty v
 Programs for people using the library, built out of the examples. Each one
 should be useful on its own without the library, and the library should be
 something it happens to use.
+
+### The 19 copies of a font-path helper, and why the better answer was not taken
+
+Done on 2026-10-13, and recorded because it is the one place in this repository where the right fix
+was known, measured, and deliberately not taken.
+
+`v test <single_file>` compiles that file and not its siblings. `tools/run_tests.v` invokes
+`v test <name>` per file, because per-file invocation is what lets it report pass, fail, blocked and
+skip counts per file rather than one number for the directory. So a shared `corpus_font_path`
+helper in a neighbouring test file satisfies `v test .` and fails every run the runner makes.
+
+Eighteen test files therefore each carry the same forty lines of resolution order
+(`$VTEXT_TEST_FONTS`, `testdata/fonts`, then the platform directory last and only on Windows) and
+the same `skip_missing`. That is duplication, and it is the price of the report the runner gives.
+
+The better answer is to move the helpers into the module itself, where every test file sees them and
+one copy serves all. It was not taken here because it moves code out of the test files into the
+library's own sources, which is a different change with its own review, and a test-only helper
+reaching into `vtext.v` is a worse arrangement than a duplicated block whose duplication has one
+named cause.
+
+The trigger for writing this down is the platform work on 2026-10-12/13, which made the suite run on
+Linux and macOS for the first time and needed the helper everywhere at once. Before that, one file
+carried a Windows path and the question had never arisen.
 
 ### The inspection API
 

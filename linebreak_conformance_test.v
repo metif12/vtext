@@ -65,7 +65,22 @@ import os
 // was missing was the generator and the plumbing rather than the data. Alongside it, four small
 // rules: LB24, LB23's prefix, LB27's prefix, and `.ns` leaving the prohibited-end list. That last
 // is worth 121, where the roadmap had carried a note saying 12.
-const conformance_floor = 17972
+//
+// On 2026-10-12 it became **18,008**, worth 36, when LB24 started reading through a mark: a
+// postfix numeral holds its letter across a diacritic the way a letter holds a letter. And
+// **18,409**, worth 461 with 24 broken, from six rules that read the numeric classes through a
+// mark and `.pr`/`.po` leaving the space list they had been standing in.
+//
+// On 2026-10-13 **18,447**, worth 38, when `.cp` left `is_prohibited_end` and became the pair rule
+// it should have been. The class list answered by character and the committee answers by pair:
+// `× 0029 × 2757 ÷` is [30.02] and does not break, `× 0029 ÷ 1B05 ÷` is [31.01] and does. Taking the
+// class out measured 39 fixed against 19 broken, and the 19 are what the pair rule recovers.
+//
+// The 899 that remain are in the roadmap, and the largest bucket is four more classes in the same
+// shape — `.insp`, `.ex`, `.hy` and `.bb` — each of which is a class list standing in for a pair
+// rule. Reading `eff_left` through them was measured at 20 fixed against 94 broken, because it
+// propagated the over-refusal into the mark rules, so each needs its own pass.
+const conformance_floor = 18447
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.
