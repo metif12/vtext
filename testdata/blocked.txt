@@ -11,5 +11,7 @@
 #
 # Delete a line when the file it names reads its fonts from testdata/fonts, or when it skips itself with a
 # printed reason. Nothing else removes an entry.
-
-linebreak_test.v: wrap_font() loads C:\Windows\Fonts\segoeui.ttf, a font only Windows ships, and this file is owned by another change. Until it reads testdata/fonts or skips with a printed reason, the whole file panics on Linux and macOS and cannot run there at all.
+#
+# On 2026-10-13 this list was emptied. `linebreak_test.v` was the last entry — it loaded Segoe UI from an
+# absolute path — and its `wrap_font` now reads Amiri from the corpus with the same resolution order every
+# other test file uses and a printed skip when the host has neither. Nothing is blocked on any platform.

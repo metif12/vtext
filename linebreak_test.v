@@ -1,5 +1,7 @@
 module vtext
 
+import os
+
 // Line breaking, per UAX #14.
 //
 // The tests check the rules against text where the answer is not a matter of
@@ -496,9 +498,25 @@ fn test_a_quoted_run_with_spaces_inside_it_stays_whole() {
 // Wrapping is the reason break opportunities exist, so these check the whole path: the rules pick
 // the positions and the measurement decides which of them is far enough along.
 
+// A font for the wrap tests, resolved corpus-first.
+//
+// This was `C:\Windows\Fonts\segoeui.ttf` until 2026-10-13, which meant every test below ran only on
+// this machine. Amiri is committed with the corpus and carries both halves these tests need: the 58
+// Latin codepoints the paragraph tests spell out, and the Arabic `سلام دنیا` the right-to-left test
+// uses. Nothing here asserts a width in pixels — every threshold is `plain.width / 2.0` or a
+// trivially wide or narrow bracket — so the font being a different one does not move a limit.
+//
+// The same resolution order the rest of the suite uses, and the same `VTEXT_TEST_FONTS` override. A
+// host with neither the corpus nor a platform font directory prints a skip rather than panicking,
+// because a file that panics is a file that proves nothing on three quarters of the machines this
+// is supposed to run on.
 fn wrap_font() &FontSet {
 	fs := new_font_set()
-	fs.add(load_font_file('C:\\Windows\\Fonts\\segoeui.ttf') or { panic(err) })
+	p := corpus_font_path('Amiri-Regular.ttf') or {
+		skip_missing('Amiri-Regular.ttf')
+		exit(0)
+	}
+	fs.add(load_font_file(p) or { panic(err) })
 	return fs
 }
 
@@ -956,4 +974,56 @@ fn test_line_break_a_mark_on_a_space_or_a_hard_break_is_unresolved() {
 	for cp in [0x0020, 0x200B, 0x000A, 0x000B, 0x000D, 0x0085] {
 		assert starts_of(ctx, word(cp, 0x0308, 0xFE6A)) == [1, 2, 3], 'a mark on a space or a hard break is unresolved, cp ${cp:04x}'
 	}
+}
+
+// ---------------------------------------------------------------- corpus fonts
+
+// The same resolution every other test file in this module carries, because  test <file> compiles
+// one file and not its siblings: a helper in a neighbour satisfies  test . and fails every
+// single-file run tools/run_tests.v makes.
+
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+fn corpus_font_bytes(name string) ?[]u8 {
+	p := corpus_font_path(name) or { return none }
+	return os.read_bytes(p) or { panic('${p} is not readable: ${err}') }
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing prints why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and tools/run_tests.v counts
+// them file by file.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
 }
