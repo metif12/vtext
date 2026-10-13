@@ -1027,3 +1027,35 @@ fn skip_missing(name string) {
 	}
 	println(line)
 }
+
+// A close punctuation holds a letter and parts from a Brahmic letter, which is the same character
+// answering two ways and the reason `.cp` left the prohibited-end list.
+//
+// `× 0029 × 2757 ÷` is [30.02], a break that must not happen, and `× 0029 ÷ 1B05 ÷` is [31.01], one
+// that must. The class list this replaced refused both, which was worth 19 of the 39 cases the rule
+// gains: the Balinese and Brahmic letters, the jamo, the ideographs, the emoji and the regional
+// indicators it was gluing to the bracket.
+fn test_line_break_holds_a_letter_after_a_close_punctuation_but_not_an_aksara() {
+	ctx := new_context()
+	// 0029 CP, 2757 AI->AL: held.
+	cps := [rune(0x0029), rune(0x2757)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [2], 'a close bracket holds a letter, got ${starts}'
+	// 0029 CP, 1B05 AK: a break, which is what the list was refusing.
+	cps2 := [rune(0x0029), rune(0x1B05)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert 1 in starts2, 'and parts from a Brahmic letter, got ${starts2}'
+	// 0029 CP, 0030 NU: a digit is held the same way a letter is.
+	cps3 := [rune(0x0029), rune(0x0030)]
+	mut starts3 := []int{}
+	for o in break_opportunities(ctx, cps3, true) {
+		starts3 << o.start
+	}
+	assert starts3 == [2], 'and a digit, got ${starts3}'
+}

@@ -431,6 +431,27 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if (left == .al || left == .hl || left == .nu) && right == .op {
 		return BreakKind.no
 	}
+	// A close punctuation holds a letter, a Hebrew letter or a digit, and nothing else.
+	//
+	// `.cp` was in `is_prohibited_end`, which is the wrong shape for it: the class list said "a line
+	// may not end on a close punctuation" and the committee answers that two ways. `× 0029 ÷ 1B05 ÷`
+	// breaks at [31.01] and `× 0029 × 2757 ÷` does not at [30.02] — the same close parenthesis, and
+	// the answer turns on what follows rather than on what it is.
+	//
+	// Taking it out of the list measured **39 fixed against 19 broken**. The 19 are what a pair rule
+	// recovers and a removal does not: they were all `close-parenthesis × letter`, tagged [30.02],
+	// where the list had been answering by accident. The classes it holds across are the ones
+	// `effective_class` has already resolved, so three names cover them; AI, XX and SA are folded
+	// into AL upstream and need no arm of their own.
+	//
+	// One case is still open and it is recorded rather than hidden: `(4·)$` is [25.04] on the
+	// parenthesis, so a prefix numeral is held too. Adding `.pr` and `.po` here measured **worse**,
+	// 35 fixed against 39 — the same currency symbol is a break at four other positions in the file
+	// where it follows no bracket, so the pair rule cannot be widened without losing more than it
+	// gains. That one wants LB25's numeric matrix, which this engine reads as pairs.
+	if left == .cp && (right == .al || right == .hl || right == .nu) {
+		return BreakKind.no
+	}
 	// LB23a and LB23b: two of the same class that must not be split, which is
 	// Hangul syllables and a numeric run's own continuation. They come before
 	// LB28 so that a run of numbers stays whole when the class says so.
@@ -737,7 +758,7 @@ fn is_prohibited_start_after_space(c LineBreakClass) bool {
 // is_prohibited_end reports whether a line may not end with this class, which
 // is rules LB15 through LB19 and LB21.
 fn is_prohibited_end(c LineBreakClass) bool {
-	return c == .op || c == .qu || c == .cp || c == .insp || c == .ex || c == .hy
+	return c == .op || c == .qu || c == .insp || c == .ex || c == .hy
 		|| c == .bb
 }
 
