@@ -800,7 +800,7 @@ fn test_line_break_holds_a_numeral_and_its_letter_across_a_mark() {
 // the class list was standing in for.
 //
 // `× 2757 × 0024 ÷` is [24.03] and `× 0024 ÷ 0024 ÷` is [31.01], so a numeral holds to a letter
-// and two numerals do not hold to each other. The direction matters because `.pr` and `.po` sit in
+// and two numerals do not hold to each other. The direction matters because `.pr` and `.po` sat in
 // `is_prohibited_start_after_space`: a space in front of one is still a break the file asks for,
 // `× 0020 ÷ 0024 ÷` is [18.0], which is why they are not in `is_prohibited_start` — moving them
 // there measured 16 fixed against 537 newly broken.
@@ -820,4 +820,140 @@ fn test_line_break_holds_a_letter_to_a_numeral_but_not_a_space() {
 		starts2 << o.start
 	}
 	assert 1 in starts2, 'and a space breaks in front of one, got ${starts2}'
+}
+
+// The numeric matrix is nine classes wide, not one, and the list named all forty-odd.
+//
+// `.pr` and `.po` sat in `is_prohibited_start_after_space`, which refuses a break before them
+// wherever one is asked for. The committee's file asks for one in 244 places and refuses one in
+// 216, and which of the two it does depends on the left-hand class. `× 3000 ÷ 20A9 ÷` is an
+// ideographic space and a won sign, tagged [31.01] — the default break — because a break-after
+// character breaks before a prefix numeral just like anything else.
+//
+// Measured 2026-10-13: removing the two entries is worth 220 on its own, and the 216 they were
+// refusing on the engine's behalf are LB24.03, LB25.05, LB25.06, LB23.13 and LB27.01, which is
+// the whole of why this reads as a mistake in a class list rather than a missing rule.
+// Together the change is 1,338 to **937** failures: 425 fixed, 24 newly broken.
+//
+// Every shape below is one the file names, and each is checked in both directions so a later edit
+// that widens the refusal back out cannot hide behind one passing case.
+fn test_line_break_breaks_before_a_prefix_numeral_the_file_asks_to() {
+	ctx := new_context()
+	// A break-after character, a close bracket and a non-starter all break before both classes.
+	// U+3000 BA, U+232A CL, U+3005 NS.
+	for cp in [0x3000, 0x232A, 0x3005] {
+		assert starts_of(ctx, word(cp, 0x0024)) == [1, 2], 'a break before a prefix numeral, cp ${cp:04x}'
+		assert starts_of(ctx, word(cp, 0x20A9)) == [1, 2], 'and before a won sign, cp ${cp:04x}'
+		assert starts_of(ctx, word(cp, 0x0025)) == [1, 2], 'and before a number sign, cp ${cp:04x}'
+	}
+	// Two prefixes in a row, which the file answers [31.01]: the first is not held by the second.
+	assert starts_of(ctx, word(0x20A9, 0x0024)) == [1, 2], 'and a prefix numeral parts from another one'
+}
+
+// ...and the classes the leftover list still holds too tightly, which are the same shape of
+// mistake one line up and are recorded rather than fixed here.
+//
+// `× 002D ÷ 0024 ÷` is [31.01] — a hyphen and a dollar sign, and the file asks for a break — and
+// `× 002D × 0308 × 2757 ÷` is [20.1], another one. Both are refused by `.hy` sitting in
+// `is_prohibited_end`, which refuses a break after *every* hyphen where the file answers it nine
+// ways. Removing it is the same question as the one above and is not done in the same change:
+// LB21 is what makes "well-known" break after its hyphen, and `is_prohibited_end` also carries
+// `.cp`, `.ex` and `.insp`, which the mark-reading experiment showed have the same shape of hole.
+fn test_line_break_records_the_hyphen_and_close_punctuation_over_refusal() {
+	ctx := new_context()
+	// The engine refuses; the file asks for a break at both of these.
+	assert starts_of(ctx, word(0x002D, 0x0024)) == [2], 'a hyphen is still held by is_prohibited_end'
+	assert starts_of(ctx, word(0x002D, 0x0308, 0x2757)) == [2, 3], 'and it also refuses the break after the mark the file asks for'
+}
+
+// ...and the other half of the matrix, which the list was getting right by accident.
+//
+// `× 2757 × 20A9 ÷` is [24.03] and `× 0030 ÷ 20A9 ÷` is [25.06]: a letter, a Hebrew letter or a
+// digit refuses a break before either class, so the pair is three classes on the left rather than
+// every one of them. It reads through a mark the way LB24.02 does, and a mark at the head of the
+// text is the base in its turn — `pair_left` is `.cm` exactly when the mark run reaches the start,
+// and the file tags CM × PR [24.03] as well.
+fn test_line_break_holds_a_letter_a_hebrew_letter_or_a_digit_to_a_numeral() {
+	ctx := new_context()
+	// 2757 AI -> AL, 05D0 HL, 0030 NU, against both a prefix and a postfix.
+	for cp in [0x2757, 0x05D0, 0x0030] {
+		assert starts_of(ctx, word(cp, 0x20A9)) == [2], 'held to a prefix numeral, cp ${cp:04x}'
+		assert starts_of(ctx, word(cp, 0xFE6A)) == [2], 'and to a postfix, cp ${cp:04x}'
+	}
+	// Through a mark, where the committee writes the same tags for the same pair.
+	assert starts_of(ctx, word(0x2757, 0x0308, 0x20A9)) == [3], 'a letter holds across a diacritic'
+	assert starts_of(ctx, word(0x05D0, 0x0308, 0xFE6A)) == [3], 'and a Hebrew letter holds to a postfix'
+	// A leading mark is its own base, so the refusal still answers.
+	assert starts_of(ctx, word(0x0308, 0x20A9)) == [2], 'a mark at the head of the text is the base'
+}
+
+// LB23.13 and LB27.01: an emoji, an ideograph or a Hangul syllable holds to a *postfix* numeral
+// and not to a prefix one, and the asymmetry is the file's rather than a reading of it.
+//
+// `× 263A × 20A9 ÷` is tagged [23.13] and `× 263A ÷ 20A9 ÷` is tagged [31.01], the default break,
+// so `EB × PO` and `EB × PR` are two different answers from one pair of classes. A single rule for
+// both would have to be positioned by the right-hand character rather than by the rule, which is
+// why these are two rules and not one list. Both read through a mark: `× 270A × 0308 × FE6A ÷` is
+// tagged [23.13] and `× AC00 × 0308 × FE6A ÷` is tagged [27.01].
+fn test_line_break_holds_an_emoji_an_ideograph_or_a_syllable_to_a_postfix_only() {
+	ctx := new_context()
+	// U+270A EB, U+231A ID, U+AC00 H2: held to a postfix.
+	for cp in [0x270A, 0x231A, 0xAC00] {
+		assert starts_of(ctx, word(cp, 0xFE6A)) == [2], 'held to a postfix numeral, cp ${cp:04x}'
+	}
+	// U+1100 JL and U+11A8 JT are jamo, and the same rule answers for them.
+	assert starts_of(ctx, word(0x1100, 0xFE6A)) == [2], 'a leading jamo is held to a postfix too'
+	// ...and every one of them parts from a prefix numeral, which is the other half of the pair.
+	for cp in [0x270A, 0x231A, 0xAC00, 0x1100] {
+		assert starts_of(ctx, word(cp, 0x20A9)) == [1, 2], 'but parts from a prefix, cp ${cp:04x}'
+	}
+	// Through a mark, where the raw left-hand class is the combining mark and the base is the emoji.
+	assert starts_of(ctx, word(0x270A, 0x0308, 0xFE6A)) == [3], 'an emoji holds across a diacritic'
+	assert starts_of(ctx, word(0xAC00, 0x0308, 0xFE6A)) == [3], 'and a syllable does too'
+	assert starts_of(ctx, word(0x270A, 0x0308, 0x20A9)) == [2, 3], 'and still parts from a prefix'
+}
+
+// A word joiner with a mark on it still holds, and so does an open punctuation or a quotation mark.
+//
+// This is the half of the mark reading that survives the rest of it. Measured over every
+// `base × CM × right` position in ucd/LineBreakTest.txt against the bare `base × right` pair, the
+// two agree in 1,684 positions and disagree in 130; the bases that agree *and* refuse a break after
+// every character are BB, GL, WJ, OP and QU. Reading the whole `is_prohibited_end` list through the
+// mark instead fixed 20 cases and broke 94, because `.cp`, `.ex`, `.hy` and `.insp` refuse only some
+// of them and the propagation carried that over-refusal into the mark side.
+//
+// It sits below LB20 rather than beside `is_prohibited_end`, and one case puts it there:
+// `× 00B4 × 0308 ÷ FFFC ÷` is tagged [20.01], so an object replacement character still breaks
+// through a mark hanging on an acute accent.
+fn test_line_break_holds_a_mark_to_an_open_punctuation_or_a_word_joiner() {
+	ctx := new_context()
+	// U+0028 OP, U+FEFF WJ, U+00AB QU, U+00B4 BB, each with a mark and a postfix after it.
+	assert starts_of(ctx, word(0x0028, 0x0308, 0xFE6A)) == [3], 'an open punctuation holds across a mark'
+	assert starts_of(ctx, word(0xFEFF, 0x0308, 0xFE6A)) == [3], 'a word joiner holds across a mark'
+	assert starts_of(ctx, word(0x00AB, 0x0308, 0xFE6A)) == [3], 'a quotation mark holds across a mark'
+	assert starts_of(ctx, word(0x00B4, 0x0308, 0xFE6A)) == [3], 'and a break-before accent does too'
+	// The contingency break character still wins, which is what fixes this rule's position.
+	assert starts_of(ctx, word(0x00B4, 0x0308, 0xFFFC)) == [2, 3], 'but an object replacement character still breaks'
+	// A class the mark does NOT answer for, so the refusal stays where it belongs: a comma in front
+	// of a mark breaks the way the bare pair does.
+	assert starts_of(ctx, word(0x002C, 0x0308, 0x2757)) == [2, 3], 'a comma does not inherit the mark'
+}
+
+// The six classes where the mark contradicts the pair it stands on, which is the file disagreeing
+// with itself rather than a gap in the engine.
+//
+// `× 0020 ÷ 0308 × FE6A ÷` is a space, a mark and a postfix numeral, and the file refuses the second
+// break — where the bare `× 0020 × FE6A ÷` is [18.0] and asks for one. The same holds for a zero
+// width space and for the four hard breaks, which is 24 of the 24 cases this change still fails.
+// UAX #14 has no rule for a mark standing on a space or a newline, and the file has both answers,
+// so these are recorded rather than coded around: a rule refusing them would have to be keyed on
+// six classes that break after every other one.
+fn test_line_break_a_mark_on_a_space_or_a_hard_break_is_unresolved() {
+	ctx := new_context()
+	// The engine grants the break the file refuses, and these are the shapes. The file answers
+	// `[1, 3]` at each of them; the engine answers `[1, 2, 3]`, so the disagreement is the one
+	// position between the mark and the numeral.
+	for cp in [0x0020, 0x200B, 0x000A, 0x000B, 0x000D, 0x0085] {
+		assert starts_of(ctx, word(cp, 0x0308, 0xFE6A)) == [1, 2, 3], 'a mark on a space or a hard break is unresolved, cp ${cp:04x}'
+	}
 }

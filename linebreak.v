@@ -210,16 +210,6 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if left == .zw {
 		return BreakKind.allowed
 	}
-	// LB11: a word joiner forbids a break on either side of it, and LB12 forbids one before it.
-	// The two are the same effect and one rule says it: a line may not end on a word joiner and
-	// may not begin with one, because either would separate the two characters the writer asked to
-	// be inseparable.
-	//
-	// This is what a caller reaches for when a word must not be split. A zero width non-joiner is
-	// not the same thing: it is a combining mark, so it glues only to what comes before it.
-	if left == .wj || right == .wj {
-		return BreakKind.no
-	}
 	// The rules below ask what the left-hand character *is* — what it glues, what it may not end a
 	// line on — and a mark standing on a character answers for that character. LB15a and LB15b read
 	// this way, and the committee's test is where it is visible: `× GL × 0308 × FFFC ÷` refuses a
@@ -229,7 +219,11 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// This is deliberately not the same as changing the mark's class, which this chain tried once and
 	// measured 10,912 against 13,090. That version rewrote the class for every later rule, so a base
 	// that may break away had its break suppressed by the mark in front of it. This only reaches the
-	// two lookups below, where the question is the base's.
+	// lookups below, where the question is the base's.
+	//
+	// It is declared here, above LB11, because LB11 reads it too: `eff_left == .wj` below and
+	// `is_prohibited_end(eff_left)` further down both need the base and not the mark, and the
+	// declaration sits before the first of them.
 	mut eff_left := left
 	if is_markish(left) {
 		mut j := i
@@ -237,6 +231,20 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			j--
 		}
 		eff_left = classes[j]
+	}
+	// LB11: a word joiner forbids a break on either side of it, and LB12 forbids one before it.
+	// The two are the same effect and one rule says it: a line may not end on a word joiner and
+	// may not begin with one, because either would separate the two characters the writer asked to
+	// be inseparable.
+	//
+	// This is what a caller reaches for when a word must not be split. A zero width non-joiner is
+	// not the same thing: it is a combining mark, so it glues only to what comes before it.
+	//
+	// The left half is `eff_left` and not `left`, which the committee's file asks for: `× FEFF × 0308
+	// × FE6A ÷` is [11.02] at the postfix numeral, so a word joiner with a mark on it still holds.
+	// Reading the raw character there lost 4 cases when the numeric matrix was corrected.
+	if eff_left == .wj || right == .wj {
+		return BreakKind.no
 	}
 	// LB12: glue is not a break either. It is a letter's way of saying that what is on either side
 	// of it belongs together, which is what a zero width space inside a word means and what a
@@ -266,6 +274,13 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 		// LB14 through LB17: the left-hand character may not end a line, including the forms that
 		// read across a run of spaces. This comes before LB18, which is what makes `× SP × X ÷`
 		// answer those rules rather than the space's own break.
+		//
+		// This is `left` and not `eff_left`, and that is measured rather than careless. Reading the
+		// base here fixed 20 cases — the mark positions tagged [14.0], [19.x] and [21.05] above a
+		// postfix numeral — and broke 94, because the list carries `.cp`, `.ex`, `.hy` and `.insp`,
+		// which refuse only *some* breaks after them: `× 0029 × 2757 ÷` is [30.02] and `× 0029 ÷ 1B05
+		// ÷` is [31.01]. Propagating that through a mark turned 94 correct breaks into refusals, so
+		// the mark cannot simply inherit the whole list.
 		return BreakKind.no
 	}
 	// LB15a and LB15b: a quotation mark and a space either side of it are one thing.
@@ -375,6 +390,28 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if right == .cb {
 		return BreakKind.allowed
 	}
+	// The half of the mark reading that survives the `is_prohibited_end` list above: a mark standing
+	// on a base that refuses a break after *any* character inherits that refusal.
+	//
+	// Measured over every `base × CM × right` position in ucd/LineBreakTest.txt against the bare
+	// `base × right` pair: they agree in 1,684 positions and disagree in 130. The bases that agree
+	// *and* are uniformly "no break" on the bare side are exactly `.op` and `.qu`, plus `.bb` with
+	// one exception. BB, GL, WJ, OP and QU are the five classes with no `brk` anywhere in their
+	// row, and two of them are already answered above (`eff_left == .gl` at LB12, `eff_left == .wj`
+	// at LB11). BB is the one with a hole in it and `.cp`, `.ex`, `.hy` and `.insp` have more:
+	// `× 0029 ÷` is [30.02] for a letter and [31.01] for an aksara, which is why they are not here.
+	//
+	// It sits below LB20 and not beside `is_prohibited_end`, and that is one case: `× 00B4 × 0308
+	// ÷ FFFC ÷` is tagged [20.01] at the contingency break character, so an object replacement
+	// character still breaks through a mark hanging on an acute accent. Above LB20 that case lost
+	// the break the file asks for.
+	//
+	// The 130 that disagree are all six of SP, ZW, BK, CR, LF and NL on the left of a mark, where
+	// the file refuses a break the bare pair asks for. That is the file disagreeing with itself and
+	// it is recorded on `is_prohibited_start_after_space` rather than coded around.
+	if left == .cm && (eff_left == .op || eff_left == .qu || eff_left == .bb) {
+		return BreakKind.no
+	}
 	// LB17, LB19, LB21, LB22 and the numeric matrix's own prohibitions, which all sit below LB18
 	// in the specification's order: a line may not begin with one of these unless a space is in
 	// front of it.
@@ -433,6 +470,17 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 		|| right == .h3) {
 		return BreakKind.no
 	}
+	// LB27.01: the syllable holds to a *postfix* numeral in the other direction, and not to a prefix
+	// one. `× AC00 × 20A9 ÷` is tagged [27.01] and `× AC00 ÷ 20A9 ÷` is tagged [31.01], the default
+	// break, which is the same asymmetry LB23.13 has and the reason the two are written as two rules
+	// rather than one list.
+	//
+	// `pair_left` for the same reason: `× AC00 × 0308 × FE6A ÷` is tagged [27.01] and the raw
+	// left-hand class there is the mark.
+	if (pair_left == .h2 || pair_left == .h3 || pair_left == .jl || pair_left == .jv
+		|| pair_left == .jt) && right == .po {
+		return BreakKind.no
+	}
 	if pair_left == .nu && right == .nu {
 		return BreakKind.no
 	}
@@ -447,20 +495,56 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// 2026-10-12: **36 cases gained, none broken**, and the control confirms it — with `left` here
 	// the score returns to exactly the baseline, so the mark is the whole of the gain.
 	//
-	// The rule's other direction, `AL × PR`, is NOT written here and that is measured rather than
-	// awkward. `× 2757 × 20A9 ÷` is the shape and it is already answered: `.pr` and `.po` sit in
-	// `is_prohibited_start_after_space`, which refuses a break before them wherever one is asked
-	// for. A second rule for it added nothing — the score was identical with and without — and
-	// moving the two classes instead measured **16 fixed against 537 newly broken**, because a
-	// space in front of a prefix numeral is a break the file asks for: `× 0020 ÷ 0024 ÷` is [18.0].
-	// The list is doing that job, and a redundant rule beside it would only make the two disagree.
+	// The rule's other direction, `AL × PR`, was written as a second rule here first and measured
+	// identical to what the list already gave, which is why it was not; the comment that claimed the
+	// list was answering it was only half the story. The list was answering it for *every* left-hand
+	// class, and that is the trap: `.pr` and `.po` in `is_prohibited_start_after_space` refuse a break
+	// before a prefix or postfix numeral wherever one is asked for, and the file asks for one in 244
+	// places — `× 3000 ÷ 20A9 ÷` is an ideographic space and a won sign, tagged [31.01], a break —
+	// while refusing it in 216 others. Removing the two classes alone measured **244 fixed against 216
+	// newly broken**, and the 216 are the three rules below, which is the whole of why this reads as a
+	// mistake in a class list rather than as a missing rule.
 	if (pair_left == .pr || pair_left == .po) && (right == .al || right == .hl) {
 		return BreakKind.no
-	} // LB23: a numeric prefix does not part from the ideograph or the emoji after it.
+	}
+	// LB24.03 and LB25.05, LB25.06: a letter, a Hebrew letter or a digit refuses to break before a
+	// prefix or postfix numeral either, which is the other half of the numeric matrix and the half the
+	// class list was answering for every class at once.
+	//
+	// `× 2757 × 20A9 ÷` is the committee's own shape, tagged [24.03], and `× 0030 ÷ 20A9 ÷` is
+	// tagged [25.06]. A break *after* a prefix or postfix is allowed, and the file says so at [31.01]:
+	// `× 20A9 ÷ 2757 ÷`, `× 0024 ÷ 231A ÷`, `÷ 20A9 ÷ 0024 ÷` all break. So the two classes are not
+	// prohibited starts in general, and the list held them for 30 classes the file never asks about.
+	//
+	// It reads through a mark for the same reason LB24.02 does and with the same reach: `× 2757 × 0308
+	// × 20A9 ÷` holds, tagged [24.03], and so does a mark with nothing in front of it — `pair_left` is
+	// `.cm` exactly when the mark run reaches the start of the text, and the file tags CM × PR
+	// [24.03] as well.
+	//
+	// `.cm` in the left list is a mark at the head of the text, not a mark on a base: for any other
+	// position `eff_left` has already walked back to the base above.
+	if (pair_left == .al || pair_left == .hl || pair_left == .nu || pair_left == .cm)
+		&& (right == .pr || right == .po) {
+		return BreakKind.no
+	}
+	// LB23: a numeric prefix does not part from the ideograph or the emoji after it.
 	//
 	// `× 0024 × 231A ÷` and `× 20A9 × 270A ÷` are the committee's own shapes and the answer is
 	// [23.12] on both.
 	if left == .pr && (right == .idas || right == .eb || right == .em) {
+		return BreakKind.no
+	}
+	// LB23.13: the emoji base, the emoji modifier and the ideograph hold to a *postfix* numeral,
+	// and not to a prefix one. The asymmetry is the file's and not a reading of it: `× 263A × 20A9 ÷`
+	// is tagged [23.13] and `× 263A ÷ 20A9 ÷` is tagged [31.01], the default break. So the pair is
+	// `EB × PO` and `EB × PR` is two different answers, and a single list for the two classes would
+	// have to be positioned by the right-hand character rather than by the rule.
+	//
+	// It reads through a mark the way LB24 does, and the file says so itself: `× 270A × 0308 × FE6A ÷`
+	// is tagged [23.13] at the postfix, where the raw left-hand class is CM and the base is EB.
+	// Reading the raw character there left 22 of the 70 cases the numeric-matrix correction broke,
+	// which is the whole of the difference.
+	if (pair_left == .eb || pair_left == .em || pair_left == .idas) && right == .po {
 		return BreakKind.no
 	}
 	if left == .ri && right == .ri {
@@ -625,14 +709,29 @@ fn is_prohibited_start(c LineBreakClass) bool {
 
 // is_prohibited_start_after_space reports whether a line may not begin with this class once a
 // space is allowed to break in front of it, which is LB17 for a break-before-and-after, LB19 for
-// a quotation mark, LB21 for a break-before, a hyphen or a non-starter, LB22 for an inseparable
-// numeral infix, and the numeric matrix's prefix and postfix.
+// a quotation mark, LB21 for a break-before, a hyphen or a non-starter, and LB22 for an
+// inseparable numeral infix.
+//
+// This function also documents the two entries that were removed from it, because the removal is
+// the most instructive thing in the file. `.pr` and `.po` were here, on the reading that a numeric
+// prefix or postfix is something a line may not begin with. It is, for *nine* left-hand classes —
+// AL, HL, NU and CM by LB24.03 and LB25, and OP, BB, GL, QU and WJ by rules that already answer.
+// It is not for the other thirty, and the file asks for a break before a prefix or postfix numeral
+// in 244 places: `× 3000 ÷ 20A9 ÷` is an ideographic space and a won sign, tagged [31.01].
+//
+// Removing the two entries measured **244 fixed against 216 newly broken**, and the 216 are the
+// three rules below — LB24.03 with LB25.05 and LB25.06, LB23.13 and LB27.01 — which is the
+// whole of why this reads as a mistake in a class list rather than as a missing rule. So the
+// list was answering five questions at once with one entry, which is the shape of the mistake
+// rather than the fact that it was a wrong class. A space in front of a prefix numeral is a break
+// the file asks for and LB18 still gives it: `× 2757 × 0020 ÷ 20A9 ÷` is [18.0], because the space
+// is answered before this list is ever reached.
 //
 // LB12a's glue is here too, though not in this function: it is spelled out at its own site because
 // its exclusion list is the point of it.
 fn is_prohibited_start_after_space(c LineBreakClass) bool {
 	return c == .b2 || c == .qu || c == .ba || c == .hh || c == .hy || c == .ns
-		|| c == infx || c == .pr || c == .po
+		|| c == infx
 }
 
 // is_prohibited_end reports whether a line may not end with this class, which
