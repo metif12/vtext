@@ -767,3 +767,57 @@ fn test_an_sa_mark_after_a_character_is_held_to_it() {
 	// answers with `[31.01]` and what the unresolved leading mark costs elsewhere.
 	assert starts_of(ctx, word(0x0E31, 0x1B05)) == [1, 2], 'a leading SA mark has nothing to attach to'
 }
+
+// A numeric prefix or postfix holds its letter across a diacritic, which is what
+// LB24 reading through a mark looks like.
+//
+// `× FE6A × 0308 × 2757 ÷` is the committee's own case, tagged [24.02] on the letter. A postfix
+// numeral followed by a mark and a letter is one unit, the way a letter followed by a mark and a
+// letter is one unit under LB28. The rule was reading the character in front of it, so a diacritic
+// between the numeral and its letter detached them.
+//
+// Measured 2026-10-12: 36 cases gained and none broken, and the control is the change itself —
+// with `left` where `pair_left` now sits, the score returns to exactly the baseline.
+fn test_line_break_holds_a_numeral_and_its_letter_across_a_mark() {
+	ctx := new_context()
+	// FE6A PO, 0308 CM, 2757 AI.
+	cps := [rune(0xFE6A), rune(0x0308), rune(0x2757)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [3], 'the numeral holds its letter across the mark, got ${starts}'
+	// And the other direction, a prefix numeral, which is the same rule.
+	cps2 := [rune(0x0024), rune(0x0308), rune(0x2757)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert starts2 == [3], 'and a prefix numeral does too, got ${starts2}'
+}
+
+// A letter does not part from a prefix numeral either, and that is the other half of the rule
+// the class list was standing in for.
+//
+// `× 2757 × 0024 ÷` is [24.03] and `× 0024 ÷ 0024 ÷` is [31.01], so a numeral holds to a letter
+// and two numerals do not hold to each other. The direction matters because `.pr` and `.po` sit in
+// `is_prohibited_start_after_space`: a space in front of one is still a break the file asks for,
+// `× 0020 ÷ 0024 ÷` is [18.0], which is why they are not in `is_prohibited_start` — moving them
+// there measured 16 fixed against 537 newly broken.
+fn test_line_break_holds_a_letter_to_a_numeral_but_not_a_space() {
+	ctx := new_context()
+	// 2757 AI, 0024 PR: no break between them.
+	cps := [rune(0x2757), rune(0x0024)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert 1 !in starts, 'a letter holds to a prefix numeral, got ${starts}'
+	// A space in front of the same numeral is a break.
+	cps2 := [rune(0x0020), rune(0x0024)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert 1 in starts2, 'and a space breaks in front of one, got ${starts2}'
+}

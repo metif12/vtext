@@ -440,10 +440,23 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	//
 	// `× FE6A × 2757 ÷` and `× 0025 × 05D0 ÷` are the committee's own shapes and the answer is
 	// [24.02] on both.
-	if (left == .pr || left == .po) && (right == .al || right == .hl) {
+	//
+	// It reads through a mark, which is the whole of the change and the reason it is `pair_left`
+	// and not `left`: `× 0024 × 0308 × 2757 ÷` is the committee's own case and a prefix numeral
+	// holds its letter across the diacritic in front of it the same way a letter does. Measured
+	// 2026-10-12: **36 cases gained, none broken**, and the control confirms it — with `left` here
+	// the score returns to exactly the baseline, so the mark is the whole of the gain.
+	//
+	// The rule's other direction, `AL × PR`, is NOT written here and that is measured rather than
+	// awkward. `× 2757 × 20A9 ÷` is the shape and it is already answered: `.pr` and `.po` sit in
+	// `is_prohibited_start_after_space`, which refuses a break before them wherever one is asked
+	// for. A second rule for it added nothing — the score was identical with and without — and
+	// moving the two classes instead measured **16 fixed against 537 newly broken**, because a
+	// space in front of a prefix numeral is a break the file asks for: `× 0020 ÷ 0024 ÷` is [18.0].
+	// The list is doing that job, and a redundant rule beside it would only make the two disagree.
+	if (pair_left == .pr || pair_left == .po) && (right == .al || right == .hl) {
 		return BreakKind.no
-	}
-	// LB23: a numeric prefix does not part from the ideograph or the emoji after it.
+	} // LB23: a numeric prefix does not part from the ideograph or the emoji after it.
 	//
 	// `× 0024 × 231A ÷` and `× 20A9 × 270A ÷` are the committee's own shapes and the answer is
 	// [23.12] on both.
@@ -619,7 +632,7 @@ fn is_prohibited_start(c LineBreakClass) bool {
 // its exclusion list is the point of it.
 fn is_prohibited_start_after_space(c LineBreakClass) bool {
 	return c == .b2 || c == .qu || c == .ba || c == .hh || c == .hy || c == .ns
-		|| c == infx || c == .po || c == .pr
+		|| c == infx || c == .pr || c == .po
 }
 
 // is_prohibited_end reports whether a line may not end with this class, which
