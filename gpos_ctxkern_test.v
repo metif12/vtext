@@ -6,8 +6,73 @@ module vtext
 // rather than by the specification, so the tests are about the shapes the fonts actually have.
 import os
 
-fn ctx_font(name string) &Font {
-	return load_font_file(os.join_path('C:\\Windows\\Fonts', name)) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus is first because a test that runs only because one machine ships a font is a test about that
+// machine. The platform directory is still asked second, so a Windows checkout keeps reading Andalus,
+// Majalla, Simpo and Tahoma. VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn ctx_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+// amiri is the corpus font these tests read.
+//
+// It carries the kern feature and four chaining-context positioning lookups under arab, and it reaches them
+// from a codepoint, so a rule can be asked about the text it was written for. Andalus, which the exact
+// numbers below were read out of, is a Windows font the corpus does not carry.
+fn amiri() ?&Font {
+	return ctx_font('Amiri-Regular.ttf')
 }
 
 // A record under kern usually names a single positioning, not a pair.
@@ -17,9 +82,22 @@ fn ctx_font(name string) &Font {
 // reaches, 186 name a single positioning and 12 name a pair. Andalus is the case to write the test
 // against: its rules are answered by lookups that move one glyph, and its pattern glyphs are reachable
 // from a codepoint, so the rules can actually fire.
+// A record under kern usually names a single positioning, not a pair.
+//
+// This is the first thing to be right about applying these, and it is the reason a pair-shaped reader
+// answers nothing at all. Across the Arabic fonts on this machine, of the records a kern feature
+// reaches, 186 name a single positioning and 12 name a pair. Andalus is the case to write the test
+// against: its rules are answered by lookups that move one glyph, and its pattern glyphs are reachable
+// from a codepoint, so the rules can actually fire.
+//
+// No corpus font can run this. Measured: Amiri's kern feature reaches its eleven pair lookups and Noto
+// Nastaliq's reaches its one, and neither font writes a chaining-context rule under kern at all, so the
+// run the test builds from a pattern is empty and `asked` stays at zero. The corpus has the chaining
+// rules — Amiri four of them, Nastaliq twenty-one — but not under kern. So this keeps the four Windows
+// faces it was written against and names them everywhere else.
 fn test_gpos_kern_contexts_answer_the_rules_a_font_wrote() {
 	for name in ['andlso.ttf', 'majalla.ttf', 'Simpo.ttf', 'tahoma.ttf'] {
-		f := ctx_font(name)
+		f := ctx_font(name) or { return }
 		gpos := f.face.gpos or { continue }
 		mut asked := 0
 		mut answered := 0
@@ -67,7 +145,7 @@ fn test_gpos_kern_contexts_answer_the_rules_a_font_wrote() {
 // rule. A caller asking for a kerning value and getting a placement is getting what the font asked for,
 // so the test is about the number being the one the font wrote rather than about which kind it is.
 fn test_gpos_kern_context_placement_is_the_value_the_font_wrote() {
-	f := ctx_font('andlso.ttf')
+	f := ctx_font('andlso.ttf') or { return }
 	gpos := f.face.gpos or { panic('andalus has no gpos') }
 	// Lookup 21 covers glyph 3 with an xPlacement of -120, which is what the font's bytes say.
 	mut found := ?Offset2(none)
@@ -93,7 +171,7 @@ fn test_gpos_kern_context_placement_is_the_value_the_font_wrote() {
 // about is a glyph and its context rather than two named glyphs, and a reader that insists the pattern
 // covers both throws away every rule shaped like this one.
 fn test_gpos_kern_context_reaches_a_glyph_through_its_backtrack() {
-	f := ctx_font('andlso.ttf')
+	f := ctx_font('andlso.ttf') or { return }
 	gpos := f.face.gpos or { panic('andalus has no gpos') }
 	// The run without the glyph that gives the rule its condition: the input glyph alone.
 	mut bare := []u16{}
@@ -120,8 +198,11 @@ fn test_gpos_kern_context_reaches_a_glyph_through_its_backtrack() {
 }
 
 // A pair the font says nothing about is not placed, whatever else the font does.
+//
+// Nothing here depends on which font answers — an empty run and an out-of-range pair are questions about
+// the reader rather than about the file — so the corpus font is asked, and it answers them everywhere.
 fn test_gpos_kern_context_does_not_fire_on_text_it_does_not_match() {
-	f := ctx_font('andlso.ttf')
+	f := amiri() or { return }
 	// A run of two glyphs no rule names, and an empty run.
 	mut gids := []u16{}
 	gids << u16(3)
@@ -138,8 +219,8 @@ fn test_gpos_kern_context_does_not_fire_on_text_it_does_not_match() {
 // the pattern. A position past the end of the pattern is the signature of a parse that read one field
 // too many, and it is silent: the rule still matches and still asks for a move.
 fn test_gpos_kern_context_records_are_inside_their_pattern() {
-	for name in ['andlso.ttf', 'majalla.ttf', 'Simpo.ttf', 'tahoma.ttf'] {
-		f := ctx_font(name)
+	for name in ['Amiri-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf'] {
+		f := ctx_font(name) or { return }
 		gpos := f.face.gpos or { continue }
 		for li in gpos.kerning_for('arab') {
 			if int(li) >= gpos.lookups.len {

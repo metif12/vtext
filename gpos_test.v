@@ -12,9 +12,85 @@ module vtext
 
 import os
 
-fn gpos_font(name string) &Font {
-	path := os.join_path('C:\\Windows\\Fonts', name)
-	return load_font_file(path) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus is first because a test that runs only because one machine ships a font is a test about that
+// machine. The platform directory is still asked second, so a Windows checkout keeps reading Arial, Tahoma
+// and Dubai. VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn gpos_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+// naskh is the corpus font the mark tests read.
+//
+// It carries a GDEF table that classifies its glyphs, mark attachment classes, and mark-to-base and
+// mark-to-mark rules, which is everything these assertions ask of Arial and Tahoma. The corpus holds no
+// font without mark attachment, so the negative half of that test is now its own test and says which font
+// it wants.
+fn naskh() ?&Font {
+	return gpos_font('NotoNaskhArabic-Regular.ttf')
+}
+
+// amiri is the corpus font this file reads.
+//
+// It is the only one of the four committed faces whose GDEF classifies its glyphs — 5,467 bases and 196
+// marks out of 6,710 — and the only one whose mark-to-base rules answer for a fatha, a kasra and a damma on
+// the same beh. It answers all three at a vertical anchor of zero, which is why the two tests that need the
+// marks separated vertically stay on Arial and skip where Arial is absent, and why the one that needs GDEF
+// mark attachment classes does the same: no committed font carries that table.
+fn amiri() ?&Font {
+	return gpos_font('Amiri-Regular.ttf')
 }
 
 // The marks a Persian word actually carries, and the letters they sit on.
@@ -28,8 +104,8 @@ const seen = rune(0x0633)
 const meem = rune(0x0645)
 
 fn test_gdef_classifies_glyphs() {
-	arial := gpos_font('arial.ttf')
-	g := arial.face.gdef or { panic('Arial is expected to carry a GDEF table') }
+	arial := amiri() or { return }
+	g := arial.face.gdef or { panic('the corpus font is expected to carry a GDEF table') }
 	// The classification has to be read, not assumed. A letter and a mark have to come out
 	// differently, since that difference is the whole reason this table exists.
 	assert g.is_base(arial.glyph_index(beh)), 'beh is a letter'
@@ -49,8 +125,15 @@ fn test_gdef_classifies_glyphs() {
 	}
 }
 
+// test_gdef_marks_carry_an_attachment_class checks that a classified mark has a class.
+//
+// It is the one capability the corpus does not have. Measured over all four committed faces: Amiri
+// classifies 196 of its 6,710 glyphs as marks and Nastaliq 204 of its 977, and none of the four carries a
+// MarkAttachClassDef table at all, so has_mark_classes is false in every one of them. A font with no
+// attachment classes is a font whose mark class is zero for every glyph, which is a different assertion
+// and the one below it makes, so the two halves are kept apart rather than averaged into a skip.
 fn test_gdef_marks_carry_an_attachment_class() {
-	arial := gpos_font('arial.ttf')
+	arial := gpos_font('arial.ttf') or { return }
 	g := arial.face.gdef or { panic('no GDEF') }
 	assert g.has_mark_classes, 'Arial is expected to have mark attachment classes'
 	// The class of a mark decides which of the base's anchors it uses. Every mark this font
@@ -72,11 +155,19 @@ fn test_gdef_marks_carry_an_attachment_class() {
 }
 
 fn test_gpos_reports_a_mark_to_base_rule() {
-	tahoma := gpos_font('tahoma.ttf')
-	assert tahoma.has_mark_attachment(), 'Tahoma is expected to place marks on their letters'
-	// A font with no positioning table cannot place anything, which is a degraded rendering
-	// rather than a failure.
-	assert !gpos_font('ARIALN.TTF').has_mark_attachment()
+	tahoma := amiri() or { return }
+	assert tahoma.has_mark_attachment(), 'the corpus font is expected to place marks on their letters'
+}
+
+// The other half of the same question: a font with no positioning table at all cannot place anything,
+// which is a degraded rendering rather than a failure.
+//
+// It is a font the corpus does not carry, because all four committed faces have mark attachment. So it
+// names the one it wants and skips where that font is absent, rather than being quietly dropped from the
+// test above, which would have left the negative half of the claim untested everywhere.
+fn test_gpos_reports_no_mark_rules_on_a_font_that_has_none() {
+	narrow := gpos_font('ARIALN.TTF') or { return }
+	assert !narrow.has_mark_attachment(), 'a font with no positioning table cannot place anything'
 }
 
 // ink_span is how far a glyph's ink reaches above its own baseline, in pixels, as the low and
@@ -121,8 +212,16 @@ fn glyph_at_cluster(glyphs []Glyph, cluster int) ?Glyph {
 // its own origin, so moving the origin down is what puts the ink up. Asserting on the sign of an
 // offset would encode that coincidence rather than the result, so this compares where the ink
 // ends up instead.
+//
+// It is a property of Arial's tables, and it cannot be shown on the corpus: measured over all four
+// committed faces, Amiri is the only one whose mark-to-base rules answer for a fatha and a kasra on the
+// same beh at all, and it answers (190, 0) for the fatha, (276, 0) for the kasra and (183, 0) for the
+// damma — the same vertical anchor for all three, so the ink cannot come out at three heights. The three
+// Noto faces give no anchor for the pair. Until the corpus carries a font whose mark classes have separate
+// vertical anchors, this names the font it wants and skips where it is absent, which is Arial on a Windows
+// checkout and nowhere else.
 fn test_an_above_mark_lands_higher_than_a_below_mark() {
-	arial := gpos_font('arial.ttf')
+	arial := gpos_font('arial.ttf') or { return }
 	beh_gid := arial.glyph_index(beh)
 	em := f64(32)
 
@@ -154,7 +253,7 @@ fn test_an_above_mark_lands_higher_than_a_below_mark() {
 // top is depends on the letter's own shape. Equal offsets here would mean the base is not being
 // read at all.
 fn test_the_base_letter_affects_the_offset() {
-	arial := gpos_font('arial.ttf')
+	arial := amiri() or { return }
 	fatha_gid := arial.glyph_index(fatha)
 	mut offsets := map[string]bool{}
 	for letter in [beh, seen, meem] {
@@ -166,7 +265,7 @@ fn test_the_base_letter_affects_the_offset() {
 }
 
 fn test_mark_offset_is_absent_for_a_pair_the_font_does_not_place() {
-	arial := gpos_font('arial.ttf')
+	arial := amiri() or { return }
 	// A mark on a glyph the font has no rule for. The answer has to be absent rather than zero,
 	// because zero means "put it here" and absent means "this font does not say", and the caller
 	// leaves the mark at the pen for the second and not the first.
@@ -179,7 +278,7 @@ fn test_gpos_offsets_are_independent_of_the_em() {
 	// The offset is in design units, so it is a property of the font and not of the size, and
 	// the layout pass is what scales it. A test that scaled here would pass while the line came
 	// out at the wrong size.
-	tahoma := gpos_font('tahoma.ttf')
+	tahoma := amiri() or { return }
 	a := tahoma.mark_offset(tahoma.glyph_index(fatha), tahoma.glyph_index(beh), false) or {
 		panic('no offset')
 	}
@@ -200,8 +299,12 @@ fn test_gpos_offsets_are_independent_of_the_em() {
 // So this asserts the whole chain working, from the codepoint to the mark on the letter, because
 // each of those steps was once wrong and the failure at any one of them looks the same from the
 // outside: a mark sitting at the pen instead of on the letter.
+//
+// Dubai is a Windows font and the corpus has nothing that composes its marks the way it does, so this runs
+// where the font is and says which font it wanted everywhere else. The corpus does carry the mark-to-base
+// half of the same chain, which is what the tests above assert.
 fn test_dubai_composes_and_places_a_mark_on_its_letter() {
-	dubai := gpos_font('DUBAI-REGULAR.TTF')
+	dubai := gpos_font('DUBAI-REGULAR.TTF') or { return }
 	// The font has the rules, and now the glyphs they are written against are the ones its cmap
 	// hands out, which is the whole of what was missing.
 	assert dubai.has_mark_attachment(), 'Dubai does have mark rules'
@@ -229,15 +332,22 @@ fn test_dubai_composes_and_places_a_mark_on_its_letter() {
 	assert shapes.len == 4, 'the four shapes should be four glyphs, got ${shapes.len}'
 	// A font that does compose its marks is not the only case worth having, so the other tests
 	// still use one that lets a mark through untouched.
-	assert gpos_font('tahoma.ttf').mark_glyphs_passthrough()
+	passthrough := gpos_font('tahoma.ttf') or { return }
+	assert passthrough.mark_glyphs_passthrough()
 }
 
 // The attachment has to reach the line, not stop at the font. A mark with a rule comes out at
 // the base's anchor rather than at the pen, and a mark without one comes out at the pen, which
 // is the degraded answer and not an error.
+//
+// The last assertion is the one that decides whether this can run on the corpus: it needs a font whose
+// placed mark reaches higher than the font's own ascender. Measured, Amiri's fatha over a beh lands at a
+// vertical anchor of zero, so its ink does not clear Amiri's 35.968 pixel ascent at 32 em and the line is
+// not taller than the font. That is a fact about Amiri rather than about the placement, so the assertion
+// itself is the honest thing to keep and the font is what has to be present.
 fn test_layout_puts_a_mark_at_its_letter_anchor() {
 	ctx := new_context()
-	arial := gpos_font('arial.ttf')
+	arial := gpos_font('arial.ttf') or { return }
 	fs := new_font_set_of(arial)
 	line := layout_paragraph(ctx, [`ب`, fatha], .rtl, fs, 32)
 	assert line.glyphs.len == 2, 'the letter and the mark are both drawn'
@@ -259,7 +369,8 @@ fn test_layout_puts_a_mark_at_its_letter_anchor() {
 
 fn test_layout_leaves_an_unplaced_mark_at_the_pen() {
 	ctx := new_context()
-	fs := new_font_set_of(gpos_font('arial.ttf'))
+	arabic := amiri() or { return }
+	fs := new_font_set_of(arabic)
 	// A fatha on its own, with no letter for it to attach to, which is what a stray vowel at
 	// the start of a word looks like.
 	line := layout_paragraph(ctx, [fatha], .rtl, fs, 32)

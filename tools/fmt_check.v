@@ -52,10 +52,7 @@ fn main() {
 	for a in os.args[1..] {
 		filter = a
 	}
-	mut vexe := os.getenv('VEXE')
-	if vexe == '' {
-		vexe = 'C:\\Users\\MR\\v\\v.exe'
-	}
+	mut vexe := compiler()
 
 	mut all := collect(filter)
 	if all.len == 0 {
@@ -108,6 +105,26 @@ fn main() {
 		println('and running `v fmt -w` over the whole directory would rewrite one of them by 429,652 lines.')
 	}
 	exit(failed.len)
+}
+
+// compiler is the V binary to run the formatter with.
+//
+// VEXE when the caller set it, the one beside this checkout when it exists, and otherwise `v` from PATH.
+// This gate now runs on Linux and macOS as well as on Windows, and a hardcoded Windows path would have it
+// report every file on those two as "could not be checked", which reads like a formatter problem and is a
+// lookup problem.
+fn compiler() string {
+	v := os.getenv('VEXE')
+	if v != '' {
+		return v
+	}
+	home := os.home_dir()
+	for candidate in [os.join_path(home, 'v', 'v.exe'), os.join_path(home, 'v', 'v')] {
+		if os.exists(candidate) {
+			return candidate
+		}
+	}
+	return 'v'
 }
 
 // collect lists the V files to check.

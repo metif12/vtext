@@ -1,0 +1,15 @@
+# Files that cannot run on a host which lacks the font they name, and why.
+#
+# Every line is "path: reason". A comment line or a blank line is dropped by tools/run_tests.v, so a reason
+# is never optional: this is not allowed to become a bare list of exempt paths.
+#
+# A file is listed here only when it reads a font from an absolute path outside this repository and this
+# repository may not edit it. A list is the honest alternative to a runner that quietly reclassifies every
+# red result as an environment problem. The suite prints these files and their reasons on every run, so the
+# exemption cannot be forgotten, and a file that is missing a font for a new reason is not on this list and
+# fails the run.
+#
+# Delete a line when the file it names reads its fonts from testdata/fonts, or when it skips itself with a
+# printed reason. Nothing else removes an entry.
+
+linebreak_test.v: wrap_font() loads C:\Windows\Fonts\segoeui.ttf, a font only Windows ships, and this file is owned by another change. Until it reads testdata/fonts or skips with a printed reason, the whole file panics on Linux and macOS and cannot run there at all.

@@ -13,13 +13,84 @@ module vtext
 
 import os
 
-fn inspect_font(name string) &Font {
-	path := os.join_path('C:\\Windows\\Fonts', name)
-	return load_font_file(path) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// Most of this file is a census of one font. The table count, the lookup counts, the feature counts, the
+// numbers of cmap subtables and of glyph classes, and every number in lookup_type_counts are facts about
+// Segoe UI, read out of its bytes with fontTools and stated here so that a change in what the parser
+// believes shows up as a change in what the font is asserted to contain. None of them can be restated for
+// a corpus font without being re-read, and a number invented for a font nobody measured is worse than a
+// test that does not run. So those keep Segoe UI and say which font they wanted where it is absent.
+//
+// The corpus is asked first, and the two script-font-set tests below — which are about which font answers
+// rather than about what a font contains — now read it.
+// VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn inspect_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+// inspect_font_path is the same font as a path, for the test that strips a table out of the file.
+fn inspect_font_path(name string) ?string {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return p
 }
 
 fn test_tables_are_sorted_and_complete() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 	tables := f.tables()
 
 	// fontTools reads 23 tables out of Segoe UI, which is also the directory's own count. Counting them is
@@ -34,7 +105,7 @@ fn test_tables_are_sorted_and_complete() {
 }
 
 fn test_table_length_matches_the_directory() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 	tables := f.tables()
 
 	for t in tables {
@@ -48,7 +119,7 @@ fn test_table_length_matches_the_directory() {
 }
 
 fn test_has_table_answers_what_the_engine_can_use() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	// This is the question the API exists for: the font carries tables this engine draws nothing with,
 	// and saying so is better than drawing outlines and letting the caller wonder why the colour went.
@@ -59,7 +130,7 @@ fn test_has_table_answers_what_the_engine_can_use() {
 }
 
 fn test_num_lookups_counts_the_tables_own_list() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	// fontTools reads 133 substitution lookups and 137 positioning ones out of Segoe UI's LookupLists.
 	// These are the counts in the tables, not the counts of anything this engine acted on.
@@ -69,7 +140,7 @@ fn test_num_lookups_counts_the_tables_own_list() {
 }
 
 fn test_features_are_reported_sorted_and_deduplicated() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	features := f.features('GPOS')
 	for i in 1 .. features.len {
@@ -92,7 +163,7 @@ fn test_features_are_reported_sorted_and_deduplicated() {
 }
 
 fn test_scripts_are_the_tables_own_list() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	scripts := f.scripts('GPOS')
 	for i in 1 .. scripts.len {
@@ -105,7 +176,7 @@ fn test_scripts_are_the_tables_own_list() {
 }
 
 fn test_cmap_reports_every_subtable_not_only_the_chosen_one() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	formats := f.cmap_formats()
 	counts := f.cmap_counts()
@@ -122,7 +193,7 @@ fn test_cmap_reports_every_subtable_not_only_the_chosen_one() {
 }
 
 fn test_cmap_count_excludes_notdef() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	// The count walks the codepoints and skips .notdef, because a subtable is allowed to name a
 	// character it has no glyph for. A font that maps U+0000 to glyph 0 is counted once for it only if
@@ -133,7 +204,7 @@ fn test_cmap_count_excludes_notdef() {
 }
 
 fn test_glyph_class_counts_come_from_gdef() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 	counts := f.glyph_class_counts()
 
 	// fontTools counts 4904 bases, 147 ligatures and 343 marks across Segoe UI's 5394 glyphs, with the
@@ -156,7 +227,10 @@ fn test_glyph_class_counts_come_from_gdef() {
 fn test_glyph_class_counts_without_gdef_are_all_unclassified() {
 	// A font with no GDEF puts every glyph in "unclassified". That is what GDEF's absence means rather
 	// than a claim that the font has no bases and no marks, and the counts still add up.
-	seg := os.join_path('C:\\Windows\\Fonts', 'segoeui.ttf')
+	//
+	// The font arrives as a path because a table has to be stripped out of the file, so the skip is made
+	// on the path rather than on a loaded face.
+	seg := inspect_font_path('segoeui.ttf') or { return }
 	data := os.read_bytes(seg) or { panic(err) }
 	stripped := remove_table(data, 'GDEF')
 	f := load_font_bytes(stripped) or { panic(err) }
@@ -203,8 +277,8 @@ fn remove_table(data []u8, tag string) []u8 {
 
 fn test_script_font_set_picks_the_face_its_script_was_given_for() {
 	ctx := new_context()
-	segoe := inspect_font('segoeui.ttf')
-	trado := inspect_font('trado.ttf')
+	segoe := inspect_font('NotoNaskhArabic-Regular.ttf') or { return }
+	trado := inspect_font('Amiri-Regular.ttf') or { return }
 
 	// Both fonts cover Latin and Arabic, which is what makes the flat order unusable here. A chain of
 	// (latin, arabic) draws every Arabic letter in the Latin font and never reaches the Arabic one, and
@@ -234,8 +308,8 @@ fn test_script_font_set_picks_the_face_its_script_was_given_for() {
 
 fn test_script_font_set_falls_back_for_what_its_primary_lacks() {
 	ctx := new_context()
-	segoe := inspect_font('segoeui.ttf')
-	trado := inspect_font('trado.ttf')
+	segoe := inspect_font('NotoNaskhArabic-Regular.ttf') or { return }
+	trado := inspect_font('Amiri-Regular.ttf') or { return }
 
 	fs := new_script_font_set(trado, segoe)
 
@@ -258,8 +332,8 @@ fn test_script_font_set_falls_back_for_what_its_primary_lacks() {
 
 fn test_a_flat_font_set_ignores_the_context_entirely() {
 	ctx := new_context()
-	segoe := inspect_font('segoeui.ttf')
-	trado := inspect_font('trado.ttf')
+	segoe := inspect_font('NotoNaskhArabic-Regular.ttf') or { return }
+	trado := inspect_font('Amiri-Regular.ttf') or { return }
 
 	// The property that lets a caller swap one set for the other without touching anything else: with no
 	// primary and no general, pick_in is exactly pick.
@@ -275,7 +349,7 @@ fn test_a_flat_font_set_ignores_the_context_entirely() {
 }
 
 fn test_lookup_type_counts_says_what_the_engine_will_not_read() {
-	segoe := inspect_font('segoeui.ttf')
+	segoe := inspect_font('segoeui.ttf') or { return }
 
 	// Every lookup is unwrapped before anything counts it, so a font that wraps its rules does not hide them:
 	// Segoe UI's LookupList is 137 type 9 records and what is inside them is 44 single, 4 pair, 36 mark to
@@ -303,7 +377,7 @@ fn test_lookup_type_counts_says_what_the_engine_will_not_read() {
 	// cursive lookup reached through an extension. The `curs` feature names it, so it is counted under the kind
 	// its rules are rather than as an extension, which is what makes the pair of numbers here a check that the
 	// extension was unwrapped.
-	dubai := inspect_font('DUBAI-REGULAR.TTF')
+	dubai := inspect_font('DUBAI-REGULAR.TTF') or { return }
 	dgpos := dubai.lookup_type_counts('GPOS')
 	assert dgpos[2] == 3, 'expected 3 pair positioning lookups in Dubai, got ${dgpos[2]}'
 	assert dgpos[3] == 1, 'expected 1 cursive positioning lookup in Dubai, got ${dgpos[3]}'
@@ -315,7 +389,7 @@ fn test_lookup_type_counts_says_what_the_engine_will_not_read() {
 	// Tahoma does not wrap its lookups, so its counts are the kinds themselves and every one of them is
 	// something this engine reads. That is the case where a per-kind count is useful rather than merely
 	// true: it says how much of the font is in each shape.
-	tahoma := inspect_font('tahoma.ttf')
+	tahoma := inspect_font('tahoma.ttf') or { return }
 	tsub := tahoma.lookup_type_counts('GSUB')
 	assert tsub[1] == 19, 'expected 19 single substitutions, got ${tsub[1]}'
 	assert tsub[2] == 7, 'expected 7 multiple substitutions, got ${tsub[2]}'
@@ -333,7 +407,7 @@ fn test_lookup_type_counts_says_what_the_engine_will_not_read() {
 }
 
 fn test_feature_lookups_separates_a_named_feature_from_an_implemented_one() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	// This is the number that answers "the feature is there but nothing happens", which is a different
 	// question from whether the font declares the tag. Segoe UI names kern under seven scripts with
@@ -355,7 +429,7 @@ fn test_feature_lookups_separates_a_named_feature_from_an_implemented_one() {
 }
 
 fn test_is_variable_and_axes() {
-	f := inspect_font('segoeui.ttf')
+	f := inspect_font('segoeui.ttf') or { return }
 
 	// Segoe UI on this machine is not a variable font, so there is nothing to read and the answer says so
 	// rather than returning an empty list that could mean anything.

@@ -14,12 +14,66 @@ module vtext
 
 import os
 
-fn mtl_font(name string) &Font {
-	path := os.join_path('C:\\Windows\\Fonts', name)
-	return load_font_file(path) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus is first because a test that runs only because one machine ships a font is a test about that
+// machine. The platform directory is still asked second, so a Windows checkout keeps reading Tahoma,
+// Arial, Dubai, Arabic Typesetting and Times. VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
 }
 
-// runes builds a slice of codepoints by appending.
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn mtl_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
 //
 // An inline []rune{...} holding values above 255 evaluates to an empty slice in this compiler,
 // with no error, so a test written that way would be measuring the compiler rather than the engine
@@ -45,9 +99,9 @@ const mtl_beh = 0x0628
 // It is a list rather than one font because a font either has these rules or it does not, and a
 // font that does not is a font the engine is right to find nothing in. Naming the ones that do
 // keeps the capability from being a constant.
-const mtl_fonts = ['tahoma.ttf', 'arial.ttf', 'DUBAI-REGULAR.TTF', 'ARABTYPE.TTF', 'times.ttf']
+const mtl_fonts = ['NotoNaskhArabic-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf',
+	'NotoNaskhArabic-Variable.ttf']
 
-// the_pair lays out lam and alef and returns the glyph the fusion produced, or zero when the font
 // did not fuse them.
 fn the_pair(font &Font) u16 {
 	ctx := new_context()
@@ -79,7 +133,7 @@ fn test_mtl_fonts_that_carry_the_rules_report_it() {
 	mut found := 0
 	mut checked := 0
 	for name in mtl_fonts {
-		f := mtl_font(name)
+		f := mtl_font(name) or { return }
 		checked++
 		if f.places_marks_on_ligatures() {
 			found++
@@ -87,19 +141,25 @@ fn test_mtl_fonts_that_carry_the_rules_report_it() {
 	}
 	// Four of the five. A lower bar would let a regression that drops one font's rules pass, and a
 	// higher one would fail when Windows ships an update to a font.
-	assert found >= 4, 'expected at least 4 of ${checked} fonts to place marks on ligatures, found ${found}'
+	// All three of them. The list was five fonts and the bar was four, to catch a regression that dropped
+	// one font's rules; the corpus carries three that place marks on ligatures, and Amiri is the fourth that
+	// does not, so the bar is all of the ones that do. A lower one would let a font stop being read pass.
+	assert found >= 3, 'expected at least 3 of ${checked} fonts to place marks on ligatures, found ${found}'
 }
 
 // test_mtl_a_mark_after_a_lam_alef_is_placed checks the thing itself.
 //
-// The mark has to leave the pen. A mark left at the pen also has a position, so a test asserting
-// only that the mark exists would pass whether the rule fired or not; what distinguishes them is
-// that a placed mark is at a place the font chose and the pen is not one of them.
+// It needs two things of one font: that it fuses the pair into one glyph, and that it fills in one
+// component's anchors so the mark leaves the pen. Measured, no committed font does both. Noto Naskh and its
+// variable face fuse the pair and put the mark's offset at (0, 0), so the mark stays on the pen; Noto
+// Nastaliq moves its mark off the pen and does not fuse the pair. So this keeps Tahoma, which is where it
+// was written, and names it everywhere else. The capability it depends on is what the test above asserts,
+// and that one does ask the corpus.
 fn test_mtl_a_mark_after_a_lam_alef_is_placed() {
 	mut placed := 0
 	mut tried := 0
-	for name in mtl_fonts {
-		f := mtl_font(name)
+	for name in ['tahoma.ttf', 'arial.ttf', 'DUBAI-REGULAR.TTF', 'ARABTYPE.TTF', 'times.ttf'] {
+		f := mtl_font(name) or { return }
 		pair := the_pair(f)
 		if pair == 0 {
 			continue
@@ -135,7 +195,7 @@ fn test_mtl_a_mark_after_a_lam_alef_is_placed() {
 // last. Tahoma puts them on the first component of a two component pair, which is what made an
 // engine that took the last component find nothing.
 fn test_mtl_the_component_is_chosen_from_the_anchors() {
-	f := mtl_font('tahoma.ttf')
+	f := mtl_font('tahoma.ttf') or { return }
 	pair := the_pair(f)
 	assert pair != 0, 'tahoma should fuse lam and alef'
 	mark := f.glyph_index(mtl_fatha)
@@ -156,7 +216,7 @@ fn test_mtl_the_component_is_chosen_from_the_anchors() {
 // damma and a fatha share a class and share an anchor, which is correct of the font and would look
 // like a bug if it were not known.
 fn test_mtl_two_marks_land_in_different_places() {
-	f := mtl_font('tahoma.ttf')
+	f := mtl_font('tahoma.ttf') or { return }
 	_, fatha_x, fatha_y := the_line(f, mtl_fatha)
 	// A kasra goes below a letter and Tahoma gives it a class of its own, so it must land elsewhere.
 	_, kasra_x, kasra_y := the_line(f, mtl_kasra)
@@ -184,7 +244,7 @@ fn test_mtl_two_marks_land_in_different_places() {
 // ligature rule that shadowed the mark-to-base one, would leave marks on letters in the wrong place.
 // The control is the thing that already worked, so it is the thing a change here can break.
 fn test_mtl_a_mark_on_a_letter_still_works() {
-	f := mtl_font('tahoma.ttf')
+	f := mtl_font('tahoma.ttf') or { return }
 	ctx := new_context()
 	line := layout_paragraph(ctx, runes(mtl_beh, mtl_fatha), .rtl, new_font_set_of(f), 64.0)
 	assert line.glyphs.len == 2, 'a letter and a mark are two glyphs, got ${line.glyphs.len}'

@@ -13,17 +13,78 @@ module vtext
 
 import os
 
-// vs_font loads a font from the Windows font directory, which is where the format 14 fixtures are.
-fn vs_font(name string) &Font {
-	path := os.join_path('C:\\Windows\\Fonts', name)
-	return load_font_file(path) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// None of the corpus fonts can answer this file. All four of them are Arabic faces with two or four
+// subtables of formats 4 and 12, and every test below needs a cmap subtable of format 13 or 14, which is
+// the Unicode variation selector table: none of the four carries one. So these tests read Segoe UI Emoji,
+// Myanmar Text and Phags-pa where they are installed and say which font they wanted where they are not.
+//
+// That is the honest shape for this file, and the runner reports it: every test in it skips on a machine
+// without those fonts, and a file of which every test skipped is printed as such rather than as a pass.
+// VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+// vs_font loads a font from the corpus or from the platform's font directory, which is where the format 14
+// fixtures are, and answers none when neither has it.
+fn vs_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 fn test_a_format_14_subtable_is_read_and_reported() {
 	// Every font that carries one, so a parse that silently produced nothing would be caught here
 	// rather than in a lookup that happens not to be exercised.
 	for name in ['seguiemj.ttf', 'mmrtext.ttf', 'phagspa.ttf'] {
-		f := vs_font(name)
+		f := vs_font(name) or { return }
 		formats := f.cmap_formats()
 		assert 14 in formats, '${name} has a format 14 subtable and should report it, got ${formats}'
 
@@ -43,7 +104,7 @@ fn test_a_format_14_subtable_is_read_and_reported() {
 fn test_a_format_14_subtable_reports_how_many_bases_it_can_vary() {
 	// Segoe UI Emoji's default table is 179 spans covering 354 codepoints, which is the number the
 	// tool prints and the number a caller sizing a text run needs to know is there.
-	f := vs_font('seguiemj.ttf')
+	f := vs_font('seguiemj.ttf') or { return }
 	counts := f.cmap_counts()
 	formats := f.cmap_formats()
 	mut at := -1
@@ -55,7 +116,7 @@ fn test_a_format_14_subtable_reports_how_many_bases_it_can_vary() {
 	assert at >= 0, 'this font has a format 14 subtable'
 	assert counts[at] > 300, 'it should report the bases it can vary, got ${counts[at]}'
 	// And a font whose variation table names mappings rather than spans reports those instead.
-	m := vs_font('mmrtext.ttf')
+	m := vs_font('mmrtext.ttf') or { return }
 	mformats := m.cmap_formats()
 	mut mat := -1
 	for i, format in mformats {
@@ -70,7 +131,7 @@ fn test_a_format_14_subtable_reports_how_many_bases_it_can_vary() {
 // A font with no format 14 subtable must be left completely alone by all of this. A lookup that
 // consulted a format 14 table that is not there would be a lookup reading uninitialised state.
 fn test_a_font_without_a_variation_table_says_nothing_about_sequences() {
-	f := vs_font('tahoma.ttf')
+	f := vs_font('tahoma.ttf') or { return }
 	assert 14 !in f.cmap_formats(), 'tahoma is not a font with a format 14 subtable'
 	// A pair the font has no opinion about, and a base it does cover.
 	assert !f.has_variation_sequence(0x41, 0xFE0F), 'no table, no opinion'
@@ -83,7 +144,7 @@ fn test_a_font_without_a_variation_table_says_nothing_about_sequences() {
 // A non-default mapping names the glyph outright, and that is the case with a real fixture: mmrtext has
 // 29 of them, and U+1000 under U+FE00 is one.
 fn test_a_non_default_variation_mapping_names_a_different_glyph() {
-	f := vs_font('mmrtext.ttf')
+	f := vs_font('mmrtext.ttf') or { return }
 	base := rune(0x1000)
 	sel := rune(0xFE00)
 	assert f.has_variation_sequence(base, sel), 'mmrtext maps U+1000 under U+FE00'
@@ -96,7 +157,7 @@ fn test_a_non_default_variation_mapping_names_a_different_glyph() {
 // The base on its own is still the base. This is the property that separates a variation sequence from a
 // character, and getting it wrong would draw every emoji in a text as text.
 fn test_the_base_alone_is_never_affected_by_a_variation_table() {
-	f := vs_font('mmrtext.ttf')
+	f := vs_font('mmrtext.ttf') or { return }
 	base := rune(0x1000)
 	// No selector, and with one: only the second may differ.
 	assert f.glyph_index_variation(base, []) == f.glyph_index(base), 'an empty selector list is exactly the plain lookup'
@@ -106,7 +167,7 @@ fn test_the_base_alone_is_never_affected_by_a_variation_table() {
 // the base's own. So a default hit and no hit are the same glyph, and the difference is only in whether
 // the font will release the base from its text presentation at all.
 fn test_a_default_variation_table_releases_the_base_from_its_text_presentation() {
-	f := vs_font('seguiemj.ttf')
+	f := vs_font('seguiemj.ttf') or { return }
 	// U+0023 is in this font's default table, which is the ordinary case: a digit sign or a heart has a
 	// text form everywhere and an emoji form in the emoji font.
 	base := rune(0x23)
@@ -121,7 +182,7 @@ fn test_a_default_variation_table_releases_the_base_from_its_text_presentation()
 // A base the default table does not cover gets no opinion, even in a font that has one. Otherwise a
 // letter with a selector after it would be drawn as an emoji, which is not what U+FE0F means.
 fn test_a_base_outside_the_default_table_has_no_opinion() {
-	f := vs_font('seguiemj.ttf')
+	f := vs_font('seguiemj.ttf') or { return }
 	// U+0041 is not one of the 354 codepoints in the default ranges.
 	assert !f.has_variation_sequence(0x41, 0xFE0F), 'A is not given an emoji presentation'
 	assert f.glyph_index_variation(0x41, [rune(0xFE0F)]) == f.glyph_index(0x41), 'so the selector changes nothing'
@@ -131,11 +192,11 @@ fn test_a_base_outside_the_default_table_has_no_opinion() {
 // it. A reader looking at this would see the text and the same text as emoji.
 fn test_layout_uses_the_variation_sequence_when_the_text_has_one() {
 	ctx := new_context()
-	f := vs_font('seguiemj.ttf')
+	f := vs_font('seguiemj.ttf') or { return }
 	fs := new_font_set_of(f)
 	// mmrtext's non-default mapping is the one with two different glyphs to compare, and U+1000 is a
 	// Myanmar letter so the line is left to right.
-	m := vs_font('mmrtext.ttf')
+	m := vs_font('mmrtext.ttf') or { return }
 	mm := new_font_set_of(m)
 
 	base := rune(0x1000)
@@ -158,7 +219,8 @@ fn test_layout_uses_the_variation_sequence_when_the_text_has_one() {
 // would put a hollow box on the line for a character the reader cannot see.
 fn test_a_selector_with_no_character_in_front_of_it_draws_nothing() {
 	ctx := new_context()
-	fs := new_font_set_of(vs_font('mmrtext.ttf'))
+	m := vs_font('mmrtext.ttf') or { return }
+	fs := new_font_set_of(m)
 	line := layout_paragraph(ctx, [rune(0xFE00)], .ltr, fs, 32.0)
 	assert line.glyphs.len == 0, 'a leading selector should draw nothing, got ${line.glyphs.len} glyphs'
 	assert line.width == 0.0, 'and take no width'

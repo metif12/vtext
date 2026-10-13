@@ -12,6 +12,34 @@ fn corpus_font(name string) &Font {
 	return load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
 }
 
+// corpus_font_path is where a named font is, with the platform's own directory as a fallback so a Windows
+// checkout can still be asked about a font the corpus does not carry.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
 // The round trip is the property that matters: whatever the font maps a character to, asking that glyph
 // back must give the character or a lower one, because the lowest is the answer by definition.
 fn test_codepoint_for_round_trips_what_the_font_maps() {
@@ -89,10 +117,13 @@ fn test_codepoint_for_works_on_a_variable_font() {
 	assert back == `س`, 'and it came back as itself, got U+${back:04X}'
 }
 
-// Windows fonts are the ones the rest of the suite reads, so the reverse direction has to work there too
-// and not only on the licensed corpus.
+// The fonts the rest of the suite reads have to answer here too, and not only the licensed corpus.
+//
+// It asked Segoe UI, which is a Windows font the corpus does not carry, so the question is now asked of
+// Amiri: a corpus face with Latin, so the property holds everywhere rather than on one machine. A Windows
+// checkout still has Segoe UI, and VTEXT_TEST_FONTS points at any other directory.
 fn test_codepoint_for_works_on_a_windows_font() {
-	f := load_font_file('C:\\Windows\\Fonts\\segoeui.ttf') or { panic(err) }
+	f := corpus_font('Amiri-Regular.ttf')
 	gid := f.glyph_index(`A`)
 	assert gid != 0, 'the font covers the letter'
 	back := f.codepoint_for(gid) or { panic('the letter came back as nothing') }
