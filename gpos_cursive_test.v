@@ -176,8 +176,69 @@ fn test_gpos_cursive_reader_counts_the_coverage_in_glyphs() {
 // on something shaped like an anchor, which is how a cursive table came to be dismissed as a mark
 // attachment twice. Reading the record array from the six-byte header rather than four makes every one of
 // its anchors declare itself an anchor, and the lookup resolves to a cursive rule.
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus comes first, and for this test it is also the better witness: Noto Nastaliq Urdu reaches its
+// cursive rule through an extension, which is the path Dubai used to take and the one that was read wrong
+// twice. The platform directory is still asked second, so a Windows checkout keeps reading Dubai.
+// VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn cursive_real_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
 fn test_gpos_dubai_curs_feature_reaches_a_cursive_rule() {
-	f := load_font_file('C:\\Windows\\Fonts\\DUBAI-REGULAR.TTF') or { panic(err) }
+	f := cursive_real_font('NotoNastaliqUrdu-Regular.ttf') or { return }
 	gpos := f.face.gpos or { panic('no GPOS') }
 	mut cursive := 0
 	mut covered := 0

@@ -1,0 +1,108 @@
+# The suite runs on every push, on all three platforms, because until now it ran on one.
+#
+# Every test in this repository used to read its fonts from C:\Windows\Fonts, which meant every claim in it
+# was a claim about this machine. The fonts the tests need are now committed under testdata/fonts and carry
+# their licences, so the same checks run here, on Linux and on macOS, and the platform the claims were
+# actually made on is no longer a guess.
+#
+# What a run on each platform proves:
+#
+#   ubuntu, macos    the corpus: parsing, shaping, GPOS, GSUB, bidi, line breaking, normalisation, and
+#                    every assertion that is about the engine rather than about one font. This is where the
+#                    claim used to be unverifiable, and it is the reason this workflow exists.
+#   windows          the same, plus the Windows-only measurements, which still run wherever those fonts
+#                    happen to be installed. On a runner they are not, so they skip and say so.
+#
+# V is built from source rather than taken from the latest release, and that is not a preference. Measured
+# twice, on 2026-10-13:
+#
+#   1. the latest release, 0.5.2 7647ce1, cannot compile this repository at all. brackets.v declares a
+#      method on `&[]BracketPair`, and that build rejects it as a hard error: "V arrays are already
+#      references behind the scenes". The file is not this change's to rewrite.
+#
+#   2. the same release has no os.exec_opt, which tools/run_tests.v calls, and answers "Did you mean
+#      os.execute_opt?".
+#
+# A compiler built from master does both, and it is what this repository is developed against. So the
+# workflow clones V and builds it, using each platform's own bootstrap: make on Linux and macOS, makev.bat
+# on Windows, which is what V's own continuous integration does on its Windows runners.
+#
+# What a red run means is not always a defect: a test that needs a font only Windows ships skips itself and
+# prints why, and tools/run_tests.v counts those skips and names every file in which every test skipped. A
+# file that cannot run at all is recorded in testdata/blocked.txt with its reason and is reported as
+# BLOCKED rather than passed. So the number to read is the one the runner prints:
+#
+#   Summary for all V _test.v files: N passed, 0 failed, K blocked, 29 total
+#
+# and a green job with K blocked is a job that proved what it could prove here and said what it could not.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    name: suite (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+          - os: macos-latest
+            cc: clang
+          - os: windows-latest
+            cc: gcc
+    steps:
+      - uses: actions/checkout@v4
+
+      # The compiler. A shallow clone of master is enough: V builds from a single C file that ships in the
+      # repository, so there is no bootstrap compiler to find first.
+      #
+      # The two platforms that build with make get a bash step, and Windows gets a cmd step, because
+      # makev.bat is a batch file and driving one through git-bash's cmd shim is where quoting goes to die.
+      # Each step puts the build's own directory on PATH, which is the whole of the installation: the
+      # compiler finds vlib beside itself, and tools/run_tests.v finds it through VEXE.
+      - name: Install V (Linux and macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/vsrc"
+          git clone --depth 1 https://github.com/vlang/v "$src"
+          make -C "$src" -j2
+          echo "$src" >> "$GITHUB_PATH"
+
+      - name: Install V (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          git clone --depth 1 https://github.com/vlang/v %RUNNER_TEMP%\vsrc
+          pushd %RUNNER_TEMP%\vsrc
+          call makev.bat
+          echo %RUNNER_TEMP%\vsrc>>"%GITHUB_PATH%"
+
+      - name: v version
+        run: v version
+
+      # The formatter gate first, because a suite that does not compile cannot be measured and the
+      # formatter is what makes a diff reviewable. It is the same tool this repository used before there
+      # was a workflow, and it knows about the two files `v fmt` cannot handle.
+      - name: v run tools/fmt_check.v
+        run: v run tools/fmt_check.v
+
+      # The real suite: every _test.v file in the module, one at a time, with the counts printed.
+      #
+      # VTEXT_CC names the C compiler for the platform: macOS ships a clang behind the name gcc, so the
+      # runner asks for it by its own name and a failure in the C toolchain says which one it was.
+      - name: v run tools/run_tests.v
+        run: v run tools/run_tests.v
+        env:
+          VTEXT_CC: ${{ matrix.cc }}

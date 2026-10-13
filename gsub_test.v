@@ -9,9 +9,98 @@ module vtext
 
 import os
 
-fn gsub_font(name string) &Font {
-	path := os.join_path('C:\\Windows\\Fonts', name)
-	return load_font_file(path) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus is first because a test that runs only because one machine ships a font is a test about that
+// machine. The platform directory is still asked second, so a Windows checkout keeps reading the ten
+// Windows faces this file was written against. VTEXT_TEST_FONTS overrides both.
+//
+// Three things the corpus cannot supply are recorded here rather than discovered one failure at a time,
+// because all three were measured: no committed font has a substitution rule that changes a letter's glyph
+// through shaped_glyph, so the tests that assert a shape came back different stay on Majalla; none has a
+// dlig that fuses f and i, so that one stays on Tahoma; and none is a font with no GSUB table at all, which
+// is what Arial Narrow and Consolas stand for here.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn gsub_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+// amiri is the corpus font these tests read.
+//
+// It carries a GSUB table with the arab script and fina, init and medi features with lookups behind them,
+// a ccmp with ligature rules in it, and no isol feature at all, which is exactly the shape several
+// assertions below ask of Majalla and Dubai.
+fn amiri() ?&Font {
+	return gsub_font('Amiri-Regular.ttf')
+}
+
+// nastaliq is the corpus font with no Latin and no presentation forms, for the chain that has to be walked
+// by a font that cannot answer for the character either side of a seam.
+fn nastaliq() ?&Font {
+	return gsub_font('NotoNastaliqUrdu-Regular.ttf')
+}
+
+// has_any_font answers whether at least one of the named fonts is readable on this host.
+//
+// A test that measures a property across several fonts needs this up front rather than after the fact:
+// a loop that skipped every one of them would leave its counters at zero and then assert about nothing.
+fn has_any_font(names []string) bool {
+	for name in names {
+		if corpus_font_path(name) or { '' } != '' {
+			return true
+		}
+	}
+	return false
 }
 
 // The four shapes of a few letters, mixed joining and non-joining, plus a tatweel. A parser
@@ -27,7 +116,7 @@ fn arabic_probe_letters() []rune {
 // two it holds. Getting this wrong produces no error at all: every lookup comes back empty and
 // every Arabic letter quietly draws in its base shape.
 fn test_gsub_accepts_a_script_tag_in_either_case() {
-	majalla := gsub_font('majalla.ttf')
+	majalla := gsub_font('majalla.ttf') or { return }
 	g := majalla.face.gsub or { panic('no gsub on the face') }
 	assert g.script('arab') != none
 	assert g.script('Arab') != none, 'the Unicode spelling has to resolve too'
@@ -76,7 +165,7 @@ fn fs_of(f &Font) &FontSet {
 // than the shadda's, and the rule is written in that order.
 fn test_ligature_fuses_two_marks_into_one() {
 	ctx := new_context()
-	arial := gsub_font('arial.ttf')
+	arial := gsub_font('arial.ttf') or { return }
 	fs := new_font_set_of(arial)
 	// beh, fathatan, shadda: three characters in, and the two marks become one glyph.
 	line := layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs, 32)
@@ -98,7 +187,7 @@ fn test_ligature_fuses_two_marks_into_one() {
 // longer be traced back to the character a caret belongs to.
 fn test_ligature_keeps_the_first_characters_cluster() {
 	ctx := new_context()
-	arial := gsub_font('arial.ttf')
+	arial := gsub_font('arial.ttf') or { return }
 	line := layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs_of(arial), 32)
 	// The fused mark stands for two characters and reports the earlier one, which is what lets
 	// the rest of the pipeline walk the input without losing track.
@@ -113,7 +202,7 @@ fn test_ligature_keeps_the_first_characters_cluster() {
 // untouched. Applying a rule that does not match would be worse than not looking.
 fn test_ligature_leaves_a_pair_the_font_does_not_fuse() {
 	ctx := new_context()
-	arial := gsub_font('arial.ttf')
+	arial := amiri() or { return }
 	// A fatha and a sukun: no rule in the font joins them.
 	line := layout_paragraph(ctx, [test_beh, test_fatha, sukun], .rtl, fs_of(arial), 32)
 	assert line.glyphs.len == 3, 'three characters should give three glyphs'
@@ -126,7 +215,7 @@ fn test_ligature_leaves_a_pair_the_font_does_not_fuse() {
 // The parser reads the rules from a real table, and a rule read wrong is a rule that fuses the
 // wrong glyphs. This checks the one the engine relies on, straight out of the table.
 fn test_ligature_rules_are_read_from_the_font() {
-	arial := gsub_font('arial.ttf')
+	arial := amiri() or { return }
 	g := arial.face.gsub or { panic('no gsub') }
 	// The fathatan and the shadda are in Arial's ccmp, which is the feature Arabic composition
 	// lives under. A parser that found the feature but not its rules would still report a font
@@ -170,11 +259,11 @@ fn test_ligature_rules_are_read_from_the_font() {
 // was not split at the seam would either fuse across it or lose a glyph to a rule that could not
 // apply.
 fn test_ligature_does_not_straddle_two_fonts() {
-	// An Arabic font and a Latin-only one, with a character between two Arabic ones that only
+	// An Arabic font and a font with no Latin at all, with a character between two Arabic ones that only
 	// the first font covers. The line therefore has to survive a chain that cannot be used for
 	// one script throughout.
-	arabic := gsub_font('majalla.ttf')
-	latin := gsub_font('ARIALN.TTF')
+	arabic := amiri() or { return }
+	latin := nastaliq() or { return }
 	fs := new_font_set()
 	fs.add(arabic)
 	fs.add(latin)
@@ -192,14 +281,14 @@ fn test_ligature_does_not_straddle_two_fonts() {
 }
 
 fn test_gsub_parses_and_arab_script_exists() {
-	majalla := gsub_font('majalla.ttf')
+	majalla := amiri() or { return }
 	assert majalla.has_gsub(), 'Majalla is expected to carry a GSUB table'
 	g := majalla.face.gsub or { panic('no gsub on the face') }
 	assert g.script('arab') != none, 'the Arabic script has to be addressable'
 }
 
 fn test_gsub_arab_script_enables_the_positional_features() {
-	majalla := gsub_font('majalla.ttf')
+	majalla := amiri() or { return }
 	g := majalla.face.gsub or { panic('no gsub on the face') }
 	s := g.script('arab') or { panic('no arab script') }
 	mut tags := []string{}
@@ -223,8 +312,8 @@ fn test_gsub_arab_script_enables_the_positional_features() {
 // the base letter's own glyph already is the isolated form. Asking for one and getting the
 // base letter back is then the correct answer rather than a gap.
 fn test_gsub_treats_a_missing_isol_rule_as_the_base_letter() {
-	// Dubai is the font that omits it.
-	dubai := gsub_font('DUBAI-REGULAR.TTF')
+	// Amiri is the corpus font that omits it.
+	dubai := amiri() or { return }
 	g := dubai.face.gsub or { panic('no gsub on the face') }
 	s := g.script('arab') or { panic('no arab script') }
 	mut tags := []string{}
@@ -239,7 +328,7 @@ fn test_gsub_treats_a_missing_isol_rule_as_the_base_letter() {
 }
 
 fn test_gsub_substitutes_the_three_shapes_of_a_letter() {
-	majalla := gsub_font('majalla.ttf')
+	majalla := gsub_font('majalla.ttf') or { return }
 	// Beh is dual joining, so it has all four shapes, and Majalla carries none of them in its
 	// cmap, so all of them have to come out of GSUB.
 	base := majalla.glyph_index(rune(0x0628))
@@ -263,7 +352,7 @@ fn test_gsub_substitutes_the_three_shapes_of_a_letter() {
 // A shape a font has no rule for has to come back as the base letter rather than as some
 // other glyph, since a wrong glyph is worse than an unjoined one.
 fn test_gsub_leaves_an_uncovered_glyph_alone() {
-	majalla := gsub_font('majalla.ttf')
+	majalla := amiri() or { return }
 	g := majalla.face.gsub or { panic('no gsub on the face') }
 	// A Latin letter is in no Arabic feature, so no rule covers it and every shape comes back
 	// unchanged. This is the case that matters in practice: a Persian line with an embedded
@@ -292,7 +381,8 @@ fn test_gsub_rejects_data_that_is_not_a_table() {
 	header[5] = 0xFF
 	assert new_gsub(header, none) == none
 	// A font with no GSUB at all is not a failure either.
-	assert !gsub_font('ARIALN.TTF').has_gsub()
+	no_table := gsub_font('ARIALN.TTF') or { return }
+	assert !no_table.has_gsub()
 }
 
 // A regression guard on the parse itself, over several real fonts.
@@ -321,7 +411,7 @@ fn test_gsub_finds_shapes_across_the_arabic_fonts() {
 		['DUBAI-REGULAR.TTF'], ['simpo.ttf'], ['ARABTYPE.TTF']]
 	for c in cases {
 		name := c[0]
-		f := gsub_font(name)
+		f := gsub_font(name) or { continue }
 		assert f.has_gsub(), '${name} is expected to carry a GSUB table'
 		g := f.face.gsub or { panic('${name} has no gsub on the face') }
 		mut rules := 0
@@ -374,7 +464,7 @@ fn test_gsub_finds_shapes_across_the_arabic_fonts() {
 // final form is normally narrower than the isolated one, so reusing the base letter's advance
 // would leave the line the wrong width.
 fn test_shaped_glyph_index_follows_the_substitution() {
-	majalla := gsub_font('majalla.ttf')
+	majalla := gsub_font('majalla.ttf') or { return }
 	base := majalla.glyph_index(rune(0x0628))
 	final_form := majalla.shaped_glyph_index(base, .final, 'arab')
 	assert final_form != base, 'the final form should be a different glyph'
@@ -383,11 +473,11 @@ fn test_shaped_glyph_index_follows_the_substitution() {
 	assert base_advance > 0 && final_advance > 0, 'both glyphs have to have an advance'
 	// A font that has a substitution table but no rule for this letter returns the base
 	// rather than guessing. Consolas does carry a GSUB, just not one with Arabic rules.
-	mono := gsub_font('consola.ttf')
+	mono := gsub_font('consola.ttf') or { return }
 	mono_base := mono.glyph_index(`A`)
 	assert mono.shaped_glyph_index(mono_base, .final, 'arab') == mono_base
 	// A font with no table at all cannot shape anything, and says so the same way.
-	narrow := gsub_font('ARIALN.TTF')
+	narrow := gsub_font('ARIALN.TTF') or { return }
 	assert !narrow.has_gsub()
 	assert narrow.shaped_glyph_index(narrow.glyph_index(`A`), .final, 'arab') ==
 		narrow.glyph_index(`A`)
@@ -404,7 +494,7 @@ fn test_shaped_glyph_index_follows_the_substitution() {
 // lookups of four and two subtables and one ligature lookup, with every one of the six context
 // subtables naming a single substitution.
 fn test_chain_context_rules_are_read_from_the_font() {
-	dubai := gsub_font('DUBAI-REGULAR.TTF')
+	dubai := gsub_font('DUBAI-REGULAR.TTF') or { return }
 	g := dubai.face.gsub or { panic('Dubai has no gsub') }
 	ccmp := g.lookups_for('arab', 'ccmp')
 	assert ccmp.len == 3, 'Dubai ccmp should name three lookups, got ${ccmp.len}'
@@ -450,8 +540,8 @@ fn test_chain_context_rules_are_read_from_the_font() {
 // A record that applies to an input position the pattern does not have is a misread record, and
 // would put a substitution somewhere the font never asked for one.
 fn test_chain_context_records_stay_inside_their_pattern() {
-	for name in ['DUBAI-REGULAR.TTF', 'ARABTYPE.TTF', 'tahoma.ttf', 'segoeui.ttf'] {
-		f := gsub_font(name)
+	for name in ['Amiri-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf'] {
+		f := gsub_font(name) or { continue }
 		g := f.face.gsub or { panic('${name} has no gsub') }
 		for lookup in g.lookups {
 			for chain in lookup.chains {
@@ -477,12 +567,21 @@ fn test_chain_context_records_stay_inside_their_pattern() {
 // and both are marked in gsub.v as unexercised by any font on this machine rather than asserted
 // here against a font that does not set them.
 fn test_lookup_flags_are_read_from_the_font() {
+	// The flags are only observable on a font that sets them, so the whole test is skipped when none of
+	// the fonts that do is present. Looping anyway would leave the three flags below at their zero values
+	// and assert about a run that never happened.
+	any := has_any_font(['DUBAI-REGULAR.TTF', 'ARABTYPE.TTF', 'tahoma.ttf', 'segoeui.ttf', 'majalla.ttf',
+		'trado.ttf', 'simpo.ttf'])
+	if !any {
+		skip_missing('DUBAI-REGULAR.TTF, ARABTYPE.TTF, tahoma.ttf, segoeui.ttf, majalla.ttf, trado.ttf, simpo.ttf')
+		return
+	}
 	mut right_to_left := false
 	mut ignore_marks := false
 	mut classes := map[int]bool{}
 	for name in ['DUBAI-REGULAR.TTF', 'ARABTYPE.TTF', 'tahoma.ttf', 'segoeui.ttf', 'majalla.ttf',
 		'trado.ttf', 'simpo.ttf'] {
-		f := gsub_font(name)
+		f := gsub_font(name) or { continue }
 		g := f.face.gsub or { panic('${name} has no gsub') }
 		for lookup in g.lookups {
 			if lookup.flag & gsub_flag_right_to_left != 0 {
@@ -512,7 +611,7 @@ fn test_lookup_flags_are_read_from_the_font() {
 // the only substitution type that does. Arabic Typesetting puts one at the front of its ccmp, so
 // the rules exist to be read.
 fn test_multiple_substitution_rules_are_read_from_the_font() {
-	f := gsub_font('ARABTYPE.TTF')
+	f := amiri() or { return }
 	g := f.face.gsub or { panic('no gsub') }
 	mut found := 0
 	for li in g.lookups_for('arab', 'ccmp') {
@@ -550,7 +649,7 @@ fn test_multiple_substitution_rules_are_read_from_the_font() {
 // A lookup that expands a glyph must not silently refuse to because of where the glyph came from:
 // a font's mark compositions are as likely to be a rule of this kind as a ligature.
 fn test_multiple_substitution_is_applied() {
-	f := gsub_font('ARABTYPE.TTF')
+	f := gsub_font('ARABTYPE.TTF') or { return }
 	g := f.face.gsub or { panic('no gsub') }
 	// Find a covered glyph and run the lookup over it directly, so the test is about the rule
 	// rather than about which text happens to reach it.
@@ -589,7 +688,7 @@ fn test_multiple_substitution_is_applied() {
 // The flags only matter where they change an answer, so this checks that a glyph the font calls a
 // mark is skipped by a lookup that ignores marks and kept by one that does not.
 fn test_a_lookup_that_ignores_marks_cannot_see_them() {
-	f := gsub_font('DUBAI-REGULAR.TTF')
+	f := gsub_font('DUBAI-REGULAR.TTF') or { return }
 	g := f.face.gsub or { panic('no gsub') }
 	// A mark the font's own GDEF calls a mark, so the test is about the flag and not the data.
 	mut mark := u16(0)
@@ -632,7 +731,7 @@ fn test_a_lookup_that_ignores_marks_cannot_see_them() {
 // the two letters instead. Tahoma is used here because it is a font with a rule to apply, so the
 // test can tell the difference between the feature working and the feature being absent.
 fn test_discretionary_features_are_off_unless_asked_for() {
-	f := gsub_font('tahoma.ttf')
+	f := gsub_font('tahoma.ttf') or { return }
 	fs := fs_of(f)
 	ctx := new_context()
 	f_gid := f.glyph_index(`f`)
@@ -1118,7 +1217,7 @@ fn test_right_to_left_does_not_change_how_a_pattern_is_written() {
 // line comes out with no error in it and nothing to say why the joining stopped.
 
 fn test_a_font_whose_shapes_are_alternates_gets_them() {
-	at := gsub_font('ARABTYPE.TTF')
+	at := gsub_font('ARABTYPE.TTF') or { return }
 	g := at.face.gsub or { panic('no gsub') }
 	// The reason it was a hole: the feature is not a single substitution at all.
 	mut kinds := []u16{}
@@ -1146,7 +1245,7 @@ fn test_a_font_whose_shapes_are_alternates_gets_them() {
 }
 
 fn test_alternate_shapes_reach_a_second_font_too() {
-	simpo := gsub_font('simpo.ttf')
+	simpo := gsub_font('simpo.ttf') or { return }
 	g := simpo.face.gsub or { panic('no gsub') }
 	mut kinds := []u16{}
 	for li in g.lookups_for('arab', 'init') {
@@ -1170,7 +1269,7 @@ fn test_alternate_shapes_reach_a_second_font_too() {
 
 fn test_alternate_rules_are_read_from_the_font() {
 	for name in ['ARABTYPE.TTF', 'simpo.ttf', 'majalla.ttf', 'DUBAI-REGULAR.TTF'] {
-		f := gsub_font(name)
+		f := gsub_font(name) or { continue }
 		g := f.face.gsub or { panic('${name} has no gsub') }
 		mut rules := 0
 		for lookup in g.lookups {
@@ -1302,7 +1401,7 @@ fn run_in_logical_order(line Line) []Ligatable {
 fn test_a_chaining_context_substitutes_on_real_text() {
 	// A beh and two noons, which Majalla composes by rewriting the middle glyph. Three letters
 	// with a joining form in the middle and at the end, so the rule has a pattern to match.
-	majalla := gsub_font('majalla.ttf')
+	majalla := gsub_font('majalla.ttf') or { return }
 	g := majalla.face.gsub or { panic('no gsub') }
 	// The font has to have the kind of rule under test, or the test would pass on a font that
 	// never got to the interesting part.
@@ -1340,7 +1439,7 @@ fn test_a_chaining_context_expands_one_character_into_several_on_real_text() {
 	// A sin and two fahs, which Arabic Typesetting composes into more glyphs than it started
 	// with. This is the case the whole multiple substitution milestone exists for, and it is the
 	// only way to reach the layout invariant below with a real font rather than a built table.
-	at := gsub_font('ARABTYPE.TTF')
+	at := gsub_font('ARABTYPE.TTF') or { return }
 	g := at.face.gsub or { panic('no gsub') }
 	fs := fs_of(at)
 	ctx := new_context()
@@ -1387,7 +1486,7 @@ fn test_a_plain_ligature_still_fuses_a_pair_on_real_text() {
 	// The same opt in, reaching the ordinary ligature kind rather than a context. Arabic
 	// Typesetting fuses a doubled meem, and this is the case a caller who asked for a ligature
 	// most obviously wanted.
-	at := gsub_font('ARABTYPE.TTF')
+	at := gsub_font('ARABTYPE.TTF') or { return }
 	fs := fs_of(at)
 	ctx := new_context()
 	plain := layout_paragraph(ctx, [calt_meem, calt_meem], .rtl, fs, 32)
@@ -1414,7 +1513,7 @@ fn test_a_plain_ligature_still_fuses_a_pair_on_real_text() {
 // still matched, and the case below is the one that would break if the bound were off by one: the pair
 // sits at the end, so the copy has to stop exactly at the last glyph rather than short of it.
 fn test_a_ligature_still_fuses_at_the_end_of_a_long_run() {
-	at := gsub_font('ARABTYPE.TTF')
+	at := gsub_font('ARABTYPE.TTF') or { return }
 	fs := fs_of(at)
 	ctx := new_context()
 	opt := &LayoutOptions{

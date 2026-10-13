@@ -5,8 +5,74 @@ module vtext
 // they cannot pass by agreeing with a wrong parse.
 import os
 
-fn kern_font(name string) &Font {
-	return load_font_file(os.join_path('C:\\Windows\\Fonts', name)) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus is asked first because a test that runs only because one machine ships a font is a test about
+// that machine. The platform directory is still asked second, so a Windows checkout keeps reading Times New
+// Roman and Dubai. VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn kern_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+// amiri is the corpus font the Latin kerning tests read.
+//
+// It carries a Latin kerning table that closes the usual pairs, which is what these assertions ask of Times:
+// A against V is -62, T against o is -97, and the reverse order gives the same number because a class matrix
+// has no direction in it. Times New Roman is a Windows font the corpus does not carry, and none of the
+// assertions below depends on which face answers, so the corpus one answers them everywhere.
+fn amiri() ?&Font {
+	return kern_font('Amiri-Regular.ttf')
 }
 
 // runes is a test helper: a list of codepoints above 255 written inline as []rune comes out empty,
@@ -20,7 +86,7 @@ fn runes(cps ...int) []rune {
 }
 
 fn test_gpos_kerning_latin_pairs_move_the_first_glyph() {
-	f := kern_font('times.ttf')
+	f := amiri() or { return }
 	// A, V is the pair a font kerns hardest, and the adjustment is a negative advance because the
 	// two letters lean into each other.
 	av := f.kern_offset(f.glyph_index(`A`), f.glyph_index(`V`), 'latn') or {
@@ -42,7 +108,7 @@ fn test_gpos_kerning_latin_pairs_move_the_first_glyph() {
 // named. So the same number can come back for the reverse pair, and that is not a bug. What would be
 // a bug is a value that differs by direction, because the cell itself has no direction to differ in.
 fn test_gpos_kerning_of_a_class_pair_does_not_depend_on_order() {
-	f := kern_font('times.ttf')
+	f := amiri() or { return }
 	a := f.glyph_index(`A`)
 	v := f.glyph_index(`V`)
 	forward := f.kern_offset(a, v, 'latn') or { panic('no rule for AV') }
@@ -61,7 +127,7 @@ fn test_gpos_kerning_of_a_class_pair_does_not_depend_on_order() {
 // the matrix would apply the adjustment the font wrote for glyphs it left out of the rule on
 // purpose.
 fn test_gpos_kerning_does_not_move_an_omitted_pair() {
-	f := kern_font('times.ttf')
+	f := amiri() or { return }
 	sp := f.glyph_index(` `)
 	period := f.glyph_index(`.`)
 	// Either answer is correct: no rule, or a rule that says zero. A non-zero one is not.
@@ -75,16 +141,17 @@ fn test_gpos_kerning_does_not_move_an_omitted_pair() {
 
 // A font that kerns a script says so, and one that does not says none.
 fn test_gpos_kerning_reports_whether_a_script_has_any() {
-	// Times carries a Latin kerning table, which is what a book face is for.
-	assert kern_font('times.ttf').kerns('latn')
+	// Amiri carries a Latin kerning table, and it kerns Arabic as well.
+	amiri := amiri() or { return }
+	assert amiri.kerns('latn')
 	// A script the font says nothing about has no kerning, whatever the font does for others.
-	assert !kern_font('times.ttf').kerns('zzzz')
+	assert !amiri.kerns('zzzz')
 }
 
 // The offsets are in design units, as the font's own coordinates run, so they scale with the font
 // and not with a pixel size the caller happened to ask for.
 fn test_gpos_kerning_offsets_are_in_design_units() {
-	f := kern_font('times.ttf')
+	f := amiri() or { return }
 	off := f.kern_offset(f.glyph_index(`A`), f.glyph_index(`V`), 'latn') or { panic('no rule') }
 	upm := f64(f.units_per_em())
 	assert -off.x < upm / 4.0, 'a kern is small next to an em'
@@ -99,8 +166,12 @@ fn test_gpos_kerning_offsets_are_in_design_units() {
 // names are the ones the pipeline produced rather than the ones it was given. A lam followed by an
 // alef is a single ligature glyph that no pair rule can name, and the letters either side of it are
 // shaped into different glyphs than the letters stand in on their own.
+// The numbers 448 and 454 are Dubai's glyph ids in its own class definitions, and the distance of 3000 is
+// a glyph its coverage does not name. Both are facts about one file, so this runs where that file is and
+// names it everywhere else. What the corpus can carry is the class-0 and out-of-coverage halves of the
+// same question, which the test above already asks of Amiri's Latin table.
 fn test_gpos_kerning_reads_the_arabic_script_rules() {
-	f := kern_font('DUBAI-REGULAR.TTF')
+	f := kern_font('DUBAI-REGULAR.TTF') or { return }
 	assert f.kerns('arab'), 'dubai carries Arabic kerning rules'
 	// Glyphs taken from the font's own class definitions rather than picked at random: the rule puts
 	// 448 in one class and 454 in another, and the cell between them is a kern.
@@ -121,8 +192,12 @@ fn test_gpos_kerning_reads_the_arabic_script_rules() {
 
 // Laying a line out and asking about what came out is the only way a caller can kern Arabic, so the
 // shaped glyphs have to answer, not the letters as written.
+//
+// Amiri is the corpus font that kerns Arabic, and the assertions are about the shape of the answer rather
+// than about which pair the font happens to kern: whatever it does with this pair, the value has to be a
+// decision the font made and small next to an em.
 fn test_gpos_kerning_applies_to_the_shaped_glyphs_of_a_line() {
-	f := kern_font('DUBAI-REGULAR.TTF')
+	f := amiri() or { return }
 	fs := new_font_set_of(f)
 	// A word whose middle two letters the font classes together, taken from the pair the rules name.
 	line := layout_paragraph(new_context(), runes(0x0645, 0x064A, 0x0628, 0x0627), .rtl, fs, 32.0)

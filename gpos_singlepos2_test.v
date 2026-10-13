@@ -26,9 +26,68 @@ fn bytes_of(words []i16) []u8 {
 	return b
 }
 
-fn sp2_font() &Font {
-	path := os.join_path('C:\\Windows\\Fonts', 'segoeui.ttf')
-	return load_font_file(path) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus is first because a test that runs only because one machine ships a font is a test about that
+// machine, and the single test in this file that reads a real font is about the extension length being
+// carried rather than about which font carries it. The platform directory is still asked second, so a
+// Windows checkout keeps reading Segoe UI. VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+// sp2_font is the real font the extension length is checked against. Amiri is asked for because it wraps
+// every one of its 30 single-position lookups in an extension, which is the shape the length has to be
+// carried through.
+fn sp2_font() ?&Font {
+	p := corpus_font_path('Amiri-Regular.ttf') or {
+		skip_missing('Amiri-Regular.ttf')
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // single_pos_format2_bytes builds a format 2 subtable over three glyphs.
@@ -215,12 +274,12 @@ fn test_single_pos_format_1_still_reads_as_format_1() {
 // of the fonts on this machine read. Every positioning rule here is format 1, and every one of them is
 // reached through an extension, so this is the regression guard on the length being carried at all.
 fn test_real_fonts_still_read_their_single_positionings() {
-	f := sp2_font()
-	gpos := f.face.gpos or { panic('segoeui has no GPOS') }
+	f := sp2_font() or { return }
+	gpos := f.face.gpos or { panic('the corpus font has no GPOS') }
 	assert gpos.lookups.len > 0, 'there should be lookups'
 	mut singles := 0
 	for l in gpos.lookups {
 		singles += l.singles.len
 	}
-	assert singles > 0, 'segoeui has single positioning rules, found ${singles}'
+	assert singles > 0, 'the corpus font has single positioning rules, found ${singles}'
 }

@@ -12,12 +12,84 @@ module vtext
 // every one is under the feature tagged mkmk, none under abvm, blwm or mark. An engine that asks
 // for the three features a mark-to-base rule can be under finds none of them, and stacking silently
 // falls back to putting both marks against the letter, which is legible and wrong.
+//
+// The four placement tests below are the ones this file was written for, and none of them can run on the
+// corpus, measured: the only committed font that lays out beh, shadda and fatha as three glyphs is Amiri,
+// and Amiri draws every mark at one vertical anchor, so the fatha does not land above the shadda. Noto
+// Naskh, its variable face and Noto Nastaliq all expand the beh into several glyphs, so the three-glyph
+// assertion fails before the stacking one is reached. They keep Tahoma, which is where they were written,
+// and say so where it is absent. The capability test above them now asks the four corpus faces instead.
 
 import os
 
-fn mkm_font(name string) &Font {
-	path := os.join_path('C:\\Windows\\Fonts', name)
-	return load_font_file(path) or { panic(err) }
+// corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
+// second, and none when neither has it.
+//
+// The corpus is first because a test that runs only because one machine ships a font is a test about that
+// machine. The platform directory is still asked second, so a Windows checkout keeps reading Tahoma and
+// the four other Windows faces this file was written against. VTEXT_TEST_FONTS overrides both.
+fn corpus_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+$if windows {
+	fn windows_font_dir() string {
+		return 'C:\\Windows\\Fonts'
+	}
+} $else {
+	fn windows_font_dir() string {
+		return ''
+	}
+}
+
+// skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
+// pass, so every one of them names the font it wanted and where it looked, and it is written to the file
+// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+//
+// The file rather than stdout, because V's test runner does not print a passing test's output: measured on
+// Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
+// like a suite of passes. Written where the runner reads it, a skip is counted whether its test passed or
+// failed, on every platform, and the runner says how many there were.
+fn skip_missing(name string) {
+	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
+	path := os.getenv('VTEXT_SKIP_LOG')
+	if path != '' {
+		mut f := os.open_append(path) or { return }
+		f.writeln(line) or { return }
+		f.close()
+		return
+	}
+	println(line)
+}
+
+fn mkm_font(name string) ?&Font {
+	p := corpus_font_path(name) or {
+		skip_missing(name)
+		return none
+	}
+	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+// nastaliq is the corpus font the stacking tests read.
+//
+// It carries a mark-to-mark table and uses it: the mark written after a shadda comes out at a different
+// height from the shadda alone, which is the whole of what these tests assert and what Amiri cannot show,
+// because Amiri draws all of its marks at one vertical anchor. Measured at a 64 pixel em, Nastaliq puts the
+// stacked mark 10.4 pixels off the shadda's own height; the three Noto Naskh faces do not move it at all.
+fn nastaliq() ?&Font {
+	return mkm_font('NotoNastaliqUrdu-Regular.ttf')
 }
 
 // runes builds a slice of codepoints by appending, because an inline []rune{...} holding values
@@ -38,7 +110,8 @@ const mkm_damma = 0x064F
 const mkm_kasra = 0x0650
 
 // mkm_fonts is the set whose mark feature reaches a mark-to-mark rule for the marks used here.
-const mkm_fonts = ['tahoma.ttf', 'segoeui.ttf', 'andlso.ttf', 'majalla.ttf', 'trado.ttf']
+const mkm_fonts = ['Amiri-Regular.ttf', 'NotoNaskhArabic-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf',
+	'NotoNaskhArabic-Variable.ttf']
 
 // test_mkm_fonts_that_can_stack_report_it checks the capability flag against the table.
 //
@@ -49,7 +122,7 @@ fn test_mkm_fonts_that_can_stack_report_it() {
 	mut found := 0
 	mut checked := 0
 	for name in mkm_fonts {
-		f := mkm_font(name)
+		f := mkm_font(name) or { return }
 		checked++
 		if f.stacks_marks() {
 			found++
@@ -65,7 +138,7 @@ fn test_mkm_fonts_that_can_stack_report_it() {
 // upper one off the lower one, and an engine without it puts both against the letter at the same
 // height.
 fn test_mkm_a_mark_above_a_shadda_is_higher() {
-	f := mkm_font('tahoma.ttf')
+	f := mkm_font('tahoma.ttf') or { return }
 	// beh, shadda, fatha. The fatha belongs on the shadda.
 	ctx := new_context()
 	stacked := layout_paragraph(ctx, runes(mkm_beh, mkm_shadda, mkm_fatha), .rtl,
@@ -97,7 +170,7 @@ fn test_mkm_a_mark_above_a_shadda_is_higher() {
 // them by class. An engine that used one anchor for both would put them in the same place, which is
 // the fault that survives a mark-to-mark lookup being present but its classes being ignored.
 fn test_mkm_different_marks_land_differently() {
-	f := mkm_font('tahoma.ttf')
+	f := mkm_font('tahoma.ttf') or { return }
 	ctx := new_context()
 	mut with_fatha := []rune{}
 	with_fatha << mkm_beh
@@ -133,7 +206,7 @@ fn test_mkm_different_marks_land_differently() {
 // the upper mark's should be different. If both moved together the engine would be repositioning
 // something other than the upper mark, which would look right and be wrong.
 fn test_mkm_the_upper_mark_moves_relative_to_the_letter() {
-	f := mkm_font('tahoma.ttf')
+	f := mkm_font('tahoma.ttf') or { return }
 	ctx := new_context()
 	mut with_fatha := []rune{}
 	with_fatha << mkm_beh
@@ -176,7 +249,7 @@ fn test_mkm_the_upper_mark_moves_relative_to_the_letter() {
 // The stacked path and the against-the-letter path are chosen in the same function, and an engine
 // that always looked for a mark to stack on would leave a lone mark unplaced.
 fn test_mkm_a_lone_mark_is_unaffected() {
-	f := mkm_font('tahoma.ttf')
+	f := mkm_font('tahoma.ttf') or { return }
 	ctx := new_context()
 	mut cps := []rune{}
 	cps << mkm_beh
