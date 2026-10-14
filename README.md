@@ -537,8 +537,34 @@ both start with a dash and guessing which is which is the kind of guess that wor
 v run tools/fetch_ucd.v         # the UCD files, which are not committed
 ```
 
-The tests read real fonts from `C:\Windows\Fonts`, so they only run on a machine with Tahoma, Segoe
-UI and Dubai installed.
+The tests and the examples read fonts in this order: `$VTEXT_TEST_FONTS` then
+`$VTEXT_EXAMPLE_FONTS`, then the committed corpus under `testdata/fonts`, then
+`C:\Windows\Fonts` last and only on Windows. On Linux and macOS the corpus is what answers, so the
+suite runs there — in WSL, 28 of 29 files pass, 1 is blocked, and 88 tests skip with a printed
+reason. A font no directory carries is a skip that says which font and where it looked, never a
+silent pass; `tools/run_tests.v` counts them per file.
+
+On a Windows host nothing changes: the platform directory is reached for the fonts the corpus has
+no equivalent of, and the examples produce byte-identical output. The corpus has no Segoe, Tahoma,
+Consolas or Traditional Arabic, so on a host without them the same text is drawn in Amiri and the
+pictures differ. That is the honest answer, not a regression.
+
+### Looking at the output in a window
+
+`tools/viewpng.v` opens any of the pictures a tool or an example wrote, with the mouse wheel
+scaling about the cursor and the left drag panning:
+
+```sh
+v run tools/viewpng.v examples/mark_stack/mark_stack.png
+```
+
+There is no window *inside* an example, and that is a toolchain limit rather than a choice. A
+program importing both `gg` and `vtext` does not build: each includes `stb_truetype.h` with
+`STB_TRUETYPE_IMPLEMENTATION` into V's single generated C translation unit, and C forbids two
+definitions of one identifier in one unit regardless of linkage. 453 errors, `redefinition of
+'stbtt__buf_get8'` among them, reproducible in twenty-five lines. The viewer is therefore a
+separate program that knows nothing about text, which also means it opens any PNG and the examples
+still build on a machine with no display.
 
 ## Notes on the code
 
