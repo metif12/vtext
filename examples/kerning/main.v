@@ -23,6 +23,7 @@ module main
 
 import math
 import vtext
+import corpus
 import paint
 
 // Two fonts that both cover Latin, and differ in how hard they kern.
@@ -31,8 +32,6 @@ import paint
 // font can make: Tahoma has Arabic kerning and no Latin kerning, and this engine has to respect that.
 // The sizes differ too, and that is the second thing to read off the picture: two fonts of the same point
 // size are not the same size, so a line that looks bigger in one of them is the font's doing.
-const kerning_font = 'C:/Windows/Fonts/segoeui.ttf'
-const plain_font = 'C:/Windows/Fonts/tahoma.ttf'
 
 // Every letter here has a diagonal pair next to it somewhere in the word, which is where a font's
 // kerning lives. Kerning a word with no diagonal in it shows nothing.
@@ -78,15 +77,15 @@ const rule_level = u8(205)
 
 fn main() {
 	ctx := vtext.new_context()
-	kerned := vtext.load_font_file(kerning_font) or { panic('cannot open ${kerning_font}: ${err}') }
-	plain := vtext.load_font_file(plain_font) or { panic('cannot open ${plain_font}: ${err}') }
+	kerned := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	plain := vtext.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 
 	// What the two fonts say about themselves, printed because the picture only means something next to
 	// it: a difference in the spacing is a difference in the font, not in the engine.
 	println('${word}')
 	println('')
-	println('${kerning_font}: kerns latin = ${kerned.kerns('latn')}')
-	println('${plain_font}: kerns latin = ${plain.kerns('latn')}')
+	println(': kerns latin = ${kerned.kerns('latn')}')
+	println(': kerns latin = ${plain.kerns('latn')}')
 	println('')
 	for p in pairs {
 		l := p.left.runes()[0]

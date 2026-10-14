@@ -13,14 +13,20 @@ module main
 
 import vtext
 import paint
+import corpus
 
-// The fonts this example asks for by role, rather than by name. Which file fills a role is this
-// program's decision; what the engine does with the result is the library's.
+// The fonts this example asks for by role, rather than by name. Which file fills a role is the
+// `corpus` module's decision: the committed corpus first, the platform's own directory last and only
+// on Windows. On this machine both resolve to the faces the example was written against and the
+// output is unchanged; on Linux or macOS they resolve to Amiri, and the same three lines draw in a
+// naskh face instead of a Segoe one.
 //
 // Both cover Persian as well as Arabic, including the three letters Persian adds (peh, cheh, gaf) and
 // its own yeh and keheh, so one font set handles both scripts and nothing here falls back.
-const latin_font = 'C:/Windows/Fonts/segoeui.ttf'
-const arabic_font = 'C:/Windows/Fonts/trado.ttf'
+//
+// The families are listed in preference order and the first one that exists wins, which is why a
+// `segoeui.ttf` then `Amiri-Regular.ttf` list is not a guess: on a host with Segoe it is Segoe, and on
+// one without it the corpus answers rather than the example failing to open a font.
 
 // Three lines, so one command shows three things at once.
 //
@@ -48,8 +54,12 @@ const em_px = 28.0
 
 fn main() {
 	ctx := vtext.new_context()
-	latin := vtext.load_font_file(latin_font) or { panic('cannot open ${latin_font}: ${err}') }
-	arabic := vtext.load_font_file(arabic_font) or { panic('cannot open ${arabic_font}: ${err}') }
+	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or {
+		panic('cannot open a Latin font: ${err}')
+	}
+	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or {
+		panic('cannot open an Arabic font: ${err}')
+	}
 	// One set with both fonts in it, so a character the Latin font has no glyph for is found in the
 	// Arabic one rather than drawn as a box. Order is preference: the first font that covers a
 	// character wins.

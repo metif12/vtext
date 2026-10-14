@@ -15,12 +15,11 @@ module main
 
 import os
 import vtext
+import corpus
 import paint
 
 // Two fonts, because the Latin line at the top of the picture is drawn with the same call as the Arabic
 // below it and neither font covers the other's script.
-const latin_font = 'C:/Windows/Fonts/segoeui.ttf'
-const arabic_font = 'C:/Windows/Fonts/trado.ttf'
 
 // The Arabic line. The lam-alef is written as one character pair on purpose: it is the one ligature
 // Arabic forms out of the letters themselves, and it becomes a single glyph whose cluster is the first
@@ -46,8 +45,8 @@ fn main() {
 	debug := os.args.len > 1 && os.args[1] == '-debug'
 
 	ctx := vtext.new_context()
-	latin := vtext.load_font_file(latin_font) or { panic('cannot open ${latin_font}: ${err}') }
-	arabic := vtext.load_font_file(arabic_font) or { panic('cannot open ${arabic_font}: ${err}') }
+	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	fs := vtext.new_script_font_set(arabic, latin)
 
 	mut width := 0

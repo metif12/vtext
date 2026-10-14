@@ -30,10 +30,8 @@
 module main
 
 import vtext
+import corpus
 import paint
-
-const latin_font = 'C:/Windows/Fonts/segoeui.ttf'
-const arabic_font = 'C:/Windows/Fonts/tahoma.ttf'
 
 // Row is one line of the picture: some text and what it is there to show.
 struct Row {
@@ -88,13 +86,13 @@ const baseline_level = u8(205)
 
 fn main() {
 	ctx := vtext.new_context()
-	latin := vtext.load_font_file(latin_font) or { panic('cannot open ${latin_font}: ${err}') }
-	arabic := vtext.load_font_file(arabic_font) or { panic('cannot open ${arabic_font}: ${err}') }
+	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := vtext.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	fs := vtext.new_script_font_set(arabic, latin)
 
 	// What the font says it can do. Every row below depends on these three answers, and printing them
 	// means a reader does not have to take the picture's word for which rules were used.
-	println(arabic_font)
+	println(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf'))
 	println('  places marks on a base      ${arabic.has_mark_attachment()}')
 	println('  stacks one mark on another  ${arabic.stacks_marks()}')
 	println('  puts a mark on a ligature   ${arabic.places_marks_on_ligatures()}')

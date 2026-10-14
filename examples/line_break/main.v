@@ -28,10 +28,8 @@
 module main
 
 import vtext
+import corpus
 import paint
-
-const latin_font = 'C:/Windows/Fonts/segoeui.ttf'
-const arabic_font = 'C:/Windows/Fonts/trado.ttf'
 
 const latin_text = 'The quick brown fox jumps over the lazy dog and keeps on running until it is tired.'
 
@@ -48,8 +46,8 @@ const column_gap = 40.0
 
 fn main() {
 	ctx := vtext.new_context()
-	latin := vtext.load_font_file(latin_font) or { panic('cannot open ${latin_font}: ${err}') }
-	arabic := vtext.load_font_file(arabic_font) or { panic('cannot open ${arabic_font}: ${err}') }
+	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	fs := vtext.new_script_font_set(arabic, latin)
 
 	// Wrap first and measure, so the canvas is sized from what was produced rather than from a guess. A

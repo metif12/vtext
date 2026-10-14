@@ -20,11 +20,9 @@ module main
 import math
 import vtext
 import paint
+import corpus
 
 // Two Arabic-capable fonts that cover Persian as well, so one FontSet serves every row.
-const arabic_font = 'C:/Windows/Fonts/segoeui.ttf'
-const persian_font = 'C:/Windows/Fonts/segoeui.ttf'
-const plain_font = 'C:/Windows/Fonts/tahoma.ttf'
 
 // Case is one word and the feature that changes it.
 struct Case {
@@ -39,19 +37,19 @@ const cases = [
 		text:    'الله'
 		feature: 'liga'
 		about:   'four glyphs become two: a shape that exists only as a pair'
-		font:    arabic_font
+		font:    corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')
 	}
 	Case{
 		text:    'الله'
 		feature: 'liga'
 		about:   'the same in a second font, which agrees'
-		font:    plain_font
+		font:    corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')
 	}
 	Case{
 		text:    'فارسی'
 		feature: 'liga'
 		about:   'five glyphs stay five and the line gets narrower'
-		font:    persian_font
+		font:    corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')
 	},
 ]
 

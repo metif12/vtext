@@ -24,9 +24,8 @@
 module main
 
 import vtext
+import corpus
 import paint
-
-const font_path = 'C:/Windows/Fonts/consola.ttf'
 
 // The codepoint range scanned. Everything above this is not scanned.
 const scan_first = 0
@@ -42,9 +41,9 @@ const many_level = u8(150)
 const none_level = u8(225)
 
 fn main() {
-	f := vtext.load_font_file(font_path) or { panic('cannot open ${font_path}: ${err}') }
+	f := vtext.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	glyphs := f.num_glyphs()
-	println(font_path)
+	println(corpus.font('consola.ttf', 'Amiri-Regular.ttf'))
 	println('  ${glyphs} glyphs, ${f.units_per_em()} units per em')
 
 	// The reverse map, built by asking the font forward for every codepoint in the range. There is no

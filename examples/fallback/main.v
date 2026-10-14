@@ -25,11 +25,10 @@
 module main
 
 import vtext
+import corpus
 import paint
 
 // A font that covers Latin, Greek and Cyrillic and no Arabic, and a font that covers Arabic.
-const first_font = 'C:/Windows/Fonts/consola.ttf'
-const second_font = 'C:/Windows/Fonts/trado.ttf'
 
 // Three lines: one that stays in the first font, one that crosses into the second, and one that runs off
 // the end of the chain. The Hebrew is there on purpose: no font here covers it.
@@ -51,18 +50,18 @@ const missing_level = u8(70)
 
 fn main() {
 	ctx := vtext.new_context()
-	first := vtext.load_font_file(first_font) or { panic('cannot open ${first_font}: ${err}') }
-	second := vtext.load_font_file(second_font) or { panic('cannot open ${second_font}: ${err}') }
+	first := vtext.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	second := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	// Order is preference: a character both fonts cover comes from the first, and one only the second
 	// covers comes from the second.
 	fs := vtext.new_font_set_of(first, second)
 
 	// What each font covers is printed, because the picture only means something next to it. A reader who
 	// does not know that Consolas has no Arabic cannot tell a working fallback from a coincidence.
-	println('first font:  ${first_font}')
+	println('first font:  ')
 	println('  covers Latin A   ${first.has_glyph('A'.runes()[0])}')
 	println('  covers Arabic mim ${first.has_glyph(0x0645)}')
-	println('second font: ${second_font}')
+	println('second font: ')
 	println('  covers Latin A   ${second.has_glyph('A'.runes()[0])}')
 	println('  covers Arabic mim ${second.has_glyph(0x0645)}')
 	println('  covers Hebrew alef ${second.has_glyph(0x05D0)}')
