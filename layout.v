@@ -116,9 +116,30 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 	// from, because that tag is the only thing that survives reordering.
 	mut placed := []Glyph{cap: decomposed.len}
 	for seq in bidi.sequences {
+		// The bidi pass takes X9-removed characters out of its sequences, and a zero
+		// width non-joiner is one of them — its bidi class is BN. But joining has to
+		// see it: it breaks the join where it sits, which is its whole purpose, and a
+		// نیم‌فاصله shaped without it comes out joined. So the non-joiners removed
+		// between two kept characters go back in for shaping; the shaping loop drops
+		// them from its output, so they never become glyphs and the line is unchanged
+		// apart from the shapes on either side. sub_idx maps each shaped position back
+		// to the decomposed text, which is what the cluster mapping below reads
+		// instead of the sequence. A joiner is deliberately not restored: unlike the
+		// non-joiner it is drawn as itself when shaped, so restoring it would add a
+		// glyph the line does not have today, and its join-forcing stays a known gap.
 		mut sub := []rune{cap: seq.len}
-		for i in seq {
+		mut sub_idx := []int{cap: seq.len}
+		for k, i in seq {
+			if k > 0 {
+				for r in seq[k - 1] + 1 .. i {
+					if decomposed[r] == zero_width_non_joiner {
+						sub << decomposed[r]
+						sub_idx << r
+					}
+				}
+			}
 			sub << decomposed[i]
+			sub_idx << i
 		}
 		shaped := ctx.shaper.shape_arabic(ctx.properties, sub)
 		mut run := []Glyph{}
@@ -130,9 +151,9 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 			script = shaped.glyphs[0].script
 		}
 		for g in shaped.glyphs {
-			// A sequence is a list of input indices with the X9-removed characters taken
-			// out, so an index in the shaped run is an offset into the sequence rather than
-			// into the paragraph.
+			// A shaped index counts the restored non-joiners too, so it is an offset
+			// into sub_idx rather than into the sequence; without a restoration the
+			// two are the same list.
 			//
 			// One shaped letter can become more than one glyph, which is what happens to a
 			// lam-alef in a font with no ligature form. Each of those glyphs is tagged with
@@ -144,9 +165,9 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 				// it was written after rather than whichever character canonical ordering happened
 				// to put next to it.
 				offset := g.start + j
-				mut cluster := seq[g.start]
-				if offset < seq.len {
-					decomposed_at := seq[offset]
+				mut cluster := sub_idx[g.start]
+				if offset < sub_idx.len {
+					decomposed_at := sub_idx[offset]
 					if decomposed_at < origin.len {
 						cluster = origin[decomposed_at]
 					}

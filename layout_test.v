@@ -235,6 +235,21 @@ fn test_layout_mark_on_shaped_base_uses_shaped_anchor() {
 	assert approx(mark.x - base.x, f64(off.x) * scale, 0.01), 'the mark sits at the shaped anchor, not the base one'
 }
 
+fn test_layout_zwnj_breaks_join_through_bidi() {
+	ctx := new_context()
+	fs := persian_fonts()
+	// yeh meem ZWNJ feh: the non-joiner is X9-removed from bidi sequences, but joining
+	// has to see it. Shaped without it, the meem joins into the feh and takes the
+	// medial form, and نیم‌فاصله renders joined; with it the meem is final and the
+	// feh, with nothing after it and the join behind it broken, is isolated.
+	line := layout_paragraph(ctx, [rune(0x06CC), rune(0x0645), rune(0x200C), rune(0x0641)], .rtl, fs, 32)
+	assert line.glyphs.len == 3, 'the non-joiner is dropped, not drawn'
+	meem := glyph_at_cluster(line.glyphs, 1) or { panic('no meem glyph') }
+	feh := glyph_at_cluster(line.glyphs, 3) or { panic('no feh glyph') }
+	assert meem.form == .final, 'the non-joiner ends the join: meem is final'
+	assert feh.form == .isolated, 'the non-joiner ends the join: feh is isolated'
+}
+
 fn test_layout_draws_marks_after_letters() {
 	ctx := new_context()
 	fs := persian_fonts()
