@@ -34,6 +34,7 @@ import re
 import shutil
 import subprocess
 import sys
+import unicodedata
 from collections import defaultdict
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -177,17 +178,20 @@ def vtext_mark_rel(vg):
     for k, g in enumerate(vg):
         if not g['is_mark']:
             base_at.setdefault(g['cluster'], abs_pos[k])
-    mark_clusters = set(g['cluster'] for g in vg if g['is_mark'])
     for k, g in enumerate(vg):
         if not g['is_mark']:
             continue
-        c = g['cluster'] - 1
-        while c in mark_clusters:
+        # A mark decomposed from the same character as its base shares that
+        # base's cluster (0622 splits to alef plus maddah, both cluster 4),
+        # so the base's own cluster is checked first — the engine's own rule
+        # is <= for the same reason. Otherwise the walk steps down over
+        # mark-only clusters (and past a lam-alef fusion, which carries the
+        # lam's cluster) to the letter the mark was written after.
+        c = g['cluster']
+        if c not in base_at:
             c -= 1
-        while c >= 0 and c not in base_at:
-            # The base letter fused into a ligature (lam-alef carries the
-            # lam's cluster): keep walking to the glyph that drew it.
-            c -= 1
+            while c >= 0 and c not in base_at:
+                c -= 1
         if c in base_at:
             mx, my = abs_pos[k]
             bx, by = base_at[c]
@@ -202,6 +206,13 @@ def check_case(cid, font_name, cps, direction, size):
     meta, vg, _ = parse_dump(run_vtext(font_path, cps, size, direction))
     upem = int(float(meta.get('upem', '1000')))
     nchars = len(cps)
+    # Glyph names for the mark filter below; the hmtx leg reuses the table.
+    from fontTools.ttLib import TTFont
+    tt = TTFont(font_path, fontNumber=0, lazy=True)
+    try:
+        order = tt.getGlyphOrder()
+    finally:
+        tt.close()
 
     hg = hb_shape(font_path, cps, direction, upem)
     va, ha = per_cluster_adv(vg, nchars), per_cluster_adv(hg, nchars)
@@ -227,15 +238,36 @@ def check_case(cid, font_name, cps, direction, size):
     # (damma on meem: 56 against 76, neither side wrong). vtext_mark_rel
     # re-bases each mark onto its base glyph first, so both numbers are
     # base-relative.
-    vm = vtext_mark_rel(vg)
-    hm = [(g['xoff'], g['yoff']) for g in hg if abs(g['adv']) < 0.001]
+    # is_mark_glyph names the comparable marks: glyphs whose name is a Unicode
+    # combining mark (uni0653 and friends). Zero advance alone does not qualify,
+    # because Naskh-style fonts compose their letters from dot components
+    # through GSUB — threedotsupabovear and dotabovear are zero-advance mark
+    # glyphs clustered to their letter, five of HarfBuzz's six "marks" on
+    # متن آزمایشش, where the engine draws predotted presentation forms and
+    # reports one. Counting every zero-advance glyph compared two different
+    # glyph inventories; descriptive-named real marks are the documented cost,
+    # excluded on both sides equally rather than half-compared.
+    def is_mark_glyph(gid):
+        if gid < 0 or gid >= len(order):
+            return False
+        nm = order[gid]
+        if len(nm) == 7 and nm.startswith('uni'):
+            try:
+                return unicodedata.combining(chr(int(nm[3:], 16))) != 0
+            except Exception:
+                return False
+        return False
+
+    vm = [(x, y, gid, cl) for x, y, gid, cl in vtext_mark_rel(vg)
+          if is_mark_glyph(gid)]
+    hm = [(g['xoff'], g['yoff']) for g in hg
+          if abs(g['adv']) < 0.001 and is_mark_glyph(g['gid'])]
     if len(vm) != len(hm):
         diffs.append(('mark', f'{len(vm)} vtext marks vs {len(hm)} hb marks in run order'))
     else:
         for (rx, ry, gid, cl), (hx, hy) in zip(vm, hm):
             if abs(rx - hx) > TOL['mark_off'] or abs(ry - hy) > TOL['mark_off']:
                 diffs.append(('mark', f'mark gid {gid} cluster {cl}: vtext ({rx:.1f},{ry:.1f}) vs hb ({hx:.1f},{hy:.1f})'))
-
     # fontTools: hmtx advance of every emitted gid vs vtext's advance
     from fontTools.ttLib import TTFont
     tt = TTFont(font_path, fontNumber=0, lazy=True)
