@@ -19,7 +19,7 @@ comes with them.
 | cmap formats 0, 4, 6, 12, 13, 14 | done |
 | Metrics, underline placement, rasterization | done |
 | Unicode normalization (UAX #15) | done |
-| Bidirectional paragraphs (UAX #9) | done |
+| Bidirectional paragraphs (UAX #9) | done, and corrected 2026-10-16 for the NFD index drift below |
 | Arabic joining (UAX #53) | done |
 | Grapheme clusters (UAX #29) | done |
 | Font fallback chains | done |
@@ -86,6 +86,17 @@ performance item, so there is no longer a performance argument for any of them.
 
 These are the things a caller would hit and find missing. Each one is a
 correctness question, not a feature, and none of them is large.
+
+### NFD index drift in visual ordering — fixed 2026-10-16
+
+Bidi runs on the NFD-normalized text, but glyph clusters are original input positions. When NFD
+changes the length — U+0622 splitting to U+0627 plus U+0653 — `place_glyphs` looked up decomposed
+visual indices as original clusters, putting every glyph after the split one position off. The
+visible failure was "ello h" for "hello" in mixed Persian text. Going through the origin mapping
+keeps them aligned, and a `drawn` set skips the second visit when two decomposed characters share
+one origin. A mark sharing its base's cluster (both report 47 for U+0622) now finds that base in
+`position_marks` via `<=` instead of `<`, and skips mark-on-mark stacking when its own cluster has
+a letter.
 
 ### ~~Line breaking (UAX #14)~~
 
