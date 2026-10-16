@@ -162,14 +162,15 @@ fn test_joining_persian_word() {
 	//
 	// The sin takes its initial form, U+FEB3. The pair takes the final ligature U+FEFC,
 	// because the sin joins into the lam, and in logical order that is the join on the
-	// lam's left. The meem takes its final form, U+FEE2, because the ligature hands the
-	// lam's forward join on to it: without that the word would break at the ligature.
-	// U+FEE1 is the isolated meem, which is what a meem at the end of a word with
-	// nothing joining into it would take.
+	// lam's left. The meem takes its isolated form, U+FEE1, because the alef inside
+	// the pair is right joining and never connects forward: the lam's forward join
+	// ends inside the ligature and nothing carries past it. HarfBuzz agrees exactly,
+	// giving the meem Amiri's base gid 85 with advance 452, which is what U+FEE1 maps
+	// to. A final meem here was a bug: propagate_past_ligature handed the join on.
 	got := run(['0633', '0644', '0627', '0645'])
-	assert got == ['FEB3', 'FEFC', 'FEE2'], 'got ${got}'
+	assert got == ['FEB3', 'FEFC', 'FEE1'], 'got ${got}'
 	assert got.len == 3, 'the lam and the alef should fuse'
-	assert run_forms(['0633', '0644', '0627', '0645']) == ['initial', 'final', 'final']
+	assert run_forms(['0633', '0644', '0627', '0645']) == ['initial', 'final', 'isolated']
 }
 
 // A Persian phrase with a space in it: the space has no shape and must not connect

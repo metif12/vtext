@@ -1,13 +1,9 @@
 arabic-hello	cluster	char 1 U+0644: vtext 691.00 vs hb 245.00
 arabic-hello	cluster	char 2 U+0627: vtext 0.00 vs hb 446.00
-arabic-hello	cluster	char 3 U+0645: vtext 522.00 vs hb 452.00
-arabic-hello	width	total: vtext 1781.00 vs hb 1711.00
 arabic-two-words	cluster	char 1 U+0644: vtext 691.00 vs hb 245.00
 arabic-two-words	cluster	char 2 U+0627: vtext 0.00 vs hb 446.00
-arabic-two-words	cluster	char 3 U+0645: vtext 522.00 vs hb 452.00
 arabic-two-words	cluster	char 6 U+0646: vtext 190.00 vs hb 274.00
 arabic-two-words	cluster	char 7 U+06CC: vtext 244.00 vs hb 168.00
-arabic-two-words	width	total: vtext 3186.00 vs hb 3124.00
 arabic-two-words	ink	U+062F: box vtext 12x14 vs pillow 10x13
 arabic-marks	cluster	char 0 U+0628: vtext 190.00 vs hb 219.00
 arabic-marks	cluster	char 2 U+0633: vtext 568.00 vs hb 291.00
@@ -52,29 +48,24 @@ arabic-zwnj	mark	0 vtext marks vs 1 hb marks in run order
 arabic-digits	mark	1 vtext marks vs 6 hb marks in run order
 mixed-arabic-latin	cluster	char 3 U+0644: vtext 691.00 vs hb 245.00
 mixed-arabic-latin	cluster	char 4 U+0627: vtext 0.00 vs hb 446.00
-mixed-arabic-latin	cluster	char 5 U+0645: vtext 522.00 vs hb 452.00
-mixed-arabic-latin	width	total: vtext 4934.00 vs hb 4864.00
 mixed-arabic-latin	ink	U+0069: box vtext 8x22 vs pillow 8x20
 mixed-arabic-latin	ink	U+0627: box vtext 5x25 vs pillow 4x23
 mixed-bidi-number	cluster	char 4 U+0633: vtext 568.00 vs hb 992.00
 mixed-bidi-number	cluster	char 5 U+0644: vtext 691.00 vs hb 603.00
 mixed-bidi-number	cluster	char 6 U+0627: vtext 0.00 vs hb 217.00
-mixed-bidi-number	cluster	char 7 U+0645: vtext 522.00 vs hb 452.00
 mixed-bidi-number	cluster	char 15 U+0066: vtext 300.00 vs hb 289.00
-mixed-bidi-number	width	total: vtext 6793.00 vs hb 7265.00
 persian-digits	cluster	char 7 U+0633: vtext 568.00 vs hb 344.00
 persian-digits	cluster	char 8 U+06CC: vtext 585.00 vs hb 730.00
 persian-digits	width	total: vtext 7781.00 vs hb 7702.00
 persian-digits	ink	U+06F1: box vtext 7x23 vs pillow 6x21
 nastaliq-hello	cluster	char 1 U+0644: vtext 848.00 vs hb 201.00
 nastaliq-hello	cluster	char 2 U+0627: vtext 264.00 vs hb 297.00
-nastaliq-hello	cluster	char 3 U+0645: vtext 438.00 vs hb 660.00
 nastaliq-hello	cluster	char 5 U+062F: vtext 300.00 vs hb 330.00
-nastaliq-hello	width	total: vtext 3324.00 vs hb 2961.00
 nastaliq-hello	mark	0 vtext marks vs 6 hb marks in run order
 naskh-joining	cluster	char 1 U+0644: vtext 610.00 vs hb 310.00
 naskh-joining	cluster	char 2 U+0627: vtext 0.00 vs hb 300.00
-naskh-joining	cluster	char 3 U+0645: vtext 528.00 vs hb 489.00
-naskh-joining	width	total: vtext 3319.00 vs hb 3280.00
 naskh-joining	mark	0 vtext marks vs 2 hb marks in run order
 variable-naskh	mark	1 vtext marks vs 6 hb marks in run order
+arabic-two-words	width	total: vtext 3116.00 vs hb 3124.00
+mixed-bidi-number	width	total: vtext 6723.00 vs hb 7265.00
+nastaliq-hello	width	total: vtext 3546.00 vs hb 2961.00

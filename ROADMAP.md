@@ -1418,17 +1418,36 @@ identity and advances, Pillow for the rasterized box and coverage, and Pango
 for how many lines a width makes and how wide each is. Thirteen cases, from
 `salam` to the nastaliq torture line to mixed bidi with digits.
 
-The first run found eighty differences, and the most interesting one is not a
-tolerance question. For U+0633 U+0644 U+0627 U+0645 in Amiri the engine emits
-three glyphs: lam and alef become one glyph, U+FEFC, advance 691, and alef's
-cluster is empty. HarfBuzz emits four, lam 245 and alef 446, with or without
-explicit liga and rlig. There is no lam-alef ligature in any type-4 lookup in
-the font — searched by component glyph id and by result name — so the
-engine's substitution comes from somewhere HarfBuzz never goes, most likely a
-context it does not check. The totals agree to 4% and every cluster boundary
-disagrees by hundreds of units, which is exactly what an over-eager
-substitution looks like. Fixing it is phase-1 work; the suite's job is to
-notice it, which it did on day one.
+The first run found eighty differences, and sorting them taught something the raw
+count hid. For U+0633 U+0644 U+0627 U+0645 in Amiri the engine emits three
+glyphs — lam and alef fused as U+FEFC, advance 691, alef's cluster empty —
+where HarfBuzz emits four, lam 245 and alef 446. That fusion is not a bug: it
+is the settled order from the joining attempt above, the shaper fusing what it
+recognises as one shape while the font shapes what it recognises as one
+letter. And it is advance-neutral, 691 against 245 plus 446 exactly, so it
+contributes nothing to any total-width difference. The cluster-split entries
+stay in the baseline with this reason, not as defects.
+
+The defect the suite actually found sat one letter over. The meem after the
+pair came out U+FEE2, final form, advance 522, against HarfBuzz's base gid 85
+at 452 — the whole of the case's 70-unit total difference. The cause was
+`propagate_past_ligature` in joining.v, which handed the lam's forward join to
+whatever followed the alef on the theory that the word would otherwise break
+at the ligature. But the alef is right joining and never connects forward,
+and the fused form is final or isolated, neither of which connects forward
+either: the lam's forward join ends inside the ligature. Feature-by-feature
+shaping confirmed it — with init and medi off, HarfBuzz leaves that meem
+exactly where it is, isolated — and removing the propagation fixed twelve
+diffs across six cases, with Amiri's سلام totals agreeing exactly at 1711.
+U+FEE1, the isolated meem, maps to the same gid 85 in Amiri's cmap, which is
+why the fix converges rather than merely moving the difference.
+
+Two residuals deserve their names so they are leads rather than mysteries.
+In mixed-bidi-number the corrected meem unmasked a separate over-wide
+cluster elsewhere in the case, and in nastaliq-hello the meem itself now
+matches HarfBuzz at 660 while the remaining 585 units sit in the pre-existing
+joining differences. Both are recorded in the baseline with their new values,
+and neither belongs to this fix.
 
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a

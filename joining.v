@@ -159,14 +159,15 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 			form := if join_prev[i] { JoiningForm.final } else { JoiningForm.isolated }
 			glyph := s.find_ligature(0x0644, u32(cps[i + 1]), u16(form))
 			if glyph != 0 {
-				// The ligature is drawn as one glyph, but it sits where the lam was, and
-				// the lam was free to connect to the letter on its other side. That join
-				// has to be carried over to whatever follows the alef, or the word would
-				// break at the ligature. This is what lets a lam-alef sit in the middle
-				// of a word rather than only at its edges.
-				propagate_past_ligature(p, cps, i, mut join_prev, mut join_next)
 				// The pair covers the lam and the alef. Any mark after the alef belongs to
 				// the ligature, and becomes a glyph of its own.
+				//
+				// Nothing carries past the alef: it is right joining, so it never
+				// connects to the letter that follows it, and the fused form is final
+				// or isolated, neither of which connects forward either. The lam's
+				// forward join ends inside the ligature. Measured against HarfBuzz on
+				// Amiri's سلام: the meem after the pair is isolated (base gid 85),
+				// not final, and handing the join on is what wrongly gave it U+FEE2.
 				out.glyphs << ShapedGlyph{
 					cps:    [rune(glyph)]
 					base:   [cps[i], cps[i + 1]]
@@ -293,28 +294,6 @@ fn attach_marks(p &Properties, cps []rune, from int, mut out &ShapedRun) int {
 		out.glyphs[out.glyphs.len - 1].selectors << selectors
 	}
 	return i
-}
-
-// propagate_past_ligature carries the lam's forward join onto the letter after the alef.
-//
-// The alef is right joining, so it never connects to the letter that follows it, and
-// the join the lam would have made to that letter is lost when the two are drawn as one
-// glyph. Handing it on is what keeps a lam-alef in the middle of a word connected to what
-// comes after it.
-fn propagate_past_ligature(p &Properties, cps []rune, lam_at int, mut join_prev []bool,
-	mut join_next []bool) {
-	// A join the lam could not make in the first place carries nothing forward.
-	if !join_next[lam_at] {
-		return
-	}
-	after := next_letter(p, cps, lam_at + 1)
-	if after < 0 {
-		return
-	}
-	// The letter after the alef takes the join, and it does so by the same rule as any
-	// other pair: the ligature stands where the lam was, and the ligature connects
-	// forward whenever the lam could.
-	join_prev[after] = true
 }
 
 // form_for picks the shape from the two join decisions.
