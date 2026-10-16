@@ -178,8 +178,11 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 		}
 		// The font's own substitutions, before anything is placed. A ligature or a mark
 		// composition is a property of the text's order, not of where it ends up on the line, so
-		// it has to happen while the run is still in logical order.
-		for glyph in substitute_in_fonts(run, em_px, script, options.features) {
+		// it has to happen while the run is still in logical order. Kerning goes through the
+		// same path for the same reason, and it needs the run's direction: the kern folds
+		// into the advance of the visually first glyph of the pair.
+		rtl := seq.len > 0 && bidi.levels[seq[0]] & 1 == 1
+		for glyph in substitute_in_fonts(run, em_px, script, options.features, rtl) {
 			placed << glyph
 		}
 	}
@@ -242,7 +245,8 @@ fn is_space_at(props &Properties, cps []rune, i int) bool {
 // letters a ligature would have fused are drawn apart. That is the honest answer for a line whose
 // characters came from different fonts: there is no single glyph to draw them as, and a mark
 // composition that needs the letter before it is out of reach for the same reason.
-fn substitute_in_fonts(glyphs []Glyph, em_px f64, script string, features []string) []Glyph {
+fn substitute_in_fonts(glyphs []Glyph, em_px f64, script string, features []string,
+	rtl bool) []Glyph {
 	if glyphs.len == 0 {
 		return glyphs
 	}
@@ -267,7 +271,51 @@ fn substitute_in_fonts(glyphs []Glyph, em_px f64, script string, features []stri
 		}
 		at = end
 	}
+	kern_pairs(mut out, em_px, script, rtl)
 	return out
+}
+
+// kern_pairs folds the font's pair positioning into advances, after every substitution
+// has run so the pairs are the glyphs the font's rules are written against.
+//
+// Only plain adjacency is considered: same font on both sides, no marks in the pair.
+// A mark between two letters is left to the lookups' own flags, which this does not
+// second-guess, and a fallback seam has no single table to ask.
+//
+// The kern folds into the advance of the visually first glyph of the pair — the first
+// logical glyph going left to right, the second going right to left — which is where
+// HarfBuzz reports it: AV tightens A's advance, and e-f in an RTL run tightens f's.
+fn kern_pairs(mut glyphs []Glyph, em_px f64, script string, rtl bool) {
+	if glyphs.len < 2 {
+		return
+	}
+	mut gids := []u16{cap: glyphs.len}
+	for g in glyphs {
+		gids << g.gid
+	}
+	for i in 0 .. glyphs.len - 1 {
+		a := glyphs[i]
+		b := glyphs[i + 1]
+		if a.is_mark || b.is_mark {
+			continue
+		}
+		fa := a.font or { continue }
+		fb := b.font or { continue }
+		if fa != fb {
+			continue
+		}
+		off := fa.context_placement(gids, i, i + 1, script) or { continue }
+		scale := em_px / f64(fa.face.units_per_em)
+		// y is positive upwards in the font and downwards on the line, as in
+		// position_marks, so it is flipped here rather than at the callers.
+		if rtl {
+			glyphs[i + 1].advance += f64(off.x) * scale
+			glyphs[i + 1].y -= f64(off.y) * scale
+		} else {
+			glyphs[i].advance += f64(off.x) * scale
+			glyphs[i].y -= f64(off.y) * scale
+		}
+	}
 }
 
 // place_glyphs positions the glyphs on the line in visual order.

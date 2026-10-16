@@ -758,21 +758,36 @@ pub fn (g &Gpos) kerning_for(script string) []u16 {
 // A value of zero is a real answer, and it is different from no answer: it is the font saying the
 // pair is already correct. The caller cannot tell the two apart from the number, so this returns
 // none only when the font has no rule at all.
+//
+// Adjustments accumulate across lookups rather than stopping at the first: every lookup that
+// matches applies, and the line moves by their sum. A PairPos class-0 row matches any glyph its
+// classes do not name, usually for zero, so stopping at the first match would let that zero
+// hide a real kern a contextual lookup holds for the same pair — e-f in Amiri reports (0, 0)
+// from the class row and -11 from the chain, and HarfBuzz draws the -11.
 pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string) ?Offset2 {
+	mut x := 0
+	mut y := 0
+	mut found := false
 	for li in g.kerning_for(script) {
 		if li >= g.lookups.len {
 			continue
 		}
 		for rule in g.lookups[li].pairs {
 			if a := rule.offset_for(left_gid, right_gid) {
-				return Offset2{
-					x: a.x
-					y: a.y
-				}
+				x += a.x
+				y += a.y
+				found = true
+				break
 			}
 		}
 	}
-	return none
+	if !found {
+		return none
+	}
+	return Offset2{
+		x: x
+		y: y
+	}
 }
 
 // has_kerning reports whether the font has any pair adjustment for a script, which is what a
@@ -864,14 +879,23 @@ pub fn (g &Gpos) has_contextual_positioning(script string) bool {
 // The plain pair rules are answered first, because a rule that says one thing about a pair regardless of
 // its surroundings is a more specific answer than one that says what to do only in a context, and a font
 // may put both kinds under one feature.
+//
+// Both answers count when both exist: adjustments accumulate across lookups rather than stopping at
+// the first, so a class-0 zero from the pairs does not hide a contextual kern for the same glyphs.
+// e-f in Amiri is (0, 0) plain and -11 in context, and HarfBuzz draws the sum.
 pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string) ?Offset2 {
 	if left < 0 || right >= gids.len || left >= right {
 		return none
 	}
 	left_gid := gids[left]
 	right_gid := gids[right]
+	mut x := 0
+	mut y := 0
+	mut found := false
 	if off := g.kern_offset(left_gid, right_gid, script) {
-		return off
+		x += off.x
+		y += off.y
+		found = true
 	}
 	for li in g.kerning_for(script) {
 		if li >= g.lookups.len {
@@ -921,24 +945,36 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string) 
 					// a glyph is what the font meant even when the same lookup also carries pair rules.
 					for rule in g.lookups[target].singles {
 						if a := rule.offset_for(named) {
-							return a
+							x += a.x
+							y += a.y
+							found = true
+							break
 						}
 						if named != other {
 							if a := rule.offset_for(other) {
-								return a
+								x += a.x
+								y += a.y
+								found = true
+								break
 							}
 						}
 					}
 					for rule in g.lookups[target].pairs {
 						if a := rule.offset_for(left_gid, right_gid) {
-							return Offset2{ x: a.x, y: a.y }
+							x += a.x
+							y += a.y
+							found = true
+							break
 						}
 					}
 				}
 			}
 		}
 	}
-	return none
+	if !found {
+		return none
+	}
+	return Offset2{ x: x, y: y }
 }
 
 // spans_pair reports whether a matched pattern is about the pair the caller named.

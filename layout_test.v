@@ -250,6 +250,21 @@ fn test_layout_zwnj_breaks_join_through_bidi() {
 	assert feh.form == .isolated, 'the non-joiner ends the join: feh is isolated'
 }
 
+fn test_layout_applies_pair_kern_to_advance() {
+	ctx := new_context()
+	f := amiri() or { return }
+	mut fs := new_font_set()
+	fs.add(f)
+	// AV in Amiri kerns by -62 design units on the A: the kern folds into the advance
+	// of the visually first glyph of the pair, which HarfBuzz reports as 550 against
+	// the hmtx 612. Without the kern pass both advances come straight from hmtx.
+	line := layout_paragraph(ctx, [rune(0x0041), rune(0x0056)], .ltr, fs, 1000)
+	a := glyph_at_cluster(line.glyphs, 0) or { panic('no A glyph') }
+	v := glyph_at_cluster(line.glyphs, 1) or { panic('no V glyph') }
+	assert a.advance > 549.0 && a.advance < 551.0, 'the kern tightened A, got ${a.advance}'
+	assert v.advance > 622.0 && v.advance < 624.0, 'V is untouched, got ${v.advance}'
+}
+
 fn test_layout_draws_marks_after_letters() {
 	ctx := new_context()
 	fs := persian_fonts()
