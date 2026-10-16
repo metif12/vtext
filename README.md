@@ -133,14 +133,34 @@ Named here so that a caller is not surprised by them.
   every character rather than at the word boundaries a reader expects.
 
   Line breaking is measured against the Unicode committee's own test for this version, not described.
-  It passes **13,453 of 19,346 cases (69.5%)**, and `linebreak_conformance_test.v` asserts that as a
-  floor on every run, so the number cannot be quietly lowered. A run of digits holds together, and so
-  does a letter-digit boundary, so `12345` and `H2O` do not split.
+  It passes **18,777 of 19,346 cases (97.1%)**, and `linebreak_conformance_test.v` asserts that as a
+  floor on every run, so the number cannot be quietly lowered.
 
-  One consequence is worth knowing about: **a line may not end on a combining mark**, which in UAX #14
-  includes the zero width non-joiner. So `نیم‌فاصله` is no longer breakable at its joiner, though the
-  two halves remain visually separate. To break there the text has to carry a word joiner. This follows
-  the specification and is worth 312 conformance cases, and `ROADMAP.md` records it as the trade-off it is.
+## Guarantees
+
+What the library promises, what it refuses to guess, and what the caller decides.
+
+**A shaped run is what the font says.** Joining forms, ligatures, mark positions and kerns all come
+from the font's own GSUB and GPOS tables. Where the font is silent — a mark with no anchor, a pair
+with no kern — the mark stays at the pen and the pair is unkerned, rather than invented.
+
+**A glyph maps back to the text.** Every `Glyph` carries the input cluster it came from, through
+substitutions that split one character into several and ligatures that fuse several into one, and
+through NFD reordering the text before shaping. A caret position survives the pipeline.
+
+**A missing glyph is drawn, not dropped.** A character no font covers gets glyph zero in the font
+that was asked, and `.notdef` is drawn as the hollow box it is. Dropping it would move every glyph
+after it along, which changes the text instead of showing that something was lost.
+
+**A subsetter refuses rather than writes a wrong font.** `tools/subset.v` keeps glyph ids instead of
+renumbering them, loads what it wrote back, and compares every kept glyph's rasterization. A subset
+that shapes differently is an error, not a smaller success.
+
+**What the caller decides, because the library cannot.** The font fallback chain and its order. The
+line height below the natural one, which clips the ink. A word wider than the margin, which goes on
+a line of its own rather than being hyphenated. Alignment, which needs a container width the engine
+does not have. And the glyph cache, which lives with the caller because the key needs a font id only
+the caller assigns.
 - **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
   Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
 - **Cursive attachment.** The rules are read correctly from real fonts — Amiri, Noto Nastaliq Urdu and Dubai
