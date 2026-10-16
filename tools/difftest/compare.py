@@ -156,6 +156,45 @@ def per_cluster_adv(glyphs, nchars):
     return acc
 
 
+def vtext_mark_rel(vg):
+    """Base-relative mark positions: (x, y_up, gid, cluster) per mark.
+
+    The dump carries pen-relative offsets, so absolute pen positions are
+    reconstructed first (pen starts at 0, each glyph's advance moves it) and
+    each mark is then measured from the nearest preceding non-mark glyph,
+    which is its base in visual order. y is flipped to HarfBuzz sign
+    (positive up) at the same time, the one place the sign lives.
+    """
+    abs_pos, ismark, out = [], [], []
+    pen = 0.0
+    for g in vg:
+        abs_pos.append((pen + g['xoff'], -g['yoff']))
+        ismark.append(g['is_mark'])
+        pen += g['adv']
+    # Cluster of every non-mark glyph: a mark's base is found through the
+    # input index, not through neighbours.
+    base_at = {}
+    for k, g in enumerate(vg):
+        if not g['is_mark']:
+            base_at.setdefault(g['cluster'], abs_pos[k])
+    mark_clusters = set(g['cluster'] for g in vg if g['is_mark'])
+    for k, g in enumerate(vg):
+        if not g['is_mark']:
+            continue
+        c = g['cluster'] - 1
+        while c in mark_clusters:
+            c -= 1
+        while c >= 0 and c not in base_at:
+            # The base letter fused into a ligature (lam-alef carries the
+            # lam's cluster): keep walking to the glyph that drew it.
+            c -= 1
+        if c in base_at:
+            mx, my = abs_pos[k]
+            bx, by = base_at[c]
+            out.append((mx - bx, -(my - by), g['gid'], g['cluster']))
+    return out
+
+
 def check_case(cid, font_name, cps, direction, size):
     """Returns (diffs, meta). diffs is a list of (check, detail)."""
     diffs = []
@@ -180,14 +219,22 @@ def check_case(cid, font_name, cps, direction, size):
     # marked line for bookkeeping rather than ink. Both sides emit glyphs in
     # visual order, so the i-th mark on each side is the same mark, and what
     # is compared is where it sits.
-    vm = [g for g in vg if g['is_mark']]
-    hm = [g for g in hg if abs(g['adv']) < 0.001]
+    #
+    # Where it sits needs the same origin on both sides. HarfBuzz reports a
+    # mark offset relative to its base glyph's origin; the dump's xoff is
+    # relative to the running pen, a different quantity. Comparing those
+    # directly failed every mark in the corpus for bookkeeping a second time
+    # (damma on meem: 56 against 76, neither side wrong). vtext_mark_rel
+    # re-bases each mark onto its base glyph first, so both numbers are
+    # base-relative.
+    vm = vtext_mark_rel(vg)
+    hm = [(g['xoff'], g['yoff']) for g in hg if abs(g['adv']) < 0.001]
     if len(vm) != len(hm):
         diffs.append(('mark', f'{len(vm)} vtext marks vs {len(hm)} hb marks in run order'))
     else:
-        for x, y in zip(vm, hm):
-            if abs(x['xoff'] - y['xoff']) > TOL['mark_off'] or abs(x['yoff'] - y['yoff']) > TOL['mark_off']:
-                diffs.append(('mark', f'mark gid {x["gid"]} cluster {x["cluster"]}: vtext ({x["xoff"]:.1f},{x["yoff"]:.1f}) vs hb ({y["xoff"]:.1f},{y["yoff"]:.1f})'))
+        for (rx, ry, gid, cl), (hx, hy) in zip(vm, hm):
+            if abs(rx - hx) > TOL['mark_off'] or abs(ry - hy) > TOL['mark_off']:
+                diffs.append(('mark', f'mark gid {gid} cluster {cl}: vtext ({rx:.1f},{ry:.1f}) vs hb ({hx:.1f},{hy:.1f})'))
 
     # fontTools: hmtx advance of every emitted gid vs vtext's advance
     from fontTools.ttLib import TTFont

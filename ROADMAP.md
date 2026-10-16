@@ -1483,6 +1483,22 @@ the same: ten mark offsets differ by hundreds of units — (674,201) against
 and two meems (522 against 565 and 522 against 223) sit in marked contexts
 the isolated-meem fix did not reach. That triage is the next unit.
 
+Diagnosed, root cause in the font's own tables. Amiri's Arabic mark
+attachment lives in GPOS lookups 49 and 50, about five thousand base glyphs
+each, and their coverage names exactly two families: the GSUB joining
+outputs (glyph01543, glyph02588, glyph03259, glyph03662, glyph04030) and the
+base letters (uni0628, uni0633, uni0645). No presentation form appears in any
+of them — not FEE7, FEE2, FE8F, FE8E, FEB3 or FBFF. The engine draws
+presentation forms by the deliberate cmap route, so the glyphs on screen are
+precisely the glyphs the font wrote no anchors against. The comparator's mark
+leg was hardened first, because it compared pen-relative offsets against
+base-relative ones and miscounted a leading mark besides; rebased onto the
+base through the input cluster, fusion-aware, it reports the same ten lines,
+which is what proves they are engine positioning gaps rather than harness
+bookkeeping. Closing them means resolving anchors across the route
+boundary — the presentation glyph on screen against the base letter's anchor
+records — which is the next unit's work.
+
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a
 baseline entry for a diff that no longer occurs exits 1 naming it stale. The
