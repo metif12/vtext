@@ -1501,11 +1501,20 @@ One correction to the story above, because the history matters: the fallback
 already exists. `Glyph.base_gid` records the base letter behind every
 presentation form, and `position_marks` retries a missed anchor through it —
 that is what positioned nine of ten marks in the test line. The ten corpus
-marks are still hundreds of units off, so the fallback does not reach them,
-and the open question is which step misses: the mark's coverage, the anchor
-class the fallback reads, or advances accumulating under a mark the layout
-never re-based. That is the next unit's work, and it starts from the ten
-lines, not from the tables.
+marks are still hundreds of units off, and the reason is now measured to the
+anchor pair, not guessed. Kasra on the beh of بِسْم: vtext reports (276, 0),
+HarfBuzz (-133, 0), and in isolation both report (276, 0). The beh in
+isolation is the base glyph uni0628, whose lookup-50 anchor is (276, 0); the
+beh in context is GSUB-initial glyph03639, whose lookup-50 anchor is
+(-133, 0). vtext draws presentation-initial beh and falls back to the base
+letter's anchor — the isolated shape's number applied to the initial shape's
+glyph. Anchors are per-shape and differ by hundreds, so resolving coverage
+was necessary and is not sufficient. No presentation form appears as a mark
+base or ligature component in any GPOS mark lookup in Amiri — searched all of
+them — so there is no in-font record that names the drawn glyph. The fix is
+shape-aware anchor resolution: from a presentation form and its joining
+shape, reach the GSUB glyph of that shape and read its anchor. That is
+designed, not done, and it starts from the kasra pair above.
 
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a
