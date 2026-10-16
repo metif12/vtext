@@ -164,6 +164,26 @@ fn test_joining_leaves_a_font_that_maps_presentation_forms_alone() {
 	}
 }
 
+// Noto Nastaliq draws its lam-alef pair through a plain context rule (type 5 format 1):
+// lam-medi followed by alef-fina invokes the lookup that draws both .LA forms. Without
+// the plain-context reader the lam stays lam-fina at 848 wide and HarfBuzz reports 201;
+// with it the lam's share of the pair is 201. A plain number comparison would also pass
+// for a dropped lam, so the count is asserted too: the pair is two glyphs, one advancing.
+fn test_plain_context_selects_nastaliq_lam_alef() {
+	f := corpus_font('NotoNastaliqUrdu-Regular.ttf')
+	line := laid_out(f, 'سلام')
+	mut lam := 0.0
+	mut lam_glyphs := 0
+	for g in line.glyphs {
+		if g.cluster == 1 {
+			lam += g.advance
+			lam_glyphs++
+		}
+	}
+	assert lam_glyphs == 2, 'the lam draws as a pair, got ${lam_glyphs} glyphs'
+	assert lam > 200.0 && lam < 202.0, 'the lam-alef context fired, got ${lam}'
+}
+
 fn approx_zero(w f64) bool {
 	return w > -0.001 && w < 0.001
 }

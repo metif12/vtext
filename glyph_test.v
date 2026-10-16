@@ -222,9 +222,11 @@ fn test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw() {
 	}
 	out := fs.shaped_glyphs(ctx, sg, 32)
 	assert out.len == 2, 'a lam-alef is drawn as its two letters'
-	// The lam takes the shape the ligature had, and the alef connects backwards because the
-	// lam did.
-	assert out[0].form == .final
+	// The lam keeps its own joins rather than the pair's: it joins the alef ahead of
+	// it, so with the pair joined behind it is medial. Final here would skip the
+	// medial-masked lookups, which is what kept Nastaliq's rlig .LA context from
+	// forming; the alef connects backwards because the lam did.
+	assert out[0].form == .medial
 	assert out[1].form == .final
 	// A pair standing on its own joined nothing, so neither half is final.
 	lone := ShapedGlyph{

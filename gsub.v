@@ -22,17 +22,18 @@ module vtext
 // cmap never hands out, so no text the pipeline can produce reaches them. See the note on
 // mark_glyphs_passthrough in gpos.v for what that gap actually is.
 //
-// What is not here is the rest of context substitution: the plain context format, lookup type 5,
-// and the two chaining formats that need a class definition and a nested rule set, which are
-// formats 1 and 2 of type 6. Every Arabic font this engine is pointed at composes through format
-// 3 alone, so those are named here as deliberately absent rather than shipped untested against a
-// font that does not reach for them.
+// What is not here is the rest of context substitution: the class-based formats 2 and 3
+// of lookup type 5, and the two chaining formats that need a class definition and a nested
+// rule set, which are formats 1 and 2 of type 6. The one format-1 context in the corpus,
+// Noto Nastaliq's lam-alef rule, is read; the class-based ones have no font reaching for
+// them here and stay named as deliberately absent rather than shipped untested.
 
 // Lookup types, from the OpenType specification.
 const gsub_lookup_single = 1
 const gsub_lookup_multiple = 2
 const gsub_lookup_alternate = 3
 const gsub_lookup_ligature = 4
+const gsub_lookup_context = 5
 const gsub_lookup_chain_context = 6
 const gsub_lookup_extension = 7
 
@@ -147,6 +148,24 @@ mut:
 	lookup u16
 }
 
+// Context1 is one plain context (type 5) subtable in format 1: a coverage naming the
+// first glyph and, per covered glyph, the rules for what follows it.
+//
+// Format 1 names glyphs directly, which is why it needs no class definition: the input
+// is a list of glyph ids matched in order against the run, and the records name the
+// lookups to run at each matched position. Formats 2 and 3 match through classes and
+// are not read. The one format-1 rule in the corpus is Noto Nastaliq's lam-alef:
+// coverage lam-medi/lam-init, input alef-fina, lookup 0 at both positions, which is
+// what turns the pair into the .LA forms HarfBuzz draws.
+struct ContextRule {
+mut:
+	// input are the glyphs after the first, matched in order.
+	input []u16
+	// records are the lookups to run at the matched positions, position zero being
+	// the covered glyph itself.
+	records []ChainRecord
+}
+
 // ChainContext3 is a chaining context in format 3: the pattern of glyphs before, at and after the
 // position being substituted, given as coverage tables.
 //
@@ -194,6 +213,12 @@ mut:
 	ligatures  []LigatureSet
 	multiples  []MultipleSubst
 	chains     []ChainContext3
+	// context_coverage names the first glyph of each plain-context rule, and
+	// context_sets holds one rule list per covered glyph, in coverage order. A NULL
+	// set offset parses to an empty list rather than shifting the rest, for the same
+	// positional reason an empty multiple sequence is kept.
+	context_coverage []CoverageRange
+	context_sets     [][]ContextRule
 	// longest_ligature is how many components the longest ligature rule in this lookup has, and so
 	// how many glyphs a match can read past the one it starts from.
 	//
@@ -494,7 +519,7 @@ pub fn (g &Gsub) substitute_forms(lookups []u16, items []Ligatable, want ?Joinin
 fn lookup_substitutes(l &Lookup) bool {
 	return l.kind == gsub_lookup_single || l.kind == gsub_lookup_multiple
 		|| l.kind == gsub_lookup_alternate || l.kind == gsub_lookup_ligature
-		|| l.kind == gsub_lookup_chain_context
+		|| l.kind == gsub_lookup_chain_context || l.kind == gsub_lookup_context
 }
 
 // substitute_one runs one lookup over a whole run.
@@ -697,6 +722,9 @@ fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth int) ?
 	if lookup.kind == gsub_lookup_chain_context {
 		return g.apply_chain(lookup, items, eff, at, depth)
 	}
+	if lookup.kind == gsub_lookup_context {
+		return g.apply_context(lookup, items, eff, at, depth)
+	}
 	return none
 }
 
@@ -751,38 +779,91 @@ fn (g &Gsub) apply_ligature(lookup Lookup, items []Ligatable, eff []int, at int)
 	}
 }
 
+// apply_records runs a matched context's records against the run. Records run from the
+// last input position backwards, which is what lets each one be run against the run as
+// it stands: every edit made so far was at a higher index, and changing the length of a
+// list after an index does not move that index. Both chaining and plain contexts share
+// it, because a matched pattern is a matched pattern whichever table named it.
+fn (g &Gsub) apply_records(records []ChainRecord, m ChainMatch, items []Ligatable,
+	eff []int, depth int) ?Substitution {
+	mut work := items
+	mut edits := []Edit{}
+	for record in records {
+		if record.position >= m.positions.len {
+			continue
+		}
+		pos := m.positions[record.position]
+		if pos < 0 || pos >= work.len {
+			continue
+		}
+		if sub := g.apply_at(record.lookup, work, one_at(pos), 0, depth + 1) {
+			for e in sub.edits {
+				edits << e
+			}
+			work = splice(work, sub)
+		}
+	}
+	if edits.len > 0 {
+		return Substitution{ edits: edits }
+	}
+	return none
+}
+
 // apply_chain runs a chaining context's records against the run once its pattern has matched.
-//
-// The records are applied from the last input position backwards, which is what lets each one be
-// run against the run as it stands: every edit made so far was at a higher index, and changing
-// the length of a list after an index does not move that index.
 fn (g &Gsub) apply_chain(lookup Lookup, items []Ligatable, eff []int, at int,
 	depth int) ?Substitution {
 	for chain in lookup.chains {
 		if m := g.match_chain_at(chain, eff, items, at) {
-			mut work := items
-			mut edits := []Edit{}
-			for record in chain.records {
-				if record.position >= m.positions.len {
-					continue
-				}
-				pos := m.positions[record.position]
-				if pos < 0 || pos >= work.len {
-					continue
-				}
-				if sub := g.apply_at(record.lookup, work, one_at(pos), 0, depth + 1) {
-					for e in sub.edits {
-						edits << e
-					}
-					work = splice(work, sub)
-				}
-			}
-			if edits.len > 0 {
-				return Substitution{ edits: edits }
+			if sub := g.apply_records(chain.records, m, items, eff, depth) {
+				return sub
 			}
 		}
 	}
 	return none
+}
+
+// apply_context runs a plain context's rules against the run: the first rule whose input
+// follows the covered glyph wins, and its records run through the same path as a chain's.
+fn (g &Gsub) apply_context(lookup Lookup, items []Ligatable, eff []int, at int,
+	depth int) ?Substitution {
+	if at < 0 || at >= eff.len {
+		return none
+	}
+	ci := coverage_index(lookup.context_coverage, items[eff[at]].gid) or { return none }
+	if ci >= lookup.context_sets.len {
+		return none
+	}
+	for rule in lookup.context_sets[ci] {
+		if m := g.match_context_at(rule, eff, items, at) {
+			if sub := g.apply_records(rule.records, m, items, eff, depth) {
+				return sub
+			}
+		}
+	}
+	return none
+}
+
+// match_context_at tests one plain-context rule at one effective position: the covered
+// glyph is already known to match, so the rule's input list is checked against the glyphs
+// that follow it, in order, with nothing skipped that the effective sequence kept.
+fn (g &Gsub) match_context_at(rule &ContextRule, eff []int, items []Ligatable,
+	at int) ?ChainMatch {
+	if at + rule.input.len + 1 > eff.len {
+		return none
+	}
+	mut positions := []int{cap: rule.input.len + 1}
+	positions << at
+	for k, gid in rule.input {
+		if items[eff[at + 1 + k]].gid != gid {
+			return none
+		}
+		positions << at + 1 + k
+	}
+	return ChainMatch{
+		start:     at
+		positions: positions
+		consumed:  rule.input.len + 1
+	}
 }
 
 // match_chain_at tests a context's pattern at one effective position.
@@ -1127,12 +1208,33 @@ fn parse_lookups(r &Reader, off int) []Lookup {
 					lookup.chains << c
 				}
 			}
+			if resolved.kind == gsub_lookup_context {
+				if c := parse_context1(r, resolved.at) {
+					// Coverage indices are per subtable, so the two lists grow
+					// together: appending both keeps every set aligned with the
+					// coverage range that owns it.
+					lookup.context_coverage << c.context_coverage
+					lookup.context_sets << c.context_sets
+				}
+			}
 		}
 		lookup.kind = lookup_kind_of(lookup, header_kind)
 		lookup.longest_ligature = longest_ligature_of(lookup)
 		out << lookup
 	}
 	return out
+}
+
+// has_context_rules reports whether a lookup holds any plain-context rule at all. An
+// empty rule list substitutes nothing, and without this a lookup whose subtables all
+// failed to parse would still claim the context type and skip the other kinds.
+fn has_context_rules(l &Lookup) bool {
+	for set in l.context_sets {
+		if set.len > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // longest_ligature_of counts the components of the longest ligature rule a lookup holds.
@@ -1161,6 +1263,9 @@ fn longest_ligature_of(l &Lookup) int {
 fn lookup_kind_of(l &Lookup, header_kind u16) u16 {
 	if l.chains.len > 0 {
 		return gsub_lookup_chain_context
+	}
+	if has_context_rules(l) {
+		return gsub_lookup_context
 	}
 	if l.multiples.len > 0 {
 		return gsub_lookup_multiple
@@ -1255,6 +1360,82 @@ fn parse_alternate_subst(r &Reader, at int) ?AlternateSubst {
 		ranges: ranges
 		sets:   sets
 	}
+}
+
+// parse_context1 reads one plain ContextSubst subtable in format 1.
+//
+// Only format 1 is read: formats 2 and 3 match through glyph classes, and no font
+// here reaches for them. A NULL rule set offset is an empty rule list, kept
+// positionally so later sets stay aligned with their coverage index.
+fn parse_context1(r &Reader, at int) ?Lookup {
+	if r.u16_at(at) != 1 {
+		return none
+	}
+	mut out := Lookup{ kind: gsub_lookup_context }
+	out.context_coverage = parse_coverage(r, at + int(r.u16_at(at + 2)))
+	set_count := int(r.u16_at(at + 4))
+	if set_count < 0 || 6 + set_count * 2 > r.len() - at {
+		return none
+	}
+	for si in 0 .. set_count {
+		set_off := int(r.u16_at(at + 6 + si * 2))
+		if set_off == 0 {
+			out.context_sets << []ContextRule{}
+			continue
+		}
+		set_at := at + set_off
+		if !r.has(set_at, 2) {
+			out.context_sets << []ContextRule{}
+			continue
+		}
+		rule_count := int(r.u16_at(set_at))
+		mut rules := []ContextRule{cap: rule_count}
+		for ri in 0 .. rule_count {
+			if !r.has(set_at + 2 + ri * 2, 2) {
+				break
+			}
+			rule_at := set_at + int(r.u16_at(set_at + 2 + ri * 2))
+			if rule := parse_context_rule(r, rule_at) {
+				rules << rule
+			}
+		}
+		out.context_sets << rules
+	}
+	return out
+}
+
+// parse_context_rule reads one SubRule: the glyphs after the covered first one and the
+// lookups to run at each matched position.
+fn parse_context_rule(r &Reader, at int) ?ContextRule {
+	if !r.has(at, 4) {
+		return none
+	}
+	glyph_count := int(r.u16_at(at))
+	subst_count := int(r.u16_at(at + 2))
+	if glyph_count < 1 || subst_count < 0 {
+		return none
+	}
+	// The input list holds every glyph but the covered first, then the records.
+	if 4 + (glyph_count - 1 + subst_count * 2) * 2 > r.len() - at {
+		return none
+	}
+	mut rule := ContextRule{}
+	for i in 0 .. glyph_count - 1 {
+		rule.input << r.u16_at(at + 4 + i * 2)
+	}
+	for i in 0 .. subst_count {
+		base := at + 4 + (glyph_count - 1) * 2 + i * 4
+		rule.records << ChainRecord{
+			position: int(r.u16_at(base))
+			lookup:   r.u16_at(base + 2)
+		}
+	}
+	// Last position first, as in parse_chain3: applying the records one after another
+	// must not move a position a later record still needs.
+	rule.records.sort_with_compare(fn (a &ChainRecord, b &ChainRecord) int {
+		return b.position - a.position
+	})
+	return rule
 }
 
 // parse_chain3 reads one ChainingContextSubst subtable in format 3.

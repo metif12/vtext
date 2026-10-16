@@ -270,7 +270,10 @@ pub fn (fs &FontSet) covers(cp rune) bool {
 // substitute_glyphs rather than here.
 //
 // A ligature is the one case that produces more than one glyph, because it stood for two
-// letters and both have to be drawn. The lam takes the shape the ligature had. The alef
+// letters and both have to be drawn. The lam keeps its own joins rather than the pair's:
+// it joins the alef ahead of it, so with the pair joined behind it is medial, not final.
+// Giving it the pair's final form starves the medial-masked joining lookups, and in Noto
+// Nastaliq that is what keeps the rlig context for the .LA pair from ever forming. The alef
 // connects backwards only when the lam did, so it takes a final form whenever the ligature
 // joined to anything and an isolated one when the pair stood on its own.
 //
@@ -303,7 +306,13 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 
 	mut out := []Glyph{cap: sg.base.len}
 	for i, cp in sg.base {
-		form := if i == 0 || sg.form == .isolated { sg.form } else { JoiningForm.final }
+		mut form := if i == 0 || sg.form == .isolated { sg.form } else { JoiningForm.final }
+		// A lam split out of a lam-alef fusion the font cannot draw is medial when the
+		// pair was joined: it joins the alef ahead of it as well as the letter behind.
+		// The pair's final form on the lam would skip the medial-masked lookups below.
+		if i == 0 && sg.base.len == 2 && cp == 0x0644 && sg.form == .final {
+			form = .medial
+		}
 		// The selectors belong to the character as a whole, so every glyph it was split into gets
 		// them. A format 13 subtable is exactly the case where it happens: one glyph standing for
 		// two codepoints, and the selector that came after the second belongs to both.
