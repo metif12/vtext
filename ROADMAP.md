@@ -1495,9 +1495,17 @@ leg was hardened first, because it compared pen-relative offsets against
 base-relative ones and miscounted a leading mark besides; rebased onto the
 base through the input cluster, fusion-aware, it reports the same ten lines,
 which is what proves they are engine positioning gaps rather than harness
-bookkeeping. Closing them means resolving anchors across the route
-boundary — the presentation glyph on screen against the base letter's anchor
-records — which is the next unit's work.
+bookkeeping.
+
+One correction to the story above, because the history matters: the fallback
+already exists. `Glyph.base_gid` records the base letter behind every
+presentation form, and `position_marks` retries a missed anchor through it —
+that is what positioned nine of ten marks in the test line. The ten corpus
+marks are still hundreds of units off, so the fallback does not reach them,
+and the open question is which step misses: the mark's coverage, the anchor
+class the fallback reads, or advances accumulating under a mark the layout
+never re-based. That is the next unit's work, and it starts from the ten
+lines, not from the tables.
 
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a

@@ -141,8 +141,11 @@ Named here so that a caller is not surprised by them.
 What the library promises, what it refuses to guess, and what the caller decides.
 
 **A shaped run is what the font says.** Joining forms, ligatures, mark positions and kerns all come
-from the font's own GSUB and GPOS tables. Where the font is silent — a mark with no anchor, a pair
-with no kern — the mark stays at the pen and the pair is unkerned, rather than invented.
+from the font's own GSUB and GPOS tables. Anchors are written against base glyphs, so a mark on a
+presentation form resolves through its base letter's anchor. Where the font is silent — a mark with
+no anchor anywhere, a pair with no kern — the mark stays at the pen and the pair is unkerned, rather
+than invented. Marked Arabic positioning against HarfBuzz is tracked case by case in the differential
+baseline, where ten entries remain open.
 
 **A glyph maps back to the text.** Every `Glyph` carries the input cluster it came from, through
 substitutions that split one character into several and ligatures that fuse several into one, and
@@ -176,6 +179,17 @@ the caller assigns.
 - **Non-Arabic scripts beyond the basics.** Latin, Greek and Cyrillic resolve their glyphs, shapes,
   kern and draw correctly, but a font's script-specific positioning tables go unused.
 - **Vertical text.**
+
+## Differential testing
+
+Shaping is measured against four independent engines, not described. `tools/shapedump.v`
+dumps any case as tab-separated glyphs (advance, offsets, cluster, source font, box,
+coverage), and `tools/difftest/compare.py` lays HarfBuzz, fontTools, Pillow and Pango
+beside it over thirteen cases, from `سلام` to mixed bidi with digits. Every difference
+found is recorded in `tools/difftest/baseline.tsv` — currently seventy entries, each
+with its reason in `ROADMAP.md` — and CI fails on any new difference or any fixed one
+left unrecorded, in both directions. The Pango leg compares wrap widths at a fixed
+width and runs where libpango exists; everywhere else it skips aloud.
 
 ## Using it
 
