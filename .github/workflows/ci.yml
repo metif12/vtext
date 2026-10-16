@@ -13,6 +13,13 @@
 #   windows          the same, plus the Windows-only measurements, which still run wherever those fonts
 #                    happen to be installed. On a runner they are not, so they skip and say so.
 #
+# A second job, differential shaping, runs beside the suite on ubuntu-latest and nowhere else, because only
+# there does the fourth reference exist: libpango ships with the runner's image and pip installs the other
+# three. It runs tools/difftest/compare.py, which dumps every case through this repository's own shaper and
+# lays HarfBuzz, fontTools, Pillow and Pango beside it. The baseline in tools/difftest/baseline.tsv records
+# every difference measured on the day it was written, eighty of them, so a green job means no new
+# difference and no fixed one left unrecorded: both directions fail, and both print what changed.
+#
 # V is built from source rather than taken from the latest release, and that is not a preference. Measured
 # twice, on 2026-10-13:
 #
@@ -106,3 +113,40 @@ jobs:
         run: v run tools/run_tests.v
         env:
           VTEXT_CC: ${{ matrix.cc }}
+
+  difftest:
+    name: differential shaping (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install V
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/vsrc"
+          git clone --depth 1 https://github.com/vlang/v "$src"
+          make -C "$src" -j2
+          echo "$src" >> "$GITHUB_PATH"
+
+      # The Pango leg dlopens these; the runner image usually has them, and the install makes
+      # "usually" into a guarantee the job does not have to think about again.
+      - name: System libraries for the Pango leg
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libpango-1.0-0 libcairo2
+
+      - name: pip install uharfbuzz fonttools pillow pangocffi pangocairocffi cairocffi
+        shell: bash
+        run: python3 -m pip install --quiet uharfbuzz fonttools pillow pangocffi pangocairocffi cairocffi
+
+      # Eighty known differences are recorded in the baseline, so green means nothing new and
+      # nothing fixed-without-a-record: both directions fail and say which.
+      - name: python3 tools/difftest/compare.py
+        shell: bash
+        run: python3 tools/difftest/compare.py
+        env:
+          TMPDIR: ${{ runner.temp }}/difftest
+          VJOBS: '1'

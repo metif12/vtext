@@ -30,6 +30,7 @@ disagree by whole glyphs when they do not, so there is daylight between the
 two and no tolerance tunes a real diff away.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,6 +48,8 @@ TOL = {
     'advance_hmtx': 0.6,        # design units; advances are integers here
     'ink_px': 1,                # pixels per box edge
     'ink_sum_rel': 0.20,        # relative total-coverage difference
+    'pango_line_px': 4.0,       # pixels per wrapped line width
+    'pango_wrap_px': 400,       # wrap width both engines lay out at
 }
 
 
@@ -68,10 +71,14 @@ def run_vtext(font_path, cps, size, direction):
 
 def parse_dump(text):
     glyphs, meta = [], {}
+    wrap_widths = []
     for line in text.splitlines():
         if line.startswith('#'):
+            m = re.match(r'# line (\d+): width=([\d.]+)', line)
+            if m:
+                wrap_widths.append(float(m.group(2)))
             for part in line[1:].strip().split():
-                if '=' in part and '\t' not in part:
+                if '=' in part and '\t' not in part and not part.startswith('line'):
                     k, val = part.split('=', 1)
                     meta[k] = val
             continue
@@ -82,8 +89,9 @@ def parse_dump(text):
                        'yoff': float(f[3]), 'cluster': int(f[4]),
                        'is_mark': int(f[5]), 'font': f[6], 'left': int(f[7]),
                        'top': int(f[8]), 'width': int(f[9]), 'height': int(f[10]),
-                       'ink': int(f[11])})
-    return meta, glyphs
+                       'ink': int(f[11]),
+                       'line': int(f[12]) if len(f) > 12 else 0})
+    return meta, glyphs, wrap_widths
 
 
 def hb_shape(font_path, cps, direction, upem):
@@ -120,7 +128,7 @@ def check_case(cid, font_name, cps, direction, size):
     """Returns (diffs, meta). diffs is a list of (check, detail)."""
     diffs = []
     font_path = os.path.join(FONTS, font_name)
-    meta, vg = parse_dump(run_vtext(font_path, cps, size, direction))
+    meta, vg, _ = parse_dump(run_vtext(font_path, cps, size, direction))
     upem = int(float(meta.get('upem', '1000')))
     nchars = len(cps)
 
@@ -216,7 +224,81 @@ def check_case(cid, font_name, cps, direction, size):
         meta['ink_checked'] = str(checked)
     except Exception as e:
         diffs.append(('ink', f'pillow leg failed: {type(e).__name__}: {e}'))
+
+    # Pango leg: wrap widths at a fixed width. Both sides auto-detect the
+    # base direction per UAX#9, so vtext is re-dumped with --dir auto here
+    # even when the shaping leg used an explicit direction: same rule in,
+    # comparable lines out. A base-direction disagreement between the two
+    # auto-detectors would itself be a finding, reported as a line-count
+    # diff rather than hidden.
+    try:
+        import pango_leg
+        from pango_leg import SkipLeg
+        try:
+            family = font_family_name(font_path)
+        except Exception as e:
+            raise SkipLeg(f'family name unreadable: {e}')
+        text = ''.join(chr(int(c, 16)) for c in cps)
+        pwidths, pn = pango_leg.layout_lines(family, text, size, TOL['pango_wrap_px'])
+        wmeta, wg, vwidths = parse_dump(run_vtext_wrap(font_path, cps, size))
+        _ = (wmeta, wg)  # glyph rows unused here; the widths are the engine's own
+        if pn != len(vwidths):
+            diffs.append(('pango', f'lines: vtext {len(vwidths)} vs pango {pn}'))
+        else:
+            for i, (a, b) in enumerate(zip(vwidths, pwidths)):
+                if abs(a - b) > TOL['pango_line_px']:
+                    diffs.append(('pango', f'line {i}: vtext {a:.1f}px vs pango {b:.1f}px'))
+        meta['pango_lines'] = f'{len(vwidths)}/{pn}'
+    except SkipLeg as e:
+        meta['pango_lines'] = f'skipped: {e}'
+    except Exception as e:
+        diffs.append(('pango', f'pango leg failed: {type(e).__name__}: {e}'))
     return diffs, meta
+
+
+def font_family_name(font_path):
+    from fontTools.ttLib import TTFont
+    tt = TTFont(font_path, fontNumber=0, lazy=True)
+    try:
+        for rec in tt['name'].names:
+            if rec.nameID == 1 and rec.platformID in (3, 1):
+                try:
+                    s = rec.toUnicode()
+                except Exception:
+                    continue
+                if s and all(ord(c) < 128 or True for c in s):
+                    # prefer a plain-ASCII record; fall back to the first one
+                    if all(ord(c) < 128 for c in s):
+                        return s
+        for rec in tt['name'].names:
+            if rec.nameID == 1:
+                try:
+                    return rec.toUnicode()
+                except Exception:
+                    continue
+        raise ValueError('no family name record')
+    finally:
+        tt.close()
+
+
+def run_vtext_wrap(font_path, cps, size):
+    import shutil
+    import subprocess
+    v = shutil.which('v') or 'v'
+    cmd = [v, '-gc', 'none', 'run', os.path.join(REPO, 'tools', 'shapedump.v'),
+           font_path, '--cps'] + cps + ['--size', str(size), '--dir', 'auto',
+                                        '--wrap', str(TOL['pango_wrap_px'])]
+    env = dict(os.environ)
+    tmp = os.path.join(os.environ.get('LOCALAPPDATA', os.environ.get('TMPDIR', '/tmp')),
+                       'opencode', 'difftest')
+    os.makedirs(tmp, exist_ok=True)
+    env['TMPDIR'] = tmp
+    env['VJOBS'] = '1'
+    p = subprocess.run(cmd, capture_output=True, text=True, cwd=REPO)
+    if p.returncode != 0:
+        raise RuntimeError(f'shapedump --wrap failed: {p.stderr[-2000:]}')
+    return p.stdout
+
 
 
 def load_cases():
@@ -280,7 +362,7 @@ def main():
                 print(f'{cid} NEW-DIFF [{check}] {detail}')
                 new += 1
         failures += new
-        print(f'{cid}: {len(diffs)} diff(s) [{meta.get("ink_checked", "?")} ink-checked]')
+        print(f'{cid}: {len(diffs)} diff(s) [{meta.get("ink_checked", "?")} ink-checked] [pango {meta.get("pango_lines", "?")}]')
     for b in sorted(baseline):
         if b not in seen:
             print(f'STALE (update deliberately): {b}')

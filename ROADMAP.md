@@ -1406,6 +1406,38 @@ reads the file a second time with `os.read_bytes(font.path())` — which means a
 would help. And `Font.codepoint_for` cannot name a glyph after subsetting, because the ids are not
 contiguous.
 
+## Differential shaping: four references, one baseline — running 2026-10-16
+
+The engine is written from the specifications, and the specifications are not
+a second implementation. So there is now one: `tools/shapedump.v` dumps any
+case as thirteen tab-separated columns (glyph, advance, offsets, cluster,
+mark flag, source font, box, coverage sum, wrap line), and
+`tools/difftest/compare.py` lays four independent engines beside it — the
+HarfBuzz in `uharfbuzz` for shaping decisions, `fontTools` for outline
+identity and advances, Pillow for the rasterized box and coverage, and Pango
+for how many lines a width makes and how wide each is. Thirteen cases, from
+`salam` to the nastaliq torture line to mixed bidi with digits.
+
+The first run found eighty differences, and the most interesting one is not a
+tolerance question. For U+0633 U+0644 U+0627 U+0645 in Amiri the engine emits
+three glyphs: lam and alef become one glyph, U+FEFC, advance 691, and alef's
+cluster is empty. HarfBuzz emits four, lam 245 and alef 446, with or without
+explicit liga and rlig. There is no lam-alef ligature in any type-4 lookup in
+the font — searched by component glyph id and by result name — so the
+engine's substitution comes from somewhere HarfBuzz never goes, most likely a
+context it does not check. The totals agree to 4% and every cluster boundary
+disagrees by hundreds of units, which is exactly what an over-eager
+substitution looks like. Fixing it is phase-1 work; the suite's job is to
+notice it, which it did on day one.
+
+Both directions of the ratchet were tested before the baseline was written:
+eighty observed diffs with an empty file exit 1 listing every one, and a
+baseline entry for a diff that no longer occurs exits 1 naming it stale. The
+eighty now in `tools/difftest/baseline.tsv` are the measured state, and the
+CI job beside the suite runs the whole comparison on every push — ubuntu
+only, because only there does libpango exist, and the Pango leg skips aloud
+everywhere else.
+
 ## Explicitly not planned
 
 Worth writing down so that these do not come back as questions.
