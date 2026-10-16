@@ -236,3 +236,37 @@ fn test_gpos_kern_context_records_are_inside_their_pattern() {
 		}
 	}
 }
+
+// The class-based chaining rules parse and match: Amiri's kern lookups 2 and 38 hold them,
+// and a synthetic two-glyph pattern must match at its position with both positions reported.
+// Without the format-2 reader those lookups parse to nothing and there is no rule to match.
+fn test_gpos_kern_class_rules_parse_and_match() {
+	f := amiri() or { return }
+	gpos := f.face.gpos or { panic('Amiri has no GPOS') }
+	mut parsed := 0
+	for li in gpos.kerning_for('latn') {
+		if int(li) >= gpos.lookups.len {
+			continue
+		}
+		if has_chain_classes(gpos.lookups[li]) {
+			parsed++
+		}
+	}
+	assert parsed > 0, 'Amiri kern holds class-based chaining rules'
+	cc := ChainClass2{
+		coverage: [CoverageRange{ first: 15, last: 15 }]
+		input:    ClassDef{
+			entries: [ClassRangeEntry{ first: 10, last: 20, value: 1 }]
+		}
+		sets:     [[], [ChainClassRule{
+			input:   [u16(1)]
+			records: [ContextRecord{ position: 1, lookup: 0 }]
+		}]]
+	}
+	m, rule := gpos.match_chain_class_at(cc, [u16(9), u16(15), u16(12)], 1) or {
+		panic('the class pattern should match')
+	}
+	assert m.start == 1, 'the match starts at the covered glyph'
+	assert m.positions == [1, 2], 'both input glyphs are reported'
+	assert rule.input == [u16(1)], 'the returned rule is the one that matched'
+}

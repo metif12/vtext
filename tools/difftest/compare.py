@@ -119,8 +119,12 @@ def hb_shape(font_path, cps, direction, upem):
     for text, start in itemize_runs(''.join(chr(int(c, 16)) for c in cps)):
         buf = hb.Buffer()
         buf.add_str(text)
-        if direction in ('ltr', 'rtl'):
-            buf.direction = direction
+        # Direction per run, not per case: forcing rtl on a Latin run invents an
+        # RTL-only kern (def goes 300 to 289) that no real renderer applies, and
+        # the suite compared that ghost against an engine that shapes the run
+        # left to right. Strong L runs go ltr, strong rightward runs rtl, and
+        # weak or neutral runs keep the case direction like the paragraph does.
+        buf.direction = run_direction(text, direction)
         buf.guess_segment_properties()
         hb.shape(font, buf)
         for gi, gp in zip(buf.glyph_infos, buf.glyph_positions):
@@ -128,6 +132,16 @@ def hb_shape(font_path, cps, direction, upem):
                         'xoff': float(gp.x_offset), 'yoff': float(gp.y_offset),
                         'cluster': gi.cluster + start, 'is_mark': 0})
     return out
+
+
+def run_direction(text, case_direction):
+    for ch in text:
+        bc = unicodedata.bidirectional(ch)
+        if bc == 'L':
+            return 'ltr'
+        if bc in ('R', 'AL'):
+            return 'rtl'
+    return case_direction
 
 
 def itemize_runs(text):

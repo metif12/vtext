@@ -265,6 +265,19 @@ fn test_layout_applies_pair_kern_to_advance() {
 	assert v.advance > 622.0 && v.advance < 624.0, 'V is untouched, got ${v.advance}'
 }
 
+fn test_layout_applies_class_kern_to_latin_pair() {
+	ctx := new_context()
+	f := amiri() or { return }
+	mut fs := new_font_set()
+	fs.add(f)
+	// life in Amiri kerns f against e by -11 through lookup 43's class matrix, which is a
+	// different road from AV's rule: the pair is found by class rather than named outright.
+	// Without the kern pass both advances come straight from hmtx.
+	line := layout_paragraph(ctx, [rune(0x006C), rune(0x0069), rune(0x0066), rune(0x0065)], .ltr, fs, 1000)
+	ef := glyph_at_cluster(line.glyphs, 2) or { panic('no f glyph') }
+	assert ef.advance > 288.0 && ef.advance < 290.0, 'the kern tightened f, got ${ef.advance}'
+}
+
 fn test_layout_draws_marks_after_letters() {
 	ctx := new_context()
 	fs := persian_fonts()
