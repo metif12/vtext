@@ -104,16 +104,48 @@ def hb_shape(font_path, cps, direction, upem):
     # Dividing by 64 here reported every advance 64x small and drowned the
     # real diffs; that wrong divisor is recorded so nobody re-adds it.
     font.scale = (upem, upem)
-    buf = hb.Buffer()
-    buf.add_str(''.join(chr(int(c, 16)) for c in cps))
-    if direction in ('ltr', 'rtl'):
-        buf.direction = direction
-    buf.guess_segment_properties()
-    hb.shape(font, buf)
-    return [{'gid': gi.codepoint, 'adv': float(gp.x_advance),
-             'xoff': float(gp.x_offset), 'yoff': float(gp.y_offset),
-             'cluster': gi.cluster, 'is_mark': 0}
-            for gi, gp in zip(buf.glyph_infos, buf.glyph_positions)]
+    # Itemize by script before shaping, the way Pango does, because HarfBuzz
+    # does not: one buffer holding سلام and abc guesses script Latn from the
+    # first strong character, finds no Latn GSUB records, and returns every
+    # Arabic letter unshaped (base advances 992/603/217 straight from hmtx).
+    # Comparing that against a properly itemized engine measured nothing but
+    # the harness. Runs are maximal spans of one bidi class with weak and
+    # neutral spans (digits, spaces) folded into the preceding strong run —
+    # the granularity Pango itemizes at for this corpus — each shaped alone
+    # with clusters re-based to the full string. A case that is one script is
+    # one run and shapes exactly as before.
+    out = []
+    for text, start in itemize_runs(''.join(chr(int(c, 16)) for c in cps)):
+        buf = hb.Buffer()
+        buf.add_str(text)
+        if direction in ('ltr', 'rtl'):
+            buf.direction = direction
+        buf.guess_segment_properties()
+        hb.shape(font, buf)
+        for gi, gp in zip(buf.glyph_infos, buf.glyph_positions):
+            out.append({'gid': gi.codepoint, 'adv': float(gp.x_advance),
+                        'xoff': float(gp.x_offset), 'yoff': float(gp.y_offset),
+                        'cluster': gi.cluster + start, 'is_mark': 0})
+    return out
+
+
+def itemize_runs(text):
+    import unicodedata
+    strong, runs = [], []
+    for ch in text:
+        bc = unicodedata.bidirectional(ch)
+        strong.append('arab' if bc in ('AL', 'AN') else 'latn' if bc == 'L' else '')
+    i, n = 0, len(text)
+    cur_script, cur_start = None, 0
+    for k, s in enumerate(strong):
+        if s:
+            if cur_script is None:
+                cur_script, cur_start = s, 0
+            elif s != cur_script:
+                runs.append((text[cur_start:k], cur_start))
+                cur_script, cur_start = s, k
+    runs.append((text[cur_start:], cur_start))
+    return [(t, s) for t, s in runs if t]
 
 
 def per_cluster_adv(glyphs, nchars):

@@ -1449,6 +1449,19 @@ matches HarfBuzz at 660 while the remaining 585 units sit in the pre-existing
 joining differences. Both are recorded in the baseline with their new values,
 and neither belongs to this fix.
 
+The suite then measured the harness. The mixed-bidi residual — seen at 568
+against HarfBuzz's 992, totals 542 apart — survived the meem fix and did not
+look like shaping at all, because it was not: the comparator fed سلام and
+abc to HarfBuzz in one buffer, which guesses script Latin from the first
+strong character, finds no Latin GSUB records, and returns every Arabic
+letter unshaped, base advances 992/603/217 straight from hmtx. Four of the
+case's five diffs were that artifact. The HarfBuzz leg now itemizes by script
+first, the way Pango does — maximal bidi-class spans with digits and spaces
+folded into the neighbouring strong run, each shaped alone — and the case
+collapsed to the two deliberate fusion-split lines plus eleven units on the
+Latin f. Single-script cases shape byte-identically either way, which the
+ratchet confirmed by reporting nothing else.
+
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a
 baseline entry for a diff that no longer occurs exits 1 naming it stale. The
