@@ -1,0 +1,3 @@
+# Known diffs the suite accepts. One per line: case<TAB>check<TAB>detail.
+# Anything not listed here fails the run. Anything listed here that stops
+# reproducing fails too — update this file deliberately or not at all.

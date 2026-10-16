@@ -1,0 +1,25 @@
+# Differential shaping corpus: HarfBuzz, FreeType and Pango read this file.
+#
+# One case per line, tab-separated, no header: id, font, codepoints, dir, size.
+# codepoints are space-separated hex, no U+ prefix — unambiguous in any editor,
+# in either direction, with no escapes to misread. dir is auto, ltr or rtl and
+# goes to both engines unchanged. size is pixels; 32 keeps one design unit near
+# one pixel on a 2048-upm face without hiding subpixel decisions.
+#
+# The texts are the ones this engine was measured against while being built, not
+# a random sample: every joining shape, every lam-alef context, marks above and
+# below and stacked, Persian digits, a ZWNJ-separated pair, a Latin run inside
+# Arabic, and a Latin line with a ligature and digits in it.
+arabic-hello	Amiri-Regular.ttf	0633 0644 0627 0645	rtl	32
+arabic-two-words	Amiri-Regular.ttf	0633 0644 0627 0645 0020 062F 0646 06CC 0627	rtl	32
+arabic-marks	Amiri-Regular.ttf	0628 0650 0633 0652 0645 0650 0020 0627 0644 0644 064E 0647 0020 0627 0644 0631 0651 062D 0652 0645 0670 0646 0020 0627 0644 0631 0651 062D 0650 064A 0645 0650	rtl	32
+arabic-allah	Amiri-Regular.ttf	0627 0644 0644 0647	rtl	32
+arabic-zwnj	Amiri-Regular.ttf	0646 06CC 0645 200C 0641 0627 0635 0644 0647	rtl	32
+arabic-digits	NotoNaskhArabic-Regular.ttf	0645 062A 0646 0020 0622 0632 0645 0627 06CC 0634 06CC	rtl	32
+latin-liga	NotoNaskhArabic-Regular.ttf	006F 0066 0066 0069 0063 0065 0020 0066 0066 0069 0020 0064 0069 0066 0066 0069 0063 0075 006C 0074 0079	ltr	32
+mixed-arabic-latin	Amiri-Regular.ttf	0627 0644 0633 0644 0627 0645 0020 006C 0069 0067 0061 0074 0065 0073	rtl	32
+mixed-bidi-number	Amiri-Regular.ttf	0061 0062 0063 0020 0633 0644 0627 0645 0020 0031 0032 0033 0020 0064 0065 0066	rtl	32
+persian-digits	Amiri-Regular.ttf	06F1 06F2 06F3 0020 0641 0627 0631 0633 06CC 0020 0061 0062 0063 0020 06F4 06F5 06F6	rtl	32
+nastaliq-hello	NotoNastaliqUrdu-Regular.ttf	0633 0644 0627 0645 0020 062F 0646 06CC 0627	rtl	32
+naskh-joining	NotoNaskhArabic-Regular.ttf	0633 0644 0627 0645 0020 062F 0646 06CC 0627	rtl	32
+variable-naskh	NotoNaskhArabic-Variable.ttf	0645 062A 0646 0020 0622 0632 0645 0627 06CC 0634 06CC	rtl	32
