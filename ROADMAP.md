@@ -1462,6 +1462,27 @@ collapsed to the two deliberate fusion-split lines plus eleven units on the
 Latin f. Single-script cases shape byte-identically either way, which the
 ratchet confirmed by reporting nothing else.
 
+The دنیا residual — noon 190 against 274, yeh 244 against 168, totals eight
+apart — analyzed down to the route rather than to a bug. Both engines agree
+on the abstract forms: noon initial, farsi yeh medial, and the presentation
+codepoints' own names say so (FEE7 initial, FBFF medial). They disagree on
+the drawings: Amiri's presentation noon spans x -23 to 150 while its GSUB
+initial spans -41 to 213, and the yeh pair differs the same way. Same form,
+different glyphs, font-internal metric divergence — the measured price of
+the deliberate cmap route, and the baseline entries stay with this reason.
+The dal box on the same word — vtext 12x14 against Pillow 10x13 for the same
+gid 63 — is a third party's convention, not the engine's: the rasterizer is
+stb_truetype while Pillow is FreeType, the outline at 32px spans 2.54 to
+12.23 which is Pillow's 10 almost exactly, and the coverage sums agree within
+the leg's tolerance, so this is edge-pixel rounding on one glyph rather than
+over-fill. It stays as the one ink entry with this reason.
+
+The next bucket is arabic-marks, twenty-eight entries, and it is not more of
+the same: ten mark offsets differ by hundreds of units — (674,201) against
+(68,0), (56,-64) against (8,-259) — which no rounding convention explains,
+and two meems (522 against 565 and 522 against 223) sit in marked contexts
+the isolated-meem fix did not reach. That triage is the next unit.
+
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a
 baseline entry for a diff that no longer occurs exits 1 naming it stale. The
