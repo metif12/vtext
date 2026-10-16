@@ -80,7 +80,23 @@ import os
 // shape — `.insp`, `.ex`, `.hy` and `.bb` — each of which is a class list standing in for a pair
 // rule. Reading `eff_left` through them was measured at 20 fixed against 94 broken, because it
 // propagated the over-refusal into the mark rules, so each needs its own pass.
-const conformance_floor = 18447
+// On 2026-10-13 **18,447**, worth 38, when `.cp` left `is_prohibited_end` and became the pair
+// rule it should have been: `× 0029 × 2757 ÷` is [30.02] and does not break, `× 0029 ÷ 1B05 ÷` is
+// [31.01] and does. A class list answers by character and the committee answers by pair.
+//
+// Later the same day **18,670**, worth 223 with none broken, when an opening punctuation started
+// reading the run it precedes end to end. `is_prohibited_end` reads `left`, which is the space
+// itself, so it could only ever forbid the break at the parenthesis; `× OP × SP × R` and
+// `× OP × CM × SP × R` are 138 × each with no ÷ counterpart in either shape. The committee has no
+// narrower answer and neither does this engine: the refusal is unconditional on the right-hand
+// class, the same way LB15a reads its run.
+//
+// On 2026-10-16 **18,777**, worth 107 more, when the em dash stopped refusing every break before
+// it. `.b2` sat in `is_prohibited_start_after_space` beside the real members and answered 59 breaks
+// with refusals. A narrow `right == .b2` pair recovers `× 2014 × 2014 ÷` [17.0] and `× 200D × 2014 ÷`
+// [8.1] without touching the other 57 — the second through the raw property, because a joiner folds
+// to a mark and no class can name it.
+const conformance_floor = 18777
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.

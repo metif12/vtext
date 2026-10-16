@@ -335,6 +335,15 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			if quote_role_of(quote, cps[i + 1]) == .pf {
 				return BreakKind.no
 			}
+			// LB14: an opening punctuation holds a run of spaces and marks end to end, and that
+			// hold is unconditional — measured over ucd/LineBreakTest.txt, `× OP × SP × R` and
+			// `× OP × CM × SP × R` are 138 × each with no ÷ counterpart in either shape, however
+			// the `is_prohibited_end` list above failed to answer them: it reads `left`, which is
+			// the space itself, so it can only ever forbid the break *at* the parenthesis.
+			// Measured: 223 cases fixed, none broken.
+			if behind >= 0 && classes[behind] == .op {
+				return BreakKind.no
+			}
 		}
 	}
 	// LB18: break after a space.
@@ -428,6 +437,14 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not, so an open punctuation may begin a
 	// line after a marked letter but not after a bare one. LB28 and LB23 read through a mark and
 	// LB30 does not.
+	//
+	// That reading was measured and it is wrong in one direction: changing `left` to `eff_left` here
+	// fixed the 21 `× C × 0308 × 0028 ÷` [30.02] positions and broke 12 more,
+	// `× C × 0308 ÷ 2329 ÷` [31.01]. Both right-hand characters are class OP — U+0028 LEFT
+	// PARENTHESIS and U+2329 LEFT-POINTING ANGLE BRACKET — and the file holds one and breaks the
+	// other, so the distinction is not the line-break class. It is East_Asian_Width, which this
+	// engine does not carry, and a rule that names OP by class cannot see it. Reverted: net +3 for
+	// a rule that is wrong about which character it names is not a rule.
 	if (left == .al || left == .hl || left == .nu) && right == .op {
 		return BreakKind.no
 	}
@@ -450,6 +467,27 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// where it follows no bracket, so the pair rule cannot be widened without losing more than it
 	// gains. That one wants LB25's numeric matrix, which this engine reads as pairs.
 	if left == .cp && (right == .al || right == .hl || right == .nu) {
+		return BreakKind.no
+	}
+	// LB17: a break-before-and-after does not part from itself, and that is the whole of the
+	// rule. `× 2014 × 2014 ÷` (tagged [17.0] on the second em dash) refuses, and nothing else about
+	// the class refuses anything: bare `× 2757 ÷ 2014 ÷`, `× 00B4 ÷ 2014 ÷` and `× 2757 × 0308 ÷
+	// 2014 ÷` are all [18.0]/[31.01] breaks.
+	//
+	// What this replaces sat in `is_prohibited_start_after_space` beside the real members and
+	// refused a break before *every* em dash — including the 59 `× C × 0308 ÷ 2014 ÷` the file
+	// answers by breaking. Measured with both halves: removing the list entry and writing the
+	// narrow pair fixes 107 with none broken against the previous 676.
+	//
+	// Both halves answer what the *left* of the decision is, not the dash. `× 2014 × 0308 × 2014 ÷`
+	// [17.0] refuses because the mark stands on a dash of its own, which the `eff_left` walk
+	// answers by reaching back to it. And `× 200D × 2014 ÷` [8.1] refuses for a reason no class
+	// can carry: `effective_class` folds a zero width joiner into a combining mark, so at the
+	// class level this pair is indistinguishable from `× 302A ÷ 2014 ÷` and `× 0000 ÷ 2014 ÷`,
+	// which both break. The file wants the joiner held and the marks broken, so the raw property
+	// is asked here rather than the resolved class. It is the only `line_break_of(cps[i])` call in
+	// the chain, and it is here because there is no class-level spelling of "a joiner, specifically".
+	if right == .b2 && (eff_left == .b2 || props.line_break_of(cps[i]) == .zwj) {
 		return BreakKind.no
 	}
 	// LB23a and LB23b: two of the same class that must not be split, which is
@@ -751,7 +789,7 @@ fn is_prohibited_start(c LineBreakClass) bool {
 // LB12a's glue is here too, though not in this function: it is spelled out at its own site because
 // its exclusion list is the point of it.
 fn is_prohibited_start_after_space(c LineBreakClass) bool {
-	return c == .b2 || c == .qu || c == .ba || c == .hh || c == .hy || c == .ns
+	return c == .qu || c == .ba || c == .hh || c == .hy || c == .ns
 		|| c == infx
 }
 

@@ -1059,3 +1059,32 @@ fn test_line_break_holds_a_letter_after_a_close_punctuation_but_not_an_aksara() 
 	}
 	assert starts3 == [2], 'and a digit, got ${starts3}'
 }
+
+// An opening punctuation holds a run of spaces and marks end to end, and that hold is
+// unconditional: ucd/LineBreakTest.txt has `× OP × SP × R` and `× OP × CM × SP × R` 138 times each
+// with no ÷ counterpart in either shape, however `is_prohibited_end` failed to answer them — it
+// reads `left`, which is the space itself, so it can only ever forbid the break at the parenthesis.
+fn test_line_break_holds_a_space_run_to_an_open_punctuation() {
+	ctx := new_context()
+	// 0028 OP, 0020 SP, 2757 AI->AL: held, [14.0].
+	cps := [rune(0x0028), rune(0x0020), rune(0x2757)]
+	mut starts := []int{}
+	for o in break_opportunities(ctx, cps, true) {
+		starts << o.start
+	}
+	assert starts == [3], 'an open bracket holds the run, got ${starts}'
+	// 0028 OP, 0308 CM, 0020 SP, 2757 AI->AL: held through the mark too.
+	cps2 := [rune(0x0028), rune(0x0308), rune(0x0020), rune(0x2757)]
+	mut starts2 := []int{}
+	for o in break_opportunities(ctx, cps2, true) {
+		starts2 << o.start
+	}
+	assert starts2 == [4], 'and across a mark in the run, got ${starts2}'
+	// Control: the same run hanging from a letter breaks, which is LB18.
+	cps3 := [rune(0x2757), rune(0x0020), rune(0x2757)]
+	mut starts3 := []int{}
+	for o in break_opportunities(ctx, cps3, true) {
+		starts3 << o.start
+	}
+	assert 2 in starts3, 'but a letter lets the space go, got ${starts3}'
+}

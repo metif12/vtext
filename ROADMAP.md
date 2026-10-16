@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **18,447 of 19,346 (95.3%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | partial, and now measured: **18,777 of 19,346 (97.1%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -103,7 +103,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 18,447 of 19,346 — 95.3%.**
+**Measured, because "done" above was a description and not a number. 18,777 of 19,346 — 97.1%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -234,8 +234,12 @@ one that paid for it. A conformance score is a count of cases and cases are not 
 what the mark was for. The one-sided rule at the end of the chain is what is left, and it is the
 smaller one.
 
-What the remaining **899** are, worth writing down before anyone starts:
+What the remaining **676** are, worth writing down before anyone starts:
 
+- **An opening punctuation holds the run it precedes end to end, and the engine now agrees.** `× OP ×
+  SP × R` and `× OP × CM × SP × R` are 138 × each with no ÷ counterpart in either shape, and the
+  `is_prohibited_end` list could not answer them because it reads the space itself. Measured 223
+  fixed, none broken, by reading the run origin the way LB15a already did.
 - **The leading mark, in either direction.** A mark with nothing in front of it is unresolved: the
   committee breaks after a leading *ordinary* mark in some cases and not others —
   `× 302A ÷ 1B05 ÷` breaks, `× 302A × 2757 ÷` does not — and gating the mark rule on the mark having
