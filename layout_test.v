@@ -211,6 +211,30 @@ fn test_layout_places_a_mark_on_its_letter() {
 	assert approx(line.width, base.advance, 0.001), 'the mark adds no width'
 }
 
+fn test_layout_mark_on_shaped_base_uses_shaped_anchor() {
+	ctx := new_context()
+	fs := persian_fonts()
+	// beh + kasra + seen: the beh is initial, so the glyph on screen is a presentation
+	// form, not the base letter — and the base letter's own anchor is the isolated
+	// shape's number. The mark must sit at the anchor of the GSUB initial glyph, which
+	// is what HarfBuzz reads: kasra on initial beh is -178 in Amiri, against 276 for
+	// the isolated base. Reading the base anchor here puts the mark hundreds of units
+	// wide of where the font puts it.
+	line := layout_paragraph(ctx, [`ب`, rune(0x0650), `س`], .rtl, fs, 32)
+	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
+	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
+	assert mark.is_mark && !base.is_mark, 'only the mark is a mark'
+	f := amiri() or { return }
+	assert base.base_gid != 0, 'a presentation beh must remember its base'
+	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab')
+	assert shaped != base.base_gid, 'Amiri must shape initial beh through GSUB'
+	off := f.mark_offset(f.glyph_index(rune(0x0650)), shaped, false) or {
+		panic('the font should anchor kasra on shaped beh')
+	}
+	scale := 32.0 / f64(f.units_per_em())
+	assert approx(mark.x - base.x, f64(off.x) * scale, 0.01), 'the mark sits at the shaped anchor, not the base one'
+}
+
 fn test_layout_draws_marks_after_letters() {
 	ctx := new_context()
 	fs := persian_fonts()

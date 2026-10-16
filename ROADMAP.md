@@ -1513,8 +1513,9 @@ was necessary and is not sufficient. No presentation form appears as a mark
 base or ligature component in any GPOS mark lookup in Amiri — searched all of
 them — so there is no in-font record that names the drawn glyph. The fix is
 shape-aware anchor resolution: from a presentation form and its joining
-shape, reach the GSUB glyph of that shape and read its anchor. That is
-designed, not done, and it starts from the kasra pair above.
+shape, reach the GSUB glyph of that shape and read its anchor.
+
+Done 2026-10-16, as `shaped_mark_offset`: presentation glyph, then GSUB glyph of the base's own shape via `shaped_glyph_index`, then base letter. Two things had to be true. First, the point query had to see Amiri's joining tables at all: init, medi and fina there are MultipleSubst lookups with one output each, which `apply` skipped as unanswerable, so every query returned the base and the cascade never fired — the first run moved nothing and the probe said why. `apply` now reads single-output multiples as the single substitutions they are; longer sequences stay with the run-level path. Second, the middle step had to beat the base fallback everywhere it fires, and it does except once: across the ten marks the combined error fell from roughly 2400 to roughly 690 design units, two marks now agree exactly, one is five units off, and the kasra that motivated it went 409 to 45. The exception is the kasra on the final meem, where the fina-direct glyph's anchor sits on the baseline (81, 0) against HarfBuzz's below (8, -259): the direct glyph is one shaping step short of the contextual one, and for this mark the base fallback's below-ish (56, -64) was nearer. That line stays in the baseline with this reason. The layout test pins the shaped anchor with a revert control: kasra on initial beh, -178 against the base's 276, failing with the cascade removed.
 
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a

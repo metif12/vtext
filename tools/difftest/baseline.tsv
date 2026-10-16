@@ -20,16 +20,8 @@ arabic-marks	cluster	char 25 U+0631: vtext 343.00 vs hb 292.00
 arabic-marks	cluster	char 29 U+064A: vtext 244.00 vs hb 337.00
 arabic-marks	cluster	char 30 U+0645: vtext 522.00 vs hb 223.00
 arabic-marks	width	total: vtext 7748.00 vs hb 6912.00
-arabic-marks	mark	mark gid 96 cluster 31: vtext (56.0,-64.0) vs hb (8.0,-259.0)
-arabic-marks	mark	mark gid 96 cluster 28: vtext (130.0,376.0) vs hb (37.0,0.0)
-arabic-marks	mark	mark gid 97 cluster 26: vtext (-13.0,0.0) vs hb (-134.0,0.0)
 arabic-marks	mark	mark gid 128 cluster 20: vtext (2.0,0.0) vs hb (-95.0,0.0)
 arabic-marks	mark	mark gid 98 cluster 18: vtext (674.0,201.0) vs hb (68.0,0.0)
-arabic-marks	mark	mark gid 97 cluster 16: vtext (-13.0,0.0) vs hb (-134.0,0.0)
-arabic-marks	mark	mark gid 94 cluster 10: vtext (22.0,0.0) vs hb (-185.0,0.0)
-arabic-marks	mark	mark gid 96 cluster 5: vtext (56.0,-64.0) vs hb (76.0,0.0)
-arabic-marks	mark	mark gid 98 cluster 3: vtext (550.0,0.0) vs hb (-175.0,0.0)
-arabic-marks	mark	mark gid 96 cluster 1: vtext (276.0,0.0) vs hb (-133.0,0.0)
 arabic-marks	ink	U+0627: box vtext 5x25 vs pillow 4x23
 arabic-marks	ink	U+0627: box vtext 5x25 vs pillow 4x23
 arabic-marks	ink	U+0627: box vtext 5x25 vs pillow 4x23
@@ -68,3 +60,10 @@ nastaliq-hello	width	total: vtext 3546.00 vs hb 2961.00
 mixed-bidi-number	cluster	char 5 U+0644: vtext 691.00 vs hb 245.00
 mixed-bidi-number	cluster	char 6 U+0627: vtext 0.00 vs hb 446.00
 mixed-bidi-number	width	total: vtext 6723.00 vs hb 6712.00
+arabic-marks	mark	mark gid 96 cluster 31: vtext (81.0,0.0) vs hb (8.0,-259.0)
+arabic-marks	mark	mark gid 97 cluster 26: vtext (-110.0,0.0) vs hb (-134.0,0.0)
+arabic-marks	mark	mark gid 97 cluster 16: vtext (-110.0,0.0) vs hb (-134.0,0.0)
+arabic-marks	mark	mark gid 94 cluster 10: vtext (-208.0,0.0) vs hb (-185.0,0.0)
+arabic-marks	mark	mark gid 96 cluster 5: vtext (81.0,0.0) vs hb (76.0,0.0)
+arabic-marks	mark	mark gid 98 cluster 3: vtext (62.0,0.0) vs hb (-175.0,0.0)
+arabic-marks	mark	mark gid 96 cluster 1: vtext (-178.0,0.0) vs hb (-133.0,0.0)

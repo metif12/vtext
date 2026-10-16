@@ -501,15 +501,7 @@ fn position_marks(mut line Line, em_px f64) {
 		if f != base_font {
 			continue
 		}
-		mut off := f.mark_offset(g.gid, base.gid, false) or {
-			// The base may be a presentation form, whose anchors the font never wrote — they
-			// live on the base letter it stands for. Falling back to the base glyph's anchor
-			// is what puts a kasra on a medial meem rather than leaving it at the pen.
-			if base.base_gid == 0 {
-				continue
-			}
-			f.mark_offset(g.gid, base.base_gid, false) or { continue }
-		}
+		mut off := shaped_mark_offset(f, g.gid, base) or { continue }
 		// The offset is in design units and the line is in pixels, so it is scaled by the same
 		// ratio the advances came from.
 		scale := em_px / f64(f.face.units_per_em)
@@ -518,6 +510,36 @@ fn position_marks(mut line Line, em_px f64) {
 		// is flipped here rather than leaving every caller to remember.
 		line.glyphs[i].y = -f64(off.y) * scale
 	}
+}
+
+// shaped_mark_offset finds a mark's anchor offset, resolving across the joining-route
+// boundary the engine deliberately straddles: it draws presentation forms by cmap lookup,
+// but anchors are written against base letters and GSUB joining outputs, never against
+// presentation forms.
+//
+// The cascade is presentation glyph, then GSUB glyph of the same shape, then base
+// letter. The middle step is the one that matters: the base letter's anchor is the
+// isolated shape's number, but the drawn glyph may be initial, medial or final, whose
+// anchors differ by hundreds of units — kasra on beh is 276 on the base but -133 on
+// the initial form in Amiri lookup 50, and HarfBuzz reads the -133. Asking the font's
+// joining tables for the glyph of the base's own shape recovers the number HarfBuzz
+// reads. base_gid is only ever set on the Arabic presentation-form path, so 'arab' is
+// that path's own script rather than a guess; a font with no such rule answers the
+// base glyph and the last step behaves as before.
+fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph) ?Offset2 {
+	if off := f.mark_offset(mark_gid, base.gid, false) {
+		return off
+	}
+	if base.base_gid == 0 {
+		return none
+	}
+	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab')
+	if shaped != base.base_gid {
+		if off := f.mark_offset(mark_gid, shaped, false) {
+			return off
+		}
+	}
+	return f.mark_offset(mark_gid, base.base_gid, false)
 }
 
 // draw_order returns the glyphs in the order they should be painted: letters first, marks

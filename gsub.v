@@ -971,6 +971,18 @@ pub fn (g &Gsub) apply(lookups []u16, gid u16) u16 {
 				out = sub
 			}
 		}
+		// A multiple substitution with exactly one output is a single substitution wearing
+		// another type number: Amiri keeps all four joining shapes in such lookups, and a
+		// query that only reads singles answers the base glyph for every one of them. A
+		// sequence of any other length cannot be expressed as one glyph id, so those rules
+		// are left to the run-level path, which is the documented limit of this question.
+		if lookup.kind == gsub_lookup_multiple {
+			if seq := multiple_lookup(lookup.multiples, out) {
+				if seq.len == 1 {
+					out = seq[0]
+				}
+			}
+		}
 		// A font that keeps a shape in alternates rather than in a single substitution is asking
 		// the same question and answering it with a list, and Arabic Typesetting does exactly
 		// that for its final forms. Reading only the single kind would leave those letters
