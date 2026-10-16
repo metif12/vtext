@@ -42,6 +42,12 @@ pub mut:
 	// here because a font that keeps its Arabic shapes in a GSUB table is drawn from the
 	// base letter, and picking the right variant of that base letter is what form decides.
 	form JoiningForm
+	// base_gid is the base letter's glyph when this glyph is a presentation form, and zero
+	// otherwise. A mark attaches by anchor to a base letter, but anchors are written against
+	// base glyphs — not against the presentation forms a cmap lookup returns. So a mark on a
+	// presentation-form letter would find no anchor and stay at the pen. Recording the base
+	// lets mark placement fall back to the base's anchor, which is where the font put it.
+	base_gid u16
 	// font is the font this glyph was found in, which is not necessarily the first in the
 	// FontSet. It is none only when the chain was empty. The caller needs it to rasterise,
 	// and the font carries the units the advance was scaled from.
@@ -284,6 +290,14 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 			fs.glyph_variation_in(ctx, form_cp, sg.selectors, em_px)
 		}
 		g.form = sg.form
+		// When the presentation form is not the base letter, remember the base glyph for mark
+		// attachment. Anchors are written against base glyphs, so without this a mark on a
+		// presentation-form letter finds no anchor. The lookup is a cmap query, not a shaping.
+		if sg.base.len > 0 && sg.base[0] != form_cp {
+			if bf := fs.pick_in(ctx, sg.base[0]) {
+				g.base_gid = bf.glyph_index(sg.base[0])
+			}
+		}
 		return [g]
 	}
 

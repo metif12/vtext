@@ -501,7 +501,15 @@ fn position_marks(mut line Line, em_px f64) {
 		if f != base_font {
 			continue
 		}
-		off := f.mark_offset(g.gid, base.gid, false) or { continue }
+		mut off := f.mark_offset(g.gid, base.gid, false) or {
+			// The base may be a presentation form, whose anchors the font never wrote — they
+			// live on the base letter it stands for. Falling back to the base glyph's anchor
+			// is what puts a kasra on a medial meem rather than leaving it at the pen.
+			if base.base_gid == 0 {
+				continue
+			}
+			f.mark_offset(g.gid, base.base_gid, false) or { continue }
+		}
 		// The offset is in design units and the line is in pixels, so it is scaled by the same
 		// ratio the advances came from.
 		scale := em_px / f64(f.face.units_per_em)
