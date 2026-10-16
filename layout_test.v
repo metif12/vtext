@@ -937,3 +937,30 @@ fn test_wrapping_and_measuring_agree_about_features() {
 	plain := measure_paragraph(ctx, cps, .rtl, fs, 32)
 	assert laid.width < plain.max_content_width, 'liga should narrow this line: ${laid.width} against ${plain.max_content_width}'
 }
+
+// A Latin run after a decomposed character lays out left to right, not as if its first
+// character belonged to the run on its right.
+//
+// U+0622 ALEF WITH MADDA decomposes under NFD to U+0627 plus U+0653, so the decomposed text is
+// one character longer than the caller's and every index after the split drifts by one. Bidi runs
+// on the decomposed text but the glyphs are tagged with original clusters, and looking up a
+// decomposed index as an original cluster puts the first Latin letter a whole word to the right,
+// drawn as "ello h" for "hello". Going through the origin mapping keeps them aligned.
+fn test_layout_keeps_a_latin_run_together_after_nfd_splits_a_character() {
+	ctx := new_context()
+	fs := new_font_set_of(amiri() or { return })
+	// U+0622, space, "hello", space, U+0633 U+0644 U+0627 U+0645.
+	cps := [rune(0x0622), rune(0x0020), rune(0x0068), rune(0x0065), rune(0x006C), rune(0x006C),
+		rune(0x006F), rune(0x0020), rune(0x0633), rune(0x0644), rune(0x0627), rune(0x0645)]
+	line := layout_paragraph(ctx, cps, .auto, fs, 32.0)
+	// Collect the Latin glyphs in visual (left-to-right) order. Their clusters must run 2,3,4,5,6:
+	// h first, then e, l, l, o. If NFD drift misaligns the lookup, the leftmost Latin glyph reports
+	// cluster 3 ('e') and 'h' appears a word to the right, which is the "ello h" failure.
+	mut cls := []int{}
+	for g in line.glyphs {
+		if g.cluster >= 2 && g.cluster <= 6 {
+			cls << g.cluster
+		}
+	}
+	assert cls == [2, 3, 4, 5, 6], 'Latin run must read h,e,l,l,o left to right, got clusters ${cls}'
+}

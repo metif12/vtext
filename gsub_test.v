@@ -798,7 +798,7 @@ fn test_a_character_keeps_every_glyph_made_of_it() {
 		visual_order:    [0, 1]
 		paragraph_level: 0
 	}
-	line := place_glyphs(placed, bidi)
+	line := place_glyphs(placed, bidi, [0, 1])
 	assert line.len == 3, 'all three glyphs should be drawn, got ${line.len}'
 	assert line[0].gid == 10 && line[1].gid == 11, 'both glyphs of character zero, in order'
 	assert line[2].gid == 12, 'and then the next character'

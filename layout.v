@@ -170,7 +170,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 	apply_spacing(mut placed, ctx.properties, cps, options.letter_spacing, options.word_spacing)
 
 	mut line := Line{
-		glyphs:          place_glyphs(placed, bidi)
+		glyphs:          place_glyphs(placed, bidi, origin)
 		paragraph_level: bidi.paragraph_level
 	}
 	position_marks(mut line, em_px)
@@ -257,7 +257,7 @@ fn substitute_in_fonts(glyphs []Glyph, em_px f64, script string, features []stri
 // permutation is walked and each character is asked for its glyph, which draws out exactly
 // one glyph per character that has one and passes over the ones a glyph already drawn
 // stands for.
-fn place_glyphs(placed []Glyph, bidi BidiResult) []Glyph {
+fn place_glyphs(placed []Glyph, bidi BidiResult, origin []int) []Glyph {
 	mut out := []Glyph{cap: placed.len}
 	mut by_cluster := map[int][]int{}
 	for i, g in placed {
@@ -268,12 +268,29 @@ fn place_glyphs(placed []Glyph, bidi BidiResult) []Glyph {
 		by_cluster[g.cluster] << i
 	}
 
+	// visual_order holds indices into the decomposed text, because bidi runs after NFD, but
+	// by_cluster is keyed by the caller's original clusters. When NFD changes the length —
+	// a precomposed character splitting into two — the two numberings drift, and looking up
+	// a decomposed index as an original cluster puts every glyph after the split one position
+	// off. Going through origin is what keeps them aligned: origin[v] is the original character
+	// the decomposed character at v came from. Without this, the first character of a Latin run
+	// after a decomposed Arabic word is drawn as if it belonged to the Arabic run on its right.
+	//
+	// And because two decomposed characters can come from one original, the same cluster can be
+	// reached twice while walking the visual order. The first visit draws it; the second is
+	// skipped, because drawing it again would stack the same glyph twice at two positions.
 	mut x := f64(0)
+	mut drawn := map[int]bool{}
 	for v in bidi.visual_order {
 		if !bidi.visible[v] {
 			continue
 		}
-		indices := by_cluster[v] or { continue }
+		orig := if v < origin.len { origin[v] } else { v }
+		if drawn[orig] {
+			continue
+		}
+		drawn[orig] = true
+		indices := by_cluster[orig] or { continue }
 		for i in indices {
 			mut g := placed[i]
 			g.x = x
@@ -419,15 +436,23 @@ fn position_marks(mut line Line, em_px f64) {
 		// Two glyphs of one input character are skipped rather than treated as a target for each
 		// other, so a character a substitution split into several glyphs does not stack one of
 		// them on another.
+		//
+		// A mark decomposed from the same character as its base shares that base's cluster, and
+		// it belongs on that base — not stacked on a distant mark that happens to have a smaller
+		// cluster. U+0622 splits to U+0627 plus U+0653, both cluster 47, and without this the madda
+		// stacks on whatever earlier mark the font will attach it to, hundreds of pixels from its
+		// alef. A mark whose own cluster has a letter base skips stacking.
 		mut stacked_at := -1
 		mut stacked_best := 0
-		for k, c in line.glyphs {
-			if k == i || !c.is_mark || c.cluster == g.cluster || c.cluster >= g.cluster {
-				continue
-			}
-			if stacked_at < 0 || c.cluster > stacked_best {
-				stacked_at = k
-				stacked_best = c.cluster
+		if g.cluster !in bases {
+			for k, c in line.glyphs {
+				if k == i || !c.is_mark || c.cluster == g.cluster || c.cluster >= g.cluster {
+					continue
+				}
+				if stacked_at < 0 || c.cluster > stacked_best {
+					stacked_at = k
+					stacked_best = c.cluster
+				}
 			}
 		}
 		if stacked_at >= 0 {
@@ -451,10 +476,15 @@ fn position_marks(mut line Line, em_px f64) {
 		//
 		// The search is over the clusters that are present rather than over a fixed range, so a
 		// mark whose letter was dropped from the line finds nothing and stays at the pen.
+		//
+		// A mark decomposed from the same original character as its base shares that base's
+		// cluster — U+0622 splits to U+0627 plus U+0653, and both report cluster 47 — so the
+		// comparison is <= rather than <. This is safe because bases holds only non-marks and the
+		// mark being placed is a mark: it can never select itself, only the letter it came from.
 		mut base_index := -1
 		mut best := 0
 		for cluster, bi in bases {
-			if cluster < g.cluster && (base_index < 0 || cluster > best) {
+			if cluster <= g.cluster && (base_index < 0 || cluster > best) {
 				base_index = bi
 				best = cluster
 			}
