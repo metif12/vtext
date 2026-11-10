@@ -273,6 +273,14 @@ pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Off
 	return gpos.mark_offset(mark_gid, base_gid, base_is_mark)
 }
 
+// mark_offset_in is mark_offset for the script the run is in. Mark rules live
+// under per-script features, and asking under the wrong script finds a rule
+// written for another script's glyphs or -- more often -- nothing at all.
+pub fn (f &Font) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string) ?Offset2 {
+	gpos := f.face.gpos or { return none }
+	return gpos.mark_offset_in(mark_gid, base_gid, base_is_mark, script)
+}
+
 // cursive_anchors returns where one glyph's joining stroke enters and leaves, in design units, with y
 // positive upwards as the font's own coordinates run.
 //

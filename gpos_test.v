@@ -367,6 +367,54 @@ fn test_layout_puts_a_mark_at_its_letter_anchor() {
 	assert line.ascent > arial.ascent(32), 'the mark should count towards the line height'
 }
 
+// Mark rules live under per-script features, and the engine used to read only the
+// Arabic ones. A Latin mark was therefore drawn at the pen whatever the font said.
+// mark_offset_in asks under the run's script instead, so the same pair reports
+// none by default and an offset under latn.
+//
+// The table is built as bytes, in the gpos_cursive_test.v convention: format 1,
+// coverage offsets, class count, mark and base arrays, then a mark anchor of
+// (10, 200) and a base anchor of (30, 400), which places mark glyph 700 on
+// base glyph 100 at (20, 200).
+fn test_mark_offset_in_reads_the_scripts_own_rules() {
+	data := mark_table_bytes([1, 12, 18, 1, 24, 36, 1, 1, 700, 1, 1, 100, 1, 0, 6, 1, 10, 200,
+		1, 4, 1, 30, 400])
+	r := new_reader(data)
+	rule := parse_mark_to_base(r, 0) or { panic('a well-formed mark rule should parse') }
+	g := &Gpos{
+		lookups: [GposLookup{
+			kind:       gpos_lookup_mark_to_base
+			mark_bases: [rule]
+		}]
+		scripts: [Script{ tag: 'latn', features: [ScriptFeature{ tag: 'mark', lookups: [u16(0)] }] }]
+	}
+	if off := g.mark_offset_in(700, 100, false, 'latn') {
+		assert off.x == 20 && off.y == 200, 'base minus mark anchor, got (${off.x}, ${off.y})'
+	} else {
+		panic('the latn rule should place this pair')
+	}
+	assert g.mark_offset_in(700, 100, false, 'arab') == none, 'no arab rule names this pair'
+	assert g.mark_offset(700, 100, false) == none, 'the default arab collection stays empty too'
+	// A subtable that is not format 1 is not this reader's, and a truncated one
+	// parses to nothing rather than half a rule.
+	bad := mark_table_bytes([3, 12, 18, 1, 24, 36, 1, 1, 700, 1, 1, 100, 1, 0, 6, 1, 10, 200, 1,
+		4, 1, 30, 400])
+	assert parse_mark_to_base(new_reader(bad), 0) == none, 'format 3 is not a mark rule'
+	assert parse_mark_to_base(new_reader(data[..10]), 0) == none, 'a cut header parses to nothing'
+}
+
+// mark_table_bytes turns a list of sixteen bit words into the bytes a font stores.
+// Local to this file because one test file never sees another's helpers: the runner
+// builds each file on its own.
+fn mark_table_bytes(words []int) []u8 {
+	mut b := []u8{len: words.len * 2}
+	for i, w in words {
+		b[i * 2] = u8((w >> 8) & 0xff)
+		b[i * 2 + 1] = u8(w & 0xff)
+	}
+	return b
+}
+
 fn test_layout_leaves_an_unplaced_mark_at_the_pen() {
 	ctx := new_context()
 	arabic := amiri() or { return }
