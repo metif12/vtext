@@ -1,9 +1,15 @@
 # vtext
 
-A text shaping and rendering library in V, written for Arabic and Persian but not limited to them.
+A text shaping and rendering library in V for every script, not only the ones it was
+developed against. It takes a string and a set of fonts, and returns positioned
+glyphs: decomposed, reordered, substituted, and with every combining mark placed
+on the letter it belongs to.
 
-It takes a string and a set of fonts, and returns positioned glyphs: decomposed, reordered,
-substituted, and with every combining mark placed on the letter it belongs to.
+It was developed against Arabic and Persian first, because those exercise joining,
+reordering, mark attachment and kerning all at once, and a shaper that survives
+them has its pipeline in the right order. The rest is measured, not assumed:
+line breaking against the Unicode committee's own test, shaping against four
+independent engines, and every remaining difference recorded with its reason.
 
 ```v
 import vtext
@@ -164,8 +170,9 @@ line height below the natural one, which clips the ink. A word wider than the ma
 a line of its own rather than being hyphenated. Alignment, which needs a container width the engine
 does not have. And the glyph cache, which lives with the caller because the key needs a font id only
 the caller assigns.
-- **Contextual positioning formats 1 and 2.** Format 3 is read, which is what the Arabic fonts use.
-  Formats 1 and 2 need a class for every glyph in a pattern and then a jump through a rule set.
+- **Contextual positioning formats 1, 2 and 3.** All three are read: format 3 is
+  what the Arabic fonts use, format 2 is what the class-matrix kerns are written
+  in, and format 1 matches through a coverage plus following glyph ids.
 - **Cursive attachment.** The rules are read correctly from real fonts — Amiri, Noto Nastaliq Urdu and Dubai
   all carry one and `Font.cursive_anchors` returns their anchors. They are **not applied**, and the reason is
   not that the pass is missing. The letters now reach the glyphs those rules cover, but the rule is not the
