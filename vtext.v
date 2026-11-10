@@ -405,7 +405,7 @@ pub fn (f &Font) underline_position(em_px f64) f64 {
 // comes out as overlapping ink. A glyph placed at x of 17.39 is drawn at 17 with sub_x of 2.
 //
 // The bitmap's left is how far the ink reaches left of the pen and its top how far it reaches above the
-// baseline, so the pixel the bitmap's own (0, 0) belongs at is (pen + left, baseline - top).
+// baseline, so the pixel the bitmap's own (0, 0) belongs at is (pen - left, baseline - top).
 pub fn (f &Font) rasterize(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitmap {
 	return f.face.rasterize_glyph(gid, em_px, sub_x, sub_y)
 }

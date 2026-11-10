@@ -207,7 +207,7 @@ fn draw_box(mut canvas &paint.Canvas, f &vtext.Font, gid u16, x f64, baseline f6
 	if bmp.is_empty() {
 		return
 	}
-	x0 := int(x) + bmp.left
+	x0 := int(x) - bmp.left
 	y0 := int(baseline) - bmp.top
 	canvas.rect(x0, y0, x0 + bmp.width, y0 + bmp.height, 0x60)
 }

@@ -164,6 +164,40 @@ fn cmap_preference(platform u16, encoding u16) int {
 	return 1
 }
 
+// cmap_format_readable reports whether the engine parses a cmap subtable format.
+// Formats 2, 8 and 10 are dropped by parse_cmap, so a character mapped only in
+// one of them has no glyph.
+pub fn cmap_format_readable(format int) bool {
+	return format in [0, 4, 6, 12, 13, 14]
+}
+
+// raw_cmap_formats lists the format of every subtable in a cmap table's bytes,
+// in directory order, including the ones parse_cmap drops for being unreadable.
+//
+// parse_cmap answers what the engine shapes with; this answers what the font
+// carries. A format that appears here and not there is coverage the engine
+// silently drops, which is what fontcheck reports.
+pub fn raw_cmap_formats(data []u8) []int {
+	mut out := []int{}
+	if data.len < 4 {
+		return out
+	}
+	r := new_reader(data)
+	num := int(r.u16_at(2))
+	for i in 0 .. num {
+		rec := 4 + i * 8
+		if !r.has(rec, 8) {
+			break
+		}
+		off := int(r.u32_at(rec + 4))
+		if off < 0 || off + 2 > data.len {
+			continue
+		}
+		out << int(r.u16_at(off))
+	}
+	return out
+}
+
 // parse_cmap reads every subtable of a font's 'cmap' table, best-scored first.
 fn parse_cmap(data []u8) []Cmap {
 	if data.len < 4 {

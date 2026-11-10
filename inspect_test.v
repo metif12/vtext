@@ -181,14 +181,18 @@ fn test_cmap_reports_every_subtable_not_only_the_chosen_one() {
 	formats := f.cmap_formats()
 	counts := f.cmap_counts()
 
-	// Segoe UI declares two subtables, both format 4, both mapping 3996 codepoints. The point of
-	// reporting both is that a reader knowing which one the engine picked is a different question from
-	// knowing what the font carries.
+	// Segoe UI declares two subtables, both format 4, and both mapping the same
+	// codepoints. The point of reporting both is that a reader knowing which one
+	// the engine picked is a different question from knowing what the font carries.
+	// The count itself is not pinned: it drifts with the installed Segoe UI, which
+	// mapped 3996 when this was written and 3998 after a Windows update moved it.
+	// What must hold on every machine that has the font is that the two agree.
 	assert formats.len == 2, 'expected 2 cmap subtables, got ${formats.len}'
 	assert counts.len == formats.len, 'counts and formats must be the same length'
 	assert formats[0] == 4 && formats[1] == 4, 'Segoe UI uses format 4 twice'
+	assert counts[0] == counts[1], 'the two subtables must agree, got ${counts}'
 	for i, c in counts {
-		assert c == 3996, 'subtable ${i} should map 3996 codepoints, got ${c}'
+		assert c > 3000 && c < 0x10000, 'subtable ${i} maps a plausible count, got ${c}'
 	}
 }
 

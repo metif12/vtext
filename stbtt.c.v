@@ -128,8 +128,11 @@ fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitm
 	out.height = h
 	// stb returns the box baseline-relative with y pointing up, so the top of
 	// the ink is the negated y0. Flip it so callers only deal with one
-	// convention: positive values are distances above the baseline.
-	out.left = x0
+	// convention: positive values are distances above the baseline. The same
+	// holds for x: stb's x0 is the pen-relative offset of the ink's left
+	// edge, so negating it turns it into how far the ink reaches left of
+	// the pen, which is what `left` promises and what `pen - left` draws.
+	out.left = -x0
 	out.top = -y0
 	return out
 }
@@ -162,7 +165,9 @@ fn (f &Face) box_only(gid u16, em_px f64) GlyphBitmap {
 	C.stbtt_GetGlyphBitmapBox(f.stb_ptr(), int(gid), scale, scale, &x0, &y0, &x1, &y1)
 	out.width = x1 - x0
 	out.height = y1 - y0
-	out.left = x0
+	// Negated like rasterize_glyph: the box's left edge is a pen-relative
+	// offset and `left` is a distance left of the pen.
+	out.left = -x0
 	// The same sign flip as rasterize_glyph: stb's y points up and this struct's top is a distance
 	// above the baseline, so a caller only ever deals with the second convention.
 	out.top = -y0
