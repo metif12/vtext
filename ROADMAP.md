@@ -1269,8 +1269,10 @@ and the one that matters. A font whose GSUB references a glyph its cmap never pr
 unusable, and that is a report rather than a crash.
 
 It checks the outlines, the lookup kinds, features no script reaches, the cursive reader's refusal,
-variable fonts, mark attachment, and per-script coverage. What it does **not** check is a cmap format
-this engine cannot read, which is the finding a format 13 or 14 implementation should add.
+variable fonts, mark attachment, per-script coverage, and cmap formats the engine cannot parse.
+A subtable in format 2, 8 or 10 is dropped by the reader, so characters mapped only there have no
+glyph, and `Font.cmap_table_formats` lists the formats in the font's own bytes — including the
+dropped ones — for exactly this report. The parsed list cannot show what it threw away.
 
 ### The vertical extent of a line was twice what it should have been
 

@@ -196,7 +196,8 @@ pub fn (f &Font) cmap_counts() []int {
 	return out
 }
 
-// cmap_formats lists the format number of each cmap subtable, in the same order as `cmap_counts`.
+// cmap_formats lists the format number of each cmap subtable the engine parsed,
+// in the same order as `cmap_counts`.
 //
 // The format is the first field of a subtable and the count above it is not, so the two together say more
 // than either: a format 4 with 94 mappings and a format 12 with 9472 are one font's coverage written twice,
@@ -207,6 +208,17 @@ pub fn (f &Font) cmap_formats() []int {
 		out << c.format
 	}
 	return out
+}
+
+// cmap_table_formats lists the format of every cmap subtable in the font's own
+// bytes, in directory order, including the ones the engine cannot parse.
+//
+// cmap_formats lists what the engine reads; this lists what the font carries.
+// A format here that parses to nothing is coverage the engine silently drops,
+// which is what fontcheck reports. An empty list means the font has no cmap
+// table at all rather than one the engine disliked.
+pub fn (f &Font) cmap_table_formats() []int {
+	return raw_cmap_formats(f.face.sfnt.table_data(tag_cmap))
 }
 
 // feature_lookups says how many lookups a script's feature names in a table, or zero when the script

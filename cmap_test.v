@@ -197,3 +197,46 @@ fn test_a_font_with_no_gsub_table_reports_none() {
 	assert !narrow.has_gsub(), 'this font is about cmap, and it has no Arabic to map'
 	assert narrow.glyph_index(`A`) == narrow.glyph_index(`A`), 'a letter it does have still resolves'
 }
+
+// cmap_dir_bytes turns a list of sixteen bit words into the bytes a font stores,
+// in the gpos_cursive_test.v convention. Local to this file because one test
+// file never sees another's helpers: the runner builds each file on its own.
+fn cmap_dir_bytes(words []int) []u8 {
+	mut b := []u8{len: words.len * 2}
+	for i, w in words {
+		b[i * 2] = u8((w >> 8) & 0xff)
+		b[i * 2 + 1] = u8(w & 0xff)
+	}
+	return b
+}
+
+// The engine drops a cmap subtable whose format it does not parse, so fontcheck
+// needs the formats in the font's own bytes rather than the parsed list, which
+// cannot show what it threw away. No font on this machine carries an unreadable
+// format, so the violating table is built as bytes here: a format 4 beside a
+// format 10, which the engine does not read.
+//
+// The layout is the words a hex dump would show: version, record count, two
+// records of platform, encoding and a two-word offset, then the two format
+// words the offsets point at.
+fn test_raw_cmap_formats_lists_unread_subtables_too() {
+	data := cmap_dir_bytes([0, 2, 3, 1, 0, 20, 3, 10, 0, 22, 4, 10])
+	assert raw_cmap_formats(data) == [4, 10], 'both formats, including the unread one'
+	assert cmap_format_readable(4), 'format 4 is parsed'
+	assert !cmap_format_readable(10), 'format 10 is dropped'
+	// A directory cut short ends the walk rather than reading past it, and an
+	// offset past the end skips its record rather than failing the table.
+	assert raw_cmap_formats(data[..12]) == [], 'one record of two leaves nothing readable'
+	assert raw_cmap_formats(cmap_dir_bytes([0, 1, 3, 1, 0, 200, 4])) == [], 'a bad offset skips its record'
+}
+
+// And the committed fonts must carry nothing this reports: every raw format in
+// them is one the engine parses, so fontcheck stays quiet about the corpus.
+fn test_no_corpus_font_carries_an_unreadable_cmap_format() {
+	for name in corpus_cmap_fonts {
+		f := cmap_font(name) or { return }
+		for format in f.cmap_table_formats() {
+			assert cmap_format_readable(format), '${name} carries format ${format}, which the engine drops'
+		}
+	}
+}

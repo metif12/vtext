@@ -22,6 +22,7 @@ module main
 //	lookup kinds    a kind this engine does not read is a rule that will never fire
 //	feature scripts a feature only a tagged language enables is one this engine cannot reach
 //	cmap coverage   a font with no glyph for a script it claims is a font with nothing to draw
+//	cmap formats    a subtable in a format the engine does not parse is coverage it silently drops
 //	outlines        a font with neither glyf nor CFF draws nothing at all
 //	variation       an fvar this engine does not read is a weight that will do nothing
 //	marks           a font with marks and no mark rules draws them stacked at the pen
@@ -240,6 +241,43 @@ fn main() {
 			kind: 'marks'
 			what: 'no mark attachment rules'
 			why:  'a mark is drawn at the pen with no offset, so several of them land on the same place'
+		}
+	}
+
+	// Cmap formats. parse_cmap drops a subtable whose format the engine does not
+	// parse, so a character mapped only there has no glyph. Every format in the
+	// font's own bytes is listed, including the dropped ones, because the parsed
+	// list cannot show what it threw away.
+	table_formats := font.cmap_table_formats()
+	if table_formats.len == 0 {
+		findings << Finding{
+			kind: 'cmap'
+			what: 'no cmap table, or one with no subtables in it'
+			why:  'the engine maps every character through the cmap, so this font draws nothing but .notdef'
+		}
+	} else {
+		mut unread := []int{}
+		mut any_readable := false
+		for format in table_formats {
+			if vtext.cmap_format_readable(format) {
+				any_readable = true
+			} else if format !in unread {
+				unread << format
+			}
+		}
+		for format in unread {
+			findings << Finding{
+				kind: 'cmap'
+				what: 'cmap has a format ${format} subtable'
+				why:  'the engine reads formats 0, 4, 6, 12, 13 and 14, so a character mapped only there has no glyph'
+			}
+		}
+		if !any_readable {
+			findings << Finding{
+				kind: 'cmap'
+				what: 'no readable cmap subtable'
+				why:  'every subtable is in a format the engine drops, so no character maps to a glyph'
+			}
 		}
 	}
 
