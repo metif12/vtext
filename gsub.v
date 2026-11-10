@@ -554,8 +554,24 @@ fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm) []
 		}
 		if sub := g.apply_at(li, items, eff, walk, 0) {
 			if span := sub.span() {
-				items = splice(items, sub)
-				eff = g.effective(items, lookup.flag, lookup.mark_set, want)
+				// A substitution that replaces glyphs in place leaves the effective
+				// sequence valid: it is indices into the run, and nothing moved. The
+				// splice and the full recompute are then pure overhead, paid once per
+				// substitution, which is what makes a joining pass over a long run
+				// quadratic in copying. Only length-preserving edits whose glyphs
+				// take part in matching exactly as before qualify; anything else —
+				// an expansion, a fusion, or a base letter becoming a mark — goes
+				// through the rebuild, because the positions after it are stale.
+				if edits_preserve_matching(g, items, sub, lookup.flag, lookup.mark_set) {
+					for e in sub.edits {
+						for k, ng in e.glyphs {
+							items[e.start + k] = ng
+						}
+					}
+				} else {
+					items = splice(items, sub)
+					eff = g.effective(items, lookup.flag, lookup.mark_set, want)
+				}
 				walk = eff.len - 1
 				if !rtl {
 					walk = eff_at_or_after(eff, span.last)
@@ -566,6 +582,34 @@ fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm) []
 		walk += step
 	}
 	return items
+}
+
+// edits_preserve_matching reports whether applying a substitution leaves the effective
+// sequence valid, so the walk can continue without rebuilding the run and re-deriving
+// who takes part. Two things would invalidate it: a change in length, which moves
+// every index after the edit, and a change in participation, which is what the
+// lookup's own flags decide per glyph.
+//
+// Length alone is not enough, and participation alone is not enough either. Two
+// edits can trade lengths with each other while moving everything between them,
+// so every edit is asked on its own. A base letter becoming a mark changes what
+// an ignore-marks flag steps over, and a mark becoming a base does the reverse,
+// so the check is the flag's own answer on both glyphs rather than a kind
+// comparison written a second time. Form and mark-ness ride along on the items
+// the rules produce, so the mask sees the same run either way.
+fn edits_preserve_matching(g &Gsub, items []Ligatable, sub Substitution, flag u16, mark_set u16) bool {
+	for e in sub.edits {
+		if e.start < 0 || e.glyphs.len != e.consumed || e.start + e.consumed > items.len {
+			return false
+		}
+		for k, ng in e.glyphs {
+			if g.skipped(flag, mark_set, items[e.start + k].gid) != g.skipped(flag,
+				mark_set, ng.gid) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // effective lists the glyphs of a run that take part in matching, as indices into the run.

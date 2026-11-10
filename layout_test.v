@@ -335,6 +335,31 @@ fn test_layout_falls_back_when_the_preferred_font_lacks_the_codepoint() {
 	}
 }
 
+// A Latin mark is placed by the Latin script's rules, not the Arabic ones. Arial puts
+// an acute on a q at (825, -328) design units under latn — HarfBuzz reads the same
+// pair as (-314, -328), which is the same ink: its x offset hangs off the pen past
+// the base's advance, while this engine rebases the mark onto the base glyph, and
+// 825 minus the 1139 advance is exactly -314. The arab mark tables have no such
+// rule, so before scripts were asked the mark stayed at the pen.
+fn test_layout_places_a_latin_mark_from_latin_rules() {
+	ctx := new_context()
+	arial := font_from('arial.ttf') or { return }
+	mut fs := new_font_set()
+	fs.add(arial)
+	line := layout_paragraph(ctx, [`q`, rune(0x0301)], .ltr, fs, 32)
+	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
+	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
+	assert mark.is_mark && !base.is_mark, 'only the acute is a mark'
+	scale := 32.0 / f64(arial.units_per_em())
+	// The rule must exist and be nonzero, or the assertions below agree with a
+	// font that says nothing.
+	off := arial.mark_offset_in(arial.glyph_index(rune(0x0301)), arial.glyph_index(`q`),
+		false, 'latn') or { panic('Arial should anchor an acute on a q under latn') }
+	assert off.x != 0 && off.y != 0, 'a zero anchor places nothing'
+	assert approx(mark.x - base.x, f64(off.x) * scale, 0.01), 'the mark sits at the latn anchor: ${mark.x - base.x} against ${f64(off.x) * scale}'
+	assert approx(mark.y, -f64(off.y) * scale, 0.01), 'the mark lifts off the baseline by the anchor'
+}
+
 // Nastaliq is the case that makes the base-letter route necessary. It carries the Arabic
 // letters but almost none of the presentation forms, because it keeps its four shapes in a
 // GSUB table rather than in the cmap, so the form codepoint the joining pass produced is

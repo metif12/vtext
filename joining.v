@@ -176,7 +176,8 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 					start:  i
 					end:    i + 2
 				}
-				i = attach_marks(p, cps, i + 2, mut out)
+				mut out_ref := &out
+				i = attach_marks(p, cps, i + 2, mut out_ref)
 				continue
 			}
 		}
@@ -219,7 +220,8 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 				end:     i + 1
 				is_mark: p.combining_class_of(cp) != 0
 			}
-			i = attach_marks(p, cps, i + 1, mut out)
+			mut out_ref := &out
+			i = attach_marks(p, cps, i + 1, mut out_ref)
 			continue
 		}
 
@@ -235,7 +237,8 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 			start:  i
 			end:    i + 1
 		}
-		i = attach_marks(p, cps, i + 1, mut out)
+		mut out_ref := &out
+		i = attach_marks(p, cps, i + 1, mut out_ref)
 	}
 	return out
 }

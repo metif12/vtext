@@ -904,6 +904,16 @@ function that only works for one script. `Face`, `Sfnt` and `Cmap` are still
 private, and whether a font inspection API belongs to the shaping engine or to
 its caller is a question this library has not answered.
 
+Decided 2026-11-10, from the one production caller rather than from taste:
+`Face`, `Gpos` and `Gsub` stay private. vweb shapes, measures, wraps and
+rasterizes entirely through the public surface — `Font`, `FontSet`, layout,
+measure, wrap, rasterize, inspect — with no workaround reaching past it, and
+the subset tool's two gaps (no `Font.data`, no closure API) are tool needs it
+already answers by re-reading the file, not engine needs. Opening the tables
+would freeze layouts that are still moving — chaining format 1 landed this
+month — for no caller that asks. The boundary is: the engine ends at a
+positioned glyph with a coverage bitmap, and per-call options carry the rest.
+
 ### Documentation
 
 The README covers the pipeline and the API. What is missing is the part a
@@ -1571,6 +1581,14 @@ currently drawn at the pen. The collection has to follow the run's script;
 the presentation-form cascade stays Arabic-specific because only Arabic
 draws presentation forms.
 
+Done 2026-11-10, as `mark_offset_in`: the arab list stays the parse-time
+default, the run's script selects the lookups, and the base letter's
+codepoint decides the script. Arabic behavior is unchanged by construction —
+same script tag asks the same list — and a Latin acute on a q now lands at
+its HarfBuzz-confirmed anchor (825, -328) instead of the pen, which the new
+layout test pins with a revert control. Suite 31/31, difftest 0 new and
+0 stale.
+
 **Line breaking to the file's own end.** 18,777 of 19,346 on 2026-11-10, with
 569 remaining. The buckets are the ones Phase 1 listed: the LB25 numeric
 matrix, CJK ideographic joints (no `.id` handling, CJ folded to NS), the
@@ -1598,7 +1616,15 @@ cannot score 100%), the differential corpus extended past Arabic with Latin
 mark and kern cases at 0 new and 0 stale, and the suite green on all three
 platforms with CI actually building — the toolchain drift that keeps it red
 since 2026-10-16 is the first thing this phase fixes, because a red gate
-proves nothing about any of the buckets above.
+proves nothing about any of the buckets above. Throughput is measured, not
+assumed: best-of runs on Segoe UI at 16 pixels are the number in the README,
+and an optimization lands with a before/after on the same harness or not at
+all — a `time.ticks` best-of under a loaded box once attributed a 7x font gap
+to shaping that a quiet-box A/B cut to a 5% substitution win, because the pass
+that looked dominant recomputes an effective sequence per substitution and the
+fix (in-place 1:1 writes, recompute only when length or matching behavior
+changes) removed it. The remaining cost on heavy fonts is the per-pair kern
+walk, which is its own unit.
 
 ## Explicitly not planned
 

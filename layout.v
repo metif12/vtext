@@ -197,7 +197,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 		glyphs:          place_glyphs(placed, bidi, origin)
 		paragraph_level: bidi.paragraph_level
 	}
-	position_marks(mut line, em_px)
+	position_marks(mut line, em_px, ctx)
 	measure_line(mut line, em_px, options)
 	return line
 }
@@ -474,7 +474,7 @@ fn larger(a f64, b f64) f64 {
 // carrying a stray vowel, is left at the pen position.
 // A `mut` value receiver for the reason given on measure_line: `mut line &Line` as a
 // parameter is a pair V 0.5.2 will not accept at a `position_marks(mut line, ...)` call.
-fn position_marks(mut line Line, em_px f64) {
+fn position_marks(mut line Line, em_px f64, ctx &Context) {
 	// Two passes, and the order matters. The line is in visual order, and in a right-to-left
 	// line a mark comes before the letter it belongs to, so collecting the letters and then
 	// placing the marks in one pass would find the mark's base already behind it. Collecting
@@ -495,6 +495,43 @@ fn position_marks(mut line Line, em_px f64) {
 	for oi in 0 .. marks.len {
 		i := marks[oi]
 		g := line.glyphs[i]
+		f := g.font or { continue }
+		// The base is the letter the mark was written after, which is the nearest one with a
+		// smaller input position. Searching by cluster rather than by position on the line is
+		// what makes this work in both directions, and it also steps over a ligature or a
+		// discarded control that sits between the two.
+		//
+		// The search is over the clusters that are present rather than over a fixed range, so
+		// a mark whose letter was dropped from the line finds nothing and stays at the pen.
+		//
+		// A mark decomposed from the same original character as its base shares that base's
+		// cluster — U+0622 splits to U+0627 plus U+0653, and both report cluster 47 — so the
+		// comparison is <= rather than <. This is safe because bases holds only non-marks and
+		// the mark being placed is a mark: it can never select itself, only the letter it came
+		// from.
+		//
+		// The search runs before stacking because the script comes from the letter: the font
+		// writes its anchors against the base letter, and the mark rules live under the base's
+		// script. A mark with no letter base keeps 'arab', which is what every mark used
+		// before scripts were asked. Moving the search changes no decision here: both searches
+		// only read the line.
+		mut base_index := -1
+		mut best := 0
+		for cluster, bi in bases {
+			if cluster <= g.cluster && (base_index < 0 || cluster > best) {
+				base_index = bi
+				best = cluster
+			}
+		}
+		mut script := 'arab'
+		if base_index >= 0 {
+			cand := line.glyphs[base_index]
+			if bf := cand.font {
+				if bf == f {
+					script = mark_script(ctx.properties, f, cand)
+				}
+			}
+		}
 		// The nearest preceding mark, which is what stacking means. A shadda carrying a fatha is
 		// the case: the fatha belongs to the shadda, and the font says where on the shadda in a
 		// different table from the one that places marks on letters. A mark whose nearest mark the
@@ -530,7 +567,7 @@ fn position_marks(mut line Line, em_px f64) {
 			stack_font := g.font or { continue }
 			stack_target_font := target.font or { continue }
 			if stack_font == stack_target_font {
-				if off := stack_font.mark_offset(g.gid, target.gid, true) {
+				if off := stack_font.mark_offset_in(g.gid, target.gid, true, script) {
 					stack_scale := em_px / f64(stack_font.face.units_per_em)
 					line.glyphs[i].x = target.x + f64(off.x) * stack_scale
 					line.glyphs[i].y = -f64(off.y) * stack_scale
@@ -538,31 +575,10 @@ fn position_marks(mut line Line, em_px f64) {
 				}
 			}
 		}
-		// The base is the letter the mark was written after, which is the nearest one with a
-		// smaller input position. Searching by cluster rather than by position on the line is
-		// what makes this work in both directions, and it also steps over a ligature or a
-		// discarded control that sits between the two.
-		//
-		// The search is over the clusters that are present rather than over a fixed range, so a
-		// mark whose letter was dropped from the line finds nothing and stays at the pen.
-		//
-		// A mark decomposed from the same original character as its base shares that base's
-		// cluster — U+0622 splits to U+0627 plus U+0653, and both report cluster 47 — so the
-		// comparison is <= rather than <. This is safe because bases holds only non-marks and the
-		// mark being placed is a mark: it can never select itself, only the letter it came from.
-		mut base_index := -1
-		mut best := 0
-		for cluster, bi in bases {
-			if cluster <= g.cluster && (base_index < 0 || cluster > best) {
-				base_index = bi
-				best = cluster
-			}
-		}
 		if base_index < 0 {
 			continue
 		}
 		base := line.glyphs[base_index]
-		f := g.font or { continue }
 		base_font := base.font or { continue }
 		// The glyphs have to come from the same font for an anchor in one to mean anything in
 		// the other. A line that fell back mid-word has marks in a different font from their
@@ -570,7 +586,7 @@ fn position_marks(mut line Line, em_px f64) {
 		if f != base_font {
 			continue
 		}
-		mut off := shaped_mark_offset(f, g.gid, base) or { continue }
+		mut off := shaped_mark_offset(f, g.gid, base, script) or { continue }
 		// The offset is in design units and the line is in pixels, so it is scaled by the same
 		// ratio the advances came from.
 		scale := em_px / f64(f.face.units_per_em)
@@ -595,8 +611,8 @@ fn position_marks(mut line Line, em_px f64) {
 // reads. base_gid is only ever set on the Arabic presentation-form path, so 'arab' is
 // that path's own script rather than a guess; a font with no such rule answers the
 // base glyph and the last step behaves as before.
-fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph) ?Offset2 {
-	if off := f.mark_offset(mark_gid, base.gid, false) {
+fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph, script string) ?Offset2 {
+	if off := f.mark_offset_in(mark_gid, base.gid, false, script) {
 		return off
 	}
 	if base.base_gid == 0 {
@@ -604,11 +620,27 @@ fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph) ?Offset2 {
 	}
 	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab')
 	if shaped != base.base_gid {
-		if off := f.mark_offset(mark_gid, shaped, false) {
+		if off := f.mark_offset_in(mark_gid, shaped, false, script) {
 			return off
 		}
 	}
-	return f.mark_offset(mark_gid, base.base_gid, false)
+	return f.mark_offset_in(mark_gid, base.base_gid, false, script)
+}
+
+// mark_script resolves the script whose mark rules place this mark: the script of the
+// letter it belongs to, read off the base glyph. A combining mark on its own is
+// inherited script and answers nothing; the base letter's codepoint is what the font
+// wrote its anchors against. An unresolvable base keeps 'arab', which is what every
+// mark used before scripts were asked, so nothing that placed before moves.
+fn mark_script(props &Properties, f &Font, base Glyph) string {
+	gid := if base.base_gid != 0 { base.base_gid } else { base.gid }
+	if cp := f.codepoint_for(gid) {
+		tag := props.script_tag_of(cp)
+		if tag != 'Zzzz' && tag != 'Zinh' && tag != 'Zyyy' {
+			return tag
+		}
+	}
+	return 'arab'
 }
 
 // draw_order returns the glyphs in the order they should be painted: letters first, marks

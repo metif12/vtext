@@ -7,29 +7,29 @@ module vtext
 
 // BidiClass is the UAX#9 bidirectional category of a codepoint.
 pub enum BidiClass {
-	l          = 0
-	r          = 1
-	en         = 2
-	es         = 3
-	et         = 4
-	an         = 5
-	cs         = 6
-	b          = 7
-	s          = 8
-	ws         = 9
-	on         = 10
-	bn         = 11
-	nsm        = 12
-	al         = 13
-	lro        = 14
-	rlo        = 15
-	lre        = 16
-	rle        = 17
-	pdf        = 18
-	lri        = 19
-	rli        = 20
-	fsi        = 21
-	pdi        = 22
+	l   = 0
+	r   = 1
+	en  = 2
+	es  = 3
+	et  = 4
+	an  = 5
+	cs  = 6
+	b   = 7
+	s   = 8
+	ws  = 9
+	on  = 10
+	bn  = 11
+	nsm = 12
+	al  = 13
+	lro = 14
+	rlo = 15
+	lre = 16
+	rle = 17
+	pdf = 18
+	lri = 19
+	rli = 20
+	fsi = 21
+	pdi = 22
 	// x9_removed and .class_none are not UCD values. They sit above every real class
 	// so the generated name table, which stops at pdi, reports them as unnamed.
 	//

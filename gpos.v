@@ -812,6 +812,21 @@ pub fn new_gpos(raw []u8) ?&Gpos {
 	return g
 }
 
+// mark_feature_lookups_for returns the lookups of the mark features for the script a
+// caller names, which is where a font puts mark-to-base rules for that script. Arabic
+// fonts put above-base marks under abvm and below-base marks under blwm; Latin fonts
+// use mark and mkmk the same way. Asking per script rather than collecting once is
+// what keeps an Arabic rule from placing a Latin mark, and a Latin rule from placing
+// an Arabic one. The parse-time list names arab because that is the script this
+// library was developed against; the shaping path asks per run instead.
+pub fn (g &Gpos) mark_feature_lookups_for(script string) []u16 {
+	mut out := []u16{}
+	for feat in ['abvm', 'blwm', 'mark', 'mkmk'] {
+		out << g.lookups_for(script, feat)
+	}
+	return out
+}
+
 // has_mark_attachment reports whether the font has any mark-to-base rule, which is the
 // difference between a mark that lands on its letter and one that lands beside it.
 pub fn (g &Gpos) has_mark_attachment() bool {
@@ -910,7 +925,22 @@ pub fn (g &Gpos) covers_mark(gid u16) bool {
 // y is positive upwards, which is the direction the font's own coordinates run in. A renderer
 // working in screen coordinates has to flip it.
 pub fn (g &Gpos) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Offset2 {
-	for li in g.mark_feature_lookups {
+	return g.mark_offset_on(mark_gid, base_gid, base_is_mark, g.mark_feature_lookups)
+}
+
+// mark_offset_in is mark_offset for the script the run is in, rather than for the
+// script the library was developed against. The lookups are collected the same way,
+// so for 'arab' the two ask exactly the same list; for anything else the second one
+// reaches rules the first cannot see.
+pub fn (g &Gpos) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string) ?Offset2 {
+	return g.mark_offset_on(mark_gid, base_gid, base_is_mark, g.mark_feature_lookups_for(script))
+}
+
+// mark_offset_on answers one mark pair from an explicit lookup list, which is what the
+// two public forms share: the arab list collected at parse time, and the per-script
+// list collected per run.
+fn (g &Gpos) mark_offset_on(mark_gid u16, base_gid u16, base_is_mark bool, lookups []u16) ?Offset2 {
+	for li in lookups {
 		if li >= g.lookups.len {
 			continue
 		}
