@@ -904,6 +904,16 @@ function that only works for one script. `Face`, `Sfnt` and `Cmap` are still
 private, and whether a font inspection API belongs to the shaping engine or to
 its caller is a question this library has not answered.
 
+Decided 2026-11-10, from the one production caller rather than from taste:
+`Face`, `Gpos` and `Gsub` stay private. vweb shapes, measures, wraps and
+rasterizes entirely through the public surface — `Font`, `FontSet`, layout,
+measure, wrap, rasterize, inspect — with no workaround reaching past it, and
+the subset tool's two gaps (no `Font.data`, no closure API) are tool needs it
+already answers by re-reading the file, not engine needs. Opening the tables
+would freeze layouts that are still moving — chaining format 1 landed this
+month — for no caller that asks. The boundary is: the engine ends at a
+positioned glyph with a coverage bitmap, and per-call options carry the rest.
+
 ### Documentation
 
 The README covers the pipeline and the API. What is missing is the part a
