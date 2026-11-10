@@ -138,7 +138,7 @@ fn test_gpos_chain_glyph_rule_matches_by_glyph() {
 fn test_gpos_chain_glyph_applies_through_a_lookup() {
 	g := &Gpos{
 		lookups: [GposLookup{
-			kind: gpos_lookup_chain_context
+			kind:         gpos_lookup_chain_context
 			chain_glyphs: [ChainGlyph1{
 				coverage: [CoverageRange{ first: 10, last: 10 }]
 				sets:     [[ChainGlyphRule{
@@ -149,7 +149,7 @@ fn test_gpos_chain_glyph_applies_through_a_lookup() {
 				}]]
 			}]
 		}, GposLookup{
-			kind: gpos_lookup_single_position
+			kind:    gpos_lookup_single_position
 			singles: [SinglePos{
 				ranges: [CoverageRange{ first: 20, last: 20 }]
 				format: 1

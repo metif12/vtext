@@ -1180,7 +1180,7 @@ pub fn (g &Gpos) has_contextual_positioning(script string) bool {
 	for li in g.contextual_for(script) {
 		if li < g.lookups.len
 			&& (g.lookups[li].chains.len > 0 || has_chain_classes(g.lookups[li])
-			|| has_chain_glyphs(g.lookups[li])) {
+				|| has_chain_glyphs(g.lookups[li])) {
 			return true
 		}
 	}
