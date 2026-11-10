@@ -338,8 +338,8 @@ mut:
 //
 // Format 3 is the form most Arabic positioning rules use: coverage tables matched directly.
 // Format 2 matches the same three sequences through glyph classes, which is what Amiri's
-// kern chains are written in, so both are read. Format 1 has no font reaching for it here
-// and stays named as deliberately absent.
+// kern chains are written in, and format 1 matches them through glyph ids, so all three
+// are read.
 struct ChainPosition {
 mut:
 	// backtrack are the coverages to match before the first input glyph, nearest first.
@@ -382,6 +382,34 @@ mut:
 	sets      [][]ChainClassRule
 }
 
+// ChainGlyphRule is one glyph-based chaining rule (format 1): the same three
+// sequences as a coverage or class rule, named as glyph ids rather than
+// coverages or classes. The input list holds the glyphs after the first, whose
+// own match is the coverage that selected the rule's set.
+struct ChainGlyphRule {
+mut:
+	// backtrack are the glyphs before the first input glyph, nearest first.
+	backtrack []u16
+	// input are the glyphs after the first input glyph, in order.
+	input []u16
+	// lookahead are the glyphs after the last input glyph, nearest first.
+	lookahead []u16
+	// records is the list of positioning actions to apply once the pattern has matched.
+	records []ContextRecord
+}
+
+// ChainGlyph1 is one glyph-based chaining subtable: a coverage for the first
+// input glyph and one rule list per covered glyph, in coverage order. A NULL
+// set offset is an empty rule list, kept positionally so later sets stay
+// aligned with their coverage index.
+struct ChainGlyph1 {
+mut:
+	// coverage names the glyphs the first input glyph may be.
+	coverage []CoverageRange
+	// sets holds the rules for a first glyph by its coverage index.
+	sets [][]ChainGlyphRule
+}
+
 // parse_chain_position reads one ChainContextPos subtable in format 3.
 //
 // The header interleaves: a count, then that many coverage offsets, then the next count. Reading the
@@ -406,8 +434,9 @@ fn class_def_at(r &Reader, at int, off int) ClassDef {
 
 // parse_chain_class reads one class-based chaining subtable in format 2.
 //
-// Only format 2 is read: format 1 matches through a coverage plus following glyph ids,
-// and format 3 is the coverage reader above. Class definitions are required; a zero
+// Format 2 matches through classes plus the coverage above, and format 3 is the coverage
+// reader below; format 1 matches through a coverage plus following glyph ids and is the
+// glyph reader beside them. Class definitions are required; a zero
 // offset parses to an empty table, whose every glyph is class zero — which is exactly
 // what an absent definition means, since zero is the class of everything unnamed.
 fn parse_chain_class(r &Reader, at int) ?ChainClass2 {
@@ -480,6 +509,116 @@ fn parse_chain_class_rule(r &Reader, at int) ?ChainClassRule {
 	p += 2
 	// One of the input glyphs is the covered first, so a count of zero names nothing to
 	// match and the rule can never fire.
+	if in_count < 1 || (in_count - 1) * 2 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. in_count - 1 {
+		rule.input << r.u16_at(p)
+		p += 2
+	}
+	if !r.has(p, 2) {
+		return none
+	}
+	ahead_count := int(r.u16_at(p))
+	p += 2
+	if ahead_count < 0 || ahead_count * 2 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. ahead_count {
+		rule.lookahead << r.u16_at(p)
+		p += 2
+	}
+	if !r.has(p, 2) {
+		return none
+	}
+	pos_count := int(r.u16_at(p))
+	p += 2
+	if pos_count < 0 || pos_count * 4 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. pos_count {
+		rule.records << ContextRecord{
+			position: int(r.u16_at(p))
+			lookup:   r.u16_at(p + 2)
+		}
+		p += 4
+	}
+	return rule
+}
+
+// parse_chain_glyph reads one glyph-based chaining subtable in format 1.
+//
+// The sets are aligned with the coverage index the way GSUB's plain-context
+// format 1 is: the covered first glyph selects its set, and a NULL set offset
+// is an empty rule list kept positionally. Each rule names its three sequences
+// as glyph ids, including every input glyph but the covered first.
+fn parse_chain_glyph(r &Reader, at int) ?ChainGlyph1 {
+	if r.u16_at(at) != 1 {
+		return none
+	}
+	if !r.has(at, 8) {
+		return none
+	}
+	mut c := ChainGlyph1{}
+	c.coverage = parse_coverage(r, at + int(r.u16_at(at + 2)))
+	set_count := int(r.u16_at(at + 4))
+	if set_count < 0 || 6 + set_count * 2 > r.len() - at {
+		return none
+	}
+	for si in 0 .. set_count {
+		set_off := int(r.u16_at(at + 6 + si * 2))
+		if set_off == 0 {
+			c.sets << []ChainGlyphRule{}
+			continue
+		}
+		set_at := at + set_off
+		if !r.has(set_at, 2) {
+			c.sets << []ChainGlyphRule{}
+			continue
+		}
+		rule_count := int(r.u16_at(set_at))
+		mut rules := []ChainGlyphRule{cap: rule_count}
+		for ri in 0 .. rule_count {
+			if !r.has(set_at + 2 + ri * 2, 2) {
+				break
+			}
+			if rule := parse_chain_glyph_rule(r, set_at + int(r.u16_at(set_at + 2 + ri * 2))) {
+				rules << rule
+			}
+		}
+		c.sets << rules
+	}
+	return c
+}
+
+// parse_chain_glyph_rule reads one rule of a glyph set: glyph-id lists for the
+// three sequences, then the positioning records.
+//
+// The input count includes the covered first glyph, so the stored list holds
+// every glyph after it. A rule that fails to parse is skipped rather than
+// placed half-read: the next rule starts at its own offset, so one bad rule
+// cannot shift the rest.
+fn parse_chain_glyph_rule(r &Reader, at int) ?ChainGlyphRule {
+	if !r.has(at, 2) {
+		return none
+	}
+	back_count := int(r.u16_at(at))
+	mut p := at + 2
+	if back_count < 0 || back_count * 2 > r.len() - p {
+		return none
+	}
+	mut rule := ChainGlyphRule{}
+	for _ in 0 .. back_count {
+		rule.backtrack << r.u16_at(p)
+		p += 2
+	}
+	if !r.has(p, 2) {
+		return none
+	}
+	in_count := int(r.u16_at(p))
+	p += 2
+	// One of the input glyphs is the covered first, so a count of zero names
+	// nothing to match and the rule can never fire.
 	if in_count < 1 || (in_count - 1) * 2 > r.len() - p {
 		return none
 	}
@@ -600,6 +739,9 @@ mut:
 	// chain_classes are the class-based chaining rules, the same idea through glyph
 	// classes rather than coverage tables. A lookup holds one kind or the other.
 	chain_classes []ChainClass2
+	// chain_glyphs are the glyph-based chaining rules (format 1): the same idea
+	// through glyph ids, one rule list per covered first glyph.
+	chain_glyphs []ChainGlyph1
 	// singles are single positioning rules, which move one glyph on its own. A context record usually
 	// names one of these rather than a pair rule, so a font that says "this glyph moves when it follows
 	// that one" is reachable only if these are parsed.
@@ -958,6 +1100,20 @@ fn has_chain_classes(l &GposLookup) bool {
 	return false
 }
 
+// has_chain_glyphs reports whether a lookup holds any glyph-based chaining rule. An
+// empty rule list positions nothing, and without this a lookup whose subtables all
+// failed to parse would still claim the chaining type.
+fn has_chain_glyphs(l &GposLookup) bool {
+	for cg in l.chain_glyphs {
+		for set in cg.sets {
+			if set.len > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // has_kerning reports whether the font has any pair adjustment for a script, which is what a
 // caller needs to know before deciding whether to lay a line out twice to find the answer.
 //
@@ -970,7 +1126,8 @@ pub fn (g &Gpos) has_kerning(script string) bool {
 			continue
 		}
 		lk := g.lookups[li]
-		if lk.pairs.len > 0 || lk.chains.len > 0 || has_chain_classes(lk) {
+		if lk.pairs.len > 0 || lk.chains.len > 0 || has_chain_classes(lk)
+			|| has_chain_glyphs(lk) {
 			return true
 		}
 	}
@@ -1006,7 +1163,8 @@ pub fn (g &Gpos) contextual_for(script string) []u16 {
 			}
 			// A feature may name a lookup that is not a context, and running a mark rule as if it
 			// were one would move a mark with nothing having said it should.
-			if g.lookups[li].chains.len == 0 && !has_chain_classes(g.lookups[li]) {
+			if g.lookups[li].chains.len == 0 && !has_chain_classes(g.lookups[li])
+				&& !has_chain_glyphs(g.lookups[li]) {
 				continue
 			}
 			named_lookups[li] = true
@@ -1020,7 +1178,9 @@ pub fn (g &Gpos) contextual_for(script string) []u16 {
 // which is what a script with stacked forms needs and a Latin font does not.
 pub fn (g &Gpos) has_contextual_positioning(script string) bool {
 	for li in g.contextual_for(script) {
-		if li < g.lookups.len && (g.lookups[li].chains.len > 0 || has_chain_classes(g.lookups[li])) {
+		if li < g.lookups.len
+			&& (g.lookups[li].chains.len > 0 || has_chain_classes(g.lookups[li])
+				|| has_chain_glyphs(g.lookups[li])) {
 			return true
 		}
 	}
@@ -1175,6 +1335,23 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string) 
 				}
 			}
 		}
+		for cg in g.lookups[li].chain_glyphs {
+			// A glyph rule carries its own backtrack and lookahead lengths, so like the
+			// class version every position is tried and the matcher bounds-checks each
+			// sequence itself.
+			for at in 0 .. gids.len {
+				m, rule := g.match_chain_glyph_at(cg, gids, at) or { continue }
+				if !spans_span(rule.backtrack.len, rule.lookahead.len, m, left, right) {
+					continue
+				}
+				if a := g.apply_pos_records(rule.records, m, gids, left, right, left_gid,
+					right_gid) {
+					x += a.x
+					y += a.y
+					found = true
+				}
+			}
+		}
 	}
 	if !found {
 		return none
@@ -1257,6 +1434,20 @@ pub fn (g &Gpos) apply_contextual(gids []u16, script string) []ChainApplication 
 		for cc in lookup.chain_classes {
 			for at in 0 .. gids.len {
 				m, rule := g.match_chain_class_at(cc, gids, at) or { continue }
+				for rec in rule.records {
+					if rec.position < 0 || rec.position >= m.positions.len {
+						continue
+					}
+					out << ChainApplication{
+						at:     m.positions[rec.position]
+						lookup: rec.lookup
+					}
+				}
+			}
+		}
+		for cg in lookup.chain_glyphs {
+			for at in 0 .. gids.len {
+				m, rule := g.match_chain_glyph_at(cg, gids, at) or { continue }
 				for rec in rule.records {
 					if rec.position < 0 || rec.position >= m.positions.len {
 						continue
@@ -1369,6 +1560,68 @@ fn match_class_rule(cc &ChainClass2, rule &ChainClassRule, gids []u16, at int) ?
 			return none
 		}
 		if cc.lookahead.class_of(gids[ahead]) != class {
+			return none
+		}
+	}
+	return ChainMatchPositions{
+		start:     at
+		positions: positions
+	}
+}
+
+// match_chain_glyph_at tests every rule of a glyph subtable's selected set at one position.
+// The coverage gates first — a glyph it does not name starts no rule — and then the
+// coverage index selects the set; the first rule whose three glyph-id sequences all
+// match wins.
+//
+// It returns the match together with the rule that matched, because the span check and the
+// records both belong to the rule rather than to the subtable.
+fn (g &Gpos) match_chain_glyph_at(cg &ChainGlyph1, gids []u16, at int) ?(ChainMatchPositions, ChainGlyphRule) {
+	_ = g
+	if at < 0 || at >= gids.len {
+		return none
+	}
+	ci := coverage_index(cg.coverage, gids[at]) or { return none }
+	if ci >= cg.sets.len {
+		return none
+	}
+	for rule in cg.sets[ci] {
+		if m := match_glyph_rule(rule, gids, at) {
+			return m, rule
+		}
+	}
+	return none
+}
+
+// match_glyph_rule tests one glyph rule's three sequences at a position. Positions are run
+// indices like the coverage matcher's, so a record's position indexes straight into them.
+fn match_glyph_rule(rule &ChainGlyphRule, gids []u16, at int) ?ChainMatchPositions {
+	for k, gid in rule.backtrack {
+		back := at - 1 - k
+		if back < 0 {
+			return none
+		}
+		if gids[back] != gid {
+			return none
+		}
+	}
+	mut positions := [at]
+	for k, gid in rule.input {
+		next := at + 1 + k
+		if next >= gids.len {
+			return none
+		}
+		if gids[next] != gid {
+			return none
+		}
+		positions << next
+	}
+	for k, gid in rule.lookahead {
+		ahead := at + 1 + rule.input.len + k
+		if ahead >= gids.len {
+			return none
+		}
+		if gids[ahead] != gid {
 			return none
 		}
 	}
@@ -1559,6 +1812,10 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 				} else {
 					if rule := parse_chain_class(r, resolved.at) {
 						lookup.chain_classes << rule
+					} else {
+						if rule := parse_chain_glyph(r, resolved.at) {
+							lookup.chain_glyphs << rule
+						}
 					}
 				}
 			}
@@ -1587,7 +1844,8 @@ fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 			lookup.kind = gpos_lookup_mark_to_ligature
 		} else if lookup.mark_marks.len > 0 {
 			lookup.kind = gpos_lookup_mark_to_mark
-		} else if lookup.chains.len > 0 || has_chain_classes(lookup) {
+		} else if lookup.chains.len > 0 || has_chain_classes(lookup)
+			|| has_chain_glyphs(lookup) {
 			lookup.kind = gpos_lookup_chain_context
 		} else if lookup.pairs.len > 0 {
 			lookup.kind = gpos_lookup_pair

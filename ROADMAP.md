@@ -1535,6 +1535,71 @@ CI job beside the suite runs the whole comparison on every push — ubuntu
 only, because only there does libpango exist, and the Pango leg skips aloud
 everywhere else.
 
+## Phase 5: every script
+
+The goal is every script, not only the ones the engine was developed against,
+and it is a measured goal rather than a statement of intent. The engine's
+pipeline is script-agnostic everywhere it matters — bidi, normalization,
+substitution, positioning, wrapping — and the remaining work is the places
+where it is not, each with its own acceptance test. Arabic and Persian stay
+green through all of it: the corpus cases and the differential baseline are
+the ratchet, and a phase that regresses them is not a phase.
+
+Buckets, in the order they unblock each other:
+
+**GPOS chaining format 1.** Formats 2 and 3 are read and applied; format 1
+matches through a coverage plus following glyph ids and has no reader. Same
+shape as the GSUB format 1 that already exists, with a parse test, a matcher
+test, and the corpus ratchet reporting what it fires on.
+
+Done 2026-11-10, as `chain_glyphs`: the reader, the matcher, both apply loops
+and every kind gate that names the type. No corpus font writes one — 352
+Windows faces scanned, only the four Leela* Malayalam faces do, and lookup 13
+of LeelawUI is the real-font fixture: 46 rules of backtrack, covered glyph and
+lookahead, each positioning through lookup 69. The corpus test pins the
+ratchet instead: any font gaining a format-1 rule fails it deliberately.
+
+**GSUB class-based contextual formats (5/2, 5/3, 6/1, 6/2).** Deliberately
+absent because no font in the corpus writes them. For every script that means
+finding fonts that do, shaping them beside HarfBuzz, and shipping the reader
+with fixtures rather than synthetic tables alone.
+
+**Script-specific mark and feature collection.** Mark lookups are collected
+for `arab` only, and the joining feature set is requested the same way for
+every run. A Latin mark positioned by its font's own `latn` rules is
+currently drawn at the pen. The collection has to follow the run's script;
+the presentation-form cascade stays Arabic-specific because only Arabic
+draws presentation forms.
+
+**Line breaking to the file's own end.** 18,777 of 19,346 on 2026-11-10, with
+569 remaining. The buckets are the ones Phase 1 listed: the LB25 numeric
+matrix, CJK ideographic joints (no `.id` handling, CJ folded to NS), the
+`insp`/`ex`/`hy`/`bb` class lists as pairs, quotation-span state, LB28's
+aksara subrules, and the leading-mark contradictions where the file
+disagrees with itself. Each lands with its count, like every rule before it,
+and the floor moves up each time.
+
+**Device and variation offsets.** One Device record in 341 fonts (SitkaVF),
+zero VariationIndex. `kern_offset_at` with a ppem, per the design already
+written down, verified against that one record; the variation half needs the
+delta-set index but not `gvar` instancing, which stays out.
+
+**CFF subsetting.** The subsetter refuses CFF for want of a charstring
+reader. Unblocks subsetting for OpenType-CFF, which is the other half of the
+fonts on this machine.
+
+**Vertical text.** Origin, writing mode, vertical forms — only with CJK, as
+Phase 1 already says, and measured against vertical runs rather than
+described.
+
+Acceptance for the phase: the conformance floor at the file's own end with
+every remaining failure named (a file that contradicts itself in 130 places
+cannot score 100%), the differential corpus extended past Arabic with Latin
+mark and kern cases at 0 new and 0 stale, and the suite green on all three
+platforms with CI actually building — the toolchain drift that keeps it red
+since 2026-10-16 is the first thing this phase fixes, because a red gate
+proves nothing about any of the buckets above.
+
 ## Explicitly not planned
 
 Worth writing down so that these do not come back as questions.
