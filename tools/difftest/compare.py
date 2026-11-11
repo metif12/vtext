@@ -54,8 +54,17 @@ TOL = {
 }
 
 
+def v_exe():
+    # The runner builds V from source and names it through VEXE, because the released
+    # compiler cannot build this repository: measured, 0.5.2 rejects `&[]BracketPair`
+    # and has no os.exec_opt. A bare PATH lookup finds that release here and fails
+    # every case, which is what the CI leg tripped on.
+    v = os.environ.get('VEXE') or shutil.which('v') or 'v'
+    return v
+
+
 def run_vtext(font_path, cps, size, direction):
-    v = shutil.which('v') or 'v'
+    v = v_exe()
     cmd = [v, '-gc', 'none', 'run', os.path.join(REPO, 'tools', 'shapedump.v'),
            font_path, '--cps'] + cps + ['--size', str(size), '--dir', direction]
     env = dict(os.environ)
@@ -409,7 +418,7 @@ def font_family_name(font_path):
 def run_vtext_wrap(font_path, cps, size):
     import shutil
     import subprocess
-    v = shutil.which('v') or 'v'
+    v = v_exe()
     cmd = [v, '-gc', 'none', 'run', os.path.join(REPO, 'tools', 'shapedump.v'),
            font_path, '--cps'] + cps + ['--size', str(size), '--dir', 'auto',
                                         '--wrap', str(TOL['pango_wrap_px'])]
