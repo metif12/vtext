@@ -166,14 +166,42 @@ mut:
 	records []ChainRecord
 }
 
+// ContextClassRule is one class-based plain-context rule (type 5, format 2): the
+// same three-part idea as a plain rule, with classes in place of glyphs. The input
+// list holds the classes after the first glyph, whose own class selected the rule
+// set it came from.
+struct ContextClassRule {
+mut:
+	// input are the classes after the first input glyph, in order.
+	input []u16
+	// records are the lookups to run at the matched positions, position zero being
+	// the covered glyph itself.
+	records []ChainRecord
+}
+
+// ContextClass2 is one class-based plain-context subtable (type 5, format 2): a
+// coverage for the first input glyph, one class definition, and one rule list per
+// input class value. A NULL set offset is an empty rule list, kept positionally so
+// later sets stay aligned with their class value.
+struct ContextClass2 {
+mut:
+	// coverage names the glyphs the first input glyph may be.
+	coverage []CoverageRange
+	// input is the class definition the first glyph and every following one are
+	// read against.
+	input ClassDef
+	// sets holds the rules for a first glyph by its coverage index.
+	sets [][]ContextClassRule
+}
+
 // ChainContext3 is a chaining context in format 3: the pattern of glyphs before, at and after the
 // position being substituted, given as coverage tables.
 //
 // Format 3 is the form every Arabic font this engine reads uses, and the reason is that it is the
 // only context form needing neither a class definition nor an indirection. It names coverage
-// tables directly, so matching it is a run of binary searches with no second lookup step, where
-// formats 1 and 2 would need a class for every glyph in the pattern and then a jump through a
-// rule set to find out what to do about it.
+// tables directly, so matching it is a run of binary searches with no second lookup step.
+// Formats 1 and 2 match the same three sequences through glyph ids and glyph classes;
+// they are read too, each in its own tables beside this one.
 struct ChainContext3 {
 mut:
 	// backtrack are the coverages to match before the first input glyph, nearest first.
@@ -184,6 +212,64 @@ mut:
 	// lookahead are the coverages to match after the last input glyph, nearest first.
 	lookahead [][]CoverageRange
 	records   []ChainRecord
+}
+
+// GlyphChainRule is one glyph-based chaining rule (format 1 of lookup type 6): the same
+// three sequences as a coverage or class rule, named as glyph ids. The input list holds
+// the glyphs after the covered first, whose own match is the coverage that selected
+// the rule's set.
+struct GlyphChainRule {
+mut:
+	// backtrack are the glyphs before the first input glyph, nearest first.
+	backtrack []u16
+	// input are the glyphs after the first input glyph, in order.
+	input []u16
+	// lookahead are the glyphs after the last input glyph, nearest first.
+	lookahead []u16
+	// records is the list of substitutions to apply once the pattern has matched.
+	records []ChainRecord
+}
+
+// ChainGlyphSub1 is one glyph-based chaining subtable (type 6, format 1): a coverage
+// for the first input glyph and one rule list per covered glyph, in coverage order.
+// A NULL set offset is an empty rule list, kept positionally so later sets stay
+// aligned with their coverage index.
+struct ChainGlyphSub1 {
+mut:
+	// coverage names the glyphs the first input glyph may be.
+	coverage []CoverageRange
+	// sets holds the rules for a first glyph by its coverage index.
+	sets [][]GlyphChainRule
+}
+
+// ClassChainRule is one class-based chaining rule (format 2 of lookup type 6): the
+// same three sequences, named as glyph classes. The input list holds the classes
+// after the first glyph, whose own class selected the rule set it came from.
+struct ClassChainRule {
+mut:
+	// backtrack are the classes before the first input glyph, nearest first.
+	backtrack []u16
+	// input are the classes after the first input glyph, in order.
+	input []u16
+	// lookahead are the classes after the last input glyph, nearest first.
+	lookahead []u16
+	// records is the list of substitutions to apply once the pattern has matched.
+	records []ChainRecord
+}
+
+// ChainClassSub2 is one class-based chaining subtable (type 6, format 2): three class
+// definitions and, per input class value, the rules for a first glyph of that class.
+// A NULL set offset parses to an empty rule list, kept positionally so later sets
+// stay aligned with their class value.
+struct ChainClassSub2 {
+mut:
+	// coverage names the glyphs the first input glyph may be; like the class-based
+	// positioning reader, this format gates the match on it as well as on the class.
+	coverage  []CoverageRange
+	backtrack ClassDef
+	input     ClassDef
+	lookahead ClassDef
+	sets      [][]ClassChainRule
 }
 
 // ChainMatch is a chaining context that has found its pattern, and where in the run it is.
@@ -219,6 +305,14 @@ mut:
 	// positional reason an empty multiple sequence is kept.
 	context_coverage []CoverageRange
 	context_sets     [][]ContextRule
+	// context_classes holds the class-based plain-context subtables (format 2), one
+	// per subtable in the order read. A lookup holds one context kind or the other.
+	context_classes []ContextClass2
+	// chain_glyphs holds the glyph-based chaining subtables (format 1), and
+	// chain_classes holds the class-based ones (format 2). Like the plain side, a
+	// lookup holds one chaining kind or the other.
+	chain_glyphs  []ChainGlyphSub1
+	chain_classes []ChainClassSub2
 	// longest_ligature is how many components the longest ligature rule in this lookup has, and so
 	// how many glyphs a match can read past the one it starts from.
 	//
@@ -863,6 +957,20 @@ fn (g &Gsub) apply_chain(lookup Lookup, items []Ligatable, eff []int, at int,
 			}
 		}
 	}
+	for cg in lookup.chain_glyphs {
+		if m, rule := g.match_chain_glyph_at(cg, eff, items, at) {
+			if sub := g.apply_records(rule.records, m, items, eff, depth) {
+				return sub
+			}
+		}
+	}
+	for cc in lookup.chain_classes {
+		if m, rule := g.match_chain_class_at(cc, eff, items, at) {
+			if sub := g.apply_records(rule.records, m, items, eff, depth) {
+				return sub
+			}
+		}
+	}
 	return none
 }
 
@@ -873,12 +981,23 @@ fn (g &Gsub) apply_context(lookup Lookup, items []Ligatable, eff []int, at int,
 	if at < 0 || at >= eff.len {
 		return none
 	}
-	ci := coverage_index(lookup.context_coverage, items[eff[at]].gid) or { return none }
-	if ci >= lookup.context_sets.len {
-		return none
+	// The coverage selects the format-1 set the way the class selects the format-2 one
+	// below: a glyph it does not name starts no format-1 rule, but the class subtables
+	// still get their turn, because a lookup that only carries format 2 has an empty
+	// coverage and every glyph misses it.
+	if ci := coverage_index(lookup.context_coverage, items[eff[at]].gid) {
+		if ci < lookup.context_sets.len {
+			for rule in lookup.context_sets[ci] {
+				if m := g.match_context_at(rule, eff, items, at) {
+					if sub := g.apply_records(rule.records, m, items, eff, depth) {
+						return sub
+					}
+				}
+			}
+		}
 	}
-	for rule in lookup.context_sets[ci] {
-		if m := g.match_context_at(rule, eff, items, at) {
+	for cc in lookup.context_classes {
+		if m, rule := g.match_context_class_at(cc, eff, items, at) {
 			if sub := g.apply_records(rule.records, m, items, eff, depth) {
 				return sub
 			}
@@ -958,6 +1077,195 @@ fn (g &Gsub) match_chain_at(c &ChainContext3, eff []int, items []Ligatable,
 		start:     positions[0]
 		positions: positions
 		consumed:  positions[c.input.len - 1] - positions[0] + 1
+	}
+}
+
+// match_context_class_at tests every rule of a class subtable's selected set at one effective
+// position. The coverage gates first — a glyph it does not name starts no rule — and then the
+// input class of the glyph selects the set; the first rule whose input classes all match
+// wins. The covered glyph is already known to match, so the rule's input list is checked
+// against the glyphs that follow it.
+//
+// It returns the match together with the rule that matched, because the records belong to
+// the rule rather than to the subtable.
+fn (g &Gsub) match_context_class_at(cc &ContextClass2, eff []int, items []Ligatable,
+	at int) ?(ChainMatch, ContextClassRule) {
+	_ = g
+	if at < 0 || at >= eff.len {
+		return none
+	}
+	if coverage_index(cc.coverage, items[eff[at]].gid) == none {
+		return none
+	}
+	ic := cc.input.class_of(items[eff[at]].gid)
+	if ic >= cc.sets.len {
+		return none
+	}
+	for rule in cc.sets[ic] {
+		if at + rule.input.len + 1 > eff.len {
+			continue
+		}
+		mut ok := true
+		for k, class in rule.input {
+			if cc.input.class_of(items[eff[at + 1 + k]].gid) != class {
+				ok = false
+				break
+			}
+		}
+		if !ok {
+			continue
+		}
+		mut positions := []int{cap: rule.input.len + 1}
+		positions << at
+		for k in 0 .. rule.input.len {
+			positions << at + 1 + k
+		}
+		return ChainMatch{
+			start:     at
+			positions: positions
+			consumed:  rule.input.len + 1
+		}, rule
+	}
+	return none
+}
+
+// match_chain_glyph_at tests every rule of a glyph subtable's selected set at one effective
+// position. The coverage gates first — a glyph it does not name starts no rule — and then
+// the coverage index selects the set; the first rule whose three glyph-id sequences all
+// match wins.
+//
+// It returns the match together with the rule that matched, because the span check and
+// the records both belong to the rule rather than to the subtable.
+fn (g &Gsub) match_chain_glyph_at(cg &ChainGlyphSub1, eff []int, items []Ligatable,
+	at int) ?(ChainMatch, GlyphChainRule) {
+	_ = g
+	if at < 0 || at >= eff.len {
+		return none
+	}
+	ci := coverage_index(cg.coverage, items[eff[at]].gid) or { return none }
+	if ci >= cg.sets.len {
+		return none
+	}
+	for rule in cg.sets[ci] {
+		if m := match_glyph_chain_rule(rule, eff, items, at) {
+			return m, rule
+		}
+	}
+	return none
+}
+
+// match_glyph_chain_rule tests one glyph rule's three sequences at one effective position:
+// backtrack nearest glyph first, then the input glyphs after the covered first, then the
+// lookahead. Positions are run indices like the coverage matcher's, so a record's position
+// indexes straight into them.
+fn match_glyph_chain_rule(rule &GlyphChainRule, eff []int, items []Ligatable, at int) ?ChainMatch {
+	for k, gid in rule.backtrack {
+		back := at - 1 - k
+		if back < 0 {
+			return none
+		}
+		if items[eff[back]].gid != gid {
+			return none
+		}
+	}
+	if at + rule.input.len + 1 > eff.len {
+		return none
+	}
+	for k, gid in rule.input {
+		if items[eff[at + 1 + k]].gid != gid {
+			return none
+		}
+	}
+	for k, gid in rule.lookahead {
+		ahead := at + 1 + rule.input.len + k
+		if ahead >= eff.len {
+			return none
+		}
+		if items[eff[ahead]].gid != gid {
+			return none
+		}
+	}
+	mut positions := []int{cap: rule.input.len + 1}
+	positions << at
+	for k in 0 .. rule.input.len {
+		positions << at + 1 + k
+	}
+	return ChainMatch{
+		start:     at
+		positions: positions
+		consumed:  rule.input.len + 1
+	}
+}
+
+// match_chain_class_at tests every rule of a class subtable's selected set at one effective
+// position. The coverage gates first — a glyph it does not name starts no rule — and then
+// the input class of the glyph selects the set; the first rule whose three class sequences
+// all match wins.
+//
+// It returns the match together with the rule that matched, because the span check and
+// the records both belong to the rule rather than to the subtable.
+fn (g &Gsub) match_chain_class_at(cc &ChainClassSub2, eff []int, items []Ligatable,
+	at int) ?(ChainMatch, ClassChainRule) {
+	_ = g
+	if at < 0 || at >= eff.len {
+		return none
+	}
+	if coverage_index(cc.coverage, items[eff[at]].gid) == none {
+		return none
+	}
+	ic := cc.input.class_of(items[eff[at]].gid)
+	if ic >= cc.sets.len {
+		return none
+	}
+	for rule in cc.sets[ic] {
+		if m := match_class_chain_rule(cc, rule, eff, items, at) {
+			return m, rule
+		}
+	}
+	return none
+}
+
+// match_class_chain_rule tests one class rule's three sequences at one effective position:
+// backtrack classes nearest first, then the input classes after the covered first, then
+// the lookahead classes. Positions are run indices like the coverage matcher's, so a
+// record's position indexes straight into them.
+fn match_class_chain_rule(cc &ChainClassSub2, rule &ClassChainRule, eff []int,
+	items []Ligatable, at int) ?ChainMatch {
+	for k, class in rule.backtrack {
+		back := at - 1 - k
+		if back < 0 {
+			return none
+		}
+		if cc.backtrack.class_of(items[eff[back]].gid) != class {
+			return none
+		}
+	}
+	if at + rule.input.len + 1 > eff.len {
+		return none
+	}
+	for k, class in rule.input {
+		if cc.input.class_of(items[eff[at + 1 + k]].gid) != class {
+			return none
+		}
+	}
+	for k, class in rule.lookahead {
+		ahead := at + 1 + rule.input.len + k
+		if ahead >= eff.len {
+			return none
+		}
+		if cc.lookahead.class_of(items[eff[ahead]].gid) != class {
+			return none
+		}
+	}
+	mut positions := []int{cap: rule.input.len + 1}
+	positions << at
+	for k in 0 .. rule.input.len {
+		positions << at + 1 + k
+	}
+	return ChainMatch{
+		start:     at
+		positions: positions
+		consumed:  rule.input.len + 1
 	}
 }
 
@@ -1251,6 +1559,12 @@ fn parse_lookups(r &Reader, off int) []Lookup {
 				if c := parse_chain3(r, resolved.at) {
 					lookup.chains << c
 				}
+				if c := parse_chain1(r, resolved.at) {
+					lookup.chain_glyphs << c
+				}
+				if c := parse_chain2(r, resolved.at) {
+					lookup.chain_classes << c
+				}
 			}
 			if resolved.kind == gsub_lookup_context {
 				if c := parse_context1(r, resolved.at) {
@@ -1259,6 +1573,12 @@ fn parse_lookups(r &Reader, off int) []Lookup {
 					// coverage range that owns it.
 					lookup.context_coverage << c.context_coverage
 					lookup.context_sets << c.context_sets
+				}
+				if c := parse_context2(r, resolved.at) {
+					lookup.context_classes << c
+				}
+				if c := parse_context3(r, resolved.at) {
+					lookup.chains << c
 				}
 			}
 		}
@@ -1276,6 +1596,38 @@ fn has_context_rules(l &Lookup) bool {
 	for set in l.context_sets {
 		if set.len > 0 {
 			return true
+		}
+	}
+	// A class subtable with no non-empty set substitutes nothing either, so both
+	// halves of the plain side are checked before the kind is claimed.
+	for cc in l.context_classes {
+		for set in cc.sets {
+			if set.len > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// has_chain_rules reports whether a lookup holds any chaining rule at all, in any of
+// the three forms. Like the plain side, an unparsable subtable claims nothing.
+fn has_chain_rules(l &Lookup) bool {
+	if l.chains.len > 0 {
+		return true
+	}
+	for cg in l.chain_glyphs {
+		for set in cg.sets {
+			if set.len > 0 {
+				return true
+			}
+		}
+	}
+	for cc in l.chain_classes {
+		for set in cc.sets {
+			if set.len > 0 {
+				return true
+			}
 		}
 	}
 	return false
@@ -1305,7 +1657,7 @@ fn longest_ligature_of(l &Lookup) int {
 // nothing to apply and is skipped, and an unread one is left alone so the rest of the font's rules
 // still work.
 fn lookup_kind_of(l &Lookup, header_kind u16) u16 {
-	if l.chains.len > 0 {
+	if has_chain_rules(l) {
 		return gsub_lookup_chain_context
 	}
 	if has_context_rules(l) {
@@ -1527,6 +1879,369 @@ fn parse_chain3(r &Reader, at int) ?ChainContext3 {
 		return b.position - a.position
 	})
 	return c
+}
+
+// parse_chain_records reads one SubstLookupRecord array: a count followed by that many
+// (sequence index, lookup index) pairs. All four contextual formats end their rules
+// with one, so the bound check lives here rather than in each reader.
+fn parse_chain_records(r &Reader, p int) ?ChainRecords {
+	if !r.has(p, 2) {
+		return none
+	}
+	count := int(r.u16_at(p))
+	if count < 0 || count * 4 > r.len() - (p + 2) {
+		return none
+	}
+	mut out := ChainRecords{
+		records: []ChainRecord{cap: count}
+		next:    p + 2 + count * 4
+	}
+	for i in 0 .. count {
+		base := p + 2 + i * 4
+		out.records << ChainRecord{
+			position: int(r.u16_at(base))
+			lookup:   r.u16_at(base + 2)
+		}
+	}
+	return out
+}
+
+// ChainRecords is a SubstLookupRecord array together with where the field after it
+// begins, which is what lets one reader hand the next its start.
+struct ChainRecords {
+mut:
+	records []ChainRecord
+	next    int
+}
+
+// parse_context2 reads one class-based plain ContextSubst subtable in format 2.
+//
+// The sets are aligned with the input class: the covered first glyph's class selects
+// its set, and a NULL set offset is an empty rule list kept positionally. Each rule
+// names the classes after the covered first, then its records.
+fn parse_context2(r &Reader, at int) ?ContextClass2 {
+	if r.u16_at(at) != 2 {
+		return none
+	}
+	if !r.has(at, 8) {
+		return none
+	}
+	mut c := ContextClass2{}
+	c.coverage = parse_coverage(r, at + int(r.u16_at(at + 2)))
+	c.input = parse_class_def(r, at + int(r.u16_at(at + 4)))
+	set_count := int(r.u16_at(at + 6))
+	if set_count < 0 || 8 + set_count * 2 > r.len() - at {
+		return none
+	}
+	for si in 0 .. set_count {
+		set_off := int(r.u16_at(at + 8 + si * 2))
+		if set_off == 0 {
+			c.sets << []ContextClassRule{}
+			continue
+		}
+		set_at := at + set_off
+		if !r.has(set_at, 2) {
+			c.sets << []ContextClassRule{}
+			continue
+		}
+		rule_count := int(r.u16_at(set_at))
+		mut rules := []ContextClassRule{cap: rule_count}
+		for ri in 0 .. rule_count {
+			if !r.has(set_at + 2 + ri * 2, 2) {
+				break
+			}
+			if rule := parse_context_class_rule(r, set_at + int(r.u16_at(set_at + 2 + ri * 2))) {
+				rules << rule
+			}
+		}
+		c.sets << rules
+	}
+	return c
+}
+
+// parse_context_class_rule reads one rule of a class set: the classes after the covered
+// first, then the records.
+//
+// The input count includes the covered first, so the stored list holds every class after
+// it. A rule that fails to parse is skipped rather than placed half-read: the next rule
+// starts at its own offset, so one bad rule cannot shift the rest.
+fn parse_context_class_rule(r &Reader, at int) ?ContextClassRule {
+	if !r.has(at, 4) {
+		return none
+	}
+	in_count := int(r.u16_at(at))
+	sub_count := int(r.u16_at(at + 2))
+	if in_count < 1 {
+		return none
+	}
+	mut p := at + 4
+	if (in_count - 1) * 2 > r.len() - p {
+		return none
+	}
+	mut rule := ContextClassRule{}
+	for _ in 0 .. in_count - 1 {
+		rule.input << r.u16_at(p)
+		p += 2
+	}
+	// The records follow the input list, and their count is the substitution count
+	// read above rather than a second count: each record is four bytes.
+	if sub_count < 0 || sub_count * 4 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. sub_count {
+		rule.records << ChainRecord{
+			position: int(r.u16_at(p))
+			lookup:   r.u16_at(p + 2)
+		}
+		p += 4
+	}
+	return rule
+}
+
+// parse_context3 reads one coverage-based plain ContextSubst subtable in format 3.
+//
+// Like the chaining format 3 it is a list of coverages followed by records, but with
+// no backtrack or lookahead: the pattern is the input alone. Unlike the chaining
+// format 3, the substitution count comes before the coverage offsets rather than after
+// them: format, input count, substitution count, offsets, records. Reading the count
+// from after the offsets walks into the next subtable — measured on Amiri lookup 27,
+// whose count of 3 sits at the fourth word while the offset array's own third word
+// happens to hold a 60, which then reads sixty records out of whatever follows.
+fn parse_context3(r &Reader, at int) ?ChainContext3 {
+	if r.u16_at(at) != 3 {
+		return none
+	}
+	if !r.has(at, 6) {
+		return none
+	}
+	glyph_count := int(r.u16_at(at + 2))
+	subst_count := int(r.u16_at(at + 4))
+	// A subtable with no records substitutes nothing, and parsing it as a chain would
+	// claim the chaining kind for a lookup that does nothing. The chaining reader
+	// refuses the same shape for the same reason.
+	if glyph_count < 1 || subst_count < 1 {
+		return none
+	}
+	if 6 + glyph_count * 2 + subst_count * 4 > r.len() - at {
+		return none
+	}
+	mut c := ChainContext3{}
+	for i in 0 .. glyph_count {
+		c.input << parse_coverage(r, at + int(r.u16_at(at + 6 + i * 2)))
+	}
+	mut p := at + 6 + glyph_count * 2
+	for _ in 0 .. subst_count {
+		c.records << ChainRecord{
+			position: int(r.u16_at(p))
+			lookup:   r.u16_at(p + 2)
+		}
+		p += 4
+	}
+	// Last position first, like the chaining reader: each record runs against the run
+	// as it stands, so an earlier record must not move a later one's position.
+	c.records.sort_with_compare(fn (a &ChainRecord, b &ChainRecord) int {
+		return b.position - a.position
+	})
+	return c
+}
+
+// parse_chain1 reads one glyph-based ChainingContextSubst subtable in format 1.
+//
+// The sets are aligned with the coverage index the way plain format 1 is: the covered
+// first glyph selects its set, and a NULL set offset is an empty rule list kept
+// positionally. Each rule names its three sequences as glyph ids, including every
+// input glyph but the covered first.
+fn parse_chain1(r &Reader, at int) ?ChainGlyphSub1 {
+	if r.u16_at(at) != 1 {
+		return none
+	}
+	if !r.has(at, 8) {
+		return none
+	}
+	mut c := ChainGlyphSub1{}
+	c.coverage = parse_coverage(r, at + int(r.u16_at(at + 2)))
+	set_count := int(r.u16_at(at + 4))
+	if set_count < 0 || 6 + set_count * 2 > r.len() - at {
+		return none
+	}
+	for si in 0 .. set_count {
+		set_off := int(r.u16_at(at + 6 + si * 2))
+		if set_off == 0 {
+			c.sets << []GlyphChainRule{}
+			continue
+		}
+		set_at := at + set_off
+		if !r.has(set_at, 2) {
+			c.sets << []GlyphChainRule{}
+			continue
+		}
+		rule_count := int(r.u16_at(set_at))
+		mut rules := []GlyphChainRule{cap: rule_count}
+		for ri in 0 .. rule_count {
+			if !r.has(set_at + 2 + ri * 2, 2) {
+				break
+			}
+			if rule := parse_glyph_chain_rule(r, set_at + int(r.u16_at(set_at + 2 + ri * 2))) {
+				rules << rule
+			}
+		}
+		c.sets << rules
+	}
+	return c
+}
+
+// parse_glyph_chain_rule reads one rule of a glyph chaining set: glyph-id lists for the
+// three sequences, then the positioning records.
+//
+// The input count includes the covered first glyph, so the stored list holds every glyph
+// after it. A rule that fails to parse is skipped rather than placed half-read: the next
+// rule starts at its own offset, so one bad rule cannot shift the rest.
+fn parse_glyph_chain_rule(r &Reader, at int) ?GlyphChainRule {
+	if !r.has(at, 2) {
+		return none
+	}
+	back_count := int(r.u16_at(at))
+	mut p := at + 2
+	if back_count < 0 || back_count * 2 > r.len() - p {
+		return none
+	}
+	mut rule := GlyphChainRule{}
+	for _ in 0 .. back_count {
+		rule.backtrack << r.u16_at(p)
+		p += 2
+	}
+	if !r.has(p, 2) {
+		return none
+	}
+	in_count := int(r.u16_at(p))
+	p += 2
+	// One of the input glyphs is the covered first, so a count of zero names nothing
+	// to match and the rule can never fire.
+	if in_count < 1 || (in_count - 1) * 2 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. in_count - 1 {
+		rule.input << r.u16_at(p)
+		p += 2
+	}
+	if !r.has(p, 2) {
+		return none
+	}
+	ahead_count := int(r.u16_at(p))
+	p += 2
+	if ahead_count < 0 || ahead_count * 2 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. ahead_count {
+		rule.lookahead << r.u16_at(p)
+		p += 2
+	}
+	if recs := parse_chain_records(r, p) {
+		rule.records = recs.records
+		return rule
+	}
+	return none
+}
+
+// parse_chain2 reads one class-based ChainingContextSubst subtable in format 2.
+//
+// Three class definitions and, per input class value, the rules for a first glyph of
+// that class. A NULL set offset parses to an empty rule list, kept positionally so
+// later sets stay aligned with their class value.
+fn parse_chain2(r &Reader, at int) ?ChainClassSub2 {
+	if r.u16_at(at) != 2 {
+		return none
+	}
+	if !r.has(at, 12) {
+		return none
+	}
+	mut c := ChainClassSub2{}
+	c.coverage = parse_coverage(r, at + int(r.u16_at(at + 2)))
+	c.backtrack = parse_class_def(r, at + int(r.u16_at(at + 4)))
+	c.input = parse_class_def(r, at + int(r.u16_at(at + 6)))
+	c.lookahead = parse_class_def(r, at + int(r.u16_at(at + 8)))
+	set_count := int(r.u16_at(at + 10))
+	if set_count < 0 || 12 + set_count * 2 > r.len() - at {
+		return none
+	}
+	for si in 0 .. set_count {
+		set_off := int(r.u16_at(at + 12 + si * 2))
+		if set_off == 0 {
+			c.sets << []ClassChainRule{}
+			continue
+		}
+		set_at := at + set_off
+		if !r.has(set_at, 2) {
+			c.sets << []ClassChainRule{}
+			continue
+		}
+		rule_count := int(r.u16_at(set_at))
+		mut rules := []ClassChainRule{cap: rule_count}
+		for ri in 0 .. rule_count {
+			if !r.has(set_at + 2 + ri * 2, 2) {
+				break
+			}
+			if rule := parse_class_chain_rule(r, set_at + int(r.u16_at(set_at + 2 + ri * 2))) {
+				rules << rule
+			}
+		}
+		c.sets << rules
+	}
+	return c
+}
+
+// parse_class_chain_rule reads one rule of a class set: class counts and lists for the
+// three sequences, then the substitution records.
+//
+// The input count includes the first glyph, whose class selected this set, so the stored
+// list holds every class after it. A rule that fails to parse is skipped rather than
+// placed half-read: the next rule starts at its own offset, so one bad rule cannot shift
+// the rest.
+fn parse_class_chain_rule(r &Reader, at int) ?ClassChainRule {
+	if !r.has(at, 2) {
+		return none
+	}
+	back_count := int(r.u16_at(at))
+	mut p := at + 2
+	if back_count < 0 || back_count * 2 > r.len() - p {
+		return none
+	}
+	mut rule := ClassChainRule{}
+	for _ in 0 .. back_count {
+		rule.backtrack << r.u16_at(p)
+		p += 2
+	}
+	if !r.has(p, 2) {
+		return none
+	}
+	in_count := int(r.u16_at(p))
+	p += 2
+	// One of the input glyphs is the first, whose class selected this set. A count of
+	// zero names nothing to match and the rule can never fire.
+	if in_count < 1 || (in_count - 1) * 2 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. in_count - 1 {
+		rule.input << r.u16_at(p)
+		p += 2
+	}
+	if !r.has(p, 2) {
+		return none
+	}
+	ahead_count := int(r.u16_at(p))
+	p += 2
+	if ahead_count < 0 || ahead_count * 2 > r.len() - p {
+		return none
+	}
+	for _ in 0 .. ahead_count {
+		rule.lookahead << r.u16_at(p)
+		p += 2
+	}
+	if recs := parse_chain_records(r, p) {
+		rule.records = recs.records
+		return rule
+	}
+	return none
 }
 
 // CoverageList is one of a chaining context's three coverage lists, together with where the field

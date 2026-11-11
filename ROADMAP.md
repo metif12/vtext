@@ -1574,6 +1574,25 @@ absent because no font in the corpus writes them. For every script that means
 finding fonts that do, shaping them beside HarfBuzz, and shipping the reader
 with fixtures rather than synthetic tables alone.
 
+Done 2026-11-11, as `context_classes`, `chain_glyphs` and `chain_classes`: the
+readers, the matchers, both apply loops and every kind gate that names the
+type. The premise was stale — Amiri carries all four (lookup 55 is plain
+format 2, lookups 27 and up are plain format 3, lookup 28 is chaining
+format 1, lookup 66 is chaining format 2), so the fixtures are real tables
+beside built bytes: parse tests for each format, matcher tests for each
+sequence kind, and three end-to-end substitutions with fontTools-measured
+glyph ids (1591 to 4031 through lookup 54; 1817 to 3378 and 1632 to 3396
+through lookup 65; 5439 to 5440 through lookup 24). Two misreads caught on
+the way in: the plain format-3 substitution count sits before the coverage
+offsets rather than after them, where the chaining one keeps it — Amiri
+lookup 27 is the control, a 60 where the offsets end against 3 real records —
+and a class-only lookup never reached its subtables until the format-1
+coverage miss stopped returning early, which a revert control re-fails.
+Suite 32/32, difftest 0 new and 0 stale: the new rules fire on none of the
+corpus texts, the way the GPOS format-1 rules fire on none either, so the
+fixtures above are the proof they work and the ratchet is the proof nothing
+else moved.
+
 **Script-specific mark and feature collection.** Mark lookups are collected
 for `arab` only, and the joining feature set is requested the same way for
 every run. A Latin mark positioned by its font's own `latn` rules is
