@@ -130,6 +130,9 @@ fn test_line_break_of_known_codepoints() {
 	assert p.line_break_of(`-`) == .hy
 	assert p.line_break_of(rune(0x200D)) == .zwj
 	assert p.line_break_name(`A`) == 'AL'
+	assert p.line_break_of(rune(0x11003)) == .ap
+	assert p.line_break_of(rune(0x1B50)) == .akst
+	assert p.line_break_name(rune(0x1B50)) == 'AS'
 }
 
 fn test_lookup_range_handles_edges() {
@@ -242,6 +245,32 @@ fn test_value_tables_match_the_enums() {
 	assert p.linebreak_names[int(LineBreakClass.al)] == 'AL'
 	assert p.linebreak_names[int(LineBreakClass.zwj)] == 'ZWJ'
 	assert p.linebreak_names[int(LineBreakClass.b2)] == 'B2'
+	assert p.linebreak_names[int(LineBreakClass.akst)] == 'AS'
+	assert EastAsianWidth.w.str() == 'W', 'the ordinal the generated table uses for Wide'
+	assert EastAsianWidth.f.str() == 'F', 'and for Fullwidth'
+	assert EastAsianWidth.h.str() == 'H', 'and for Halfwidth'
+}
+
+// The East Asian width table is what LB30, LB19a and LB21a refine three pairs with,
+// so it is checked against the characters the rules themselves name: U+2329 is Wide
+// and U+0028 is Narrow, which is why a letter holds the second and parts from the first.
+fn test_east_asian_width_of_known_codepoints() {
+	ea := east_asian_ranges()
+	assert is_east_asian(ea, rune(0x2329)), 'U+2329 LEFT-POINTING ANGLE BRACKET is Wide'
+	assert is_east_asian(ea, rune(0x3000)), 'U+3000 IDEOGRAPHIC SPACE is Fullwidth'
+	assert is_east_asian(ea, rune(0xFF1A)), 'U+FF1A FULLWIDTH COLON is Fullwidth'
+	assert !is_east_asian(ea, rune(0x0028)), 'U+0028 LEFT PARENTHESIS is Narrow'
+	assert !is_east_asian(ea, `A`), 'a letter is Neutral'
+}
+
+// The unassigned-pictograph table is LB30b's second arm, so it is checked against
+// the file's own shapes: U+1FFFD is reserved and Extended_Pictographic, U+1F3FB's
+// base U+270A is a real emoji base and neither is unassigned.
+fn test_ep_unassigned_of_known_codepoints() {
+	eu := ep_unassigned_ranges()
+	assert is_ep_unassigned(eu, rune(0x1FFFD)), 'U+1FFFD is reserved and pictographic'
+	assert !is_ep_unassigned(eu, rune(0x270A)), 'U+270A is an assigned emoji base'
+	assert !is_ep_unassigned(eu, `A`), 'a letter is not a pictograph at all'
 }
 
 // test_generated_bidi_table_matches_the_ucd re-reads the UCD file and checks

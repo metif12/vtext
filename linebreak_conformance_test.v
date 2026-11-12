@@ -96,7 +96,31 @@ import os
 // with refusals. A narrow `right == .b2` pair recovers `× 2014 × 2014 ÷` [17.0] and `× 200D × 2014 ÷`
 // [8.1] without touching the other 57 — the second through the raw property, because a joiner folds
 // to a mark and no class can name it.
-const conformance_floor = 18777
+//
+// On 2026-11-12 **19,342**, worth 565 with the tail closed to four cases, when the rules that read
+// like class lists turned out to be pairs the tables could already see. The East Asian width table
+// (UAX#11, generated from `EastAsianWidth.txt`) lets LB30 tell a narrow bracket from a Wide one —
+// `× 2757 × 0028 ÷` holds at [30.01] and `× 2757 ÷ 2329 ÷` breaks at [31.01] — and LB30 reads through
+// a mark the way LB28 and LB23 do. LB9's exception landed too: a mark after a hard break, a space or
+// a zero width space resolves to a letter (LB10) instead of inheriting the base. `.ex` and `.hy`
+// left `is_prohibited_end` for the pair rules that own them (LB29's letter half, LB21/LB20a, LB25's
+// numeric arms); `.bb` and the LB29/LB25 arms stay. LB20a holds a word-initial hyphen, LB21a a Hebrew
+// hyphen, LB26 only the pairs that make a syllable block, LB28a the class-form arms (AP×(AK|AS|◌),
+// (AK|AS|◌)×(VF|VI), VI×AK with an aksara-class precede). LB30b holds an emoji modifier to an emoji
+// base and to an unassigned pictograph (derived `EP & Cn` table, 34 ranges). LB8 breaks across spaces
+// after a zero width space, LB8a refuses after a joiner by raw property, and CRLF is one break.
+// The quotation holds narrowed to what the file shows: LB15a only from a fresh opening context,
+// LB15b only when the mark itself may not break, LB19's carve-outs for curly opening marks after
+// CJK with CJK or opening after, and a span-state (`prev_broke`) break for a standalone closing
+// mark before an ideograph.
+//
+// Four cases remain, and each is recorded rather than coded around. One is [28.14]
+// (`× 1BD7 × 1BEC ÷ …`, CM|AS): LB28a's sub-rule for a mark standing on a virama, which needs the
+// Indic syllabic categories this engine does not carry. Three are [31.01] `Pf|ID` span-boundary
+// breaks, which need quotation-span state the pair engine threads `prev_broke` for but does not
+// yet decide across a full span. Measured clean on this tree: 19,342 of 19,346, the same four in
+// every rerun.
+const conformance_floor = 19342
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.

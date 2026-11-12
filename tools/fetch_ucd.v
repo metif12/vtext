@@ -44,6 +44,7 @@ const ucd_files = [
 	'auxiliary/GraphemeBreakTest.txt',
 	'auxiliary/WordBreakProperty.txt',
 	'auxiliary/LineBreakTest.txt',
+	'EastAsianWidth.txt',
 ]
 
 // emoji_url is where emoji-data.txt lives, pinned to the version that was current when this was written.

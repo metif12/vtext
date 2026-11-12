@@ -210,6 +210,7 @@ pub enum LineBreakClass {
 	ap   = 46 // Aksara pre-base
 	ri   = 47 // regional indicator
 	em   = 48 // emoji modifier
+	akst = 49 // Aksara start (AS is a V keyword, the way IS is spelled insp)
 }
 
 // infx is the inseparable numeric infix, U+2026 ONE DOT LEADER and the ellipsis, which LB22 holds to
@@ -410,6 +411,57 @@ fn sa_mark_of(ranges []CodeRange, cp rune) SaMark {
 // table nothing outside an SA character is ever asked about.
 fn sa_mark_ranges() []CodeRange {
 	return parse_ranges(sa_mark_ranges_data)
+}
+
+// EastAsianWidth is the UAX#11 East_Asian_Width property of a codepoint.
+//
+// Only the $EastAsian set matters to line breaking — Fullwidth, Wide and Halfwidth —
+// which LB30, LB19a and LB21a each name. The table carries all six values anyway rather
+// than a derived boolean, because the file the generator reads answers the whole
+// property and a second table would be a second place for the ordinals to drift.
+pub enum EastAsianWidth {
+	n  = 0 // Neutral: what an unlisted codepoint is
+	a  = 1 // Ambiguous
+	f  = 2 // Fullwidth
+	h  = 3 // Halfwidth
+	na = 4 // Narrow
+	w  = 5 // Wide
+}
+
+// str returns the ordinal's name from the generated table, which is what keeps this enum and the
+// ordinals tools/gen_tables.v writes in step with each other.
+pub fn (w EastAsianWidth) str() string {
+	return ucd_name(east_asian_names_data, int(w))
+}
+
+// east_asian_ranges decodes the generated East Asian width table.
+//
+// It is decoded by the caller rather than held on Properties, the way quote_ranges is and for the
+// same reason: a few hundred ranges, asked about only where a rule names an East Asian bracket or
+// quotation mark, so a caller pays one small decode per call instead of every Properties value in
+// the library carrying a table most characters are never asked about.
+fn east_asian_ranges() []CodeRange {
+	return parse_ranges(east_asian_ranges_data)
+}
+
+// ep_unassigned_ranges decodes the generated unassigned-pictograph table, the caller-decoded way
+// for the caller-decoded reason: 34 ranges, asked about only next to an emoji modifier.
+fn ep_unassigned_ranges() []CodeRange {
+	return parse_ranges(ep_unassigned_ranges_data)
+}
+
+// is_ep_unassigned reports whether cp is an unassigned pictograph: Extended_Pictographic with
+// no entry in the UCD. LB30b's second arm holds an emoji modifier to one.
+fn is_ep_unassigned(ranges []CodeRange, cp rune) bool {
+	return lookup_range(ranges, u32(cp), 0) == 1
+}
+
+// is_east_asian reports whether cp is in the $EastAsian set UAX#14 refines three rules with:
+// East_Asian_Width Fullwidth, Wide or Halfwidth. U+2329 LEFT-POINTING ANGLE BRACKET is Wide,
+// so a letter breaks before it; U+0028 LEFT PARENTHESIS is Narrow, so a letter does not.
+fn is_east_asian(ranges []CodeRange, cp rune) bool {
+	o := lookup_range(ranges, u32(cp), 0)
+	return o == u16(EastAsianWidth.f) || o == u16(EastAsianWidth.h) || o == u16(EastAsianWidth.w)
 }
 
 // line_break_name returns the UCD name of cp's line break class, e.g. 'AL'.

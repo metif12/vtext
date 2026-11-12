@@ -98,6 +98,14 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 	// about the character a space run hangs from.
 	quote := quote_ranges()
 
+	// The East Asian widths are read once for the same reason: LB30, LB19a and LB21a are the
+	// only rules that refine a pair by width, and they ask about brackets and quotation marks.
+	ea := east_asian_ranges()
+
+	// The unassigned pictographs are read once for the same reason: LB30b is the only rule
+	// that asks, and it asks about an emoji modifier's neighbour.
+	eu := ep_unassigned_ranges()
+
 	mut out := []BreakOpportunity{}
 	for i in 0 .. n - 1 {
 		// LB21b is first, and it is the only rule that looks at more than the two characters either
@@ -111,10 +119,15 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 			}
 			continue
 		}
+		// Whether the previous position broke is decided, because positions are decided
+		// left to right and only this one is still open. A closing quotation mark that
+		// stands alone breaks on both sides, and "stands alone" is exactly this: the
+		// break in front of it already happened.
+		prev_broke := out.len > 0 && out[out.len - 1].start == i
 		// LB7, and then the pairs, in the order the specification numbers them. The
 		// order is not arbitrary: LB8 has to come before LB8a, which has to come
 		// before LB9, and a later rule may not override an earlier one.
-		kind := break_kind(props, cps, classes, quote, i)
+		kind := break_kind(props, cps, classes, quote, ea, eu, prev_broke, i)
 		if kind == BreakKind.no {
 			continue
 		}
@@ -163,21 +176,23 @@ fn is_mandatory_break_at(classes []LineBreakClass, pos int, n int, mandatory_fir
 // because "no rule matched" and "a later rule matched" are the same thing to
 // every rule below it.
 fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []CodeRange,
-	i int) BreakKind {
+	ea []CodeRange, eu []CodeRange, prev_broke bool, i int) BreakKind {
 	left := classes[i]
 	right := classes[i + 1]
 	n := classes.len
 
-	// LB4, LB5: always break, or always no break. A mandatory break has to come
-	// before the pair rules, because a newline followed by a closing bracket
+	// LB5: a CRLF is one break rather than two. A newline followed by a closing bracket
 	// still breaks, and a pair rule would otherwise read the bracket as the
 	// right-hand character and forbid it.
-	if is_mandatory_break(left) {
-		return BreakKind.mandatory
-	}
+	//
+	// The pair is checked before the mandatory rule because a carriage return is
+	// otherwise always a break on its own: `× 000D × 000A ÷` is tagged [5.01] with
+	// no break between the two, and the break after the feed is reported by the
+	// mandatory rule at the position after it.
 	if left == .cr && right == .lf {
-		// LB5, and it is checked before LB4 so that CRLF is one break rather
-		// than two.
+		return BreakKind.no
+	}
+	if is_mandatory_break(left) {
 		return BreakKind.mandatory
 	}
 	if right == .sp {
@@ -196,6 +211,27 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if is_mandatory_break(right) {
 		return BreakKind.no
 	}
+	// LB8: break before anything that follows a zero width space, even across spaces.
+	// Measured over every `ZW × SP | X` position in ucd/LineBreakTest.txt: the file
+	// breaks before every class but one group — BK, CR, LF and NL, which the rule
+	// above answers, and SP and ZW, which LB7 answers further above. Everything else
+	// breaks, including the quotation marks LB15 and LB19 hold, the joiner LB11 holds
+	// and the contingency break LB20 breaks around: rule 8 answers before rules 11
+	// through 20, so a zero width space overrides every one of them.
+	//
+	// Only spaces intervene, and the space run has to reach this position: a mark in
+	// front of it answers LB9 first. `run_origin` walks marks too and would read `ZW ×
+	// CM × SP ÷ X` as one run, but the committee tags the mark [9.0] and refuses it
+	// there.
+	if i > 0 && classes[i] == .sp {
+		mut zb := i
+		for zb > 0 && classes[zb - 1] == .sp {
+			zb--
+		}
+		if zb > 0 && classes[zb - 1] == .zw {
+			return BreakKind.allowed
+		}
+	}
 	// LB8: a zero width space is a break of its own. The committee's test asks
 	// `× 200B ÷ X ÷` for every class and answers every one of them with [8.0] —
 	// break — including the classes LB13 forbids after a space and the ones LB11
@@ -209,6 +245,14 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// the two classes differ in where they sit rather than in what they do.
 	if left == .zw {
 		return BreakKind.allowed
+	}
+	// LB8a: do not break after a zero width joiner. `× 200D × 2757 ÷` is the shape, tagged
+	// [8.1], and the raw property is asked rather than the resolved class because
+	// `effective_class` folds a joiner into a combining mark: at the class level this pair
+	// is indistinguishable from `× 0308 × 2757 ÷`, which breaks. The b2 rule below does the
+	// same raw read for the same reason.
+	if props.line_break_of(cps[i]) == .zwj {
+		return BreakKind.no
 	}
 	// The rules below ask what the left-hand character *is* — what it glues, what it may not end a
 	// line on — and a mark standing on a character answers for that character. LB15a and LB15b read
@@ -231,6 +275,19 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			j--
 		}
 		eff_left = classes[j]
+		// LB9 absorbs a mark into its base everywhere except after a hard break, a space or a
+		// zero width space, and LB10 resolves what is left into a letter: `× 000B ÷ 0308 × 2757 ÷`
+		// breaks after the control and refuses before the letter, tagged [4.0] and [28.0], because
+		// the mark is an AL and not a BK. A mark at the start of the text has no base at all, so
+		// it is a letter the same way.
+		//
+		// A word joiner and glue keep holding through a mark — `× FEFF × 0308 × FE6A ÷` is [11.02]
+		// — because LB9 names them as bases and the exception list does not.
+		if is_markish(classes[j])
+			|| classes[j] == .bk || classes[j] == .cr || classes[j] == .lf
+			|| classes[j] == .nl || classes[j] == .sp || classes[j] == .zw {
+			eff_left = .al
+		}
 	}
 	// LB11: a word joiner forbids a break on either side of it, and LB12 forbids one before it.
 	// The two are the same effect and one rule says it: a line may not end on a word joiner and
@@ -256,19 +313,52 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// glue unless a space or a hyphen is in front of it, which is what keeps "word\u00A0word" whole
 	// while letting a space glue its own no-break space to the line after it.
 	//
-	// The exemption is a list of two, not three. UAX #14 writes it `[^SP BA HY]`, and its own test
-	// file asks `× 3000 × 16FE4 ÷` — an ideographic space in front of a glue — and answers with
-	// [12.1], a break that must not happen. So a break-after character is not exempt after all,
-	// and a reader that takes the character class at its word loses the pair. A soft hyphen is kept
-	// exempt, because it is on the same side of the question as a space: it is followed by what it
-	// is attached to.
-	if right == .gl && left != .sp && left != .hy && left != .hh {
-		return BreakKind.no
+	// The exemption is a list of three. UAX #14 writes it `[^SP HY HH]`: a soft hyphen is
+	// exempt because it is an unambiguous hyphen, and a break-after is not because it is
+	// not one. The file asks `× 3000 × 16FE4 ÷` — an ideographic space in front of a glue —
+	// and answers with [12.1], a break that must not happen.
+	//
+	// A mark in front of the glue does not hide the exemption: LB9 reads `HY × CM × GL` as
+	// the hyphen and the glue, and the committee breaks `× 002D × 0308 ÷ 16FE4 ÷` at [31.01].
+	// The raw class is still asked first, because a mark on any other base holds.
+	if right == .gl {
+		mut exempt := left == .sp || left == .hy || left == .hh
+		if !exempt && left == .cm {
+			exempt = eff_left == .sp || eff_left == .hy || eff_left == .hh
+		}
+		if !exempt {
+			return BreakKind.no
+		}
 	}
 	if is_prohibited_start(right) {
 		// LB13: the right-hand character may not start a line, and this is the set that holds even
 		// when a space is in front of it. See the split in `is_prohibited_start`.
-		return BreakKind.no
+		//
+		// LB15c breaks a decimal mark free of the list: `× 0020 ÷ 002E × 0033 ÷` breaks
+		// before the full stop because a digit follows it — "subtract .5". The space
+		// is what decides, so a hyphen in front of the same mark holds it: `× 002D ×
+		// 002E × 0033 ÷` refuses at the same LB15d the list answers.
+		if !(left == .sp && right == .insp && i + 2 < n && classes[i + 2] == .nu) {
+			return BreakKind.no
+		}
+	}
+	// A break before a contingency break beats the end-list classes that would refuse
+	// it: `× 00B4 ÷ FFFC ÷`, `× 002D ÷ FFFC ÷` and `× 002C ÷ FFFC ÷` are all tagged
+	// [20.01], so LB20 answers before `is_prohibited_end` is ever asked. The three
+	// left-hand classes are the ones the file asks about — an acute, a hyphen and a
+	// comma — and not a general CB override: a quotation mark with a mark on it still
+	// refuses at the narrow rule below, which is why this stays a list.
+	if (left == .bb || left == .hy || left == .insp) && right == .cb {
+		return BreakKind.allowed
+	}
+	// A closing quotation mark that stands alone breaks on both sides: `× FF1A ÷ 201D ÷
+	// 5B66 ÷` breaks at [31.01] on both sides of the mark, while `× 00BB × 231A ÷`
+	// holds at [19.13] on both. What tells them apart is the position in front: the
+	// first mark follows a break and the second does not. The end-list below would
+	// hold both, so this answers first — but only for a mark followed by an
+	// ideograph, which is every breaking case the file has.
+	if left == .qu && quote_role_of(quote, cps[i]) == .pf && right == .idas && prev_broke {
+		return BreakKind.allowed
 	}
 	if is_prohibited_end(left) {
 		// LB14 through LB17: the left-hand character may not end a line, including the forms that
@@ -325,15 +415,39 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// that the mark does not detach the run.
 	if left == .sp || is_markish(left) {
 		behind := run_origin(classes, i)
+		// A closing mark holds the run whether a zero width space detached it or not:
+		// LB15b is about the mark and what follows it, not about what the run hangs
+		// from. `× 200B ÷ 0308 × 0020 × 00BB ÷` holds at [15.21] with a detached run
+		// and nothing after the mark.
+		if quote_role_of(quote, cps[i + 1]) == .pf {
+			follows := if i + 2 < n { classes[i + 2] } else { LineBreakClass.nl }
+			if follows == .nl || follows == .sp || follows == .gl || follows == .wj
+				|| follows == .cl || follows == .qu || follows == .cp || follows == .ex
+				|| follows == .insp || follows == .sy || follows == .bk || follows == .cr
+				|| follows == .lf || follows == .zw {
+				return BreakKind.no
+			}
+		}
 		detached := behind >= 0 && classes[behind] == .zw
 		if !detached {
 			// The run hangs on the character in front of it, and a run that reaches the start
 			// of the text hangs on nothing, so there is no quotation mark to hold it.
+			//
+			// An opening mark only holds a run it starts itself: LB15a grows the quotation
+			// from a space, an opening punctuation, another quotation or the start of the
+			// text — `(sot | BK | CR | LF | NL | OP | QU | GL | SP | ZW) Pi SP* ×` — and a
+			// mark after a letter is content already. `× 00AB × 0020 ÷ 0028 ÷` breaks at
+			// [18.0] before the parenthesis because the letter in front of the mark is not
+			// in that list, while `× QU_Pi × SP × AL ÷` holds at [15.11].
 			if behind >= 0 && quote_role_of(quote, cps[behind]) == .pi {
-				return BreakKind.no
-			}
-			if quote_role_of(quote, cps[i + 1]) == .pf {
-				return BreakKind.no
+				fresh := behind == 0 || classes[behind - 1] == .bk || classes[behind - 1] == .cr
+					|| classes[behind - 1] == .lf || classes[behind - 1] == .nl
+					|| classes[behind - 1] == .op || classes[behind - 1] == .qu
+					|| classes[behind - 1] == .gl || classes[behind - 1] == .sp
+					|| classes[behind - 1] == .zw
+				if fresh {
+					return BreakKind.no
+				}
 			}
 			// LB14: an opening punctuation holds a run of spaces and marks end to end, and that
 			// hold is unconditional — measured over ucd/LineBreakTest.txt, `× OP × SP × R` and
@@ -342,6 +456,21 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			// the space itself, so it can only ever forbid the break *at* the parenthesis.
 			// Measured: 223 cases fixed, none broken.
 			if behind >= 0 && classes[behind] == .op {
+				return BreakKind.no
+			}
+			// LB16: a closing punctuation or parenthesis holds to a nonstarter across a
+			// space run. `× 232A × 0020 × 3005 ÷` is tagged [16.0] on the iteration mark,
+			// and the run may carry marks the same way the holds above already walk:
+			// `× 232A × 0308 × 0020 × 3005 ÷` holds too.
+			if behind >= 0 && (classes[behind] == .cl || classes[behind] == .cp)
+				&& right == .ns {
+				return BreakKind.no
+			}
+			// LB17: a break-before-and-after does not part from itself across a space run.
+			// `× 2014 × 0020 × 2014 ÷` is tagged [17.0] on the second em dash, and the run
+			// may carry marks the same way the quote hold above already walks: `× 2014 ×
+			// 0308 × 0020 × 2014 ÷` holds too.
+			if behind >= 0 && classes[behind] == .b2 && right == .b2 {
 				return BreakKind.no
 			}
 		}
@@ -385,7 +514,38 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// here, above LB20, because the committee's test asks `× FFFC × 00AB ÷` — a placeholder in front
 	// of an opening quote — and answers with [19.1], a break that must not happen. So the quotation
 	// rule beats the placeholder's own break, and the two cannot share a list.
-	if right == .qu {
+	//
+	// A closing mark or a both-mark always holds: `× 2757 × 0022 ÷` and `× 2757 × 00BB ÷`
+	// refuse, and the file has no break on either side of those two marks anywhere.
+	if right == .qu && quote_role_of(quote, cps[i + 1]) != .pi {
+		return BreakKind.no
+	}
+	// An opening curly mark breaks after a nonstarter or an ideograph when CJK follows
+	// it too: `× FF1A ÷ 201C ÷ 5B66 ÷` and `× 4E43 ÷ 201C ÷ 4E3A ÷` both break at [31.01]
+	// on both sides of the mark, while `× 7684 × 201C × 0042 ÷` holds once a Latin
+	// letter follows it and `× 2757 × 00AB ÷` holds for a straight mark anywhere. The
+	// file refuses every other pairing, so the carve-out names the opening marks
+	// (`“` and `‘`), the CJK-ish left side, and a CJK or opening follow: anything
+	// else falls through to the refusal below.
+	//
+	// The left side is read raw rather than through a mark: a mark on a CJK character
+	// still refuses — `× 3005 × 0308 × 00AB ÷` is [19.11] — so this is not LB9 reading
+	// through one, it is the pair as written.
+	if right == .qu && quote_role_of(quote, cps[i + 1]) == .pi {
+		opens := cps[i + 1] == rune(0x201C) || cps[i + 1] == rune(0x2018)
+		follows := i + 2 < n
+			&& (classes[i + 2] == .idas || classes[i + 2] == .ns || classes[i + 2] == .op)
+		if !opens || (left != .ns && left != .idas) || !follows {
+			return BreakKind.no
+		}
+	}
+	// A quotation mark with a mark on it still will not break before a contingency break
+	// character: `× 0022 × 0308 × FFFC ÷` and `× 00BB × 0308 × FFFC ÷` are tagged [19.02] and
+	// [19.12]. LB9 folds the pair to QU|CB and LB19 answers before LB20 is ever consulted,
+	// which is why this sits above the contingency rule rather than in it. The opening-mark
+	// half needs no arm: the quotation hold above already refuses `QU_Pi × CM × X` through
+	// `behind`, so only the both and closing kinds reach here.
+	if left == .cm && eff_left == .qu && right == .cb {
 		return BreakKind.no
 	}
 	// LB20: a contingency break character is a break on both sides, which is the object replacement
@@ -397,6 +557,35 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 		return BreakKind.allowed
 	}
 	if right == .cb {
+		return BreakKind.allowed
+	}
+	// LB20a: do not break after a word-initial hyphen. `× 002D × 0069 ÷` and `× 00AD × 2757 ÷`
+	// are both tagged [20.1]: a hyphen-minus and a soft hyphen hold the letter after them when
+	// nothing but a break, a space or a joiner control comes first. `well-known` breaks after
+	// its hyphen because a letter comes first, and that is LB21's half below rather than this.
+	//
+	// A mark on the hyphen does not detach it: `× 002D × 0308 × 0069 ÷` holds at the same tag,
+	// with LB9 reading the pair as hyphen and letter. The exemption the LB12a comment records
+	// for a soft hyphen is a different question — a glue after one — and it stays answered there.
+	if ((left == .hy || left == .hh) || (left == .cm && (eff_left == .hy || eff_left == .hh)))
+		&& (right == .al || right == .hl) {
+		mut hb := i
+		if left == .cm {
+			for hb > 0 && is_markish(classes[hb]) {
+				hb--
+			}
+		}
+		before := hb - 1
+		if before < 0 || classes[before] == .bk || classes[before] == .cr
+			|| classes[before] == .lf || classes[before] == .nl || classes[before] == .sp
+			|| classes[before] == .zw || classes[before] == .cb || classes[before] == .gl {
+			return BreakKind.no
+		}
+	}
+	// A break after a contingency break's own marks is the same break: `× FFFC × 0308 ÷ 3000 ÷`
+	// is tagged [20.02] at the space, and LB9 reads the pair as CB|SP. The base the mark hangs
+	// from is what `eff_left` walked back to, so a mark run on any other base answers elsewhere.
+	if left == .cm && eff_left == .cb {
 		return BreakKind.allowed
 	}
 	// The half of the mark reading that survives the `is_prohibited_end` list above: a mark standing
@@ -424,7 +613,15 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// LB17, LB19, LB21, LB22 and the numeric matrix's own prohibitions, which all sit below LB18
 	// in the specification's order: a line may not begin with one of these unless a space is in
 	// front of it.
-	if is_prohibited_start_after_space(right) {
+	//
+	// An opening mark after a nonstarter or an ideograph is not on the list: the same
+	// carve-out the LB19 blanket carries below, `× FF1A ÷ 201C ÷` and `× 4E43 ÷ 201C ÷`,
+	// because a class list that names QU answers every quotation mark at once and the
+	// file breaks these at [31.01]. The class is read raw for the same reason it is
+	// there: a mark on a CJK character still holds its line.
+	if is_prohibited_start_after_space(right)
+		&& !(right == .qu && quote_role_of(quote, cps[i + 1]) == .pi
+		&& (left == .ns || left == .idas)) {
 		return BreakKind.no
 	}
 	// LB30: do not break before an open punctuation after a letter, a Hebrew letter or a digit.
@@ -433,20 +630,16 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// [30.01], a break that must not happen. It was invisible until the mark rules moved, because
 	// the blanket rule after a mark had been refusing that position anyway.
 	//
-	// This uses `left` and not `pair_left`, and that is the one place the two differ. `× 2757 ×
-	// 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not, so an open punctuation may begin a
-	// line after a marked letter but not after a bare one. LB28 and LB23 read through a mark and
-	// LB30 does not.
-	//
-	// That reading was measured and it is wrong in one direction: changing `left` to `eff_left` here
-	// fixed the 21 `× C × 0308 × 0028 ÷` [30.02] positions and broke 12 more,
-	// `× C × 0308 ÷ 2329 ÷` [31.01]. Both right-hand characters are class OP — U+0028 LEFT
-	// PARENTHESIS and U+2329 LEFT-POINTING ANGLE BRACKET — and the file holds one and breaks the
-	// other, so the distinction is not the line-break class. It is East_Asian_Width, which this
-	// engine does not carry, and a rule that names OP by class cannot see it. Reverted: net +3 for
-	// a rule that is wrong about which character it names is not a rule.
-	if (left == .al || left == .hl || left == .nu) && right == .op {
-		return BreakKind.no
+	// The left side reads through a mark the way LB28 and LB23 do: `× 2757 × 0308 × 0028 ÷` holds
+	// at [30.02] exactly the way the bare pair does. What LB30 does *not* read through is an East
+	// Asian bracket: U+2329 LEFT-POINTING ANGLE BRACKET is Wide, and `× 2757 ÷ 2329 ÷` breaks at
+	// [31.01]. The two halves were measured together once before and read as one class, which
+	// cost the 12 East Asian breaks; the width is what tells them apart.
+	if right == .op && !is_east_asian(ea, cps[i + 1]) {
+		lb30_left := if left == .cm { eff_left } else { left }
+		if lb30_left == .al || lb30_left == .hl || lb30_left == .nu {
+			return BreakKind.no
+		}
 	}
 	// A close punctuation holds a letter, a Hebrew letter or a digit, and nothing else.
 	//
@@ -466,8 +659,15 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// 35 fixed against 39 — the same currency symbol is a break at four other positions in the file
 	// where it follows no bracket, so the pair rule cannot be widened without losing more than it
 	// gains. That one wants LB25's numeric matrix, which this engine reads as pairs.
-	if left == .cp && (right == .al || right == .hl || right == .nu) {
-		return BreakKind.no
+	//
+	// The East Asian close brackets break the other way: `[CP-$EastAsian] × (AL|HL|NU)` refuses
+	// only the narrow ones, so `× 3001 ÷ 0041 ÷` breaks at [31.01] while `× 0029 × 2757 ÷` holds
+	// at [30.02]. The left side reads through a mark for the same reason the open side does:
+	// `× 0029 × 0308 × 2757 ÷` holds at [30.02] with the raw left-hand class a mark.
+	if left == .cp || (left == .cm && eff_left == .cp) {
+		if (right == .al || right == .hl || right == .nu) && !is_east_asian(ea, cps[i]) {
+			return BreakKind.no
+		}
 	}
 	// LB17: a break-before-and-after does not part from itself, and that is the whole of the
 	// rule. `× 2014 × 2014 ÷` (tagged [17.0] on the second em dash) refuses, and nothing else about
@@ -513,10 +713,19 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// left the note on `effective_class`. That version replaced the class for every later rule; this
 	// reaches three lookups, all of which ask what the left-hand character is.
 	mut pair_left := eff_left
-	if left == .jl || left == .jv || left == .jt {
-		if right == .jl || right == .jv || right == .jt {
-			return BreakKind.no
-		}
+	// LB26: a Korean syllable block does not break inside, and only inside the pairs
+	// that make one. JL holds a following JL, JV, H2 or H3; JV or H2 holds a following
+	// JV or JT; JT or H3 holds a following JT. Anything else parts: `× 1100 ÷ 11A8 ÷`
+	// breaks at [31.01] because JL × JT is not a pair the rule names, and `× 11A8 ÷
+	// 1160 ÷` breaks the same way.
+	//
+	// Every arm reads through a mark: `× 1100 × 0308 × 1100 ÷` is [26.01] with the raw
+	// left-hand class a mark. H2 × H2 and H3 × H3 are deliberately absent: two
+	// syllables break between them, and the rules below say so on purpose.
+	if (pair_left == .jl && (right == .jl || right == .jv || right == .h2 || right == .h3))
+		|| ((pair_left == .jv || pair_left == .h2) && (right == .jv || right == .jt))
+		|| ((pair_left == .jt || pair_left == .h3) && right == .jt) {
+		return BreakKind.no
 	}
 	// LB27: a numeric prefix does not part from the Hangul syllable after it.
 	//
@@ -525,7 +734,11 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	//
 	// The committee names H3 here and the engine's own LB29 lets two H2s and two H3s break
 	// between each other, so the class is not held together as a run the way the jamo are.
-	if left == .pr && (right == .jl || right == .jv || right == .jt || right == .h2
+	//
+	// It reads through a mark the way LB24 does: `× 20A9 × 0308 × AC00 ÷` is tagged [27.02]
+	// with the raw left-hand class a mark, and the pair that decides is the prefix and
+	// the syllable.
+	if pair_left == .pr && (right == .jl || right == .jv || right == .jt || right == .h2
 		|| right == .h3) {
 		return BreakKind.no
 	}
@@ -542,6 +755,65 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	}
 	if pair_left == .nu && right == .nu {
 		return BreakKind.no
+	}
+	// LB25: a prefix or postfix numeral holds to the digit after it. `× 20A9 × 0030 ÷` is
+	// tagged [25.12] and `× FE6A × 0030 ÷` is tagged [25.09], both refusals, and a break
+	// *after* a prefix numeral is allowed at [31.01] — `× 20A9 ÷ 2757 ÷` — so this is one
+	// direction only. It reads through a mark: `× 20A9 × 0308 × 0030 ÷` is [25.12] too.
+	if (pair_left == .pr || pair_left == .po) && right == .nu {
+		return BreakKind.no
+	}
+	// LB25: a close bracket holds to the postfix or prefix numeral after a number.
+	// `× 007B × 0030 × 002C × 0031 × 007D × 002B ÷` refuses at [25.03] on the plus, and
+	// `× 0028 × 0030 × 002C × 0031 × 0029 × 002B ÷` at [25.04] the same way: the run back
+	// from the bracket through any infix separators reaches a digit. A bare `NU | PO`
+	// still breaks — `× 0030 ÷ 20A9 ÷` would be [25.06] and is not — so the bracket on
+	// the left is what this asks for, not merely a digit somewhere behind.
+	if (left == .cl || left == .cp) && (right == .po || right == .pr) {
+		mut nb := i
+		for nb > 0 && (classes[nb - 1] == .sy || classes[nb - 1] == .insp) {
+			nb--
+		}
+		if nb > 0 && classes[nb - 1] == .nu {
+			return BreakKind.no
+		}
+	}
+	// LB25: a prefix or postfix numeral holds to the ideograph or digit after an opening
+	// bracket it precedes. `× 007B × 0032 ÷ ...` no — the shape is `PO × OP NU`: `× 002B ×
+	// 007B × 0032 ÷` refuses at [25.1] on the bracket, because a digit follows it. Without
+	// the digit after the bracket the pair breaks like everything else.
+	if (pair_left == .pr || pair_left == .po) && right == .op {
+		if i + 2 < n && classes[i + 2] == .nu {
+			return BreakKind.no
+		}
+	}
+	// LB25: a postfix numeral holds to the infix separator of a decimal it starts. `×
+	// 002B × 002E × 0032 ÷` refuses at [25.1] on the full stop, because a digit follows
+	// the separator. It reads through a mark the way the hyphen arm does.
+	if pair_left == .po && right == .insp {
+		if i + 2 < n && classes[i + 2] == .nu {
+			return BreakKind.no
+		}
+	}
+	// LB25: a hyphen or an infix separator holds to the digit after it. `× 002D × 0030 ÷` and
+	// `× 002C × 0030 ÷` are both refusals, tagged [25.13] and [25.14] through a mark the same
+	// way — `× 002D × 0308 × 0030 ÷` — so the pair reads through one.
+	if (pair_left == .hy || pair_left == .insp) && right == .nu {
+		return BreakKind.no
+	}
+	// LB25: a separator run holds to the prefix, postfix or digit after a number. `× 002F ×
+	// 0032 ÷` refuses at [25.15] on the solidus because a digit stands in front of the run,
+	// and `× 002E × 20AC ÷` refuses at [25.06] on the euro sign for the same reason. The run
+	// is any run of separators — the pair above answers the single-character shape — and a
+	// run with no digit in front of it breaks like everything else.
+	if (left == .sy || left == .insp) && (right == .nu || right == .pr || right == .po) {
+		mut nb2 := i
+		for nb2 > 0 && (classes[nb2 - 1] == .sy || classes[nb2 - 1] == .insp) {
+			nb2--
+		}
+		if nb2 > 0 && classes[nb2 - 1] == .nu {
+			return BreakKind.no
+		}
 	}
 	// LB24: a numeric prefix or postfix does not part from the letter or Hebrew letter after it.
 	//
@@ -570,8 +842,8 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// prefix or postfix numeral either, which is the other half of the numeric matrix and the half the
 	// class list was answering for every class at once.
 	//
-	// `× 2757 × 20A9 ÷` is the committee's own shape, tagged [24.03], and `× 0030 ÷ 20A9 ÷` is
-	// tagged [25.06]. A break *after* a prefix or postfix is allowed, and the file says so at [31.01]:
+	// `× 2757 × 20A9 ÷` is the committee's own shape, tagged [24.03], and `× 0030 × 20A9 ÷`
+	// refuses at [25.06]. A break *after* a prefix or postfix is allowed, and the file says so at [31.01]:
 	// `× 20A9 ÷ 2757 ÷`, `× 0024 ÷ 231A ÷`, `÷ 20A9 ÷ 0024 ÷` all break. So the two classes are not
 	// prohibited starts in general, and the list held them for 30 classes the file never asks about.
 	//
@@ -589,8 +861,9 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// LB23: a numeric prefix does not part from the ideograph or the emoji after it.
 	//
 	// `× 0024 × 231A ÷` and `× 20A9 × 270A ÷` are the committee's own shapes and the answer is
-	// [23.12] on both.
-	if left == .pr && (right == .idas || right == .eb || right == .em) {
+	// [23.12] on both. It reads through a mark: `× 20A9 × 0308 × 231A ÷` holds at the same
+	// tag with the raw left-hand class a mark.
+	if pair_left == .pr && (right == .idas || right == .eb || right == .em) {
 		return BreakKind.no
 	}
 	// LB23.13: the emoji base, the emoji modifier and the ideograph hold to a *postfix* numeral,
@@ -606,11 +879,47 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if (pair_left == .eb || pair_left == .em || pair_left == .idas) && right == .po {
 		return BreakKind.no
 	}
-	if left == .ri && right == .ri {
-		// LB30a: a pair of regional indicators is one flag, so the run between
-		// them is not a break. A longer run is a sequence of pairs, which is why
-		// this looks at the pair rather than the run.
-		return BreakKind.no
+	// LB30b: do not break between an emoji base and an emoji modifier, or between a
+	// potential base and one. `× 270A × 1F3FB ÷` is [30.21] and `× 1F8FF × 1F3FB ÷` is
+	// [30.22]: the second left-hand side is not an emoji base at all, it is an
+	// unassigned pictograph — reserved, Extended_Pictographic, and with no entry in
+	// the UCD — which the test file annotates ID_ExtPictUnassigned and XX_ExtPictUnassigned.
+	//
+	// Both halves read through a mark: `× 270A × 0308 × 1F3FB ÷` holds at [30.21] with
+	// the raw left-hand class a mark. What is asked is the base the mark hangs from,
+	// which is the character `eff_left` already walked back to.
+	if right == .em {
+		mut base := cps[i]
+		if left == .cm {
+			mut j := i
+			for j > 0 && is_markish(classes[j]) {
+				j--
+			}
+			base = cps[j]
+		}
+		if pair_left == .eb || is_ep_unassigned(eu, base) {
+			return BreakKind.no
+		}
+	}
+	// LB30a: a pair of regional indicators is one flag, so the run between
+	// them is not a break — unless the run is odd. Two flags in a row break
+	// between the pairs: `× 1F1F7 × 1F1FA ÷ 1F1F8 ÷` breaks at [30.13] with
+	// two indicators before it and refuses at [30.11] with one. A mark on an
+	// indicator reads through: `× 1F1E6 × 0308 × 1F1E6 ÷` is [30.11] with the
+	// raw left-hand class a mark, and the folded pair is still one indicator
+	// followed by one indicator.
+	if pair_left == .ri && right == .ri {
+		mut nri := 0
+		mut k := i
+		for k >= 0 && (classes[k] == .ri || is_markish(classes[k])) {
+			if classes[k] == .ri {
+				nri++
+			}
+			k--
+		}
+		if nri % 2 == 1 {
+			return BreakKind.no
+		}
 	}
 	// LB28: two of the same kind of letter do not break between them. This is the rule
 	// that makes a word a word, and leaving it out turns every word into a
@@ -631,20 +940,84 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if hl_or_al_left && hl_or_al_right {
 		return BreakKind.no
 	}
+	// LB28a: do not break inside the orthographic syllables of Brahmic scripts. An
+	// aksara pre-base holds the aksara, aksara start or dotted circle after it, and
+	// an aksara, start or dotted circle holds the virama after it: `× 11003 × 1B05 ÷`
+	// is [28.11] and `× 1B05 × 1BF2 ÷` is [28.12].
+	//
+	// U+25CC DOTTED CIRCLE is named in the rule itself as the third member of the
+	// class, so it is matched by codepoint rather than by class: the line break
+	// table calls it AL, and no other AL may take its place. `× 25CC × 2757 ÷`
+	// breaks, and only the aksara rules below hold the circle.
+	//
+	// Every arm reads through a mark: `× 1B05 × 0308 × 1B44 ÷` is [28.12] with the
+	// raw left-hand class a mark. The virama-final sub-rules need the Indic syllabic
+	// categories this engine does not carry, and the one case that asks for them is
+	// recorded rather than answered.
+	if pair_left == .ap && (right == .ak || right == .akst
+		|| (right == .al && cps[i + 1] == rune(0x25CC))) {
+		return BreakKind.no
+	}
+	// A virama holds the aksara after it when an aksara, a start or a dotted circle
+	// stands in front of the virama: `× 1B05 × 1B44 | ...` hmm, no — the refused
+	// position is the one after the virama. `× 11F42 × 11F26 ÷` is [28.13] with an
+	// aksara in front of the virama, and `× 25CC × 1B44 × 1B2C ÷` with the dotted
+	// circle in front of it. A mark between the virama and the aksara does not detach
+	// them: `× 1B44 × 200C × 1B2B ÷` folds the same way through LB9, with an aksara in
+	// front of the whole run.
+	if right == .ak || (right == .al && cps[i + 1] == rune(0x25CC)) {
+		mut vat := i
+		for vat > 0 && is_markish(classes[vat]) {
+			vat--
+		}
+		if classes[vat] == .vi {
+			mut vb := vat - 1
+			for vb >= 0 && is_markish(classes[vb]) {
+				vb--
+			}
+			if vb >= 0
+				&& (classes[vb] == .ak || classes[vb] == .akst || cps[vb] == rune(0x25CC)) {
+				return BreakKind.no
+			}
+		}
+	}
+	// An aksara or a start holds the virama after it, and the dotted circle stands in
+	// for either: `× 1B05 × 1BF2 ÷` and `× 1B50 × 1BF2 ÷` are both [28.12], and `× 25CC
+	// × 1BF2 ÷` holds the same way. It reads through a mark: `× 1B05 × 0308 × 1B44 ÷`
+	// is [28.12] with the raw left-hand class a mark, and the dotted circle is asked
+	// by codepoint because the line break table calls it a letter.
+	if (right == .vf || right == .vi) && (pair_left == .ak || pair_left == .akst) {
+		return BreakKind.no
+	}
+	if (right == .vf || right == .vi) && pair_left == .al {
+		mut db := i
+		for db > 0 && is_markish(classes[db]) {
+			db--
+		}
+		if cps[db] == rune(0x25CC) {
+			return BreakKind.no
+		}
+	}
 	// LB28's other two pairs: a letter and a digit, in either order. These were missing and the
 	// conformance test is what showed it — they are the cases that let "H2O" and "COVID19" split at the
 	// letter-digit boundary, which is a Latin problem and not a CJK one.
 	//
 	// A hexadecimal-looking name is the common case, and a break inside one leaves a line ending in a
 	// digit and the next starting with a letter, which reads as a hyphenation the writer never asked for.
-	if (pair_left == .al && right == .nu) || (left == .nu && right == .al) {
+	if (pair_left == .al || pair_left == .hl) && right == .nu {
+		return BreakKind.no
+	}
+	if pair_left == .nu && (right == .al || right == .hl) {
 		return BreakKind.no
 	}
 	// LB29: an infix separator — the full stop or comma of a decimal or thousands — holds to the
 	// alphabetic character that follows it. "1,000" and "3.14" are one thing each, and this is the rule
 	// that says so. It is separate from LB28 because the separator is a different class from the digit, and
 	// a pair of digits is already held together by LB23b above.
-	if left == .insp && (right == .al || right == .hl) {
+	//
+	// It reads through a mark the way LB28 does: `× 002C × 0308 × 2757 ÷` is tagged [29.0] with the
+	// raw left-hand class a mark, and the pair that decides is the separator and the letter.
+	if pair_left == .insp && (right == .al || right == .hl) {
 		return BreakKind.no
 	}
 	// LB29: the same for a pair of Hangul syllables that are not part of the same
@@ -656,10 +1029,30 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	if left == .h3 && right == .h3 {
 		return BreakKind.allowed
 	}
+	// LB21b: do not break between a solidus and a Hebrew letter. `× 002F × 05D0 ÷` is the
+	// shape, tagged [21.2].
+	//
+	// It reads through a mark the way the numeric rules do: `× 002F × 0308 × 05D0 ÷` holds at
+	// the same tag with the raw left-hand class a mark.
+	if pair_left == .sy && right == .hl {
+		return BreakKind.no
+	}
 	// LB21: a hyphen may break after it, and only after it. A hyphen-minus is the
 	// ordinary case, and a word like "well-known" has to be allowed to end its
 	// first line there or it cannot be set narrow at all.
+	//
+	// Not after a Hebrew hyphen, though: `× 05D5 × 002D × 004D ÷` is tagged [21.1],
+	// and LB21a holds `HL × HY × non-HL` together. The hyphen is found the way `eff_left`
+	// is, because a mark may hang on either side of it, and what matters is the letter
+	// in front of that mark run.
 	if left == .hy && right == .al {
+		mut hb2 := i
+		for hb2 > 0 && is_markish(classes[hb2]) {
+			hb2--
+		}
+		if hb2 > 0 && classes[hb2 - 1] == .hl {
+			return BreakKind.no
+		}
 		return BreakKind.allowed
 	}
 	// There was a rule here refusing a break after a combining mark, and it was wrong.
@@ -795,9 +1188,22 @@ fn is_prohibited_start_after_space(c LineBreakClass) bool {
 
 // is_prohibited_end reports whether a line may not end with this class, which
 // is rules LB15 through LB19 and LB21.
+//
+// EX is not in it: nothing refuses a break after `!` or `?`, and the committee
+// breaks there at [31.01] — `× FE56 ÷ 2757 ÷` is an exclamation mark and a letter.
+// A break before those marks is LB13's and lives in `is_prohibited_start`, and a
+// mark or a space after them is LB9's and LB7's, which both answer first.
+//
+// HY is not in it either: a hyphen establishes a break after itself everywhere but
+// word-initially — `× 002D ÷ 1B05 ÷` is [31.01] — and the word-initial refusal is
+// LB20a's pair, not a class list's. The numeric `HY × NU` half is LB25's and sits
+// with the matrix. BB stays, because `× 00B4 × 2757 ÷` refuses 281 times at LB21
+// and the file breaks after an acute only before a contingency break, which the
+// pair below answers. IS is not in it either: LB29 holds `IS × (AL|HL)` as its own
+// pair and LB25 holds `IS × NU` the same way, so no break the file asks for needs
+// the class list — `× 002C ÷ 1B05 ÷` is [31.01].
 fn is_prohibited_end(c LineBreakClass) bool {
-	return c == .op || c == .qu || c == .insp || c == .ex || c == .hy
-		|| c == .bb
+	return c == .op || c == .qu || c == .bb
 }
 
 // effective_class returns the class of a character, after the one change UAX#14

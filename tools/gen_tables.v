@@ -31,6 +31,14 @@ mut:
 	pad   u16
 }
 
+// Span is a closed codepoint interval. It is a struct rather than a two-element
+// array because this compiler reads multi-dimensional indexing as a pointer.
+struct Span {
+mut:
+	lo u32
+	hi u32
+}
+
 // PropertyValue is one named value of a property, plus the ordinal used in the
 // emitted tables.
 struct PropertyValue {
@@ -144,6 +152,12 @@ const line_break_order = ['XX', 'CM', 'BA', 'LF', 'BK', 'CR', 'SP', 'EX', 'QU', 
 	'OP', 'CP', 'IS', 'HY', 'SY', 'NU', 'CL', 'NL', 'GL', 'AI', 'HH', 'BB', 'HL', 'SA', 'JL', 'JV',
 	'JT', 'NS', 'AK', 'VI', 'ID', 'ID_CJ', 'VF', 'ZW', 'ZWJ', 'B2', 'IN', 'WJ', 'EB', 'CJ', 'H2',
 	'H3', 'SG', 'CB', 'AP', 'RI', 'EM']
+
+// east_asian_order lists every East_Asian_Width value, with the default first.
+// Unlisted codepoints are Neutral, and the UCD says so with @missing rather than
+// by listing them, so N is ordinal 0 the way XX is for line breaks: an absent
+// range means the default.
+const east_asian_order = ['N', 'A', 'F', 'H', 'Na', 'W']
 
 // quote_role_order reserves one ordinal per quotation role the rules can tell apart.
 //
@@ -560,6 +574,85 @@ fn sa_marks(lb_ranges []ParsedRange, gc_ranges []ParsedRange, reg &Registry) []C
 	return coalesce(pieces, reg)
 }
 
+// ep_unassigned builds the table LB30b's second arm asks: the codepoints that are
+// Extended_Pictographic and unassigned.
+//
+// Neither file answers it alone. emoji-data.txt lists the pictographs, and UnicodeData.txt
+// lists every assigned codepoint as a single or a First/Last pair, so what is in the first
+// list and in none of the second is the set. Only 34 ranges over 1426 codepoints in UCD
+// 18.0.0, which is why this is a derived table in the shape of sa_marks rather than two
+// full ones: the engine asks it about one emoji modifier's neighbour at a time.
+fn ep_unassigned(ep_ranges []ParsedRange, unicode_data string) []CodeRange {
+	mut assigned := []Span{}
+	mut first := u32(0)
+	mut in_range := false
+	for line in os.read_file(unicode_data) or { panic('cannot read ${unicode_data}') }.split_into_lines() {
+		fields := line.split(';')
+		if fields.len < 2 {
+			continue
+		}
+		cp := parse_hex(fields[0])
+		name := fields[1]
+		if name.ends_with(', First>') {
+			first = cp
+			in_range = true
+		} else if name.ends_with(', Last>') {
+			assigned << Span{ lo: first, hi: cp }
+			in_range = false
+		} else if !in_range {
+			assigned << Span{ lo: cp, hi: cp }
+		}
+	}
+	assigned.sort_with_compare(fn (a &Span, b &Span) int {
+		if a.lo < b.lo {
+			return -1
+		}
+		if a.lo > b.lo {
+			return 1
+		}
+		return 0
+	})
+	mut merged := []Span{}
+	for r in assigned {
+		if merged.len > 0 && r.lo <= merged[merged.len - 1].hi + 1 {
+			if r.hi > merged[merged.len - 1].hi {
+				merged[merged.len - 1].hi = r.hi
+			}
+		} else {
+			merged << r
+		}
+	}
+	mut out := []ParsedRange{}
+	for r in ep_ranges {
+		if r.value != 'Extended_Pictographic' {
+			continue
+		}
+		mut cur := r.lo
+		for a in merged {
+			if a.hi < cur {
+				continue
+			}
+			if a.lo > r.hi {
+				break
+			}
+			if a.lo > cur {
+				out << ParsedRange{ lo: cur, hi: a.lo - 1, value: 'ep_unassigned' }
+			}
+			cur = if a.hi + 1 > cur { a.hi + 1 } else { cur }
+			if cur > r.hi {
+				break
+			}
+		}
+		if cur <= r.hi {
+			out << ParsedRange{ lo: cur, hi: r.hi, value: 'ep_unassigned' }
+		}
+	}
+	mut reg := new_registry()
+	reg.intern('_')
+	reg.intern('ep_unassigned')
+	return coalesce(out, reg)
+}
+
 // ------------------------------------------------------------------------ main
 
 fn main() {
@@ -630,6 +723,35 @@ fn main() {
 	emit_property('LineBreak.txt', 'ucd_linebreak.v', 'LineBreak.txt', 1,
 		'line_break_names', 'line_break_ranges',
 		'the UAX#14 line break class of every codepoint', lb)
+
+	// UAX#11 East Asian width. LB30, LB19a and LB21a all name the $EastAsian set —
+	// Fullwidth, Wide and Halfwidth — so the table is read wherever a pair rule
+	// has to tell an East Asian bracket from a narrow one.
+	mut ea := new_registry()
+	intern_order(mut ea, east_asian_order)
+	emit_property('EastAsianWidth.txt', 'ucd_east_asian.v', 'EastAsianWidth.txt', 1,
+		'east_asian_names', 'east_asian_ranges',
+		'the UAX#11 East_Asian_Width property of every codepoint', ea)
+
+	// The unassigned pictographs, which are the second arm of LB30b: an emoji modifier
+	// holds to an emoji base, and to a potential base that is Extended_Pictographic and
+	// unassigned. emoji-data.txt is pinned separately the way fetch_ucd.v records, because
+	// it is not published under the UCD path; the UnicodeData.txt half is 18.0.0.
+	ep_all := ucd_ranges(os.join_path(ucd_dir, 'emoji-data.txt'), 1)
+	ep_ranges := ep_unassigned(ep_all, os.join_path(ucd_dir, 'UnicodeData.txt'))
+	mut eu := new_registry()
+	// Ordinal 0 is reserved for "not in any range", the way qu_none leads the quotation
+	// roles: every range below carries 1, so a lookup that finds nothing reads as absent
+	// rather than as a match.
+	eu.intern('_')
+	eu.intern('ep_unassigned')
+	mut teu := Text{ parts: []string{} }
+	emit_header(mut teu, 'emoji/emoji-data.txt, UnicodeData.txt')
+	emit_values(mut teu, 'ep_unassigned_names',
+		'whether a codepoint is an unassigned pictograph', eu)
+	emit_ranges(mut teu, 'ep_unassigned_ranges',
+		'whether a codepoint is an unassigned pictograph', ep_ranges)
+	emit_writes('ucd_ep_unassigned.v', mut teu)
 
 	// The quotation roles, which are a second property derived from the same two files: the
 	// line break class says a character is a quotation mark and the general category says

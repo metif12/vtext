@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | partial, and now measured: **18,777 of 19,346 (97.1%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | done, and measured: **19,342 of 19,346 (99.98%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -114,7 +114,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 18,777 of 19,346 — 97.1%.**
+**Measured, because "done" above was a description and not a number. 19,342 of 19,346 — 99.98%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -1615,6 +1615,16 @@ matrix, CJK ideographic joints (no `.id` handling, CJ folded to NS), the
 aksara subrules, and the leading-mark contradictions where the file
 disagrees with itself. Each lands with its count, like every rule before it,
 and the floor moves up each time.
+
+Done 2026-11-12, at **19,342 of 19,346**: the width table (UAX#11) lets LB30 tell a
+narrow bracket from a Wide one, LB9's exception resolves a mark after a hard break,
+a space or a zero width space to a letter, `.ex`/`.hy` left the prohibited-end list
+for the pair rules that own them, and LB28a/LB30b/LB26/LB20a/LB21a landed as pairs
+with mark read-through. Four cases remain and each is named rather than coded
+around: one [28.14] needing the Indic syllabic categories this engine does not
+carry, and three [31.01] `Pf|ID` span-boundary breaks needing quotation-span state
+(`prev_broke` threads the decision but does not span it). Suite green, difftest 0
+new and 0 stale.
 
 **Device and variation offsets.** One Device record in 341 fonts (SitkaVF),
 zero VariationIndex. `kern_offset_at` with a ppem, per the design already
