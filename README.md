@@ -66,6 +66,7 @@ it.
 - Line height, letter spacing and word spacing as caller options.
 - A line's vertical extent as the ink actually reaches, which can exceed the font's own metrics.
 - Glyph rasterization through a bundled stb_truetype.
+- A C API (`vtext.h`): the same engine for C callers, with `USAGE.md` as its guide.
 
 ### Emoji and variation sequences
 
@@ -135,11 +136,13 @@ Named here so that a caller is not surprised by them.
   puts it. A font that has only a `kern` table is drawn unkerned.
 - **The parts of UAX #14 that need a dictionary or a resolved level.** Segmentation inside a word
   (LB16b, LB17b) and the strict level rules are not implemented. Neither affects Arabic or Persian.
-- **CJK line breaking.** The ideographic rules are not implemented, so a Han or Kana run breaks at
-  every character rather than at the word boundaries a reader expects.
+- **Four UAX #14 cases.** Everything else in the committee's test passes: one needs the Indic
+  syllabic categories this engine does not carry, and three quotation-span breaks need quotation
+  state the pair engine threads but does not span. Both are named in `ROADMAP.md` rather than
+  coded around.
 
   Line breaking is measured against the Unicode committee's own test for this version, not described.
-  It passes **18,777 of 19,346 cases (97.1%)**, and `linebreak_conformance_test.v` asserts that as a
+  It passes **19,342 of 19,346 cases (99.98%)**, and `linebreak_conformance_test.v` asserts that as a
   floor on every run, so the number cannot be quietly lowered.
 
 ## Guarantees
@@ -532,6 +535,23 @@ the glyph count either way.
 
 These are what `tools/fontdump`, `tools/fontcheck` and `tools/shapetrace` are written against, and they
 are public because a library that cannot be inspected from outside cannot be diagnosed from outside.
+
+### C API
+
+`vtext.h` is this library for a C caller: opaque handles over the same objects, plain C types, errors in a caller-owned buffer. `capi.v` implements it; `vtext.def` lists the entry points for import-library generation.
+
+```sh
+v -shared -gc none -cc tcc -o vtext.dll .
+```
+
+```c
+vtext_context_t *ctx = vtext_context_new();
+vtext_fontset_t *fs = vtext_fontset_new();
+vtext_font_t *font = vtext_fontset_add_file(fs, "Amiri-Regular.ttf", err, sizeof(err));
+vtext_line_t *line = vtext_layout(ctx, text, len, VTEXT_AUTO, fs, 32.0, err, sizeof(err));
+```
+
+`USAGE.md` is the guide: building on each platform, the stack a caller thread needs, the full reference with ownership rules, and the smoke test that exercises it end to end. `examples/c-api/smoke.c` is the shape of a C program using it.
 
 ## Building and testing
 

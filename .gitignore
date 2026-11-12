@@ -1,5 +1,6 @@
 # Build output
 *.exe
+*.dll
 *.obj
 *.o
 *.a

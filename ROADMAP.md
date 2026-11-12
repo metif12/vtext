@@ -1626,6 +1626,26 @@ carry, and three [31.01] `Pf|ID` span-boundary breaks needing quotation-span sta
 (`prev_broke` threads the decision but does not span it). Suite green, difftest 0
 new and 0 stale.
 
+**C API and usage guide.** The library is usable from C: `vtext.h` with opaque
+handles over contexts, font sets, fonts, lines, wraps, breaks and bitmaps,
+implemented in `capi.v` with `@[export]` wrappers. Errors come back in a
+caller-owned buffer, so there is no hidden state; every integer crossing the
+boundary is an explicit `i32` on the V side because V `int` is 64-bit here.
+Verified end to end with `examples/c-api/smoke.c` against real fonts through
+both link routes (tcc direct, gcc via a `vtext.def` import library):
+`USAGE.md` is the quickstart plus the full reference with ownership rules.
+
+Two things found on the way in. A Windows DLL built with anything but MSVC
+exports nothing: the compiler only marked the wrappers with the ELF visibility
+attribute, which a PE linker ignores. Fixed upstream in the compiler rather
+than worked around here (the tcc `-export-all-symbols` flag stays as a belt
+until that lands). And a caller thread needs a 32 MB stack, the same reserve V
+gives its own executables: `ucd_names.v` holds two 143,217-element constant
+arrays that the compiler materializes as stack compound literals in the module
+initializer, over 2 MB before a single character is shaped. The real fix is
+generating those tables as parsed strings like every other `ucd_*.v` file;
+until then the stack is documented, not assumed.
+
 **Device and variation offsets.** One Device record in 341 fonts (SitkaVF),
 zero VariationIndex. `kern_offset_at` with a ppem, per the design already
 written down, verified against that one record; the variation half needs the
