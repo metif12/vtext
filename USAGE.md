@@ -173,6 +173,25 @@ rather than done here. Until then, reserve the stack.
 On Windows the DLL must also sit beside the executable (or on `PATH`); that
 is the loader's rule, not this library's.
 
+CI builds the library and runs the smoke test on all three platforms on every
+push and pull request (`clib` in `ci.yml`), beside the formatter gate, the
+full V suite, and the differential baseline. A green run means the headers in
+the tree match the library that was just built, because the smoke test
+compiles against exactly those headers.
+
+## Releases
+
+Tag the tree `c-api-vX.Y.Z` and push the tag; `release-c.yml` builds the
+library on all three platforms and attaches `vtext.h`, `vtext.def` and the
+binaries (plus a MinGW import library on Windows) to the GitHub release.
+
+The tag, `v.mod` and `vtext_version` must be one number: the release job
+refuses a tag that disagrees with either. So bumping the version is two edits
+— the version in `v.mod` and the `c'...'` string `vtext_version` returns —
+and then the tag. The smoke test asserts nothing about the version string, on
+purpose: a test that reads the value it is checking from the code under test
+passes whatever the code says.
+
 ## C API reference
 
 Conventions first, because they hold for every function below:

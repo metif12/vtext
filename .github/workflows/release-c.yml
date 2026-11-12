@@ -1,0 +1,120 @@
+# C library releases: headers and binaries, attached to a GitHub release.
+#
+# Tag the tree as c-api-vX.Y.Z and push the tag; this workflow builds the
+# shared library on all three platforms, checks the tag matches the version
+# the code carries, and uploads vtext.h, vtext.def and the binaries. The
+# version lives in exactly two places — v.mod and the string capi.v returns
+# from vtext_version — and the gate below refuses a tag that disagrees with
+# either, so a release can never ship headers stamped differently from the
+# code that answers for them.
+#
+# The per-push clib job in ci.yml is what proves every commit shippable; this
+# workflow only runs when somebody asks for the artifact by pushing a tag.
+
+name: release-c
+
+on:
+  push:
+    tags:
+      - 'c-api-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: C release (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            lib: libvtext.so
+            asset_suffix: linux.so
+          - os: macos-latest
+            cc: clang
+            lib: libvtext.dylib
+            asset_suffix: macos.dylib
+          - os: windows-latest
+            cc: gcc
+            lib: vtext.dll
+            asset_suffix: windows.dll
+    defaults:
+      run:
+        shell: bash
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # The tag, the module version and the version the library reports must
+      # be one number: c-api-v0.1.0 needs version: '0.1.0' in v.mod and
+      # c'0.1.0' in capi.v. A release stamped any other way is a header that
+      # disagrees with its own library about what it is.
+      - name: The tag matches the version the code carries
+        run: |
+          set -euo pipefail
+          want="${GITHUB_REF_NAME#c-api-v}"
+          mod="$(sed -n "s/^[[:space:]]*version:[[:space:]]*'\([^']*\)'.*/\1/p" v.mod)"
+          reported="$(grep -o "c'[0-9][0-9.]*'" capi.v | tr -d "c'")"
+          test "$want" = "$mod" || { echo "tag $want but v.mod says $mod"; exit 1; }
+          test "$want" = "$reported" || { echo "tag $want but vtext_version says $reported"; exit 1; }
+          echo "releasing C API $want"
+
+      - name: Install V (Linux and macOS)
+        if: runner.os != 'Windows'
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/vsrc"
+          git clone --depth 1 https://github.com/vlang/v "$src"
+          make -C "$src" -j2
+          echo "$src" >> "$GITHUB_PATH"
+
+      - name: Install V (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          git clone --depth 1 https://github.com/vlang/v %RUNNER_TEMP%\vsrc
+          pushd %RUNNER_TEMP%\vsrc
+          call makev.bat
+          echo %RUNNER_TEMP%\vsrc>>"%GITHUB_PATH%"
+
+      - name: Build the shared library
+        run: v -shared -gc none -cc ${{ matrix.cc }} -o ${{ matrix.lib }} .
+        env:
+          VJOBS: '1'
+
+      - name: MinGW import library (Windows)
+        if: runner.os == 'Windows'
+        run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
+
+      # Asset names carry the tag because one release holds all three
+      # platforms and GitHub needs every filename in it distinct.
+      - name: Stage the release assets
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          cp vtext.h "dist/vtext-${tag}.h"
+          cp vtext.def "dist/vtext-${tag}.def"
+          cp "${{ matrix.lib }}" "dist/vtext-${tag}-${{ matrix.asset_suffix }}"
+          if [ -f libvtext.dll.a ]; then cp libvtext.dll.a "dist/libvtext-${tag}-windows.a"; fi
+
+      # Rerunnable: creating an existing release fails, uploading the same
+      # assets twice does not with --clobber, so a re-run heals a half-done
+      # one instead of leaving two.
+      - name: Create or reuse the release and upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "C API $tag" \
+              --notes "vtext as a C library: vtext.h, the export list, and the shared library per platform. See USAGE.md for the build, the ownership rules, and the 32 MB caller stack."
+          fi
+          gh release upload "$tag" dist/* --clobber

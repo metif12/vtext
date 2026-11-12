@@ -150,3 +150,114 @@ jobs:
         env:
           TMPDIR: ${{ runner.temp }}/difftest
           VJOBS: '1'
+
+  clib:
+    # The C ABI: the shared library builds, its headers ship, and the smoke
+    # test that exercises it end to end passes on every platform. The DLL, .so
+    # and .dylib are uploaded with vtext.h and vtext.def, so the headers have
+    # exactly one source of truth and every run proves they match it.
+    name: C library (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: write
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            cc: gcc
+            lib: libvtext.so
+          - os: macos-latest
+            cc: clang
+            lib: libvtext.dylib
+          - os: windows-latest
+            cc: gcc
+            lib: vtext.dll
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install V (Linux and macOS)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/vsrc"
+          git clone --depth 1 https://github.com/vlang/v "$src"
+          make -C "$src" -j2
+          echo "$src" >> "$GITHUB_PATH"
+
+      - name: Install V (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          git clone --depth 1 https://github.com/vlang/v %RUNNER_TEMP%\vsrc
+          pushd %RUNNER_TEMP%\vsrc
+          call makev.bat
+          echo %RUNNER_TEMP%\vsrc>>"%GITHUB_PATH%"
+
+      # -gc none is load-bearing rather than an optimisation: with the Boehm
+      # collector the library would free objects the C caller still holds, and
+      # the caller has no handle the collector can see.
+      - name: Build the shared library
+        shell: bash
+        run: v -shared -gc none -cc ${{ matrix.cc }} -o ${{ matrix.lib }} .
+        env:
+          VJOBS: '1'
+
+      # A caller thread needs a stack the 2 MB of static literals in _vinit fit
+      # in, the same 32 MB reserve V gives its own executables. Linux and macOS
+      # default to 8 MB main-thread stacks, which is enough; Windows defaults
+      # to 1 MB, so the test binary is linked with the reserve explicitly. The
+      # library is copied beside the binary everywhere, which is what the
+      # loader looks at first on all three platforms.
+      - name: Build and place the smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          gcc examples/c-api/smoke.c -L. -lvtext -Wl,--stack,33554432 -o examples/c-api/smoke.exe
+          cp vtext.dll examples/c-api/
+
+      - name: Build and place the smoke test (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          gcc examples/c-api/smoke.c -L. -lvtext -Wl,-rpath,'$ORIGIN' -o examples/c-api/smoke
+          cp libvtext.so examples/c-api/
+
+      - name: Build and place the smoke test (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          gcc examples/c-api/smoke.c -L. -lvtext -Wl,-rpath,@loader_path -o examples/c-api/smoke
+          cp libvtext.dylib examples/c-api/
+
+      - name: Run the smoke test
+        shell: bash
+        run: ./smoke ../../testdata/fonts/Amiri-Regular.ttf
+        working-directory: examples/c-api
+
+      - name: MinGW import library (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
+
+      - name: Upload the C library and headers
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-lib-${{ matrix.os }}
+          path: |
+            vtext.h
+            vtext.def
+            ${{ matrix.lib }}
+
+      - name: Upload the MinGW import library (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: c-lib-windows-import
+          path: libvtext.dll.a
