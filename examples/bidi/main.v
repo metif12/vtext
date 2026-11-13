@@ -83,8 +83,8 @@ fn main() {
 
 	mut canvas := paint.new_canvas(canvas_w, canvas_h, 0xff)
 	mut top := f64(margin) + ascent
-	for i, text in paragraphs {
-		draw_paragraph(mut canvas, fs, lines[i], top)
+	for i in 0 .. paragraphs.len {
+		draw_paragraph(mut canvas, lines[i], top)
 		top += row_h
 	}
 
@@ -143,7 +143,7 @@ fn print_result(text string, res vtext.BidiResult, line vtext.Line) {
 
 // draw_paragraph paints one laid out line and rules the paragraph's edges, so a right-to-left line is
 // visibly anchored to the right rather than merely happening to end there.
-fn draw_paragraph(mut canvas paint.Canvas, fs &vtext.FontSet, line vtext.Line, baseline f64) {
+fn draw_paragraph(mut canvas paint.Canvas, line vtext.Line, baseline f64) {
 	for g in line.draw_order() {
 		if f := g.font {
 			canvas.draw_glyph_at(f, g, baseline, em_px, f64(margin))

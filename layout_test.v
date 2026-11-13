@@ -1056,3 +1056,29 @@ fn test_layout_keeps_a_latin_run_together_after_nfd_splits_a_character() {
 	}
 	assert cls == [2, 3, 4, 5, 6], 'Latin run must read h,e,l,l,o left to right, got clusters ${cls}'
 }
+
+// A mark shaped through a per-script set resolves to the font its script was given to.
+//
+// The flat `pick` walks `fonts`, and a per-script set keeps its fonts in their own fields, so
+// the chain is empty and a mark resolved that way comes back gid zero with no font — which is
+// what every script-set example drew before marks rode the script-aware lookup. And the
+// codepoint alone is not enough to route by: a combining mark is Inherited script, so the
+// joining pass stamps it with its base's, and this is where that stamp has to arrive.
+fn test_a_mark_through_a_script_set_comes_from_the_primary_font() {
+	ctx := new_context()
+	primary := amiri() or { return }
+	general := nastaliq() or { return }
+	fs := new_script_font_set(primary, general)
+	line := layout_paragraph(ctx, [rune(0x0628), rune(0x064E)], .rtl, fs, 32.0)
+	mut found := false
+	for g in line.glyphs {
+		if !g.is_mark {
+			continue
+		}
+		found = true
+		assert g.gid != 0, 'a mark the primary font covers must resolve, not come back .notdef'
+		f := g.font or { panic('a resolved mark names the font it was found in') }
+		assert f.path() == primary.path(), 'an Arabic mark belongs to the Arabic font, got ${f.path()}'
+	}
+	assert found, 'the fatha is a mark and must be present as one'
+}

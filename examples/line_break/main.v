@@ -53,6 +53,8 @@ fn main() {
 	// Wrap first and measure, so the canvas is sized from what was produced rather than from a guess. A
 	// fixed height crops the last line the moment a width or a word changes, which is how the first
 	// version of the hello example drew two lines and a half.
+	print_breaks(ctx, latin_text)
+	print_breaks(ctx, arabic_text)
 	mut latin_runs := [][]vtext.WrappedLine{cap: widths.len}
 	mut arabic_runs := [][]vtext.WrappedLine{cap: 1}
 	for w in widths {
@@ -114,7 +116,7 @@ fn main() {
 	for ci in 0 .. widths.len {
 		mut baseline := f64(margin) + latin_runs[ci][0].line.ascent
 		for l in latin_runs[ci] {
-			draw_line(mut canvas, fs, l, x, baseline)
+			draw_line(mut canvas, l, x, baseline)
 			baseline += l.line.ascent + l.line.descent
 		}
 		// The margin this column wraps at, drawn as a vertical rule, so an overlong line is visibly
@@ -136,12 +138,27 @@ fn main() {
 	arabic_x := f64(margin) + column_w[0] + column_gap
 	mut baseline := arabic_top + arabic_runs[0][0].line.ascent
 	for l in arabic_runs[0] {
-		draw_line(mut canvas, fs, l, arabic_x, baseline)
+		draw_line(mut canvas, l, arabic_x, baseline)
 		baseline += l.line.ascent + l.line.descent
 	}
 	draw_margin(mut canvas, arabic_x, arabic_w, arabic_top - 12.0, baseline)
 
 	canvas.write_png('line_break.png')
+}
+
+// print_breaks reports where the engine may end a line, so the wrapping below can be
+// checked against the breaks rather than believed: every line but the last must end at
+// one of these, and a line that ends anywhere else is a wrapper that invents its own.
+fn print_breaks(ctx &vtext.Context, text string) {
+	cps := text.runes()
+	breaks := vtext.break_opportunities(ctx, cps, true)
+	mut at := []int{}
+	for b in breaks {
+		if b.is_mandatory {
+			at << b.start
+		}
+	}
+	println('  ${breaks.len} break opportunities, mandatory at ${at}')
 }
 
 // print_paragraph reports the wrapping of one paragraph at one width, with the character range of each
@@ -164,7 +181,7 @@ fn print_paragraph(text string, width f64, runs []vtext.WrappedLine) {
 }
 
 // draw_line paints one wrapped line at an x offset.
-fn draw_line(mut canvas paint.Canvas, fs &vtext.FontSet, l vtext.WrappedLine, x f64, baseline f64) {
+fn draw_line(mut canvas paint.Canvas, l vtext.WrappedLine, x f64, baseline f64) {
 	for g in l.line.draw_order() {
 		if f := g.font {
 			// The offset is the column's left edge and nothing else. The glyph keeps the x the engine

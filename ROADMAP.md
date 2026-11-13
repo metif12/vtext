@@ -977,6 +977,11 @@ text is worse than a crude one; and they read left to right in both directions, 
 way in every script. Drawing the digits backwards prints 12 as 21 on a mirrored line, which is exactly
 the kind of thing this picture exists to make visible rather than to hide.
 
+A third, found reviewing the examples: the boxes, carets and numbers first carried no margin while the
+glyphs were drawn at one, so every annotation sat one margin left of its letter. On the Latin line it
+read as loose boxes; on the short Arabic line it read as broken placement. The annotation x carries the
+same margin now, because a debug view that disagrees with its own drawing proves nothing.
+
 `paint.v` is a copy in each example rather than a shared module. A V program can only import a module on
 its module path, and making every example depend on a sibling directory to save forty lines of zlib is a
 worse trade than the forty lines. The two copies are kept identical.
@@ -1007,6 +1012,26 @@ And the two columns first looked identical, which was me misreading a small pict
 Measured, the fatha's ink reaches 22 pixels above the baseline in the first column and 35 in the second.
 The offsets are in `Glyph.y`, so clearing y is the whole of "not placed", and the engine stores a mark's
 anchor result there: x at the base's x plus the anchor's, y at minus the anchor's, scaled to pixels.
+
+### The script-set chain dropped every mark — fixed 2026-11-13
+
+Found by reviewing the examples for this phase: `mark_stack` drew every row twice the same, and
+the printed glyphs said why — every mark came back gid 0 with no font. `FontSet.mark_glyph`
+resolved through the flat `pick`, which walks `fonts`, and a per-script set keeps its fonts in
+their own fields, so the chain was empty and every mark missed. Five examples shape through a
+script set, so five examples drew no marks at all; the pictures looked plausible because a
+missing mark is an absence rather than a wrong shape, and the suite's script-set tests resolve
+letters only, so nothing failed either.
+
+The fix is two halves of one decision, and the second was found by fixing the first and watching
+the mark land in the wrong font. `mark_glyph_in` routes through `pick_script` with the mark's
+ShapedGlyph script — `pick_in` itself delegates to it with the codepoint's own tag, so flat sets
+answer exactly what they did — and the joining pass stamps a mark with its base's script rather
+than Inherited, which no per-script set can route. `mark_stack` is the proof: the fatha resolves
+to gid 756 in Tahoma and sits placed, the shadda stacks on the kasra, and the last row — a mark
+no rule places — is identical in both columns. The `layout_test.v` assertion pins it: `بَ` through
+a script set must yield the fatha from the primary font, and with the fix reverted it fails
+naming the missing mark.
 
 ### ~~`examples/kerning`~~
 
@@ -1113,11 +1138,13 @@ at its spaces and that is all there is to it; Arabic has no spaces, so its break
 rules and this engine's coverage of them is partial. It wraps by the same call and breaks where the rules
 say, which is the honest statement of what that means today: five lines, none overlong at 220 pixels.
 
-One API gap found here and worth recording: `break_opportunities` is public but returns
-`[]BreakOpportunity`, which is private, so a caller outside the module cannot name the type it gets back
-and cannot read a break's position or whether it is mandatory. `wrap_paragraph` is enough to wrap with,
-but the ability to ask where a line may break is a question a caller has, and the answer is currently
-unreachable from outside. This is the second such gap; the other is `Face`, `Gpos` and `Gsub`, which are
+One API gap found here and since closed: `break_opportunities` was public but returned
+`[]BreakOpportunity`, which was private, so a caller outside the module could not name the type
+it got back. The struct is `pub` now, and this example is what exercises it — it prints the
+count and the mandatory positions before it wraps, so the ranges below are checked against
+the breaks rather than believed. `wrap_paragraph` is enough to wrap with, but the ability
+to ask where a line may break is a question a caller has, and the answer is reachable from
+outside. One such gap remains; it is `Face`, `Gpos` and `Gsub`, which are
 unreachable entirely.
 
 Drawing it needed two things the earlier examples did not. A column has to be as wide as its own widest
@@ -1150,6 +1177,25 @@ worse.
 
 And `none` is not available as a variable name. It reads as the option's empty value, so a counter called
 `none` produces "non-name `none` on left side of `:=`" rather than anything that says the name is taken.
+
+### ~~`examples/spacing`~~
+
+**Done.** `v run .` writes `spacing.png`: one Persian line laid out five ways — plain, letter-spaced,
+tightened, word-spaced, and with a caller line height — drawn stacked with a ruled baseline per
+row and a bracket per row's line height, with the laid-out width and `measure_paragraph_with`
+under the same options printed for each.
+
+The numbers are the claim, not the picture. The letter-spaced row is longer by the spacing times
+the letter count and the tightened row shorter by the same arithmetic; the word-spaced row is
+longer by the spacing times the four spaces, and the letters inside each word do not move. Every
+row's measured max equals its laid-out width, which is the contract `_with` exists for: a
+measurement taken with different options is a measurement of a different line. The bracket is
+the line height: the last row's is twice as tall while its ink is the same size, and asking for
+less than the glyphs are tall would report the smaller box without shrinking them.
+
+This is also the example that exercises `LayoutOptions` end to end. `features` was the only
+caller of `layout_paragraph_with` before it, and nothing printed a measurement at all; the
+measure half of `USAGE.md` had no example and the spacing half had no picture.
 
 ## Phase 4: tools
 

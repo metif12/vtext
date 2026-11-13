@@ -184,9 +184,18 @@ pub fn (fs &FontSet) pick(cp rune) ?&Font {
 // the same walk. That is the property worth stating, since it is what lets a caller swap one for the
 // other without changing anything else about the pipeline.
 pub fn (fs &FontSet) pick_in(ctx &Context, cp rune) ?&Font {
+	return fs.pick_script(ctx, cp, ctx.properties.script_tag_of(cp))
+}
+
+// pick_script resolves like pick_in but for a caller-known script tag rather than one read
+// off the codepoint. A combining mark's own tag is Inherited, which no per-script set can
+// route, so its caller passes the base letter's — the same answer mark_script reads off the
+// base glyph for the anchor lookup. Anything else goes through pick_in, which reads the tag
+// itself; the two agree whenever the tag is the codepoint's own.
+pub fn (fs &FontSet) pick_script(ctx &Context, cp rune, script string) ?&Font {
 	if fs.primary != none {
 		primary := fs.primary or { unsafe { nil } }
-		if ctx.properties.is_arabic_script(cp) && primary.has_glyph(cp) {
+		if script == 'Arab' && primary.has_glyph(cp) {
 			return primary
 		}
 	}
@@ -241,9 +250,21 @@ pub fn (fs &FontSet) glyph(cp rune, em_px f64) Glyph {
 	return f.glyph_for(cp, em_px)
 }
 
-// mark_glyph is glyph for a combining mark, taken through the same chain.
-pub fn (fs &FontSet) mark_glyph(cp rune, em_px f64) Glyph {
-	f := fs.pick(cp) or { return Glyph{} }
+// mark_glyph_in is the mark's glyph through the script-aware lookup.
+//
+// Marks ride the same chain as letters: a per-script set routes a mark to the font its script was
+// given to. The flat `pick` cannot serve here, because a per-script set keeps its fonts in their
+// own fields and `fonts` is empty, so `pick` reports a miss and every mark comes back gid zero
+// with no font — which is what the mark_stack example drew before this took a context. A flat
+// set ignores the context entirely, so this costs a flat chain nothing.
+//
+// script is the mark's own ShapedGlyph script, which the joining pass stamped with the base
+// letter's: the codepoint alone answers Inherited, which no per-script set can route. A caller
+// with no stamp passes '' and the tag is read off the codepoint, which is what every mark
+// that is not Inherited answers anyway.
+pub fn (fs &FontSet) mark_glyph_in(ctx &Context, cp rune, em_px f64, script string) Glyph {
+	tag := if script == '' { ctx.properties.script_tag_of(cp) } else { script }
+	f := fs.pick_script(ctx, cp, tag) or { return Glyph{} }
 	return f.mark_glyph(cp, em_px)
 }
 
@@ -288,7 +309,7 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 	form_cp := sg.cps[0]
 	if fs.covers(form_cp) {
 		mut g := if sg.is_mark {
-			fs.mark_glyph(form_cp, em_px)
+			fs.mark_glyph_in(ctx, form_cp, em_px, sg.script)
 		} else {
 			fs.glyph_variation_in(ctx, form_cp, sg.selectors, em_px)
 		}
@@ -318,7 +339,7 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 		// two codepoints, and the selector that came after the second belongs to both.
 		selectors := if i == 0 { sg.selectors } else { []rune{} }
 		mut g := if sg.is_mark {
-			fs.mark_glyph(cp, em_px)
+			fs.mark_glyph_in(ctx, cp, em_px, sg.script)
 		} else {
 			fs.glyph_variation_in(ctx, cp, selectors, em_px)
 		}

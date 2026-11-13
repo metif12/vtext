@@ -100,12 +100,14 @@ fn draw(mut canvas &paint.Canvas, fs &vtext.FontSet, ctx &vtext.Context, text st
 	mut seen := map[int]bool{}
 	baseline_i := int(baseline)
 	// Everything below the baseline: the carets and the cluster numbers. They go under the line rather
-	// than over it so they cannot cover a letter.
+	// than over it so they cannot cover a letter. Every x here carries the same margin the glyphs were
+	// drawn at, because a box without it sits one margin left of its letter and the misalignment reads
+	// as a positioning bug that is not there.
 	below := baseline_i + int(box_depth) + 2
 	for g in line.glyphs {
 		if !seen[g.cluster] {
 			seen[g.cluster] = true
-			canvas.vline(int(g.x), below + 6, below + 14, caret_level)
+			canvas.vline(int(g.x) + margin, below + 6, below + 14, caret_level)
 		}
 		// A mark has no advance and shares the letter's x, so a box for it would sit exactly on top of
 		// the letter's. Only the box of a letter that moves the pen is drawn, which is what makes the
@@ -113,9 +115,9 @@ fn draw(mut canvas &paint.Canvas, fs &vtext.FontSet, ctx &vtext.Context, text st
 		if g.advance <= 0.0 {
 			continue
 		}
-		canvas.rect(int(g.x), baseline_i - int(box_top), int(g.x + g.advance), baseline_i +
+		canvas.rect(int(g.x) + margin, baseline_i - int(box_top), int(g.x + g.advance) + margin, baseline_i +
 			int(box_depth), box_level)
-		print_cluster(canvas, g.cluster, int(g.x + g.advance / 2.0), below + 22)
+		print_cluster(canvas, g.cluster, int(g.x + g.advance / 2.0) + margin, below + 22)
 	}
 }
 
