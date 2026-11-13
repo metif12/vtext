@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Differential shaping suite: vtext against HarfBuzz, FreeType and fontTools.
+"""Differential shaping suite: vtext against HarfBuzz, FreeType, fontTools and Pango.
 
 Every number here is measured, every diff explained. The file this converges
 to is tools/difftest/baseline.tsv: the list of diffs this suite knows about
 and accepts. Anything not on that list fails the run, and anything on it that
 stops reproducing fails too, because a baseline that can rot silently is a
-test that cannot catch anything.
+test that cannot catch anything — with one host-shaped exception: the pango
+entries cannot reproduce where libpango does not exist, so on such a host
+they are reported as unverifiable rather than stale, and the full ratchet
+holds on CI where the library does.
 
 Comparison is cluster-aligned, never glyph-identity: vtext shapes Arabic
 through presentation forms where HarfBuzz shapes base letters through GSUB,
@@ -21,7 +24,24 @@ Checks, per case:
   advance  fontTools hmtx advance of every emitted gid vs vtext's advance
   ink      Pillow-rendered ink box vs vtext's rasterized box, only where
            vtext's gid equals the cmap gid (a substitution would compare two
-           different outlines, which proves nothing about either rasterizer)
+           different outlines, which proves nothing about either rasterizer).
+           The per-glyph coverage bytes travel in a covhex column so the same
+           subset is also compared pixel by pixel (rasterizer against
+           rasterizer: stb_truetype unhinted vs FreeType hinted).
+  pango    Pango's wrap widths at a fixed width (layout policy), and a
+           full-line pixel comparison of the Pango/Cairo render against a
+           vtext-composed image (shaping plus rasterization plus placement,
+           end to end). Both sides are cropped to ink before comparing, so
+           no pen origin or baseline has to be agreed between engines.
+
+Exact pixel equality is not the claim and cannot be: the two sides hint
+differently, fill coverage differently at edges, and deliberately shape
+some runs differently (see the cluster entries). What the pixel legs claim
+is a bound: max abs diff, mean abs diff, and the fraction of union pixels
+differing by more than 16, each under its TOL. A regression that moves
+ink — a wrong glyph, a dropped mark, a flipped sign, a broken advance —
+moves those numbers far past the bound, which is what makes a bounded
+comparison a ratchet instead of a description.
 
 Tolerances live in TOL below and are the only knobs. They were set by running
 the suite and reading the disagreements, not by guessing: advances agree to
@@ -49,8 +69,19 @@ TOL = {
     'advance_hmtx': 0.6,        # design units; advances are integers here
     'ink_px': 1,                # pixels per box edge
     'ink_sum_rel': 0.20,        # relative total-coverage difference
-    'pango_line_px': 4.0,       # pixels per wrapped line width
-    'pango_wrap_px': 400,       # wrap width both engines lay out at
+    # Pixel legs: any pixel differing by more than 16 fails. Below that is
+    # rounding dust; above it is a different fill. The tolerances sit just
+    # under the smallest measured systematic difference (mean 2.3, frac
+    # 0.05), so everything the legs can see is recorded, and the ratchet is
+    # the recorded values, which any change moves.
+    'ink_px_max': 16,
+    'ink_px_mean': 2.0,
+    'ink_px_frac': 0.04,
+    'pango_line_px': 4.0,   # pixels per wrapped line width
+    'pango_wrap_px': 400,   # wrap width both engines lay out at
+    'pango_px_max': 16,
+    'pango_px_mean': 2.0,
+    'pango_px_frac': 0.04,
 }
 
 
@@ -100,6 +131,7 @@ def parse_dump(text):
                        'is_mark': int(f[5]), 'font': f[6], 'left': int(f[7]),
                        'top': int(f[8]), 'width': int(f[9]), 'height': int(f[10]),
                        'ink': int(f[11]),
+                       'covhex': f[13] if len(f) > 13 else '',
                        'line': int(f[12]) if len(f) > 12 else 0})
     return meta, glyphs, wrap_widths
 
@@ -222,6 +254,74 @@ def vtext_mark_rel(vg):
     return out
 
 
+def crop_ink(w, h, px):
+    """Crop row-major L bytes to the ink bbox; returns (w, h, bytes)."""
+    if not px or w <= 0 or h <= 0 or len(px) < w * h:
+        return 0, 0, b''
+    xs = [x for x in range(w) for y in range(h) if px[y * w + x]]
+    if not xs:
+        return 0, 0, b''
+    ys = [y for y in range(h) for x in range(w) if px[y * w + x]]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    out = bytearray()
+    for y in range(y0, y1 + 1):
+        out += px[y * w + x0:y * w + x1 + 1]
+    return x1 - x0 + 1, y1 - y0 + 1, bytes(out)
+
+
+def pixel_diff(a, b):
+    """(maxabs, meanabs, over16, nunion) between cropped (w, h, bytes) images."""
+    (w1, h1, p1), (w2, h2, p2) = a, b
+    if not p1 and not p2:
+        return 0, 0.0, 0, 0
+    W, H = max(w1, w2), max(h1, h2)
+    if W <= 0 or H <= 0:
+        return 0, 0.0, 0, 0
+    tot = mx = over = 0
+    n = W * H
+    for y in range(H):
+        for x in range(W):
+            v1 = p1[y * w1 + x] if x < w1 and y < h1 else 0
+            v2 = p2[y * w2 + x] if x < w2 and y < h2 else 0
+            d = abs(v1 - v2)
+            tot += d
+            if d > mx:
+                mx = d
+            if d > 16:
+                over += 1
+    return mx, tot / n, over, n
+
+
+def compose_vtext(glyphs, size, upem):
+    """Compose one unwrapped vtext line into cropped (w, h, bytes).
+
+    Integer placement with subpixel-0 bitmaps: origin_x = round(pen + xoff)
+    - left, origin_y = baseline - top + round(y). Marks composite with max(),
+    which is order-independent like the comparison. The rounding and the
+    sub-0 bitmaps are documented approximations: the point is a stable image
+    of what the engine placed, not a second rasterizer.
+    """
+    W, H, X0, BASE = 2048, 256, 64, 192
+    cv = bytearray(W * H)
+    scale = size / upem
+    pen = 0.0
+    for g in glyphs:
+        cov = bytes.fromhex(g['covhex']) if g.get('covhex') else b''
+        w, hh = g['width'], g['height']
+        if cov and len(cov) == w * hh:
+            ox = X0 + int(round((pen + g['xoff']) * scale)) - g['left']
+            oy = BASE + int(round(-g['yoff'] * scale)) - g['top']
+            for yy in range(hh):
+                for xx in range(w):
+                    v = cov[yy * w + xx]
+                    if v:
+                        qx, qy = ox + xx, oy + yy
+                        if 0 <= qx < W and 0 <= qy < H and v > cv[qy * W + qx]:
+                            cv[qy * W + qx] = v
+        pen += g['adv']
+    return crop_ink(W, H, bytes(cv))
+
+
 def check_case(cid, font_name, cps, direction, size):
     """Returns (diffs, meta). diffs is a list of (check, detail)."""
     diffs = []
@@ -323,7 +423,15 @@ def check_case(cid, font_name, cps, direction, size):
             order2 = tt2.getGlyphOrder()
         finally:
             tt2.close()
-        pf = ImageFont.truetype(font_path, size)
+        # BASIC, not Raqm: a Pillow with libraqm (the Linux wheels) shapes an
+        # isolated combining mark through HarfBuzz and draws it on a dotted
+        # circle, while a Pillow without it (the Windows wheels) draws the
+        # bare outline — measured 20x28 against 8x7 for U+0650 in the same
+        # Pillow 12.3.0. The leg compares rasterizers on one outline, so the
+        # layout engine is pinned and both platforms draw the same thing.
+        pf = ImageFont.truetype(font_path, size,
+                                layout_engine=ImageFont.Layout.BASIC)
+        seen_px = set()
         checked = 0
         for g in vg:
             ch_idx = g['cluster']
@@ -355,6 +463,24 @@ def check_case(cid, font_name, cps, direction, size):
             pinc = sum(px)
             if pinc and g['ink'] and abs(pinc - g['ink']) / max(pinc, g['ink']) > TOL['ink_sum_rel']:
                 diffs.append(('ink', f'U+{cps[ch_idx]}: coverage vtext {g["ink"]} vs pillow {pinc}'))
+            box_ok = abs(pw - g['width']) <= TOL['ink_px'] and abs(ph - g['height']) <= TOL['ink_px']
+            if box_ok and g['gid'] not in seen_px:
+                # One check per outline: rasterization is a pure function of
+                # (font, gid, size), so re-checking the same gid in another
+                # case position proves nothing new and doubles the baseline.
+                seen_px.add(g['gid'])
+                vw, vh = g['width'], g['height']
+                vhex = g.get('covhex', '')
+                vcov = bytes.fromhex(vhex) if vhex else b''
+                if len(vcov) != vw * vh:
+                    diffs.append(('ink', f'U+{cps[ch_idx]}: coverage {len(vcov)} bytes != box {vw}x{vh}'))
+                else:
+                    cw0, ch0, ppix = crop_ink(160, 160, bytes(px))
+                    cw1, ch1, vpix = crop_ink(vw, vh, vcov)
+                    mx, mean, over, n = pixel_diff((cw1, ch1, vpix), (cw0, ch0, ppix))
+                    meta['ink_px_checked'] = str(int(meta.get('ink_px_checked', '0')) + 1)
+                    if mx > TOL['ink_px_max'] or mean > TOL['ink_px_mean'] or over / n > TOL['ink_px_frac']:
+                        diffs.append(('ink', f'U+{cps[ch_idx]} px: maxdiff {mx} meandiff {mean:.1f} over16 {over}/{n} {vw}x{vh}vs{pw}x{ph}'))
         meta['ink_checked'] = str(checked)
     except Exception as e:
         diffs.append(('ink', f'pillow leg failed: {type(e).__name__}: {e}'))
@@ -387,6 +513,39 @@ def check_case(cid, font_name, cps, direction, size):
         meta['pango_lines'] = f'skipped: {e}'
     except Exception as e:
         diffs.append(('pango', f'pango leg failed: {type(e).__name__}: {e}'))
+
+    # Pixel end-to-end: the Cairo render against a vtext-composed image.
+    # Both sides are cropped to ink before comparing, so no pen origin or
+    # baseline has to be agreed between engines; what remains is shaping
+    # plus rasterization plus placement, compared as pixels. The vtext side
+    # is re-dumped with --dir auto like the widths leg, for the same reason:
+    # same rule in, comparable image out.
+    try:
+        import pango_leg
+        from pango_leg import SkipLeg
+        try:
+            family = font_family_name(font_path)
+        except Exception as e:
+            raise SkipLeg(f'family name unreadable: {e}')
+        text = ''.join(chr(int(c, 16)) for c in cps)
+        fw, fh, fstride, fargb = pango_leg.render_lines(family, text, size)
+        fpx = bytearray()
+        for yy in range(fh):
+            fpx += fargb[yy * fstride:yy * fstride + fw * 4][3::4]
+        fw2, fh2, fpix = crop_ink(fw, fh, bytes(fpx))
+        _, av_glyphs, _ = parse_dump(run_vtext(font_path, cps, size, 'auto'))
+        vw2, vh2, vimg = compose_vtext(av_glyphs, size, upem)
+        if nchars and (not any(vimg) or not any(fpix)):
+            diffs.append(('pango', f'pixel {cid}: empty image vtext={not any(vimg)} pango={not any(fpix)}'))
+        else:
+            mx, mean, over, n = pixel_diff((vw2, vh2, vimg), (fw2, fh2, fpix))
+            meta['pango_px'] = f'maxdiff {mx} meandiff {mean:.1f} over16 {over}/{n}'
+            if mx > TOL['pango_px_max'] or mean > TOL['pango_px_mean'] or (over / n if n else 0) > TOL['pango_px_frac']:
+                diffs.append(('pango', f'pixel {cid}: maxdiff {mx} meandiff {mean:.1f} over16 {over}/{n}'))
+    except SkipLeg as e:
+        meta['pango_px'] = f'skipped: {e}'
+    except Exception as e:
+        diffs.append(('pango', f'pango pixel failed: {type(e).__name__}: {e}'))
     return diffs, meta
 
 
@@ -475,7 +634,8 @@ def main():
         print('FATAL: no cases loaded — an empty suite proves nothing')
         return 2
     baseline = load_baseline()
-    seen, failures, stale = set(), 0, 0
+    seen, failures, stale, unverifiable = set(), 0, 0, 0
+    pango_ran = False
     print(f'cases: {len(cases)}  baseline entries: {len(baseline)}')
     for cid, font_name, cps, direction, size in cases:
         try:
@@ -488,6 +648,9 @@ def main():
             print(f'{cid}: COMPARATOR ERROR {type(e).__name__}: {e}')
             failures += 1
             continue
+        if not meta.get('pango_lines', 'skipped').startswith('skipped') or \
+                not meta.get('pango_px', 'skipped').startswith('skipped'):
+            pango_ran = True
         new = 0
         for check, detail in diffs:
             key = f'{cid}\t{check}\t{detail}'
@@ -496,11 +659,22 @@ def main():
                 print(f'{cid} NEW-DIFF [{check}] {detail}')
                 new += 1
         failures += new
-        print(f'{cid}: {len(diffs)} diff(s) [{meta.get("ink_checked", "?")} ink-checked] [pango {meta.get("pango_lines", "?")}]')
+        print(f'{cid}: {len(diffs)} diff(s) [{meta.get("ink_checked", "?")} ink-checked] [pango {meta.get("pango_lines", "?")}] [px ink {meta.get("ink_px_checked", "?")}] [px pango {meta.get("pango_px", "?")}]')
     for b in sorted(baseline):
         if b not in seen:
+            # A pango entry no run on this host verified: without libpango both
+            # legs skip aloud, so there is nothing here that could reproduce
+            # it. Failing that as stale would make every pango-less host red
+            # for a reference it was never going to have — the same reason a
+            # test needing an absent font is BLOCKED rather than failed. CI
+            # runs where libpango exists and holds the full ratchet there.
+            if not pango_ran and b.split('\t')[1] == 'pango':
+                unverifiable += 1
+                continue
             print(f'STALE (update deliberately): {b}')
             stale += 1
+    if unverifiable:
+        print(f'{unverifiable} pango baseline entries unverifiable on this host (no pango stack); CI verifies them')
     print(f'done: {failures} new diff(s), {stale} stale')
     return 1 if (failures or stale) else 0
 

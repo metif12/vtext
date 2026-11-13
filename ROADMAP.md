@@ -1545,10 +1545,61 @@ Wired 2026-10-16, as `kern_pairs` inside substitution: same font both sides, no 
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a
 baseline entry for a diff that no longer occurs exits 1 naming it stale. The
-fifty-seven now in `tools/difftest/baseline.tsv` are the measured state, and the
+one hundred and seventeen now in `tools/difftest/baseline.tsv` are the measured state, and the
 CI job beside the suite runs the whole comparison on every push — ubuntu
 only, because only there does libpango exist, and the Pango leg skips aloud
 everywhere else.
+
+Pixel legs, 2026-11-13: the ink leg now compares coverage byte-for-byte, not
+just box and sum, and a Pango/Cairo full-line render is compared against a
+vtext-composed image on CI, where libpango exists. Exact equality was never
+on the table and is not claimed: FreeType hints and stb_truetype does not,
+so the same outline lands on different pixels at the edges — verified glyph
+by glyph as ASCII art (a Latin f with its stems shifted one pixel, a beh
+with its edges redrawn, never a different shape). What the legs check is a
+bound — max abs diff, mean abs diff, fraction of pixels differing by more
+than 16 — set just under the smallest measured systematic difference, so
+everything they see is recorded and the recorded numbers are the ratchet:
+any engine change moves them and fails both directions. A no-ink glyph is
+distinguished from a black one by an empty column rather than zeros, and a
+pixel the box does not cover is never read — the IndexError that found the
+un-cropped comparison proved the guard before any baseline entry depended
+on it.
+
+What the end-to-end leg found, 2026-11-13, rehearsed on Ubuntu 24.04 with the
+pinned stack before anything was recorded. Eleven of thirteen cases wrap
+within the tolerance with no entry at all — the layout policy agrees with
+Pango everywhere the shaping does. The two that do not are consequences of
+shaping diffs already in the baseline: arabic-marks lays out 245.3px against
+Pango's 220.0, and the cluster totals differ by 836 design units, about 27px
+at this size; arabic-zwnj differs by 7px on a U+0645 the cluster leg already
+records at 522 against 223. A wrap diff that is not downstream of a shaping
+diff would be a layout bug; neither of these is one.
+
+The thirteen pixel entries are the visual consequences of known shaping
+decisions, checked as images rather than trusted as numbers. الله renders
+23 rows against Pango's 35 because the two engines pick different glyphs for
+it: HarfBuzz takes 1348/6128/1346/55 through the font's ligature path and
+vtext takes presentation forms through the cmap, the deliberate routing split
+the cluster entries already record. Nastaliq renders 53 rows against 30 with
+the *same* glyph set on both sides, and the difference is vertical placement:
+HarfBuzz carries y offsets up to 299 design units on the dot components
+(780 at -84, 762 at -299, 42 at +145, 188 at +95) while vtext places them all
+at the baseline. The mark leg cannot see this — those names fail its uniXXXX
+filter, which is the documented cost of it — so the pixel leg is what pins
+it. That is the largest open placement gap the suite names.
+
+Two harness findings were load-bearing before any of that was recorded.
+First, a Pillow with libraqm — the Linux wheels have it, the Windows wheels
+do not — shapes an isolated combining mark through HarfBuzz and draws it on
+a dotted circle, 20x28 against the bare outline's 8x7 in the same Pillow
+12.3.0. The ink leg pins `Layout.BASIC` so both platforms draw the same
+outline; without the pin the same run is green on one host and red on the
+other for no engine reason. Second, Pango resolves `Noto Naskh Arabic` to
+the static file while vtext shapes the variable file by path, so the
+variable-naskh pixel entry compares across files; with only the variable
+font installed the naskh-joining numbers move, which is why the CI step
+installs the corpus as a set rather than naming one file.
 
 ## Phase 5: every script
 

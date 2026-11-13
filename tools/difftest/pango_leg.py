@@ -75,5 +75,55 @@ def layout_lines(family, text, size_px, width_px):
         raise SkipLeg(f'pango layout failed: {type(e).__name__}: {e}')
 
 
+def render_lines(family, text, size_px):
+    """Renders unwrapped text to an ARGB32 image; returns (w, h, stride, bytes).
+
+    The image is the whole paragraph on one line (no wrap limit), white text
+    on transparent. Only the alpha channel carries ink; compare.py crops to
+    the ink and compares coverage, so the pen origin and baseline need no
+    coordinating between engines. Raises SkipLeg when the pango stack is
+    missing or unusable — a missing reference is a printed skip, never a
+    silent pass and never a failure. A successfully drawn but empty image for
+    non-empty text is a harness bug and fails loud instead of comparing
+    two blank canvases.
+    """
+    ok, why = available()
+    if not ok:
+        raise SkipLeg(f'pango stack unavailable: {why}')
+    try:
+        import cairocffi
+        import pangocairocffi
+        from pangocffi import WrapMode
+        show = getattr(pangocairocffi, 'show_layout', None)
+        if show is None:
+            raise SkipLeg('pangocairocffi has no show_layout to draw with')
+        surface = cairocffi.ImageSurface(cairocffi.FORMAT_ARGB32, 2048, 256)
+        cairo_ctx = cairocffi.Context(surface)
+        layout = pangocairocffi.create_layout(cairo_ctx)
+        from pangocffi import FontDescription
+        desc = FontDescription()
+        desc.family = family
+        desc.set_absolute_size(float(size_px) * PANGO_SCALE)
+        layout.font_description = desc
+        layout.text = text
+        # No width set: a fresh layout wraps nothing by default, so the whole
+        # paragraph renders on one line without a magic wide width to defend.
+        layout.wrap = WrapMode.WORD
+        cairo_ctx.move_to(64, 192)
+        show(cairo_ctx, layout)
+        surface.flush()
+        stride = surface.get_stride()
+        # ARGB32 is native-endian; on little-endian hosts (all three CI
+        # platforms) bytes are B,G,R,A per pixel, so alpha is every 4th
+        # byte starting at 3. The alpha channel is the coverage: white
+        # text on a transparent surface, one channel doing one job.
+        raw = bytes(surface.get_data())
+        return 2048, 256, stride, raw
+    except SkipLeg:
+        raise
+    except Exception as e:
+        raise SkipLeg(f'pango render failed: {type(e).__name__}: {e}')
+
+
 class SkipLeg(Exception):
     pass

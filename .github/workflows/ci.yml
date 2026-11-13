@@ -136,12 +136,13 @@ jobs:
           echo "$src" >> "$GITHUB_PATH"
 
       # The Pango leg dlopens these; the runner image usually has them, and the install makes
-      # "usually" into a guarantee the job does not have to think about again.
+      # "usually" into a guarantee the job does not have to think about again. fontconfig ships
+      # fc-cache, which the next step needs to register the corpus fonts.
       - name: System libraries for the Pango leg
         shell: bash
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libpango-1.0-0 libcairo2
+          sudo apt-get install -y -qq libpango-1.0-0 libcairo2 fontconfig
 
       # Pinned to the versions the baseline was verified against (locally: 0 new,
       # 0 stale with Pillow 12.3.0, fontTools 4.66.1, uharfbuzz 0.56.2; the
@@ -157,7 +158,20 @@ jobs:
             pangocffi==0.14.1 pangocairocffi==0.7.1 cairocffi==1.7.1
           python3 -m pip freeze | grep -Ei 'harfbuzz|fonttools|pillow|pango|cairo'
 
-      # Fifty-seven known differences are recorded in the baseline, so green means nothing new and
+      # The shaping legs read the font file by path, but Pango resolves by family name through
+      # fontconfig, which knows nothing about testdata/fonts. Without this step Pango silently
+      # substitutes a fallback font and every case diffs against the wrong outlines — a red job
+      # measuring the absence of fonts rather than the engine. Installing the corpus makes the
+      # family lookup name the same file both sides shaped.
+      - name: Register the corpus fonts with fontconfig
+        shell: bash
+        run: |
+          mkdir -p ~/.fonts
+          cp testdata/fonts/*.ttf ~/.fonts/
+          fc-cache -f ~/.fonts
+          fc-list | grep -Ei 'Amiri|Naskh|Nastaliq' || (echo 'corpus fonts missing from fontconfig'; exit 1)
+
+      # One hundred and seventeen known differences are recorded in the baseline, so green means nothing new and
       # nothing fixed-without-a-record: both directions fail and say which.
       - name: python3 tools/difftest/compare.py
         shell: bash

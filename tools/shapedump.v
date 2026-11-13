@@ -18,7 +18,7 @@ module main
 //
 // Output, one glyph per line after the header comment lines:
 //
-//	gid  x_adv  x_off  y_off  cluster  is_mark  font  left  top  width  height  inksum
+//	gid  x_adv  x_off  y_off  cluster  is_mark  font  left  top  width  height  inksum  covhex
 //
 // x_adv is the pen advance in design units, x_off/y_off the glyph's offset from the pen in design
 // units (y positive up, HarfBuzz sign), cluster the input character index, is_mark 0/1, font the
@@ -29,6 +29,11 @@ module main
 // sum of its coverage bytes. They exist so the comparator can check the rasterizer against
 // FreeType without a second program: same glyph, same size, two independent implementations of
 // the same scanline fill. A mark reports the box of its own outline at its placed offset.
+//
+// A fourteenth column carries the coverage bytes themselves as hex, so the comparator can
+// check the fill pixel by pixel rather than only as a box and a sum. Rows without coverage
+// leave it empty; readers that only know the first thirteen columns keep working, because
+// appending cannot move what came before it.
 
 import os
 import vtext
@@ -88,7 +93,7 @@ fn main() {
 	}
 	upem := f64(f.units_per_em())
 	println('# font=${font_path} size=${size} dir=${dir} nchars=${cps.len} upem=${upem}')
-	println('# gid\tx_adv\tx_off\ty_off\tcluster\tis_mark\tfont\tleft\ttop\twidth\theight\tinksum\tline')
+	println('# gid\tx_adv\tx_off\ty_off\tcluster\tis_mark\tfont\tleft\ttop\twidth\theight\tinksum\tline\tcovhex')
 	if wrap_px > 0 {
 		dump_wrapped(ctx, cps, base, fs, size, upem, wrap_px)
 		return
@@ -109,6 +114,23 @@ fn dump_wrapped(ctx &vtext.Context, cps []rune, base vtext.Direction, fs &vtext.
 		println('# line ${li}: width=${wl.line.width:.3f} from=${wl.from} to=${wl.to}')
 		dump_glyphs(wl.line.glyphs, size, upem, li)
 	}
+}
+
+// cov_hex renders coverage bytes as lowercase hex, two characters per byte
+// per byte, so the differential suite can compare the fill pixel by pixel
+// through a text protocol. An empty bitmap encodes as an empty column rather
+// than as zeros, which keeps a no-ink glyph distinguishable from a black one.
+fn cov_hex(bm vtext.GlyphBitmap) string {
+	if bm.coverage.len == 0 {
+		return ''
+	}
+	hexdigits := '0123456789abcdef'
+	mut out := []u8{cap: bm.coverage.len * 2}
+	for b in bm.coverage {
+		out << hexdigits[int(b >> 4)]
+		out << hexdigits[int(b & 15)]
+	}
+	return out.bytestr()
 }
 
 fn dump_glyphs(glyphs []vtext.Glyph, size f64, upem f64, line_idx int) {
@@ -133,7 +155,8 @@ fn dump_glyphs(glyphs []vtext.Glyph, size f64, upem f64, line_idx int) {
 		for v in bm.coverage {
 			ink += int(v)
 		}
-		println('${g.gid}\t${x_adv:.2f}\t${x_off:.2f}\t${y_off:.2f}\t${g.cluster}\t${mark}\t${fname}\t${bm.left}\t${bm.top}\t${bm.width}\t${bm.height}\t${ink}\t${line_idx}')
+		covhex := cov_hex(bm)
+		println('${g.gid}\t${x_adv:.2f}\t${x_off:.2f}\t${y_off:.2f}\t${g.cluster}\t${mark}\t${fname}\t${bm.left}\t${bm.top}\t${bm.width}\t${bm.height}\t${ink}\t${line_idx}\t${covhex}')
 	}
 }
 

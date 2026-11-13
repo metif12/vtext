@@ -23,8 +23,6 @@ arabic-marks	width	total: vtext 7748.00 vs hb 6912.00
 arabic-marks	mark	mark gid 128 cluster 20: vtext (2.0,0.0) vs hb (-95.0,0.0)
 arabic-marks	mark	mark gid 98 cluster 18: vtext (674.0,201.0) vs hb (68.0,0.0)
 arabic-marks	ink	U+0627: box vtext 5x25 vs pillow 4x23
-arabic-marks	ink	U+0627: box vtext 5x25 vs pillow 4x23
-arabic-marks	ink	U+0627: box vtext 5x25 vs pillow 4x23
 arabic-allah	cluster	char 1 U+0644: vtext 175.00 vs hb 155.00
 arabic-allah	cluster	char 2 U+0644: vtext 197.00 vs hb 230.00
 arabic-allah	cluster	char 3 U+0647: vtext 379.00 vs hb 352.00
@@ -57,3 +55,63 @@ arabic-marks	mark	mark gid 96 cluster 1: vtext (-178.0,0.0) vs hb (-133.0,0.0)
 arabic-zwnj	cluster	char 2 U+0645: vtext 522.00 vs hb 223.00
 arabic-zwnj	width	total: vtext 2754.00 vs hb 2563.00
 nastaliq-hello	width	total: vtext 2932.00 vs hb 2961.00
+arabic-hello	ink	U+0645 px: maxdiff 74 meandiff 2.8 over16 17/308 12x28vs11x28
+arabic-two-words	ink	U+0645 px: maxdiff 74 meandiff 2.8 over16 17/308 12x28vs11x28
+arabic-marks	ink	U+0650 px: maxdiff 210 meandiff 62.4 over16 29/56 9x7vs8x7
+arabic-marks	ink	U+0651 px: maxdiff 223 meandiff 63.2 over16 37/63 9x7vs8x6
+arabic-marks	ink	U+0670 px: maxdiff 68 meandiff 10.8 over16 10/40 5x10vs4x10
+arabic-marks	ink	U+0652 px: maxdiff 93 meandiff 18.0 over16 17/42 7x8vs6x7
+arabic-marks	ink	U+064E px: maxdiff 26 meandiff 4.3 over16 3/56 9x8vs8x7
+latin-liga	ink	U+006F px: maxdiff 167 meandiff 17.4 over16 79/304 16x19vs16x18
+latin-liga	ink	U+0066 px: maxdiff 216 meandiff 14.1 over16 60/375 15x25vs15x25
+latin-liga	ink	U+0069 px: maxdiff 216 meandiff 13.2 over16 30/250 10x25vs10x25
+latin-liga	ink	U+0063 px: maxdiff 178 meandiff 15.4 over16 66/266 14x19vs14x18
+latin-liga	ink	U+0065 px: maxdiff 167 meandiff 26.0 over16 86/285 15x19vs15x18
+latin-liga	ink	U+0064 px: maxdiff 223 meandiff 12.7 over16 78/494 19x26vs19x25
+latin-liga	ink	U+0075 px: maxdiff 216 meandiff 11.7 over16 45/380 20x19vs20x18
+latin-liga	ink	U+006C px: maxdiff 173 meandiff 7.6 over16 21/250 10x25vs10x25
+latin-liga	ink	U+0074 px: maxdiff 255 meandiff 19.0 over16 49/253 11x23vs11x22
+latin-liga	ink	U+0079 px: maxdiff 216 meandiff 13.3 over16 84/494 19x26vs19x26
+mixed-arabic-latin	ink	U+006C px: maxdiff 255 meandiff 38.4 over16 62/184 8x23vs8x23
+mixed-arabic-latin	ink	U+0067 px: maxdiff 204 meandiff 34.2 over16 130/330 15x22vs14x21
+mixed-arabic-latin	ink	U+0061 px: maxdiff 160 meandiff 26.7 over16 73/195 13x15vs13x14
+mixed-arabic-latin	ink	U+0074 px: maxdiff 224 meandiff 33.6 over16 58/190 10x19vs9x19
+mixed-arabic-latin	ink	U+0065 px: maxdiff 127 meandiff 19.6 over16 54/180 12x15vs12x14
+mixed-arabic-latin	ink	U+0073 px: maxdiff 178 meandiff 42.0 over16 72/150 10x15vs10x14
+mixed-arabic-latin	ink	U+0645 px: maxdiff 74 meandiff 2.8 over16 17/308 12x28vs11x28
+mixed-bidi-number	ink	U+0064 px: maxdiff 224 meandiff 32.7 over16 112/345 15x23vs15x23
+mixed-bidi-number	ink	U+0065 px: maxdiff 127 meandiff 19.6 over16 54/180 12x15vs12x14
+mixed-bidi-number	ink	U+0066 px: maxdiff 244 meandiff 19.6 over16 51/253 11x23vs10x22
+mixed-bidi-number	ink	U+0031 px: maxdiff 173 meandiff 25.1 over16 50/198 9x22vs9x21
+mixed-bidi-number	ink	U+0032 px: maxdiff 56 meandiff 4.3 over16 29/273 13x21vs13x21
+mixed-bidi-number	ink	U+0033 px: maxdiff 218 meandiff 30.6 over16 96/286 13x22vs12x21
+mixed-bidi-number	ink	U+0645 px: maxdiff 74 meandiff 2.8 over16 17/308 12x28vs11x28
+mixed-bidi-number	ink	U+0061 px: maxdiff 160 meandiff 26.7 over16 73/195 13x15vs13x14
+mixed-bidi-number	ink	U+0062 px: maxdiff 244 meandiff 50.7 over16 132/345 15x23vs15x23
+mixed-bidi-number	ink	U+0063 px: maxdiff 191 meandiff 23.4 over16 57/180 12x15vs11x14
+persian-digits	ink	U+0061 px: maxdiff 160 meandiff 26.7 over16 73/195 13x15vs13x14
+persian-digits	ink	U+0062 px: maxdiff 244 meandiff 50.7 over16 132/345 15x23vs15x23
+persian-digits	ink	U+0063 px: maxdiff 191 meandiff 23.4 over16 57/180 12x15vs11x14
+persian-digits	ink	U+06F4 px: maxdiff 168 meandiff 13.6 over16 76/330 15x22vs15x22
+persian-digits	ink	U+06F5 px: maxdiff 113 meandiff 17.4 over16 80/273 14x21vs13x20
+persian-digits	ink	U+06F6 px: maxdiff 255 meandiff 44.5 over16 130/345 15x23vs15x23
+persian-digits	ink	U+0631 px: maxdiff 55 meandiff 2.3 over16 13/252 14x18vs14x18
+persian-digits	ink	U+06F2 px: maxdiff 194 meandiff 16.9 over16 63/273 13x22vs12x21
+persian-digits	ink	U+06F3 px: maxdiff 190 meandiff 21.5 over16 88/315 15x21vs14x21
+naskh-joining	ink	U+062F px: maxdiff 67 meandiff 6.9 over16 25/143 11x13vs11x13
+naskh-joining	ink	U+0645 px: maxdiff 255 meandiff 43.3 over16 111/286 13x22vs13x21
+arabic-hello	pango	pixel arabic-hello: maxdiff 243 meandiff 16.1 over16 306/2028
+arabic-two-words	pango	pixel arabic-two-words: maxdiff 255 meandiff 15.2 over16 551/4018
+arabic-marks	pango	line 0: vtext 245.3px vs pango 220.0px
+arabic-marks	pango	pixel arabic-marks: maxdiff 255 meandiff 30.6 over16 2815/15252
+arabic-allah	pango	pixel arabic-allah: maxdiff 255 meandiff 80.6 over16 468/980
+arabic-zwnj	pango	line 0: vtext 88.1px vs pango 81.0px
+arabic-zwnj	pango	pixel arabic-zwnj: maxdiff 255 meandiff 26.9 over16 741/3825
+arabic-digits	pango	pixel arabic-digits: maxdiff 255 meandiff 30.1 over16 1146/5586
+latin-liga	pango	pixel latin-liga: maxdiff 226 meandiff 11.1 over16 1114/8976
+mixed-arabic-latin	pango	pixel mixed-arabic-latin: maxdiff 254 meandiff 11.5 over16 744/6160
+mixed-bidi-number	pango	pixel mixed-bidi-number: maxdiff 255 meandiff 23.0 over16 1450/8640
+persian-digits	pango	pixel persian-digits: maxdiff 255 meandiff 21.9 over16 1427/8610
+nastaliq-hello	pango	pixel nastaliq-hello: maxdiff 255 meandiff 42.3 over16 1151/4823
+naskh-joining	pango	pixel naskh-joining: maxdiff 255 meandiff 13.4 over16 387/3296
+variable-naskh	pango	pixel variable-naskh: maxdiff 255 meandiff 30.1 over16 1143/5586
