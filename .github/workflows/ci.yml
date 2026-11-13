@@ -115,8 +115,13 @@ jobs:
           VTEXT_CC: ${{ matrix.cc }}
 
   difftest:
-    name: differential shaping (ubuntu)
-    runs-on: ubuntu-latest
+    name: differential shaping (ubuntu 24.04)
+    # Pinned to 24.04, not latest: this job compares against system Pango and
+    # FreeType (via Pillow's bundled copy), and ubuntu-latest moved to 26.04
+    # with a different system stack that measures differently. The baseline
+    # below was recorded on 24.04; a runner move is a reference change, not an
+    # engine change, so the runner is part of the harness version.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -138,11 +143,21 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libpango-1.0-0 libcairo2
 
-      - name: pip install uharfbuzz fonttools pillow pangocffi pangocairocffi cairocffi
+      # Pinned to the versions the baseline was verified against (locally: 0 new,
+      # 0 stale with Pillow 12.3.0, fontTools 4.66.1, uharfbuzz 0.56.2; the
+      # pangocffi trio are the versions pango_leg.py was read against). An
+      # unpinned install drifts with every release and the ratchet then
+      # measures the reference moving, not the engine. `pip freeze` records
+      # what actually ran, so a future drift has a version to blame.
+      - name: pip install the pinned reference stack
         shell: bash
-        run: python3 -m pip install --quiet uharfbuzz fonttools pillow pangocffi pangocairocffi cairocffi
+        run: |
+          python3 -m pip install --quiet \
+            uharfbuzz==0.56.2 fonttools==4.66.1 pillow==12.3.0 \
+            pangocffi==0.14.1 pangocairocffi==0.7.1 cairocffi==1.7.1
+          python3 -m pip freeze | grep -Ei 'harfbuzz|fonttools|pillow|pango|cairo'
 
-      # Eighty known differences are recorded in the baseline, so green means nothing new and
+      # Fifty-seven known differences are recorded in the baseline, so green means nothing new and
       # nothing fixed-without-a-record: both directions fail and say which.
       - name: python3 tools/difftest/compare.py
         shell: bash
@@ -209,6 +224,21 @@ jobs:
         env:
           VJOBS: '1'
 
+      # The install name the dylib records for itself is `out` — V links with
+      # its internal object name and the rename to libvtext.dylib does not
+      # rewrite it — so dyld looks for `out` at runtime and the smoke binary
+      # dies before main (seen as `tried: 'out' (no such file)` on CI). The id
+      # must be rewritten before the smoke test links, because the load path
+      # is copied from the id at link time; otool prints it before and after
+      # so a future drift shows up here rather than in a missing-file error.
+      - name: Fix the dylib install name (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          otool -D ${{ matrix.lib }} || true
+          install_name_tool -id @rpath/${{ matrix.lib }} ${{ matrix.lib }}
+          otool -D ${{ matrix.lib }}
+
       # A caller thread needs a stack the 2 MB of static literals in _vinit fit
       # in, the same 32 MB reserve V gives its own executables. Linux and macOS
       # default to 8 MB main-thread stacks, which is enough; Windows defaults
@@ -236,9 +266,15 @@ jobs:
           gcc examples/c-api/smoke.c -L. -lvtext -Wl,-rpath,@loader_path -o examples/c-api/smoke
           cp libvtext.dylib examples/c-api/
 
+      # ls first: a missing binary or a missing library beside it is otherwise
+      # a bare 127 with no failing command to read. The .exe probe is for
+      # Windows, where the binary is smoke.exe and a bare ./smoke is a
+      # command-not-found rather than a run.
       - name: Run the smoke test
         shell: bash
-        run: ./smoke ../../testdata/fonts/Amiri-Regular.ttf
+        run: |
+          ls -la
+          if [ -f smoke.exe ]; then ./smoke.exe ../../testdata/fonts/Amiri-Regular.ttf; else ./smoke ../../testdata/fonts/Amiri-Regular.ttf; fi
         working-directory: examples/c-api
 
       - name: MinGW import library (Windows)

@@ -621,7 +621,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// there: a mark on a CJK character still holds its line.
 	if is_prohibited_start_after_space(right)
 		&& !(right == .qu && quote_role_of(quote, cps[i + 1]) == .pi
-		&& (left == .ns || left == .idas)) {
+			&& (left == .ns || left == .idas)) {
 		return BreakKind.no
 	}
 	// LB30: do not break before an open punctuation after a letter, a Hebrew letter or a digit.

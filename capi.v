@@ -166,12 +166,12 @@ pub mut:
 // came from. Mirrors `vtext_glyph_t` in vtext.h field for field.
 pub struct CGlyph {
 pub mut:
-	gid      u16
-	advance  f64
-	x        f64
-	y        f64
-	cluster  i32
-	is_mark  i32
+	gid     u16
+	advance f64
+	x       f64
+	y       f64
+	cluster i32
+	is_mark i32
 }
 
 // vtext_version names this build. A C caller checks it once rather than
@@ -694,34 +694,73 @@ pub fn vtext_breaks_free(b &CBreaks) {
 	}
 }
 
+// CBitmap is what a rasterize call hands back: the ink box and the coverage in
+// caller-owned memory. It mirrors GlyphBitmap field for field, except the
+// coverage is a malloc'd buffer with an explicit length rather than a V array:
+// the bitmap crosses into C, and freeing V-allocated memory with the C free
+// couples the caller to whatever allocator that V array came from. The box is
+// read with box_only (no allocation, no fill) and the ink is rendered straight
+// into the caller's buffer with render_into, so no V array exists anywhere on
+// this path. vtext_bitmap_t in vtext.h stays opaque: only the accessors below
+// read these fields, and an empty glyph is a null data pointer with zero size.
+pub struct CBitmap {
+pub mut:
+	data   &u8
+	len    i32
+	width  i32
+	height i32
+	left   i32
+	top    i32
+}
+
 // vtext_rasterize renders one glyph at em_px and returns its 8-bit coverage,
 // with the ink box placed relative to the pen on the baseline. sub_x and
 // sub_y snap the position to quarter-pixel bins: four is one whole pixel.
 @[export: 'vtext_rasterize']
 pub fn vtext_rasterize(f &Font, gid u16, em_px f64, sub_x int, sub_y int, errbuf &u8,
-	errcap int) &GlyphBitmap {
+	errcap int) &CBitmap {
 	if f == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: font must be non-null')
 		return unsafe { nil }
 	}
-	bm := f.rasterize(gid, em_px, i32(sub_x), i32(sub_y))
 	unsafe {
-		mut p := &GlyphBitmap(malloc(sizeof(GlyphBitmap)))
-		*p = bm
+		mut p := &CBitmap(malloc(sizeof(CBitmap)))
+		p.data = nil
+		p.len = 0
+		p.width = 0
+		p.height = 0
+		p.left = 0
+		p.top = 0
+		// Same bounds rasterize_glyph enforces: a corrupt or absurd box must
+		// not turn into a huge allocation.
+		box := f.face.box_only(gid, em_px)
+		if box.width <= 0 || box.height <= 0 || box.width > 4096 || box.height > 4096 {
+			return p
+		}
+		n := box.width * box.height
+		data := &u8(malloc(n))
+		f.face.render_into(gid, em_px, i32(sub_x), i32(sub_y), data, box.width, box.height)
+		p.data = data
+		p.len = i32(n)
+		p.width = i32(box.width)
+		p.height = i32(box.height)
+		p.left = i32(box.left)
+		p.top = i32(box.top)
 		return p
 	}
 }
 
-// vtext_bitmap_free releases a rasterized glyph. The coverage goes with it,
-// which is the only heap the bitmap holds.
+// vtext_bitmap_free releases a rasterized glyph. Both allocations are the
+// caller's in the only sense that matters here: malloc'd on this side, freed
+// on this side, with no V array in between.
 @[export: 'vtext_bitmap_free']
-pub fn vtext_bitmap_free(bm &GlyphBitmap) {
+pub fn vtext_bitmap_free(bm &CBitmap) {
 	if bm == unsafe { nil } {
 		return
 	}
 	unsafe {
-		if bm.coverage.len > 0 {
-			free(bm.coverage.data)
+		if bm.data != nil && bm.len > 0 {
+			free(bm.data)
 		}
 		free(bm)
 	}
@@ -731,7 +770,7 @@ pub fn vtext_bitmap_free(bm &GlyphBitmap) {
 // bitmap's own (0, 0) belongs at is (pen - left, baseline - top), with top
 // positive upwards.
 @[export: 'vtext_bitmap_width']
-pub fn vtext_bitmap_width(bm &GlyphBitmap) int {
+pub fn vtext_bitmap_width(bm &CBitmap) int {
 	if bm == unsafe { nil } {
 		return 0
 	}
@@ -739,7 +778,7 @@ pub fn vtext_bitmap_width(bm &GlyphBitmap) int {
 }
 
 @[export: 'vtext_bitmap_height']
-pub fn vtext_bitmap_height(bm &GlyphBitmap) int {
+pub fn vtext_bitmap_height(bm &CBitmap) int {
 	if bm == unsafe { nil } {
 		return 0
 	}
@@ -747,7 +786,7 @@ pub fn vtext_bitmap_height(bm &GlyphBitmap) int {
 }
 
 @[export: 'vtext_bitmap_left']
-pub fn vtext_bitmap_left(bm &GlyphBitmap) int {
+pub fn vtext_bitmap_left(bm &CBitmap) int {
 	if bm == unsafe { nil } {
 		return 0
 	}
@@ -755,7 +794,7 @@ pub fn vtext_bitmap_left(bm &GlyphBitmap) int {
 }
 
 @[export: 'vtext_bitmap_top']
-pub fn vtext_bitmap_top(bm &GlyphBitmap) int {
+pub fn vtext_bitmap_top(bm &CBitmap) int {
 	if bm == unsafe { nil } {
 		return 0
 	}
@@ -766,9 +805,9 @@ pub fn vtext_bitmap_top(bm &GlyphBitmap) int {
 // empty and 255 is solid ink. Borrowed from the bitmap and valid until it is
 // freed; null for an empty glyph.
 @[export: 'vtext_bitmap_data']
-pub fn vtext_bitmap_data(bm &GlyphBitmap) &u8 {
-	if bm == unsafe { nil } || bm.coverage.len == 0 {
+pub fn vtext_bitmap_data(bm &CBitmap) &u8 {
+	if bm == unsafe { nil } || bm.data == nil || bm.len == 0 {
 		return unsafe { nil }
 	}
-	return bm.coverage.data
+	return bm.data
 }

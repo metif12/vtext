@@ -338,7 +338,7 @@ def check_case(cid, font_name, cps, direction, size):
             checked += 1
             img = Image.new('L', (160, 160), 0)
             ImageDraw.Draw(img).text((60, 60), chr(cp), font=pf, fill=255)
-            px = list(img.getdata())
+            px = list(img.get_flattened_data())
             W = 160
             xs = [x for x in range(W) for y in range(160) if px[y * W + x]]
             ys = [y for x in range(W) for y in range(160) if px[y * W + x]]

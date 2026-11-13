@@ -6,6 +6,12 @@
 *.a
 *.lib
 *.pdb
+# A Windows build of a V program writes its manifest beside the binary, and `v
+# run tools/x.v` leaves tools/x.exe.manifest behind. It is regenerated on every
+# run, so it is output rather than source.
+*.exe.manifest
+# Running the differential suite compiles its helpers.
+tools/difftest/__pycache__/
 .vtmp/
 vtext_build.*
 

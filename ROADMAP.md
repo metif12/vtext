@@ -1540,7 +1540,7 @@ Wired 2026-10-16, as `kern_pairs` inside substitution: same font both sides, no 
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a
 baseline entry for a diff that no longer occurs exits 1 naming it stale. The
-eighty now in `tools/difftest/baseline.tsv` are the measured state, and the
+fifty-seven now in `tools/difftest/baseline.tsv` are the measured state, and the
 CI job beside the suite runs the whole comparison on every push — ubuntu
 only, because only there does libpango exist, and the Pango leg skips aloud
 everywhere else.
@@ -1650,6 +1650,14 @@ until then the stack is documented, not assumed.
 zero VariationIndex. `kern_offset_at` with a ppem, per the design already
 written down, verified against that one record; the variation half needs the
 delta-set index but not `gvar` instancing, which stays out.
+
+Measured 2026-11-13 against the committed corpus with a probe carrying that
+positive control: SitkaVF reports 1 Device as before, and all four corpus
+fonts report zero Device and zero VariationIndex — including
+NotoNaskhArabic-Variable. There is still no in-repo fixture, so the adjustment
+engine stays unbuilt rather than built blind; the size fix that keeps a
+VariationIndex record from mis-stepping the reader is in and pinned by
+`gpos_valuesize_test.v`.
 
 **CFF subsetting.** The subsetter refuses CFF for want of a charstring
 reader. Unblocks subsetting for OpenType-CFF, which is the other half of the

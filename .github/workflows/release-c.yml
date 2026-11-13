@@ -88,6 +88,16 @@ jobs:
         env:
           VJOBS: '1'
 
+      # Same install-name rewrite as ci.yml: the dylib records `out` for
+      # itself and dyld looks for that at runtime. Rewritten before anything
+      # links against it.
+      - name: Fix the dylib install name (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          otool -D ${{ matrix.lib }} || true
+          install_name_tool -id @rpath/${{ matrix.lib }} ${{ matrix.lib }}
+          otool -D ${{ matrix.lib }}
+
       - name: MinGW import library (Windows)
         if: runner.os == 'Windows'
         run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a

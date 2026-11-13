@@ -33,9 +33,9 @@ fn C.stbtt_InitFont(voidptr, &u8, int) int
 
 fn C.stbtt_GetFontOffsetForIndex(&u8, int) int
 
-fn C.stbtt_GetGlyphBitmapBox(voidptr, int, f32, f32, &int, &int, &int, &int)
+fn C.stbtt_GetGlyphBitmapBox(voidptr, int, f32, f32, &i32, &i32, &i32, &i32)
 
-fn C.stbtt_GetGlyphBitmapBoxSubpixel(voidptr, int, f32, f32, f32, f32, &int, &int, &int, &int)
+fn C.stbtt_GetGlyphBitmapBoxSubpixel(voidptr, int, f32, f32, f32, f32, &i32, &i32, &i32, &i32)
 
 fn C.stbtt_MakeGlyphBitmapSubpixel(voidptr, &u8, int, int, int, f32, f32, f32, f32, int)
 
@@ -93,6 +93,28 @@ fn (f &Face) px_scale(em_px f64) f32 {
 	return f32(em_px / f.units_per_em_f)
 }
 
+// render_into draws gid into a caller-owned buffer of exactly w*h bytes, at the
+// same scale and subpixel shift rasterize_glyph would use. The buffer is the
+// caller's so that a C caller can own it outright: a V array dropped across
+// the C boundary would have to be freed with the C free, which couples the
+// caller to the allocator the V array came from. The C call below is the same
+// one rasterize_glyph makes, with the same arguments, so the two agree pixel
+// for pixel; stbtt_test.v pins rasterize_glyph and through it this path.
+fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, w int, h int) {
+	if !f.stb_ok {
+		return
+	}
+	scale := f.px_scale(em_px)
+	if scale <= 0 {
+		return
+	}
+	quant := f32(1.0) / 4.0
+	fx := f32(sub_x) * quant
+	fy := f32(sub_y) * quant
+	C.stbtt_MakeGlyphBitmapSubpixel(f.stb_ptr(), out, w, h, w, scale, scale, fx, fy,
+		int(gid))
+}
+
 // rasterize_glyph renders one glyph at an integer pixel size.
 //
 // sub_x and sub_y snap the position to quarter-pixel bins, which is what stops
@@ -109,20 +131,24 @@ fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitm
 	quant := f32(1.0) / 4.0
 	fx := f32(sub_x) * quant
 	fy := f32(sub_y) * quant
-	mut x0 := 0
-	mut y0 := 0
-	mut x1 := 0
-	mut y1 := 0
+	// i32, not int: these are out-parameters to a C function taking int*, and
+	// V int is 64 bits wide. A 32-bit write into a 64-bit slot reads back
+	// correctly on little-endian only by accident of the upper half staying
+	// zero; naming the width removes the accident.
+	mut x0 := i32(0)
+	mut y0 := i32(0)
+	mut x1 := i32(0)
+	mut y1 := i32(0)
 	C.stbtt_GetGlyphBitmapBoxSubpixel(f.stb_ptr(), int(gid), scale, scale, fx, fy, &x0, &y0,
 		&x1, &y1)
-	w := x1 - x0
-	h := y1 - y0
+	w := int(x1 - x0)
+	h := int(y1 - y0)
 	// A corrupt or absurd box must not turn into a huge allocation.
 	if w <= 0 || h <= 0 || w > 4096 || h > 4096 {
 		return out
 	}
 	mut buf := []u8{len: w * h}
-	C.stbtt_MakeGlyphBitmapSubpixel(f.stb_ptr(), buf[0], w, h, w, scale, scale, fx, fy, int(gid))
+	f.render_into(gid, em_px, sub_x, sub_y, buf[0], w, h)
 	out.coverage = buf
 	out.width = w
 	out.height = h
@@ -158,13 +184,13 @@ fn (f &Face) box_only(gid u16, em_px f64) GlyphBitmap {
 	if scale <= 0 {
 		return out
 	}
-	mut x0 := 0
-	mut y0 := 0
-	mut x1 := 0
-	mut y1 := 0
+	mut x0 := i32(0)
+	mut y0 := i32(0)
+	mut x1 := i32(0)
+	mut y1 := i32(0)
 	C.stbtt_GetGlyphBitmapBox(f.stb_ptr(), int(gid), scale, scale, &x0, &y0, &x1, &y1)
-	out.width = x1 - x0
-	out.height = y1 - y0
+	out.width = int(x1 - x0)
+	out.height = int(y1 - y0)
 	// Negated like rasterize_glyph: the box's left edge is a pen-relative
 	// offset and `left` is a distance left of the pen.
 	out.left = -x0
