@@ -83,8 +83,9 @@ pub fn (f &Font) table_length(tag string) int {
 	return rec.length
 }
 
-// outlines says which kind the font draws with: 'glyf' for TrueType outlines, 'CFF ' for PostScript
-// outlines, and an empty string for neither, which is a font that draws nothing at all.
+// outlines says which kind the font draws with: 'glyf' for TrueType outlines,
+// 'CFF ' for PostScript outlines, 'CFF2' for variable PostScript outlines, and
+// an empty string for neither, which is a font that draws nothing at all.
 pub fn (f &Font) outlines() string {
 	sfnt := f.face.sfnt
 	if sfnt.has(tag_glyf) && sfnt.has(tag_loca) {
@@ -92,6 +93,9 @@ pub fn (f &Font) outlines() string {
 	}
 	if sfnt.has('CFF ') {
 		return 'CFF '
+	}
+	if sfnt.has('CFF2') {
+		return 'CFF2'
 	}
 	return ''
 }

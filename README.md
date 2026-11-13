@@ -142,7 +142,7 @@ Named here so that a caller is not surprised by them.
   coded around.
 
   Line breaking is measured against the Unicode committee's own test for this version, not described.
-  It passes **19,342 of 19,346 cases (99.98%)**, and `linebreak_conformance_test.v` asserts that as a
+  It passes **19,343 of 19,346 cases (99.98%)**, and `linebreak_conformance_test.v` asserts that as a
   floor on every run, so the number cannot be quietly lowered.
 
 ## Guarantees
@@ -514,7 +514,7 @@ for t in font.tables() {
     println('${t.tag} at ${t.offset}, ${t.length} bytes')
 }
 font.has_table('COLR')            // the font has one this engine draws nothing with
-font.outlines()                   // 'glyf', 'CFF ', or ''
+font.outlines()                   // 'glyf', 'CFF ', 'CFF2', or ''
 font.num_lookups('GPOS')          // the count in the table's own LookupList
 font.features('GSUB')             // the FeatureList, sorted
 font.scripts('GPOS')              // the ScriptList, sorted

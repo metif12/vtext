@@ -114,13 +114,16 @@ import os
 // CJK with CJK or opening after, and a span-state (`prev_broke`) break for a standalone closing
 // mark before an ideograph.
 //
-// Four cases remain, and each is recorded rather than coded around. One is [28.14]
-// (`× 1BD7 × 1BEC ÷ …`, CM|AS): LB28a's sub-rule for a mark standing on a virama, which needs the
-// Indic syllabic categories this engine does not carry. Three are [31.01] `Pf|ID` span-boundary
-// breaks, which need quotation-span state the pair engine threads `prev_broke` for but does not
-// yet decide across a full span. Measured clean on this tree: 19,342 of 19,346, the same four in
+// Three cases remain, each recorded rather than coded around: the [31.01]
+// `Pf|ID` span-boundary breaks need quotation-span state the pair engine
+// threads `prev_broke` for but does not yet decide across a full span.
+// The fourth, [28.14] (`× 1BD7 × 1BEC ÷ …`, CM|AS), landed 2026-11-13 as LB28a's
+// fourth arm — `(AK|◌|AS) × (AK|◌|AS) VF` — and the note that stood here was
+// wrong about why it was missing. It said the arm needed the Indic syllabic
+// categories; it needs a three-character lookahead the engine never wrote.
+// Measured clean on this tree: 19,343 of 19,346, the same three in
 // every rerun.
-const conformance_floor = 19342
+const conformance_floor = 19343
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.

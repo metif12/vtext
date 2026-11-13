@@ -520,3 +520,52 @@ fn test_mandatory_breaks_are_marked() {
 	}
 	assert !space_mandatory, 'a space is not a paragraph end'
 }
+
+// fake_sfnt builds a minimal sfnt holding the named tables with four zero
+// bytes each: a directory the parser accepts and nothing else. It is how the
+// outline kinds no corpus font carries are tested — no font on this machine is
+// CFF-outlined (measured: 0 in 352 files plus 38 TTC faces), so a fixture
+// written from a real one cannot exist.
+fn fake_sfnt(tags []string) []u8 {
+	mut out := []u8{cap: 12 + tags.len * 20}
+	out << 'OTTO'.bytes()
+	out << u8(tags.len >> 8)
+	out << u8(tags.len & 0xff)
+	out << [u8(0), 0, 0, 0, 0, 0] // search fields the reader skips
+	mut body_at := 12 + tags.len * 16
+	for t in tags {
+		assert t.len == 4, 'an sfnt tag is four bytes'
+		out << t.bytes()
+		out << [u8(0), 0, 0, 0] // checksum, unchecked on load
+		out << u8(body_at >> 24)
+		out << u8((body_at >> 16) & 0xff)
+		out << u8((body_at >> 8) & 0xff)
+		out << u8(body_at & 0xff)
+		out << u8(0)
+		out << u8(0)
+		out << u8(0)
+		out << u8(4)
+		body_at += 4
+	}
+	for _ in 0 .. tags.len * 4 {
+		out << u8(0)
+	}
+	return out
+}
+
+fn test_outlines_names_cff2_where_no_corpus_font_can() {
+	cff := load_font_bytes(fake_sfnt(['CFF '])) or {
+		panic('a one-table CFF sfnt did not load: ${err}')
+	}
+	assert cff.outlines() == 'CFF ', 'expected CFF outlines, got ${cff.outlines()}'
+
+	cff2 := load_font_bytes(fake_sfnt(['CFF2'])) or {
+		panic('a one-table CFF2 sfnt did not load: ${err}')
+	}
+	assert cff2.outlines() == 'CFF2', 'expected CFF2 outlines, got ${cff2.outlines()}'
+
+	neither := load_font_bytes(fake_sfnt(['head'])) or {
+		panic('a one-table head-only sfnt did not load: ${err}')
+	}
+	assert neither.outlines() == '', 'a font with neither outline table reports none, got ${neither.outlines()}'
+}

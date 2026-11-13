@@ -998,6 +998,27 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			return BreakKind.no
 		}
 	}
+	// LB28a, fourth arm: one aksara member holds the next when a virama-final
+	// follows that one. `× 1BD2 × 1BEA × 1BC9 × 1BF3 ÷` holds at 1BEA|1BC9
+	// [28.14]: the pair read through the mark is AS × AS and 1BF3 is VF, and
+	// without the VF ahead the same pair breaks at LB31. The dotted circle
+	// stands in for a member on either side, asked by codepoint because the
+	// line break table calls it a letter.
+	if i + 2 < n && classes[i + 2] == .vf
+		&& (right == .ak || right == .akst || (right == .al && cps[i + 1] == rune(0x25CC))) {
+		if pair_left == .ak || pair_left == .akst {
+			return BreakKind.no
+		}
+		if pair_left == .al {
+			mut dl := i
+			for dl > 0 && is_markish(classes[dl]) {
+				dl--
+			}
+			if cps[dl] == rune(0x25CC) {
+				return BreakKind.no
+			}
+		}
+	}
 	// LB28's other two pairs: a letter and a digit, in either order. These were missing and the
 	// conformance test is what showed it — they are the cases that let "H2O" and "COVID19" split at the
 	// letter-digit boundary, which is a Latin problem and not a CJK one.

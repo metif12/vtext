@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | done, and measured: **19,342 of 19,346 (99.98%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | done, and measured: **19,343 of 19,346 (99.98%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -114,7 +114,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 19,342 of 19,346 — 99.98%.**
+**Measured, because "done" above was a description and not a number. 19,343 of 19,346 — 99.98%.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -1191,7 +1191,7 @@ private state or re-parse the file themselves. The API is what they are written 
 Font.tables() []TableInfo          tag, offset, length, sorted
 Font.has_table(tag) bool
 Font.table_length(tag) int         zero when absent
-Font.outlines() string             'glyf', 'CFF ', or ''
+Font.outlines() string             'glyf', 'CFF ', 'CFF2', or ''
 Font.num_lookups(table) int        the LookupList's own count
 Font.features(table) []string      the FeatureList, sorted, deduplicated
 Font.num_features(table) int
@@ -1405,9 +1405,14 @@ whole-file checksum is `0xB1B0AFBA` on all of them. One real bug was found that 
 written down: the checksum constant had been written in decimal, one digit out, producing fonts that
 every reader loaded and drew correctly while summing to `0xB1B180F2`.
 
-**Refused: CFF, untested.** There is no CFF or OpenType font on this machine, so the refusal path has
-never run. The reason is in the message rather than left to the reader: this rebuilds `glyf` and
-`loca`, and a charstring is a different language the library exposes no reader for. `gvar`, `hdmx`,
+**Refused: CFF, now exercised.** There is no CFF or OpenType font on this machine — measured
+2026-11-13: 0 CFF or CFF2 faces in 352 files plus 38 TTC faces — so the refusal path ran against a
+synthetic one-table OTTO fixture rather than a real font. `inspect_test.v` pins the predicate
+(`outlines()` answers `CFF `, `CFF2`, and empty for neither), and the tool run proves the branch:
+exit 1 with "has CFF outlines" and no output file. `outlines()` names `CFF2` explicitly, which also
+fixes `fontcheck` reporting a CFF2 font as drawing nothing. The reason is in the message rather than
+left to the reader: this rebuilds `glyf` and `loca`, and a charstring is a different language the
+library exposes no reader for. `gvar`, `hdmx`,
 `LTSH` and friends are copied whole for the same reason, which is why NotoNaskhArabic-Variable's
 subset is still 140768 bytes — 83204 of them `gvar` this cannot prune.
 
@@ -1620,11 +1625,21 @@ Done 2026-11-12, at **19,342 of 19,346**: the width table (UAX#11) lets LB30 tel
 narrow bracket from a Wide one, LB9's exception resolves a mark after a hard break,
 a space or a zero width space to a letter, `.ex`/`.hy` left the prohibited-end list
 for the pair rules that own them, and LB28a/LB30b/LB26/LB20a/LB21a landed as pairs
-with mark read-through. Four cases remain and each is named rather than coded
-around: one [28.14] needing the Indic syllabic categories this engine does not
-carry, and three [31.01] `Pf|ID` span-boundary breaks needing quotation-span state
-(`prev_broke` threads the decision but does not span it). Suite green, difftest 0
-new and 0 stale.
+with mark read-through. Four cases remained, each named rather than coded
+around: one [28.14] then thought to need the Indic syllabic categories this
+engine does not carry, and three [31.01] `Pf|ID` span-boundary breaks needing
+quotation-span state (`prev_broke` threads the decision but does not span it).
+Suite green, difftest 0 new and 0 stale.
+
+On 2026-11-13 the [28.14] case landed, and the note above was wrong about why
+it was missing: it is LB28a's fourth arm, `(AK|◌|AS) × (AK|◌|AS) VF`, a
+three-character lookahead the engine never wrote rather than a table it never
+carried. `× 1BD2 × 1BEA × 1BC9 × 1BF3 ÷` holds at 1BEA|1BC9 because the pair
+read through the mark is AS × AS and 1BF3 is VF; without the VF ahead the
+same pair breaks at LB31. The arm follows from UAX #14's LB28a text — four
+patterns, the fourth never written — so no Indic data was fetched and none is
+needed. Floor **19,343 of 19,346**; three span-boundary cases remain, named
+above.
 
 **C API and usage guide.** The library is usable from C: `vtext.h` with opaque
 handles over contexts, font sets, fonts, lines, wraps, breaks and bitmaps,
