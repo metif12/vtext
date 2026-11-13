@@ -7,6 +7,12 @@ module ucd
 // They are strings rather than const arrays because a V const array written out
 // element by element silently materialises with length zero in this compiler.
 // Encoding them as text also keeps a few thousand records reviewable in a diff.
+//
+// The codepoint-name delta tables are the same shape for a different reason: three
+// 143,217-element const arrays materialise as stack compound literals in the module
+// initializer, over 2 MB before a single character is shaped, which faults any caller
+// thread with a default stack. They are decoded once at load into the heap arrays
+// below instead. The names blob itself was always a string.
 
 // CodeRange maps a contiguous span of codepoints to one property value. Tables
 // are sorted by lo and non-overlapping, so a property lookup is a binary search.
@@ -170,4 +176,56 @@ pub fn parse_names(data string) []string {
 		}
 	}
 	return out
+}
+
+// parse_ints decodes a whitespace-separated table of non-negative decimals.
+//
+// Public for the same reason the other decoders are: the names tests pin it
+// directly rather than through the table that happens to use it. The values are
+// non-negative by construction — deltas from a previous entry and prefix lengths
+// — so no sign is read and a malformed word ends the value rather than failing.
+pub fn parse_ints(data string) []int {
+	mut out := []int{}
+	mut cur := 0
+	mut have := false
+	for i in 0 .. data.len {
+		c := data[i]
+		if c >= `0` && c <= `9` {
+			cur = cur * 10 + int(c - `0`)
+			have = true
+			continue
+		}
+		if have {
+			out << cur
+			cur = 0
+			have = false
+		}
+	}
+	if have {
+		out << cur
+	}
+	return out
+}
+
+// The decoded name tables. The generated file holds strings; these decode them into the heap
+// arrays the readers index. Each call parses once rather than caching in a global, because a
+// cached global needs -enable-globals on every build line that touches this module — the suite,
+// every tool, CI, the C library — and a flag threaded through all of those is a worse trade than
+// a millisecond parse on a trace path. Callers that walk the table hoist the array into a local;
+// the readers below take it as an argument for the same reason.
+// codepoint_name_cps holds the codepoint of each name, delta coded: the first value is the
+// first codepoint and each later value is the step from the entry before it.
+pub fn codepoint_name_cps() []int {
+	return parse_ints(codepoint_name_cps_data)
+}
+
+// codepoint_name_offsets holds where each suffix starts in the names blob, delta coded the same
+// way, with one more entry than there are names so the last suffix has an end.
+pub fn codepoint_name_offsets() []int {
+	return parse_ints(codepoint_name_offsets_data)
+}
+
+// codepoint_name_prefix holds how many bytes each suffix shares with the name before it.
+pub fn codepoint_name_prefix() []int {
+	return parse_ints(codepoint_name_prefix_data)
 }

@@ -193,20 +193,16 @@ a clean import library rather than every runtime symbol the tcc flag exports.
 
 ### The stack the library needs
 
-A caller thread needs a generous stack — 32 MB, the same reserve V gives its
-own executables (`-Wl,-stack,33554432` for tcc, `-Wl,--stack,33554432` for
-gcc; MSVC takes `/STACK:33554432`, same meaning, not run here). With the
-default 1 MB stack the first call into the library faults with a stack
-overflow.
-
-The reason is in the generated tables, not in the call: `ucd/ucd_names.v` holds
-two 143,217-element constant arrays, and the compiler materializes them as
-stack compound literals in the module initializer — over 2 MB before a single
-character is shaped. Every in-tree test binary survives this because V links
-executables with a 32 MB reserve; a DLL runs on the host's stack and inherits
-whatever the host reserved. The real fix is generating those tables as parsed
-strings like every other `ucd/ucd_*.v` file, which is recorded in `ROADMAP.md`
-rather than done here. Until then, reserve the stack.
+A caller thread needs no special stack: the library runs on the host's default,
+1 MB on Windows included. That was not always true. `ucd/ucd_names.v` held its
+three 143,217-element tables as constant arrays, which the compiler materialized
+as stack compound literals in the module initializer — over 2 MB before a single
+character was shaped — so the first call into the library faulted with a stack
+overflow on any thread with a default stack, and the smoke test linked a 32 MB
+reserve to get past it. The tables are generated as parsed strings like every
+other `ucd/ucd_*.v` file since 2026-11-14, decoded once at load into heap arrays,
+and the reserve went with them: the smoke test links a default 1 MB stack and
+passes, which is the proof rather than the documentation.
 
 On Windows the DLL must also sit beside the executable (or on `PATH`); that
 is the loader's rule, not this library's.

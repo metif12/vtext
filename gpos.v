@@ -2565,8 +2565,9 @@ fn read_pair_value(r &Reader, at int, format u16) PairValue {
 // All eight fields are counted, including the four VariationIndex offsets a variable font's value record may
 // carry. Those four were missing until 2026-10-04, which meant every record after one of them was read from
 // the wrong place: a font with a variable-font kern had its second pair read out of the middle of the first,
-// and the words it landed on are small numbers, so nothing looked wrong. No font on this machine sets one —
-// measured across all 341 available, with a positive control on the scan — so nothing caught it either. See
+// and the words it landed on are small numbers, so nothing looked wrong. SegUIVar sets 9,430 of them and
+// SitkaVF two — measured across all 379 faces on this machine — so the bits are exercised by real fonts even
+// though no Device table is: the count below is zero across 2,450,058 value records. See
 // `gpos_valuesize_test.v`, which is written as bytes for that reason.
 fn pair_value_size(format u16) int {
 	mut n := 0
@@ -2577,6 +2578,94 @@ fn pair_value_size(format u16) int {
 		}
 	}
 	return n
+}
+
+// Device is one size-dependent adjustment: how many pixels to add to a value at each ppem in a
+// range. A Device table corrects the scaled design units where rounding lands a pixel off, so its
+// deltas are pixels at a ppem, not design units, and there is one delta per size from start to end.
+//
+// No font measured carries one — zero across 2,450,058 value records on this machine — so nothing
+// in the engine applies it. This reader is the tested primitive for when one appears, in the same
+// standing as the SinglePos format 2 reader: correct against the specification and pinned by bytes.
+struct Device {
+mut:
+	// start and end are the smallest and largest ppem the table corrects.
+	start u16
+	end   u16
+	// format is 1, 2 or 3: signed 2-, 4- or 8-bit deltas packed most-significant first.
+	format u16
+	// deltas holds one signed pixel adjustment per ppem from start, clamped to the bytes present.
+	deltas []i8
+}
+
+// read_device parses one Device table at `at`, bounded by `limit`, which is the exclusive end of
+// whatever encloses the table — the buffer's own length, or the extension wrapper's bound the way
+// the SinglePos format 2 scan bounds itself. A table that overruns its bound is read as far as it
+// goes rather than refused, because a truncated table still corrects the sizes its bytes cover.
+//
+// A 0x8000 format is a VariationIndex, which names a delta-set index in the item variation store
+// rather than carrying deltas, and resolves to zero at the default instance — the only instance
+// this engine shapes. It is not a Device table and reads as none here.
+fn read_device(r &Reader, at int, limit int) ?Device {
+	if !r.has(at, 6) {
+		return none
+	}
+	start := r.u16_at(at)
+	end := r.u16_at(at + 2)
+	format := r.u16_at(at + 4)
+	if format != 1 && format != 2 && format != 3 {
+		return none
+	}
+	if end < start {
+		return none
+	}
+	bits := if format == 1 {
+		2
+	} else if format == 2 {
+		4
+	} else {
+		8
+	}
+	per := 16 / bits
+	mut count := int(end - start) + 1
+	mut avail := 0
+	if limit > at + 6 {
+		avail = (limit - (at + 6)) / 2
+	}
+	if count > avail * per {
+		count = avail * per
+	}
+	mut deltas := []i8{cap: count}
+	for i in 0 .. count {
+		w := int(r.u16_at(at + 6 + (i / per) * 2))
+		shift := 16 - bits * (i % per + 1)
+		mut raw := (w >> shift) & ((1 << u32(bits)) - 1)
+		half := 1 << u32(bits - 1)
+		if raw >= half {
+			raw -= 1 << u32(bits)
+		}
+		deltas << i8(raw)
+	}
+	return Device{
+		start:  start
+		end:    end
+		format: format
+		deltas: deltas
+	}
+}
+
+// delta_at returns the pixel adjustment for ppem, or zero outside the table's range or past what
+// its bytes cover. A ppem the table does not name is not corrected, which is the same answer as a
+// table that never existed.
+fn (d &Device) delta_at(ppem int) int {
+	if ppem < int(d.start) || ppem > int(d.end) {
+		return 0
+	}
+	i := ppem - int(d.start)
+	if i < 0 || i >= d.deltas.len {
+		return 0
+	}
+	return int(d.deltas[i])
 }
 
 // parse_mark_to_base reads one MarkToBasePos subtable. Only format 1 exists in the

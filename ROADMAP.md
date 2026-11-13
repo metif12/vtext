@@ -678,17 +678,28 @@ store.
 and unbuilt code is worse than none.** What survived is the measurement and one real bug, which is the part
 that would otherwise be paid for twice.
 
-**How much is actually out there.** Scanning every GPOS value record in the 337 Windows fonts and the four in
-`testdata/fonts/`, with fontTools:
+**How much is actually out there.** Scanning every GPOS value record in all Windows fonts and the four in
+`testdata/fonts/` with fontTools, 2026-11-14 — 356 files, 379 faces including every TTC face, 2,450,058
+value records:
 
 | | |
 | --- | --- |
-| value records carrying a Device table | **1** |
-| value records carrying a VariationIndex | **0** |
+| value records carrying a Device table | **0** |
+| value records carrying a VariationIndex | **9,432** |
 
-The single record is in `SitkaVF.ttf`. So the per-size half of this item is one record in one font, and the
-variable-font half has no fixture on this machine at all. That is the answer to whether this is worth building
-blind, and it is the reason it should not be.
+The 9,432 are all in two variable fonts: 9,430 in `SegUIVar.ttf`, 2 in `SitkaVF.ttf`, every one an
+X advance. The walk finds value records by type name rather than by field presence — the first
+version checked for `XPlacement` *and* `YPlacement` and a SinglePos record carrying only one of them
+sailed through uncounted — and the device attributes are `XPlaDevice`/`YPlaDevice`/`XAdvDevice`/
+`YAdvDevice`, not the `XPlacementDevice` names the first version asked for. The 9,432 hits are the
+positive control the old entry called for: the same walk that finds zero Device tables finds nine
+thousand VariationIndex ones, so the zero is the fonts' answer and not the walk's.
+
+The old entry said one Device in SitkaVF, and that was a misread of the same bytes. A variable font
+cannot carry a Device table — the specification reserves them for non-variable fonts — and SitkaVF's
+two records agree: their format word is `0x8000`, which is `VARIATION_INDEX`, a delta-set index into
+the item variation store rather than deltas. fontTools reports both with `DeltaFormat: 32768` for
+exactly this reason. There is no Device fixture on this machine, in any of its 379 faces.
 
 **The first scan said zero across all 341 fonts, and that was wrong.** fontTools was opened with `lazy=True`,
 which does not decompile subtables, so the walk over the lookup list never reached a single value record and
@@ -712,18 +723,27 @@ the case is unreachable, but because no available font exercises it. Adding the 
 and needs no font to be correct.
 
 **What implementing it would take, for whoever does it with a machine that compiles.** A Device table is
-`startSize`, `endSize`, `deltaFormat` and one delta per pixel size in four encodings — int16, uint16, int8,
-uint8 — of which only the two placement offsets are worth reading, since this engine applies a kern as an
-advance. `read_device` has to take the encoding from the table rather than infer it, and has to clamp the
-stated count to the bytes actually present, because a table that overruns itself is read as far as it goes.
-The size then has to reach the engine: `kern_offset` has no size parameter and changing its signature breaks
-the API, so the shape is a `kern_offset_at(left, right, script, ppem)` with the old one delegating at ppem
-zero, where zero means "no device adjustment" rather than "size zero". The adjustment is added in design
-units, because everything this library returns is in design units and the caller scales once.
+`startSize`, `endSize`, `deltaFormat` and one delta per pixel size in three encodings — signed 2-, 4-
+or 8-bit values packed most-significant first, `0x123F` for {1, 2, 3, -1}. `read_device` takes the
+encoding from the table rather than inferring it, refuses a `0x8000` VariationIndex and anything else
+that is not 1–3, and clamps the stated count to the bytes actually present, because a table that
+overruns itself is read as far as it goes.
 
-The variation half is a different and much larger piece of work than this entry suggests. `VariationIndex`
-points into a delta-set index that adjusts a *value* along an axis, which is tractable; making the engine
-honour a variable font's `gvar` outlines is not, and is a different feature with its own entry.
+**Done 2026-11-14, as the reader and no further, and the reason is the cursive one.** `read_device`
+lives in `gpos.v` with `Device.delta_at(ppem)`, pinned by `gpos_device_test.v` against bytes: the
+specification's own example, all three encodings with negatives pinning the sign extension, the
+wrapper bound winning over the buffer, and every refusal. What did not land is the `kern_offset_at`
+plumbing the old version of this entry designed: no font anywhere carries a Device table for it to
+read, and no caller in the layout path carries a ppem for it to answer with. A reader with byte
+fixtures is SinglePos format 2's standing — correct and pinned; a behavioural pass no font can reach
+is the cursive attachment's, and that one was withdrawn rather than shipped.
+
+The variation half needs no code, and that is the assessment rather than a deferral. The 9,432
+VariationIndex records resolve through the item variation store against the instance's coordinates,
+and this engine shapes the default instance only — variable instancing is explicitly not a goal —
+where every region scalar is zero and every delta scales to zero. Skipping them is correct at the
+default instance rather than a gap, and the stepping that gets past them is what `pair_value_size`
+counts and `gpos_valuesize_test.v` pins.
 
 ### ~~Line options, and measuring a run at a width~~
 
@@ -1762,12 +1782,14 @@ Two things found on the way in. A Windows DLL built with anything but MSVC
 exports nothing: the compiler only marked the wrappers with the ELF visibility
 attribute, which a PE linker ignores. Fixed upstream in the compiler rather
 than worked around here (the tcc `-export-all-symbols` flag stays as a belt
-until that lands). And a caller thread needs a 32 MB stack, the same reserve V
-gives its own executables: `ucd/ucd_names.v` holds two 143,217-element constant
-arrays that the compiler materializes as stack compound literals in the module
-initializer, over 2 MB before a single character is shaped. The real fix is
-generating those tables as parsed strings like every other `ucd/ucd_*.v` file;
-until then the stack is documented, not assumed.
+until that lands). And a caller thread needed a 32 MB stack, the same reserve V
+gives its own executables: `ucd/ucd_names.v` held three 143,217-element constant
+arrays that the compiler materialised as stack compound literals in the module
+initializer, over 2 MB before a single character was shaped. Fixed 2026-11-14
+by generating those tables as parsed strings like every other `ucd/ucd_*.v`
+file, decoded once at load into heap arrays: the smoke test links a default
+1 MB stack and passes, after faulting with `STATUS_STACK_OVERFLOW` on the same
+stack before, and the CI reserve went with the workaround.
 
 A third thing, found because CI stays red on it while Windows stays silent:
 `vtext_wrap_free` and `vtext_line_free` freed the glyph backing with the C free,
@@ -1794,18 +1816,12 @@ instead. The MinGW runtime DLLs the runner's gcc links dynamically travel beside
 outputs for the same reason: a loader failure prints nothing, so the build ships
 everything the tables name.
 
-**Device and variation offsets.** One Device record in 341 fonts (SitkaVF),
-zero VariationIndex. `kern_offset_at` with a ppem, per the design already
-written down, verified against that one record; the variation half needs the
-delta-set index but not `gvar` instancing, which stays out.
-
-Measured 2026-11-13 against the committed corpus with a probe carrying that
-positive control: SitkaVF reports 1 Device as before, and all four corpus
-fonts report zero Device and zero VariationIndex — including
-NotoNaskhArabic-Variable. There is still no in-repo fixture, so the adjustment
-engine stays unbuilt rather than built blind; the size fix that keeps a
-VariationIndex record from mis-stepping the reader is in and pinned by
-`gpos_valuesize_test.v`.
+**Device and variation offsets — done 2026-11-14, as the reader and the assessment.** Zero Device
+tables across 2,450,058 value records on 379 faces; 9,432 VariationIndex, all in two variable
+fonts. `read_device` with `Device.delta_at(ppem)` is pinned by `gpos_device_test.v` against bytes;
+no `kern_offset_at` plumbing, because no font carries a table and no layout caller carries a ppem.
+VariationIndex resolves to zero at the default instance — the only one shaped — so skipping is
+correct and the stepping is what `gpos_valuesize_test.v` pins.
 
 **CFF subsetting.** The subsetter refuses CFF for want of a charstring
 reader. Unblocks subsetting for OpenType-CFF, which is the other half of the

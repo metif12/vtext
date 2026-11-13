@@ -106,12 +106,15 @@ fn test_every_name_in_the_table_rebuilds() {
 	// running sum. The index is i+1 and not i, because offsets_delta[i] is the step *into* entry i and is
 	// already inside start; adding it again is what put every end past the end of the blob.
 	mut start := 0
-	for i in 0 .. ucd.codepoint_name_cps_delta.len {
-		shared := int(ucd.codepoint_name_prefix[i])
+	cps := ucd.codepoint_name_cps()
+	prefix := ucd.codepoint_name_prefix()
+	offsets := ucd.codepoint_name_offsets()
+	for i in 0 .. cps.len {
+		shared := prefix[i]
 		if shared > prev.len {
 			assert false, 'entry ${i} claims a ${shared} byte prefix but the previous name is ${prev.len}'
 		}
-		end := start + int(ucd.codepoint_name_offsets_delta[i + 1])
+		end := start + offsets[i + 1]
 		if start > end || end > ucd.codepoint_names_data.len {
 			assert false, 'entry ${i} has offsets ${start}..${end} outside a blob of ${ucd.codepoint_names_data.len}'
 		}
@@ -131,6 +134,16 @@ fn test_every_name_in_the_table_rebuilds() {
 	}
 	assert checked > 100000, 'the table should hold every assigned codepoint, walked ${checked}'
 	assert start == ucd.codepoint_names_data.len, 'the walk should end at the end of the blob'
+}
+
+fn test_parse_ints_reads_the_generated_delta_tables() {
+	// The decoder the accessors use, pinned directly rather than through the 143,217 entries that
+	// happen to use it. The generated tables wrap lines at 100 columns and separate values with
+	// single spaces, so both shapes are exercised here.
+	assert ucd.parse_ints('') == []int{}
+	assert ucd.parse_ints('32 1 1 34') == [32, 1, 1, 34]
+	assert ucd.parse_ints('32 1\n1 34\n') == [32, 1, 1, 34]
+	assert ucd.parse_ints('0') == [0]
 }
 
 fn test_joining_type_names_are_words_not_numbers() {

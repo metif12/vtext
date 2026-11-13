@@ -266,17 +266,18 @@ jobs:
         shell: bash
         run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
 
-      # A caller thread needs a stack the 2 MB of static literals in _vinit fit
-      # in, the same 32 MB reserve V gives its own executables. Linux and macOS
-      # default to 8 MB main-thread stacks, which is enough; Windows defaults
-      # to 1 MB, so the test binary is linked with the reserve explicitly. The
-      # library is copied beside the binary everywhere, which is what the
-      # loader looks at first on all three platforms.
+      # The smoke binary links a default stack. That is the point: the name
+      # tables once materialised as 2 MB of stack literals in _vinit and the
+      # test linked a 32 MB reserve to get past it. Since the tables generate
+      # as parsed strings the reserve is gone, and a loader or stack fault
+      # here fails the gate rather than being worked around. The library is
+      # copied beside the binary everywhere, which is what the loader looks
+      # at first on all three platforms.
       - name: Build and place the smoke test (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -L. -lvtext -Wl,--stack,33554432 -static-libgcc -o examples/c-api/smoke.exe
+          gcc examples/c-api/smoke.c -L. -lvtext -static-libgcc -o examples/c-api/smoke.exe
           cp vtext.dll examples/c-api/
           # The MinGW runtime this gcc links against dynamically lives in its
           # own directory, not beside the exe, so the loader dies as

@@ -65,9 +65,10 @@ fn test_a_record_after_a_variation_index_record_is_still_found() {
 	assert second.x_advance == -30, 'the second record is found past the variation index, got ${second.x_advance}'
 }
 
-// The four variation-index bits were missing from the width until 2026-10-04. No font on this machine sets
-// one — measured across all 341 fonts available, not assumed — so nothing else would have caught it, and
-// this is the assertion that says so rather than the absence of a failure.
+// The four variation-index bits were missing from the width until 2026-10-04. SegUIVar sets 9,430 of
+// them and SitkaVF two — measured across all 379 faces on this machine, not assumed — and stepping
+// past them is what keeps every record after one readable, so this is the assertion that says so
+// rather than the absence of a failure.
 fn test_the_four_variation_index_bits_are_counted() {
 	mut counted := 0
 	for bit in [u16(0x0100), u16(0x0200), u16(0x0400), u16(0x0800)] {
