@@ -1771,6 +1771,18 @@ move. Valgrind-clean after, 0 errors from 0 contexts. The `-gc none` transients
 were already dropped uncollected by design; the boxes add one buffer per call
 to the same heap, which is the documented cost, not a new one.
 
+Windows stayed red after that, with a different signature: no abort and no output at
+all, exit -1073741515 (STATUS_DLL_NOT_FOUND) where bash reports a bare 127. The
+import tables, printed by objdump on CI for exactly this, show why: the smoke binary
+imports `out.exe` — V links the DLL with the internal object name `out` (the same
+root cause as the macOS install name above), and linking straight against vtext.dll
+propagates that name into the exe, which loads nowhere. The MinGW import library step
+already existed to link a clean import table, but it ran after the smoke test; moving
+it before the smoke build makes `-lvtext` resolve to the `--dllname vtext.dll` table
+instead. The MinGW runtime DLLs the runner's gcc links dynamically travel beside the
+outputs for the same reason: a loader failure prints nothing, so the build ships
+everything the tables name.
+
 **Device and variation offsets.** One Device record in 341 fonts (SitkaVF),
 zero VariationIndex. `kern_offset_at` with a ppem, per the design already
 written down, verified against that one record; the variation half needs the

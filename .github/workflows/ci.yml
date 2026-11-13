@@ -253,6 +253,19 @@ jobs:
           install_name_tool -id @rpath/${{ matrix.lib }} ${{ matrix.lib }}
           otool -D ${{ matrix.lib }}
 
+      # The import library first: `-lvtext` must resolve to this, with the
+      # curated `--dllname vtext.dll`, and not auto-import from vtext.dll
+      # itself. V links the DLL with the internal object name `out` (the same
+      # root cause as the macOS install name above), and a direct link records
+      # that name — the smoke binary ended up importing `out.exe`, which loads
+      # nowhere, dies as STATUS_DLL_NOT_FOUND with no output, and reads as a
+      # bare 127 under bash. Through this import library the recorded name is
+      # the file beside the exe.
+      - name: MinGW import library (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
+
       # A caller thread needs a stack the 2 MB of static literals in _vinit fit
       # in, the same 32 MB reserve V gives its own executables. Linux and macOS
       # default to 8 MB main-thread stacks, which is enough; Windows defaults
@@ -318,11 +331,6 @@ jobs:
           echo smoke exit: %ERRORLEVEL%
           exit /b %ERRORLEVEL%
         working-directory: examples/c-api
-
-      - name: MinGW import library (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
-        run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
 
       - name: Upload the C library and headers
         uses: actions/upload-artifact@v4
