@@ -820,7 +820,7 @@ fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth int) ?
 				Edit{
 					start:    pos
 					consumed: 1
-					glyphs:   ligatables([sub], items[pos])
+					glyphs:   g.ligatables([sub], items[pos])
 				},
 			]
 		}
@@ -832,7 +832,7 @@ fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth int) ?
 				Edit{
 					start:    pos
 					consumed: 1
-					glyphs:   ligatables(seq, items[pos])
+					glyphs:   g.ligatables(seq, items[pos])
 				},
 			]
 		}
@@ -849,7 +849,7 @@ fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth int) ?
 				Edit{
 					start:    pos
 					consumed: 1
-					glyphs:   ligatables([alt], items[pos])
+					glyphs:   g.ligatables([alt], items[pos])
 				},
 			]
 		}
@@ -911,7 +911,7 @@ fn (g &Gsub) apply_ligature(lookup Lookup, items []Ligatable, eff []int, at int)
 			Edit{
 				start:    pos
 				consumed: m.consumed
-				glyphs:   ligatables([m.glyph], items[pos])
+				glyphs:   g.ligatables([m.glyph], items[pos])
 			},
 		]
 	}
@@ -1285,15 +1285,27 @@ fn one_at(pos int) []int {
 //
 // They share it because that is what they are: several glyphs of a single input character, which
 // is the case a layout pass has to be told about separately.
-fn ligatables(seq []u16, from Ligatable) []Ligatable {
+//
+// A piece the font classifies as a mark is flagged as one even when the input was not: a 1:N
+// split of a base letter produces the letter's dot components, and the font's GDEF table is
+// what says those are marks. Without the flag they draw at the pen unplaced, which is how
+// Nastaliq rendered its dots. A font with no GDEF answers from the input alone, which is what
+// this did before.
+fn (g &Gsub) ligatables(seq []u16, from Ligatable) []Ligatable {
 	mut out := []Ligatable{cap: seq.len}
 	for gid in seq {
+		mut is_mark := from.is_mark
+		if !is_mark {
+			if gd := g.gdef {
+				is_mark = gd.is_mark(gid)
+			}
+		}
 		out << Ligatable{
 			gid:     gid
 			cluster: from.cluster
 			source:  from.source
 			form:    from.form
-			is_mark: from.is_mark
+			is_mark: is_mark
 		}
 	}
 	return out

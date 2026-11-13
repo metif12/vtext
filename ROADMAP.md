@@ -29,7 +29,7 @@ comes with them.
 | GPOS: single positioning (format 1) | done |
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | done, and measured: **19,343 of 19,346 (99.98%)** against the Unicode test, with a floor asserted on every run |
+| Line breaking (UAX #14) | done, and measured: **19,346 of 19,346 (100%)** against the Unicode test, with a floor asserted on every run |
 | Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
@@ -114,7 +114,7 @@ dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictio
 and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
 they are not there.
 
-**Measured, because "done" above was a description and not a number. 19,343 of 19,346 — 99.98%.**
+**Measured, because "done" above was a description and not a number. 19,346 of 19,346 — 100%, the file's own end.**
 
 `ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
 committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
@@ -1735,8 +1735,19 @@ carried. `× 1BD2 × 1BEA × 1BC9 × 1BF3 ÷` holds at 1BEA|1BC9 because the pai
 read through the mark is AS × AS and 1BF3 is VF; without the VF ahead the
 same pair breaks at LB31. The arm follows from UAX #14's LB28a text — four
 patterns, the fourth never written — so no Indic data was fetched and none is
-needed. Floor **19,343 of 19,346**; three span-boundary cases remain, named
+needed. Floor **19,343 of 19,346**; three span-boundary cases remained, named
 above.
+
+On 2026-11-14 those three landed together, and the note was wrong a second
+time in the same way: it said the pair engine could not span a quotation, and
+a counter threaded through the walk does exactly that. A closing mark breaks
+after itself before an ideograph when it closes a still-open span, whether or
+not the position in front broke (`× FF1F × 201D ÷ 5B50 ÷` and its two
+siblings, whose opener stands dozens of characters back) — but only onto an
+East Asian base. The same marks around a Latin word hold at [19.13]
+(`× 0067 × 201D × 5956 ×`), so a Wide or Fullwidth base breaks and anything
+else holds: LB19a's exception read off the pair, the base read through marks.
+Floor **19,346 of 19,346 — the file's own end, zero remaining.**
 
 **C API and usage guide.** The library is usable from C: `vtext.h` with opaque
 handles over contexts, font sets, fonts, lines, wraps, breaks and bitmaps,

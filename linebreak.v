@@ -109,6 +109,13 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 	eu := ucd.ep_unassigned_ranges()
 
 	mut out := []BreakOpportunity{}
+	// Quotation-span state: how many opening marks are still open. A closing
+	// mark breaks after itself only when it closes one of these; a stray Pf
+	// with nothing open holds by the rules below. The state is an int rather
+	// than a flag because spans nest, and an inner close still closes. Only
+	// definite marks count — a mark that can be either (U+0022, U+0027) opens
+	// and closes nothing, because the pair engine cannot tell which it is.
+	mut quote_depth := 0
 	for i in 0 .. n - 1 {
 		// LB21b is first, and it is the only rule that looks at more than the two characters either
 		// side. It has to come before the pairs because it is about a hyphen in an existing break, and
@@ -126,10 +133,24 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 		// stands alone breaks on both sides, and "stands alone" is exactly this: the
 		// break in front of it already happened.
 		prev_broke := out.len > 0 && out[out.len - 1].start == i
+		// Whether this position closes a quotation span: the left character is a
+		// closing mark and an opening mark is still open. Decided here, where the
+		// pair is, rather than inside the rule, because the depth belongs to the
+		// walk and the rule only answers.
+		left_role := ucd.quote_role_of(quote, cps[i])
+		closes_span := left_role == .pf && quote_depth > 0
 		// LB7, and then the pairs, in the order the specification numbers them. The
 		// order is not arbitrary: LB8 has to come before LB8a, which has to come
 		// before LB9, and a later rule may not override an earlier one.
-		kind := break_kind(props, cps, classes, quote, ea, eu, prev_broke, i)
+		kind := break_kind(props, cps, classes, quote, ea, eu, prev_broke, closes_span, i)
+		// The span state moves past every position the same way, break or no
+		// break: a closing mark closes its span whether a line may end after
+		// it or not, and a break does not close anything early.
+		if left_role == .pi {
+			quote_depth++
+		} else if left_role == .pf && quote_depth > 0 {
+			quote_depth--
+		}
 		if kind == BreakKind.no {
 			continue
 		}
@@ -178,7 +199,7 @@ fn is_mandatory_break_at(classes []ucd.LineBreakClass, pos int, n int, mandatory
 // because "no rule matched" and "a later rule matched" are the same thing to
 // every rule below it.
 fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass, quote []ucd.CodeRange,
-	ea []ucd.CodeRange, eu []ucd.CodeRange, prev_broke bool, i int) BreakKind {
+	ea []ucd.CodeRange, eu []ucd.CodeRange, prev_broke bool, closes_span bool, i int) BreakKind {
 	left := classes[i]
 	right := classes[i + 1]
 	n := classes.len
@@ -359,8 +380,33 @@ fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass, q
 	// first mark follows a break and the second does not. The end-list below would
 	// hold both, so this answers first — but only for a mark followed by an
 	// ideograph, which is every breaking case the file has.
-	if left == .qu && ucd.quote_role_of(quote, cps[i]) == .pf && right == .idas && prev_broke {
-		return BreakKind.allowed
+	//
+	// A closing mark also breaks after itself when it closes a quotation span that
+	// is still open, whether or not the position in front broke: `× FF1F × 201D ÷
+	// 5B50 ÷` and its two siblings are [31.01] breaks whose opener (U+201C) stands
+	// dozens of characters back. The standalone case above is the same question
+	// asked about the position in front; this one is asked about the whole line,
+	// which is why the state has to thread through the walk rather than living in
+	// the pair. A stray Pf with nothing open still holds, which is what keeps the
+	// LB15b `A × SP × QU_Pf` lines and the [19.13] hold from breaking.
+	if left == .qu && ucd.quote_role_of(quote, cps[i]) == .pf && right == .idas
+		&& (prev_broke || closes_span) {
+		// A span closed on CJK text breaks; the same marks around a Latin word
+		// hold at [19.13] (`× 0067 × 201D × 5956 ×`). What tells them apart is
+		// the width of what the mark stands on: a Wide or Fullwidth base breaks
+		// and anything else holds, which is LB19a's East Asian exception read
+		// off the pair rather than the span. The base is read through marks
+		// the way eff_left is, because a mark's own width says nothing.
+		if prev_broke {
+			return BreakKind.allowed
+		}
+		mut pb := i - 1
+		for pb > 0 && is_markish(classes[pb]) {
+			pb--
+		}
+		if pb >= 0 && ucd.is_east_asian(ea, cps[pb]) {
+			return BreakKind.allowed
+		}
 	}
 	if is_prohibited_end(left) {
 		// LB14 through LB17: the left-hand character may not end a line, including the forms that

@@ -150,7 +150,13 @@ fn test_marks_survive_shaping_as_marks() {
 			assert approx_zero(g.advance), 'a mark never advances the pen, got ${g.advance}'
 		}
 	}
-	assert marks == 1, 'the fatha is still one mark, got ${marks}'
+	// Two, not one: the beh itself splits into its base (gid 14) and its dot
+	// (gid 323) through the joining features, and the font's GDEF table says the
+	// dot is a mark. HarfBuzz draws the same three glyphs — 380 and 323 at zero
+	// advance, 14 at 772 — so the second mark is the font's answer rather than
+	// the engine's invention. With the GDEF classification reverted the dot rides
+	// as a letter and this fails naming one mark.
+	assert marks == 2, 'the fatha and the beh dot are both marks, got ${marks}'
 }
 
 // The control for the whole masking idea: a font that maps the presentation forms takes the cmap route, and

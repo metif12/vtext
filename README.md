@@ -225,8 +225,8 @@ the caller assigns.
 Shaping is measured against four independent engines, not described. `tools/shapedump.v`
 dumps any case as tab-separated glyphs (advance, offsets, cluster, source font, box,
 coverage), and `tools/difftest/compare.py` lays HarfBuzz, fontTools, Pillow and Pango
-beside it over thirteen cases, from `سلام` to mixed bidi with digits. Every difference
-found is recorded in `tools/difftest/baseline.tsv` — currently one hundred and seventeen entries, each
+beside it over fifteen cases, from `سلام` to mixed bidi with digits. Every difference
+found is recorded in `tools/difftest/baseline.tsv` — currently one hundred and forty-nine entries, each
 with its reason in `ROADMAP.md` — and CI fails on any new difference or any fixed one
 left unrecorded, in both directions. The Pango leg compares wrap widths at a fixed
 width and a full-line Cairo render against a vtext-composed image, pixel by pixel;

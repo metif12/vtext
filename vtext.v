@@ -226,6 +226,16 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 		mut glyph := glyphs[item.source]
 		glyph.gid = item.gid
 		glyph.cluster = item.cluster
+		// The substitution may have decided this piece is a mark — a 1:N split of a base
+		// letter produces the letter's dot components, and the font's GDEF table is what
+		// says those are marks. The flag rides on the substitution result rather than on
+		// the input glyph, because the input was the base letter and the pieces are not.
+		// A piece that became a mark also loses the base's advance: a mark never moves
+		// the pen, and carrying the base's advance would charge one character twice.
+		if item.is_mark && !glyph.is_mark {
+			glyph.advance = 0
+		}
+		glyph.is_mark = item.is_mark
 		// A mark never advances the pen, whatever glyph it ended up as, so its zero advance is
 		// kept rather than measured. Measuring it would give a mark the width of its outline and
 		// push everything after it along the line.

@@ -23,3 +23,5 @@ persian-digits	Amiri-Regular.ttf	06F1 06F2 06F3 0020 0641 0627 0631 0633 06CC 00
 nastaliq-hello	NotoNastaliqUrdu-Regular.ttf	0633 0644 0627 0645 0020 062F 0646 06CC 0627	rtl	32
 naskh-joining	NotoNaskhArabic-Regular.ttf	0633 0644 0627 0645 0020 062F 0646 06CC 0627	rtl	32
 variable-naskh	NotoNaskhArabic-Variable.ttf	0645 062A 0646 0020 0622 0632 0645 0627 06CC 0634 06CC	rtl	32
+latin-marks	Amiri-Regular.ttf	0063 0072 0065 0300 006D 0065 0020 0062 0072 0075 0302 006C 0065 0301 0065 0020 006E 0061 0069 0308 0076 0065	ltr	32
+latin-kern	Amiri-Regular.ttf	0041 0056 0041 0057 0041 0059 006F 0054 0061	ltr	32

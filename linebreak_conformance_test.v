@@ -114,16 +114,18 @@ import os
 // CJK with CJK or opening after, and a span-state (`prev_broke`) break for a standalone closing
 // mark before an ideograph.
 //
-// Three cases remain, each recorded rather than coded around: the [31.01]
-// `Pf|ID` span-boundary breaks need quotation-span state the pair engine
-// threads `prev_broke` for but does not yet decide across a full span.
-// The fourth, [28.14] (`× 1BD7 × 1BEC ÷ …`, CM|AS), landed 2026-11-13 as LB28a's
-// fourth arm — `(AK|◌|AS) × (AK|◌|AS) VF` — and the note that stood here was
-// wrong about why it was missing. It said the arm needed the Indic syllabic
-// categories; it needs a three-character lookahead the engine never wrote.
-// Measured clean on this tree: 19,343 of 19,346, the same three in
-// every rerun.
-const conformance_floor = 19343
+// On 2026-11-13 the last three landed together, and the note that stood here
+// was wrong about why they were missing in the same way the [28.14] note was:
+// it said the pair engine could not span a quotation, and a counter threaded
+// through the walk does exactly that. A closing mark breaks after itself when
+// it closes a still-open span (`closes_span`), whether or not the position in
+// front broke — `× FF1F × 201D ÷ 5B50 ÷` and its two siblings, whose opener
+// stands dozens of characters back. And only onto an East Asian base: the same
+// marks around a Latin word hold at [19.13] (`× 0067 × 201D × 5956 ×`), so a
+// Wide or Fullwidth base breaks and anything else holds, which is LB19a's
+// exception read off the pair. Measured clean on this tree: 19,346 of 19,346,
+// no remaining failures.
+const conformance_floor = 19346
 
 // parse_case reads one line of the test file up to its comment and returns the codepoints and the break
 // decisions.
