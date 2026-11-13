@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Tests for the generated codepoint name table and for the trace-facing wrappers in trace_api.v.
 //
 // The table is front coded and delta coded, which means a wrong answer is a plausible string rather than a
@@ -104,14 +106,14 @@ fn test_every_name_in_the_table_rebuilds() {
 	// running sum. The index is i+1 and not i, because offsets_delta[i] is the step *into* entry i and is
 	// already inside start; adding it again is what put every end past the end of the blob.
 	mut start := 0
-	for i in 0 .. codepoint_name_cps_delta.len {
-		shared := int(codepoint_name_prefix[i])
+	for i in 0 .. ucd.codepoint_name_cps_delta.len {
+		shared := int(ucd.codepoint_name_prefix[i])
 		if shared > prev.len {
 			assert false, 'entry ${i} claims a ${shared} byte prefix but the previous name is ${prev.len}'
 		}
-		end := start + int(codepoint_name_offsets_delta[i + 1])
-		if start > end || end > codepoint_names_data.len {
-			assert false, 'entry ${i} has offsets ${start}..${end} outside a blob of ${codepoint_names_data.len}'
+		end := start + int(ucd.codepoint_name_offsets_delta[i + 1])
+		if start > end || end > ucd.codepoint_names_data.len {
+			assert false, 'entry ${i} has offsets ${start}..${end} outside a blob of ${ucd.codepoint_names_data.len}'
 		}
 		// The prefix bytes are copied as they are compared, so the check costs nothing over the copy that
 		// has to happen anyway. The comparison is against the previous name, which is the only thing the
@@ -121,14 +123,14 @@ fn test_every_name_in_the_table_rebuilds() {
 			out << prev[p]
 		}
 		for k in start .. end {
-			out << codepoint_names_data[k]
+			out << ucd.codepoint_names_data[k]
 		}
 		prev = out.clone()
 		start = end
 		checked++
 	}
 	assert checked > 100000, 'the table should hold every assigned codepoint, walked ${checked}'
-	assert start == codepoint_names_data.len, 'the walk should end at the end of the blob'
+	assert start == ucd.codepoint_names_data.len, 'the walk should end at the end of the blob'
 }
 
 fn test_joining_type_names_are_words_not_numbers() {

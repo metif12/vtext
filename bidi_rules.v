@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // The weak, neutral and implicit resolution rules of UAX#9 (W1 to N2 and I1, I2),
 // applied to one isolating run sequence at a time.
 //
@@ -10,7 +12,7 @@ module vtext
 // skipped: they are not part of the text the rules operate on.
 
 // is_removed reports whether a working type marks a character removed by X9.
-fn is_removed(c BidiClass) bool {
+fn is_removed(c ucd.BidiClass) bool {
 	return c == .x9_removed
 }
 
@@ -18,7 +20,7 @@ fn is_removed(c BidiClass) bool {
 //
 // orig holds the classes from before the copy was made, so idx has to be threaded
 // through every read of it: the working array is dense and the original is not.
-fn apply_w_rules(mut types []BidiClass, orig []BidiClass, idx []int, sos BidiClass) {
+fn apply_w_rules(mut types []ucd.BidiClass, orig []ucd.BidiClass, idx []int, sos ucd.BidiClass) {
 	// W1: an NSM takes the type of the previous character, or sos when it is first.
 	// When the previous character is an isolate initiator or PDI the NSM becomes
 	// ON. A chain of marks therefore all end up with the same type.
@@ -129,14 +131,14 @@ fn apply_w_rules(mut types []BidiClass, orig []BidiClass, idx []int, sos BidiCla
 // Only L, R and AL are strong. A European or Arabic number is not, and it matters
 // that the scan skips it: W2 changes an EN into an AN, and treating the new AN as
 // the strong type it just came from would lose the AL that asked for the change.
-fn strong_at(types []BidiClass, pos int) BidiClass {
+fn strong_at(types []ucd.BidiClass, pos int) ucd.BidiClass {
 	if types[pos] in [.l, .r, .al] {
 		return types[pos]
 	}
 	return .class_none
 }
 
-fn is_isolate_or_pdi(c BidiClass) bool {
+fn is_isolate_or_pdi(c ucd.BidiClass) bool {
 	return c in [.lri, .rli, .fsi, .pdi]
 }
 
@@ -157,8 +159,8 @@ fn is_isolate_or_pdi(c BidiClass) bool {
 //   otherwise either there is no strong type inside, in which case N1 and N2 will
 //       resolve the brackets on their own, or there is no supporting context, in
 //       which case both brackets fall back to the embedding direction.
-fn apply_n0(mut types []BidiClass, cps []rune, orig []BidiClass, idx []int, levels []u8,
-	sos BidiClass) {
+fn apply_n0(mut types []ucd.BidiClass, cps []rune, orig []ucd.BidiClass, idx []int, levels []u8,
+	sos ucd.BidiClass) {
 	brackets := bracket_table()
 	for pair in find_bracket_pairs(brackets, cps, types, idx) {
 		// The embedding direction of a bracket is the parity of its own level.
@@ -207,7 +209,7 @@ fn apply_n0(mut types []BidiClass, cps []rune, orig []BidiClass, idx []int, leve
 // preceding_strong returns the nearest strong type before position, or sos when
 // there is none. The types are read as they stand, so a bracket that N0 has already
 // resolved counts as the strong type it became.
-fn preceding_strong(types []BidiClass, position int, sos BidiClass) BidiClass {
+fn preceding_strong(types []ucd.BidiClass, position int, sos ucd.BidiClass) ucd.BidiClass {
 	for i := position - 1; i >= 0; i-- {
 		c := strong_as_r(types[i])
 		if c != .class_none {
@@ -240,7 +242,7 @@ struct BracketPositions {
 // BD16 emits a pair when the closing bracket is seen, but N0 then works through the
 // pairs in the logical order of their *opening* brackets, so the list is sorted
 // before it is returned.
-fn find_bracket_pairs(brackets []BracketPair, cps []rune, types []BidiClass, idx []int) []BracketPositions {
+fn find_bracket_pairs(brackets []BracketPair, cps []rune, types []ucd.BidiClass, idx []int) []BracketPositions {
 	mut stack := []int{}
 	mut out := []BracketPositions{}
 	for pos in 0 .. idx.len {
@@ -283,7 +285,7 @@ fn find_bracket_pairs(brackets []BracketPair, cps []rune, types []BidiClass, idx
 
 // strong_as_r returns L or R, or .class_none when the type is not strong. Numbers
 // count as R, which is what N0 specifies.
-fn strong_as_r(c BidiClass) BidiClass {
+fn strong_as_r(c ucd.BidiClass) ucd.BidiClass {
 	match c {
 		.l, .r {
 			return c
@@ -299,7 +301,7 @@ fn strong_as_r(c BidiClass) BidiClass {
 
 // propagate_marks gives the marks that immediately follow position the new type,
 // which is what N0 requires of NSMs that trailed a changed bracket.
-fn propagate_marks(mut types []BidiClass, orig []BidiClass, idx []int, position int, value BidiClass) {
+fn propagate_marks(mut types []ucd.BidiClass, orig []ucd.BidiClass, idx []int, position int, value ucd.BidiClass) {
 	mut i := position + 1
 	for i < types.len {
 		if orig[idx[i]] != .nsm {
@@ -321,7 +323,7 @@ fn propagate_marks(mut types []BidiClass, orig []BidiClass, idx []int, position 
 // leave them with their own class unless an override rewrites it, so the current
 // type is enough here: a bracket N0 already resolved to L or R is strong by now and
 // is not dragged around again.
-fn apply_n_rules(mut types []BidiClass, sos BidiClass, eos BidiClass, levels []u8, idx []int) {
+fn apply_n_rules(mut types []ucd.BidiClass, sos ucd.BidiClass, eos ucd.BidiClass, levels []u8, idx []int) {
 	mut i := 0
 	for i < types.len {
 		if is_removed(types[i]) || !types[i].is_neutral_or_isolate() {
@@ -350,7 +352,7 @@ fn apply_n_rules(mut types []BidiClass, sos BidiClass, eos BidiClass, levels []u
 //
 // explicit holds the levels X1 to X8 assigned, which is what the parity is read
 // from; levels is the output and receives the resolved level.
-fn apply_i_rules(types []BidiClass, explicit []u8, mut levels []u8, idx []int) {
+fn apply_i_rules(types []ucd.BidiClass, explicit []u8, mut levels []u8, idx []int) {
 	for pos in 0 .. idx.len {
 		c := types[pos]
 		if is_removed(c) {
@@ -377,7 +379,7 @@ fn apply_i_rules(types []BidiClass, explicit []u8, mut levels []u8, idx []int) {
 // apply_l1 implements rule L1: separators, and any run of whitespace or isolate
 // formatting characters before a separator or at the end of the line, take the
 // paragraph level.
-fn apply_l1(orig []BidiClass, mut levels []u8, para_level u8) {
+fn apply_l1(orig []ucd.BidiClass, mut levels []u8, para_level u8) {
 	for j in 0 .. orig.len {
 		if orig[j] == .s || orig[j] == .b {
 			levels[j] = para_level

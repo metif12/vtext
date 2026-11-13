@@ -1,13 +1,14 @@
 module vtext
 
+import vtext.ucd
 import os
 
 // The tables come straight from the UCD, so the tests check the lookup against
 // codepoints whose property is not in question, plus one full sweep of the
 // generated file against the UCD it was derived from.
 
-fn props() &Properties {
-	return new_properties()
+fn props() &ucd.Properties {
+	return ucd.new_properties()
 }
 
 fn test_bidi_class_of_known_codepoints() {
@@ -28,8 +29,8 @@ fn test_bidi_class_of_known_codepoints() {
 
 fn test_bidi_class_str_round_trip() {
 	p := props()
-	assert BidiClass.al.str() == 'AL'
-	assert BidiClass.l.str() == 'L'
+	assert ucd.BidiClass.al.str() == 'AL'
+	assert ucd.BidiClass.l.str() == 'L'
 	assert p.bidi_class_name(rune(0x0627)) == 'AL'
 }
 
@@ -51,30 +52,30 @@ fn test_joining_type_predicates() {
 	// A right joining letter such as alef connects to what comes before it: in alef then
 	// beh, the beh sits to the alef's left on screen and joins into it, so the alef takes
 	// a final form.
-	assert JoiningType.r.joins_to_previous()
-	assert !JoiningType.r.joins_to_next()
+	assert ucd.JoiningType.r.joins_to_previous()
+	assert !ucd.JoiningType.r.joins_to_next()
 	// A left joining letter is the mirror image.
-	assert JoiningType.l.joins_to_next()
-	assert !JoiningType.l.joins_to_previous()
+	assert ucd.JoiningType.l.joins_to_next()
+	assert !ucd.JoiningType.l.joins_to_previous()
 	// A dual joining letter connects on both sides.
-	assert JoiningType.d.joins_to_previous()
-	assert JoiningType.d.joins_to_next()
+	assert ucd.JoiningType.d.joins_to_previous()
+	assert ucd.JoiningType.d.joins_to_next()
 	// A join causing character holds a connection open on both sides without being a
 	// letter itself, which is what ZWJ and tatweel do.
-	assert JoiningType.c.joins_to_previous()
-	assert JoiningType.c.joins_to_next()
-	assert JoiningType.c.takes_a_shape()
+	assert ucd.JoiningType.c.joins_to_previous()
+	assert ucd.JoiningType.c.joins_to_next()
+	assert ucd.JoiningType.c.takes_a_shape()
 	// A non-joining character and a transparent one connect to nothing.
-	assert !JoiningType.u.joins_to_previous()
-	assert !JoiningType.u.joins_to_next()
-	assert !JoiningType.t.joins_to_previous()
-	assert !JoiningType.t.joins_to_next()
-	assert !JoiningType.t.takes_a_shape()
-	assert !JoiningType.u.takes_a_shape()
+	assert !ucd.JoiningType.u.joins_to_previous()
+	assert !ucd.JoiningType.u.joins_to_next()
+	assert !ucd.JoiningType.t.joins_to_previous()
+	assert !ucd.JoiningType.t.joins_to_next()
+	assert !ucd.JoiningType.t.takes_a_shape()
+	assert !ucd.JoiningType.u.takes_a_shape()
 	// Only transparent characters are skipped when deciding joins.
-	assert JoiningType.t.is_transparent()
-	assert !JoiningType.d.is_transparent()
-	assert !JoiningType.c.is_transparent()
+	assert ucd.JoiningType.t.is_transparent()
+	assert !ucd.JoiningType.d.is_transparent()
+	assert !ucd.JoiningType.c.is_transparent()
 }
 
 fn test_joining_group_covers_arabic_letters() {
@@ -137,35 +138,35 @@ fn test_line_break_of_known_codepoints() {
 
 fn test_lookup_range_handles_edges() {
 	ranges := [
-		CodeRange{ lo: 0x10, hi: 0x1f, value: 5 }
-		CodeRange{ lo: 0x30, hi: 0x3f, value: 7 },
+		ucd.CodeRange{ lo: 0x10, hi: 0x1f, value: 5 }
+		ucd.CodeRange{ lo: 0x30, hi: 0x3f, value: 7 },
 	]
-	assert lookup_range(ranges, 0x00, 0) == 0
-	assert lookup_range(ranges, 0x0f, 0) == 0
-	assert lookup_range(ranges, 0x10, 0) == 5
-	assert lookup_range(ranges, 0x1f, 0) == 5
-	assert lookup_range(ranges, 0x20, 0) == 0
-	assert lookup_range(ranges, 0x30, 0) == 7
-	assert lookup_range(ranges, 0x3f, 0) == 7
-	assert lookup_range(ranges, 0x40, 0) == 0
-	assert lookup_range(ranges, 0x7fffffff, 0) == 0
+	assert ucd.lookup_range(ranges, 0x00, 0) == 0
+	assert ucd.lookup_range(ranges, 0x0f, 0) == 0
+	assert ucd.lookup_range(ranges, 0x10, 0) == 5
+	assert ucd.lookup_range(ranges, 0x1f, 0) == 5
+	assert ucd.lookup_range(ranges, 0x20, 0) == 0
+	assert ucd.lookup_range(ranges, 0x30, 0) == 7
+	assert ucd.lookup_range(ranges, 0x3f, 0) == 7
+	assert ucd.lookup_range(ranges, 0x40, 0) == 0
+	assert ucd.lookup_range(ranges, 0x7fffffff, 0) == 0
 }
 
 fn test_parse_ranges_round_trip() {
-	got := parse_ranges('0041 005a 0\n0061 007a 3\n')
+	got := ucd.parse_ranges('0041 005a 0\n0061 007a 3\n')
 	assert got.len == 2
 	assert got[0].lo == 0x41 && got[0].hi == 0x5a && got[0].value == 0
 	assert got[1].lo == 0x61 && got[1].hi == 0x7a && got[1].value == 3
 	// A trailing record without a newline must still be read.
-	assert parse_ranges('0007 0007 1').len == 1
-	assert parse_ranges('').len == 0
+	assert ucd.parse_ranges('0007 0007 1').len == 1
+	assert ucd.parse_ranges('').len == 0
 }
 
 fn test_parse_names() {
-	assert parse_names('L\nR\nEN\n') == ['L', 'R', 'EN']
-	assert parse_names('').len == 0
+	assert ucd.parse_names('L\nR\nEN\n') == ['L', 'R', 'EN']
+	assert ucd.parse_names('').len == 0
 	// Blank lines are skipped so a trailing newline is harmless.
-	assert parse_names('A\n\nB\n').len == 2
+	assert ucd.parse_names('A\n\nB\n').len == 2
 }
 
 // test_tables_are_not_trivially_empty guards against a generator run that wrote
@@ -185,7 +186,7 @@ fn test_tables_are_not_trivially_empty() {
 	assert_range_sorted(p.linebreak_ranges)
 }
 
-fn assert_range_sorted(ranges []CodeRange) {
+fn assert_range_sorted(ranges []ucd.CodeRange) {
 	mut prev_hi := u32(0)
 	for i, r in ranges {
 		if i > 0 {
@@ -203,74 +204,74 @@ fn test_value_tables_match_the_enums() {
 	p := props()
 	// The bidi and joining enums are checked name by name, because every one of
 	// their values is used by the algorithm.
-	assert p.bidi_names[int(BidiClass.l)] == 'L'
-	assert p.bidi_names[int(BidiClass.r)] == 'R'
-	assert p.bidi_names[int(BidiClass.en)] == 'EN'
-	assert p.bidi_names[int(BidiClass.es)] == 'ES'
-	assert p.bidi_names[int(BidiClass.et)] == 'ET'
-	assert p.bidi_names[int(BidiClass.an)] == 'AN'
-	assert p.bidi_names[int(BidiClass.cs)] == 'CS'
-	assert p.bidi_names[int(BidiClass.b)] == 'B'
-	assert p.bidi_names[int(BidiClass.s)] == 'S'
-	assert p.bidi_names[int(BidiClass.ws)] == 'WS'
-	assert p.bidi_names[int(BidiClass.on)] == 'ON'
-	assert p.bidi_names[int(BidiClass.bn)] == 'BN'
-	assert p.bidi_names[int(BidiClass.nsm)] == 'NSM'
-	assert p.bidi_names[int(BidiClass.al)] == 'AL'
-	assert p.bidi_names[int(BidiClass.lro)] == 'LRO'
-	assert p.bidi_names[int(BidiClass.rlo)] == 'RLO'
-	assert p.bidi_names[int(BidiClass.lre)] == 'LRE'
-	assert p.bidi_names[int(BidiClass.rle)] == 'RLE'
-	assert p.bidi_names[int(BidiClass.pdf)] == 'PDF'
-	assert p.bidi_names[int(BidiClass.lri)] == 'LRI'
-	assert p.bidi_names[int(BidiClass.rli)] == 'RLI'
-	assert p.bidi_names[int(BidiClass.fsi)] == 'FSI'
-	assert p.bidi_names[int(BidiClass.pdi)] == 'PDI'
-	assert p.bidi_names.len == int(BidiClass.pdi) + 1, 'bidi name table has extra entries'
+	assert p.bidi_names[int(ucd.BidiClass.l)] == 'L'
+	assert p.bidi_names[int(ucd.BidiClass.r)] == 'R'
+	assert p.bidi_names[int(ucd.BidiClass.en)] == 'EN'
+	assert p.bidi_names[int(ucd.BidiClass.es)] == 'ES'
+	assert p.bidi_names[int(ucd.BidiClass.et)] == 'ET'
+	assert p.bidi_names[int(ucd.BidiClass.an)] == 'AN'
+	assert p.bidi_names[int(ucd.BidiClass.cs)] == 'CS'
+	assert p.bidi_names[int(ucd.BidiClass.b)] == 'B'
+	assert p.bidi_names[int(ucd.BidiClass.s)] == 'S'
+	assert p.bidi_names[int(ucd.BidiClass.ws)] == 'WS'
+	assert p.bidi_names[int(ucd.BidiClass.on)] == 'ON'
+	assert p.bidi_names[int(ucd.BidiClass.bn)] == 'BN'
+	assert p.bidi_names[int(ucd.BidiClass.nsm)] == 'NSM'
+	assert p.bidi_names[int(ucd.BidiClass.al)] == 'AL'
+	assert p.bidi_names[int(ucd.BidiClass.lro)] == 'LRO'
+	assert p.bidi_names[int(ucd.BidiClass.rlo)] == 'RLO'
+	assert p.bidi_names[int(ucd.BidiClass.lre)] == 'LRE'
+	assert p.bidi_names[int(ucd.BidiClass.rle)] == 'RLE'
+	assert p.bidi_names[int(ucd.BidiClass.pdf)] == 'PDF'
+	assert p.bidi_names[int(ucd.BidiClass.lri)] == 'LRI'
+	assert p.bidi_names[int(ucd.BidiClass.rli)] == 'RLI'
+	assert p.bidi_names[int(ucd.BidiClass.fsi)] == 'FSI'
+	assert p.bidi_names[int(ucd.BidiClass.pdi)] == 'PDI'
+	assert p.bidi_names.len == int(ucd.BidiClass.pdi) + 1, 'bidi name table has extra entries'
 
-	assert p.joining_names[int(JoiningType.u)] == 'U'
-	assert p.joining_names[int(JoiningType.c)] == 'C'
-	assert p.joining_names[int(JoiningType.d)] == 'D'
-	assert p.joining_names[int(JoiningType.r)] == 'R'
-	assert p.joining_names[int(JoiningType.l)] == 'L'
-	assert p.joining_names[int(JoiningType.t)] == 'T'
-	assert p.joining_names.len == int(JoiningType.t) + 1, 'joining name table has extras'
+	assert p.joining_names[int(ucd.JoiningType.u)] == 'U'
+	assert p.joining_names[int(ucd.JoiningType.c)] == 'C'
+	assert p.joining_names[int(ucd.JoiningType.d)] == 'D'
+	assert p.joining_names[int(ucd.JoiningType.r)] == 'R'
+	assert p.joining_names[int(ucd.JoiningType.l)] == 'L'
+	assert p.joining_names[int(ucd.JoiningType.t)] == 'T'
+	assert p.joining_names.len == int(ucd.JoiningType.t) + 1, 'joining name table has extras'
 
 	// The other enums are only checked for reach, since their values are looked
 	// up by name at the call site.
-	assert int(GraphemeClass.lvt) < p.grapheme_names.len
-	assert p.grapheme_names[int(GraphemeClass.zwj)] == 'ZWJ'
-	assert p.grapheme_names[int(GraphemeClass.extend)] == 'Extend'
-	assert int(LineBreakClass.em) < p.linebreak_names.len
-	assert p.linebreak_names[int(LineBreakClass.al)] == 'AL'
-	assert p.linebreak_names[int(LineBreakClass.zwj)] == 'ZWJ'
-	assert p.linebreak_names[int(LineBreakClass.b2)] == 'B2'
-	assert p.linebreak_names[int(LineBreakClass.akst)] == 'AS'
-	assert EastAsianWidth.w.str() == 'W', 'the ordinal the generated table uses for Wide'
-	assert EastAsianWidth.f.str() == 'F', 'and for Fullwidth'
-	assert EastAsianWidth.h.str() == 'H', 'and for Halfwidth'
+	assert int(ucd.GraphemeClass.lvt) < p.grapheme_names.len
+	assert p.grapheme_names[int(ucd.GraphemeClass.zwj)] == 'ZWJ'
+	assert p.grapheme_names[int(ucd.GraphemeClass.extend)] == 'Extend'
+	assert int(ucd.LineBreakClass.em) < p.linebreak_names.len
+	assert p.linebreak_names[int(ucd.LineBreakClass.al)] == 'AL'
+	assert p.linebreak_names[int(ucd.LineBreakClass.zwj)] == 'ZWJ'
+	assert p.linebreak_names[int(ucd.LineBreakClass.b2)] == 'B2'
+	assert p.linebreak_names[int(ucd.LineBreakClass.akst)] == 'AS'
+	assert ucd.EastAsianWidth.w.str() == 'W', 'the ordinal the generated table uses for Wide'
+	assert ucd.EastAsianWidth.f.str() == 'F', 'and for Fullwidth'
+	assert ucd.EastAsianWidth.h.str() == 'H', 'and for Halfwidth'
 }
 
 // The East Asian width table is what LB30, LB19a and LB21a refine three pairs with,
 // so it is checked against the characters the rules themselves name: U+2329 is Wide
 // and U+0028 is Narrow, which is why a letter holds the second and parts from the first.
 fn test_east_asian_width_of_known_codepoints() {
-	ea := east_asian_ranges()
-	assert is_east_asian(ea, rune(0x2329)), 'U+2329 LEFT-POINTING ANGLE BRACKET is Wide'
-	assert is_east_asian(ea, rune(0x3000)), 'U+3000 IDEOGRAPHIC SPACE is Fullwidth'
-	assert is_east_asian(ea, rune(0xFF1A)), 'U+FF1A FULLWIDTH COLON is Fullwidth'
-	assert !is_east_asian(ea, rune(0x0028)), 'U+0028 LEFT PARENTHESIS is Narrow'
-	assert !is_east_asian(ea, `A`), 'a letter is Neutral'
+	ea := ucd.east_asian_ranges()
+	assert ucd.is_east_asian(ea, rune(0x2329)), 'U+2329 LEFT-POINTING ANGLE BRACKET is Wide'
+	assert ucd.is_east_asian(ea, rune(0x3000)), 'U+3000 IDEOGRAPHIC SPACE is Fullwidth'
+	assert ucd.is_east_asian(ea, rune(0xFF1A)), 'U+FF1A FULLWIDTH COLON is Fullwidth'
+	assert !ucd.is_east_asian(ea, rune(0x0028)), 'U+0028 LEFT PARENTHESIS is Narrow'
+	assert !ucd.is_east_asian(ea, `A`), 'a letter is Neutral'
 }
 
 // The unassigned-pictograph table is LB30b's second arm, so it is checked against
 // the file's own shapes: U+1FFFD is reserved and Extended_Pictographic, U+1F3FB's
 // base U+270A is a real emoji base and neither is unassigned.
 fn test_ep_unassigned_of_known_codepoints() {
-	eu := ep_unassigned_ranges()
-	assert is_ep_unassigned(eu, rune(0x1FFFD)), 'U+1FFFD is reserved and pictographic'
-	assert !is_ep_unassigned(eu, rune(0x270A)), 'U+270A is an assigned emoji base'
-	assert !is_ep_unassigned(eu, `A`), 'a letter is not a pictograph at all'
+	eu := ucd.ep_unassigned_ranges()
+	assert ucd.is_ep_unassigned(eu, rune(0x1FFFD)), 'U+1FFFD is reserved and pictographic'
+	assert !ucd.is_ep_unassigned(eu, rune(0x270A)), 'U+270A is an assigned emoji base'
+	assert !ucd.is_ep_unassigned(eu, `A`), 'a letter is not a pictograph at all'
 }
 
 // test_generated_bidi_table_matches_the_ucd re-reads the UCD file and checks
@@ -294,8 +295,8 @@ fn test_generated_bidi_table_matches_the_ucd() {
 			continue
 		}
 		codes := fields[0].split('..')
-		lo := hex_value(codes[0])
-		hi := if codes.len > 1 { hex_value(codes[1]) } else { lo }
+		lo := ucd.hex_value(codes[0])
+		hi := if codes.len > 1 { ucd.hex_value(codes[1]) } else { lo }
 		want := fields[1].trim_space()
 		assert p.bidi_class_name(rune(lo)) == want, 'bidi class of U+${lo:04X}'
 		assert p.bidi_class_name(rune(hi)) == want, 'bidi class of U+${hi:04X}'
@@ -324,7 +325,7 @@ fn test_generated_joining_table_matches_the_ucd() {
 			continue
 		}
 		codes := fields[0].split('..')
-		lo := hex_value(codes[0])
+		lo := ucd.hex_value(codes[0])
 		want := fields[1].trim_space()
 		assert int(p.joining_type_of(rune(lo))) < p.joining_names.len
 		assert p.joining_names[int(p.joining_type_of(rune(lo)))] == want, 'joining type of U+${lo:04X}'

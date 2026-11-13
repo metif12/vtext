@@ -1,4 +1,4 @@
-module vtext
+module ucd
 
 // The generated tables in ucd_*.v are const strings, one record per line. They
 // are decoded once into a Properties value, which the text system owns and hands
@@ -57,7 +57,10 @@ pub fn new_properties() &Properties {
 }
 
 // hex_value parses a hexadecimal number with no prefix, either case.
-fn hex_value(s string) u32 {
+//
+// Public because the joining and normalization tables are decoded from the
+// same hex the UCD writes, and the tests read them the same way.
+pub fn hex_value(s string) u32 {
 	mut out := u32(0)
 	for i in 0 .. s.len {
 		c := s[i]
@@ -73,7 +76,10 @@ fn hex_value(s string) u32 {
 }
 
 // dec_value parses a decimal number.
-fn dec_value(s string) u16 {
+//
+// Public for the same reason as hex_value: joining forms carry decimal
+// columns the engine reads directly.
+pub fn dec_value(s string) u16 {
 	mut out := u16(0)
 	for i in 0 .. s.len {
 		c := s[i]
@@ -87,7 +93,10 @@ fn dec_value(s string) u16 {
 // parse_ranges decodes a "lo hi value" table, one range per line. It walks the
 // string directly rather than splitting it, so a table costs one allocation
 // instead of one per line.
-fn parse_ranges(data string) []CodeRange {
+//
+// Public: the normalization tables are decoded by the engine outside this
+// module with the same decoder that builds Properties.
+pub fn parse_ranges(data string) []CodeRange {
 	mut out := []CodeRange{}
 	if data.len == 0 {
 		return out
@@ -146,7 +155,10 @@ fn parse_ranges(data string) []CodeRange {
 }
 
 // parse_names decodes a one-value-per-line name table.
-fn parse_names(data string) []string {
+//
+// Public for the same reason lookup_range is: the property tests pin the
+// decoder directly rather than through a table that happens to use it.
+pub fn parse_names(data string) []string {
 	mut out := []string{}
 	if data.len == 0 {
 		return out

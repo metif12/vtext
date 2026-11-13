@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Unicode normalization, in the canonical forms UAX#15 defines: NFD and NFC.
 //
 // The shaper needs canonically equivalent text before anything else. Arabic
@@ -67,19 +69,19 @@ pub:
 	compositions []Composition
 	// nfd_no and nfc_no are the quick check sets: the characters that are never
 	// already in the corresponding form. Sorted, non-overlapping ranges.
-	nfd_no []CodeRange
-	nfc_no []CodeRange
-	props  Properties @[heap]
+	nfd_no []ucd.CodeRange
+	nfc_no []ucd.CodeRange
+	props  ucd.Properties @[heap]
 }
 
 // new_normalizer decodes the generated tables. It costs a few hundred microseconds,
 // so it is built once next to the Properties rather than per call.
-pub fn new_normalizer(props Properties) &Normalizer {
+pub fn new_normalizer(props ucd.Properties) &Normalizer {
 	return &Normalizer{
-		decompositions: parse_decompositions(canonical_decomposition_data)
-		compositions:   parse_compositions(canonical_composition_data)
-		nfd_no:         parse_ranges(nfd_qc_no_ranges_data)
-		nfc_no:         parse_ranges(nfc_qc_no_ranges_data)
+		decompositions: parse_decompositions(ucd.canonical_decomposition_data)
+		compositions:   parse_compositions(ucd.canonical_composition_data)
+		nfd_no:         ucd.parse_ranges(ucd.nfd_qc_no_ranges_data)
+		nfc_no:         ucd.parse_ranges(ucd.nfc_qc_no_ranges_data)
 		props:          props
 	}
 }
@@ -540,9 +542,9 @@ fn parse_decompositions(data string) []Decomposition {
 		}
 		mut to := []u32{cap: fields.len - 1}
 		for i in 1 .. fields.len {
-			to << hex_value(fields[i])
+			to << ucd.hex_value(fields[i])
 		}
-		out << Decomposition{ cp: hex_value(fields[0]), to: to }
+		out << Decomposition{ cp: ucd.hex_value(fields[0]), to: to }
 	}
 	return out
 }
@@ -563,16 +565,16 @@ fn parse_compositions(data string) []Composition {
 			continue
 		}
 		out << Composition{
-			starter:   hex_value(fields[0])
-			second:    hex_value(fields[1])
-			composite: hex_value(fields[2])
+			starter:   ucd.hex_value(fields[0])
+			second:    ucd.hex_value(fields[1])
+			composite: ucd.hex_value(fields[2])
 		}
 	}
 	return out
 }
 
 // in_ranges reports whether cp falls in a sorted, non-overlapping range list.
-fn in_ranges(ranges []CodeRange, cp u32) bool {
+fn in_ranges(ranges []ucd.CodeRange, cp u32) bool {
 	mut lo := 0
 	mut hi := ranges.len
 	for lo < hi {

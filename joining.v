@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Arabic joining, the shaping pass that gives each letter the shape it takes in its
 // surroundings.
 //
@@ -117,8 +119,8 @@ pub:
 // new_shaper decodes the generated tables.
 pub fn new_shaper() &Shaper {
 	return &Shaper{
-		forms:     parse_form_entries(arabic_form_map_data)
-		ligatures: parse_ligature_entries(arabic_ligature_map_data)
+		forms:     parse_form_entries(ucd.arabic_form_map_data)
+		ligatures: parse_ligature_entries(ucd.arabic_ligature_map_data)
 	}
 }
 
@@ -129,7 +131,7 @@ pub fn new_shaper() &Shaper {
 // The text is expected to be canonically decomposed first: the algorithm keys on
 // joining types, and a precomposed character is a different codepoint with a different
 // one.
-pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
+pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 	mut out := ShapedRun{ glyphs: []ShapedGlyph{cap: cps.len} }
 	if cps.len == 0 {
 		return out
@@ -251,7 +253,7 @@ pub fn (s &Shaper) shape_arabic(p &Properties, cps []rune) ShapedRun {
 // codepoint, so a mark folded into it would be lost at the font lookup and never drawn.
 // The mark still costs no advance and still sits where the letter is, so the layout pass
 // places it from is_mark.
-fn attach_marks(p &Properties, cps []rune, from int, mut out &ShapedRun) int {
+fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun) int {
 	mut i := from
 	mut selectors := []rune{}
 	for i < cps.len {
@@ -315,7 +317,7 @@ fn form_for(join_prev bool, join_next bool) JoiningForm {
 
 // compute_joins fills in whether each character connects to the one before it and to the
 // one after it.
-fn compute_joins(p &Properties, cps []rune, mut join_prev []bool, mut join_next []bool) {
+fn compute_joins(p &ucd.Properties, cps []rune, mut join_prev []bool, mut join_next []bool) {
 	// The previous non-transparent index for each position, so a mark does not hide the
 	// letter in front of it.
 	mut prev_letter := []int{len: cps.len, init: -1}
@@ -357,7 +359,7 @@ fn compute_joins(p &Properties, cps []rune, mut join_prev []bool, mut join_next 
 
 // connect decides the join between two letters that face each other. The two may have
 // controls between them, and a control there overrides what the letters would do.
-fn connect(p &Properties, cps []rune, left int, right int, mut join_prev []bool, mut join_next []bool) {
+fn connect(p &ucd.Properties, cps []rune, left int, right int, mut join_prev []bool, mut join_next []bool) {
 	// The letters have to face each other: a right joining letter connects only to what
 	// comes before it, and a left joining letter only to what comes after.
 	mut allowed := p.joining_type_of(cps[left]).joins_to_next()
@@ -382,7 +384,7 @@ fn connect(p &Properties, cps []rune, left int, right int, mut join_prev []bool,
 }
 
 // next_letter returns the index of the nearest non-transparent character after i.
-fn next_letter(p &Properties, cps []rune, i int) int {
+fn next_letter(p &ucd.Properties, cps []rune, i int) int {
 	for k in i + 1 .. cps.len {
 		if !p.joining_type_of(cps[k]).is_transparent() {
 			return k
@@ -446,9 +448,9 @@ fn parse_form_entries(data string) []FormEntry {
 			continue
 		}
 		out << FormEntry{
-			cp:    hex_value(fields[0])
-			form:  u16(dec_value(fields[1]))
-			glyph: hex_value(fields[2])
+			cp:    ucd.hex_value(fields[0])
+			form:  u16(ucd.dec_value(fields[1]))
+			glyph: ucd.hex_value(fields[2])
 		}
 	}
 	return out
@@ -467,10 +469,10 @@ fn parse_ligature_entries(data string) []LigatureEntry {
 			continue
 		}
 		out << LigatureEntry{
-			first:  hex_value(fields[0])
-			second: hex_value(fields[1])
-			form:   u16(dec_value(fields[2]))
-			glyph:  hex_value(fields[3])
+			first:  ucd.hex_value(fields[0])
+			second: ucd.hex_value(fields[1])
+			form:   u16(ucd.dec_value(fields[2]))
+			glyph:  ucd.hex_value(fields[3])
 		}
 	}
 	return out

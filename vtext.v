@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // vtext is a text shaping and rendering engine written in V.
 //
 // The pipeline is: normalization -> Unicode itemisation -> bidirectional
@@ -28,7 +30,7 @@ pub struct Context {
 pub:
 	// properties holds the character properties: bidi class, joining type and group,
 	// combining class, script, grapheme class and line break class.
-	properties &Properties
+	properties &ucd.Properties
 	// normalizer holds the canonical decomposition and composition tables of UAX#15.
 	normalizer &Normalizer
 	// shaper holds the Arabic presentation forms, which the joining pass maps onto.
@@ -38,7 +40,7 @@ pub:
 // new_context decodes every table. The caller owns the result and keeps it for the
 // lifetime of the text system.
 pub fn new_context() &Context {
-	tables := new_properties()
+	tables := ucd.new_properties()
 	return &Context{
 		properties: tables
 		normalizer: new_normalizer(*tables)

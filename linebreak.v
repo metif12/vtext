@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Line breaking, per UAX #14.
 //
 // This decides where a line is allowed to end, and nothing else. It does not
@@ -88,23 +90,23 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 	// are: LB1 asks at most once per complex-context character, and the answer is a per-character
 	// lookup. `Properties` has no field for it because `tables.v` owns that struct and the
 	// quotation work took the caller-decode route first; the note on `sa_mark_ranges` records why.
-	sa := sa_mark_ranges()
-	mut classes := []LineBreakClass{cap: n}
+	sa := ucd.sa_mark_ranges()
+	mut classes := []ucd.LineBreakClass{cap: n}
 	for i in 0 .. n {
 		classes << effective_class(props, sa, cps, i, classes)
 	}
 	// The quotation roles are read once for the same reason, and by the same rules: LB15a and
 	// LB15b are the only two that ask which direction a quotation mark opens, and they ask
 	// about the character a space run hangs from.
-	quote := quote_ranges()
+	quote := ucd.quote_ranges()
 
 	// The East Asian widths are read once for the same reason: LB30, LB19a and LB21a are the
 	// only rules that refine a pair by width, and they ask about brackets and quotation marks.
-	ea := east_asian_ranges()
+	ea := ucd.east_asian_ranges()
 
 	// The unassigned pictographs are read once for the same reason: LB30b is the only rule
 	// that asks, and it asks about an emoji modifier's neighbour.
-	eu := ep_unassigned_ranges()
+	eu := ucd.ep_unassigned_ranges()
 
 	mut out := []BreakOpportunity{}
 	for i in 0 .. n - 1 {
@@ -159,7 +161,7 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 // both ways. A caller laying out one paragraph asks for mandatory breaks to be
 // marked, and a caller measuring a single line asks for the newline to be treated as
 // a space instead, which is a different question about the same positions.
-fn is_mandatory_break_at(classes []LineBreakClass, pos int, n int, mandatory_first bool) bool {
+fn is_mandatory_break_at(classes []ucd.LineBreakClass, pos int, n int, mandatory_first bool) bool {
 	if !mandatory_first || pos <= 0 || pos > n {
 		return false
 	}
@@ -175,8 +177,8 @@ fn is_mandatory_break_at(classes []LineBreakClass, pos int, n int, mandatory_fir
 // does not apply falls through to the next rather than returning nothing,
 // because "no rule matched" and "a later rule matched" are the same thing to
 // every rule below it.
-fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []CodeRange,
-	ea []CodeRange, eu []CodeRange, prev_broke bool, i int) BreakKind {
+fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass, quote []ucd.CodeRange,
+	ea []ucd.CodeRange, eu []ucd.CodeRange, prev_broke bool, i int) BreakKind {
 	left := classes[i]
 	right := classes[i + 1]
 	n := classes.len
@@ -357,7 +359,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// first mark follows a break and the second does not. The end-list below would
 	// hold both, so this answers first — but only for a mark followed by an
 	// ideograph, which is every breaking case the file has.
-	if left == .qu && quote_role_of(quote, cps[i]) == .pf && right == .idas && prev_broke {
+	if left == .qu && ucd.quote_role_of(quote, cps[i]) == .pf && right == .idas && prev_broke {
 		return BreakKind.allowed
 	}
 	if is_prohibited_end(left) {
@@ -419,8 +421,8 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 		// LB15b is about the mark and what follows it, not about what the run hangs
 		// from. `× 200B ÷ 0308 × 0020 × 00BB ÷` holds at [15.21] with a detached run
 		// and nothing after the mark.
-		if quote_role_of(quote, cps[i + 1]) == .pf {
-			follows := if i + 2 < n { classes[i + 2] } else { LineBreakClass.nl }
+		if ucd.quote_role_of(quote, cps[i + 1]) == .pf {
+			follows := if i + 2 < n { classes[i + 2] } else { ucd.LineBreakClass.nl }
 			if follows == .nl || follows == .sp || follows == .gl || follows == .wj
 				|| follows == .cl || follows == .qu || follows == .cp || follows == .ex
 				|| follows == .insp || follows == .sy || follows == .bk || follows == .cr
@@ -439,7 +441,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			// mark after a letter is content already. `× 00AB × 0020 ÷ 0028 ÷` breaks at
 			// [18.0] before the parenthesis because the letter in front of the mark is not
 			// in that list, while `× QU_Pi × SP × AL ÷` holds at [15.11].
-			if behind >= 0 && quote_role_of(quote, cps[behind]) == .pi {
+			if behind >= 0 && ucd.quote_role_of(quote, cps[behind]) == .pi {
 				fresh := behind == 0 || classes[behind - 1] == .bk || classes[behind - 1] == .cr
 					|| classes[behind - 1] == .lf || classes[behind - 1] == .nl
 					|| classes[behind - 1] == .op || classes[behind - 1] == .qu
@@ -517,7 +519,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	//
 	// A closing mark or a both-mark always holds: `× 2757 × 0022 ÷` and `× 2757 × 00BB ÷`
 	// refuse, and the file has no break on either side of those two marks anywhere.
-	if right == .qu && quote_role_of(quote, cps[i + 1]) != .pi {
+	if right == .qu && ucd.quote_role_of(quote, cps[i + 1]) != .pi {
 		return BreakKind.no
 	}
 	// An opening curly mark breaks after a nonstarter or an ideograph when CJK follows
@@ -531,7 +533,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// The left side is read raw rather than through a mark: a mark on a CJK character
 	// still refuses — `× 3005 × 0308 × 00AB ÷` is [19.11] — so this is not LB9 reading
 	// through one, it is the pair as written.
-	if right == .qu && quote_role_of(quote, cps[i + 1]) == .pi {
+	if right == .qu && ucd.quote_role_of(quote, cps[i + 1]) == .pi {
 		opens := cps[i + 1] == rune(0x201C) || cps[i + 1] == rune(0x2018)
 		follows := i + 2 < n
 			&& (classes[i + 2] == .idas || classes[i + 2] == .ns || classes[i + 2] == .op)
@@ -620,7 +622,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// file breaks these at [31.01]. The class is read raw for the same reason it is
 	// there: a mark on a CJK character still holds its line.
 	if is_prohibited_start_after_space(right)
-		&& !(right == .qu && quote_role_of(quote, cps[i + 1]) == .pi
+		&& !(right == .qu && ucd.quote_role_of(quote, cps[i + 1]) == .pi
 			&& (left == .ns || left == .idas)) {
 		return BreakKind.no
 	}
@@ -635,7 +637,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// Asian bracket: U+2329 LEFT-POINTING ANGLE BRACKET is Wide, and `× 2757 ÷ 2329 ÷` breaks at
 	// [31.01]. The two halves were measured together once before and read as one class, which
 	// cost the 12 East Asian breaks; the width is what tells them apart.
-	if right == .op && !is_east_asian(ea, cps[i + 1]) {
+	if right == .op && !ucd.is_east_asian(ea, cps[i + 1]) {
 		lb30_left := if left == .cm { eff_left } else { left }
 		if lb30_left == .al || lb30_left == .hl || lb30_left == .nu {
 			return BreakKind.no
@@ -665,7 +667,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 	// at [30.02]. The left side reads through a mark for the same reason the open side does:
 	// `× 0029 × 0308 × 2757 ÷` holds at [30.02] with the raw left-hand class a mark.
 	if left == .cp || (left == .cm && eff_left == .cp) {
-		if (right == .al || right == .hl || right == .nu) && !is_east_asian(ea, cps[i]) {
+		if (right == .al || right == .hl || right == .nu) && !ucd.is_east_asian(ea, cps[i]) {
 			return BreakKind.no
 		}
 	}
@@ -897,7 +899,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 			}
 			base = cps[j]
 		}
-		if pair_left == .eb || is_ep_unassigned(eu, base) {
+		if pair_left == .eb || ucd.is_ep_unassigned(eu, base) {
 			return BreakKind.no
 		}
 	}
@@ -1109,7 +1111,7 @@ fn break_kind(props &Properties, cps []rune, classes []LineBreakClass, quote []C
 // `QU_Pi × SP × SP × R` is one thing, and both are answered by the character the run grew out
 // of. A run ends at the first character that is neither a space nor a mark, so it stops at a
 // quotation mark itself, at a zero width space and at real text.
-fn run_origin(classes []LineBreakClass, i int) int {
+fn run_origin(classes []ucd.LineBreakClass, i int) int {
 	mut j := i
 	for j > 0 && is_space_or_mark(classes[j - 1]) {
 		j--
@@ -1122,7 +1124,7 @@ fn run_origin(classes []LineBreakClass, i int) int {
 // The mark is spelled `.cm` rather than asked of `is_markish`, because `effective_class` has
 // already folded every markish class into `.cm` by LB4a: what a caller reads here is the
 // resolved run, not the table's own spelling of it.
-fn is_space_or_mark(c LineBreakClass) bool {
+fn is_space_or_mark(c ucd.LineBreakClass) bool {
 	return c == .sp || c == .cm
 }
 
@@ -1133,7 +1135,7 @@ fn is_space_or_mark(c LineBreakClass) bool {
 // is what happens when a line is copied out of a document and pasted back
 // somewhere that does not know it was a line. Without this the text reads as
 // two words with a space where the hyphen was.
-fn is_break_after_hyphen_break(props &Properties, cps []rune, classes []LineBreakClass,
+fn is_break_after_hyphen_break(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass,
 	i int) bool {
 	// i is the position of the right-hand character, so the hyphen is at i-1 and
 	// whatever the hyphen broke is at i-2.
@@ -1155,7 +1157,7 @@ fn is_break_after_hyphen_break(props &Properties, cps []rune, classes []LineBrea
 }
 
 // is_mandatory_break reports whether this class is one the text must break at.
-fn is_mandatory_break(c LineBreakClass) bool {
+fn is_mandatory_break(c ucd.LineBreakClass) bool {
 	return c == .lf || c == .bk || c == .cr || c == .nl
 }
 
@@ -1176,7 +1178,7 @@ fn is_mandatory_break(c LineBreakClass) bool {
 // The inseparable class is spelled .insp here because .is is a V keyword, and it matters: a
 // character that cannot be separated from its neighbour is the one case where a break on either
 // side would put two marks on different lines.
-fn is_prohibited_start(c LineBreakClass) bool {
+fn is_prohibited_start(c ucd.LineBreakClass) bool {
 	return c == .cl || c == .cp || c == .ex || c == .insp || c == .sy
 }
 
@@ -1202,9 +1204,9 @@ fn is_prohibited_start(c LineBreakClass) bool {
 //
 // LB12a's glue is here too, though not in this function: it is spelled out at its own site because
 // its exclusion list is the point of it.
-fn is_prohibited_start_after_space(c LineBreakClass) bool {
+fn is_prohibited_start_after_space(c ucd.LineBreakClass) bool {
 	return c == .qu || c == .ba || c == .hh || c == .hy || c == .ns
-		|| c == infx
+		|| c == ucd.infx
 }
 
 // is_prohibited_end reports whether a line may not end with this class, which
@@ -1223,7 +1225,7 @@ fn is_prohibited_start_after_space(c LineBreakClass) bool {
 // pair below answers. IS is not in it either: LB29 holds `IS × (AL|HL)` as its own
 // pair and LB25 holds `IS × NU` the same way, so no break the file asks for needs
 // the class list — `× 002C ÷ 1B05 ÷` is [31.01].
-fn is_prohibited_end(c LineBreakClass) bool {
+fn is_prohibited_end(c ucd.LineBreakClass) bool {
 	return c == .op || c == .qu || c == .bb
 }
 
@@ -1239,8 +1241,8 @@ fn is_prohibited_end(c LineBreakClass) bool {
 // own. A word joiner is left alone: it is already a class of its own, and it is the one that forbids
 // a break on both sides of it, which is what makes it the character a caller reaches for when a
 // word must not be split.
-fn effective_class(props &Properties, sa []CodeRange, cps []rune, i int,
-	so_far []LineBreakClass) LineBreakClass {
+fn effective_class(props &ucd.Properties, sa []ucd.CodeRange, cps []rune, i int,
+	so_far []ucd.LineBreakClass) ucd.LineBreakClass {
 	raw := props.line_break_of(cps[i])
 	if raw == .zwj {
 		return .cm
@@ -1312,7 +1314,7 @@ fn effective_class(props &Properties, sa []CodeRange, cps []rune, i int,
 		// attaches to the character in front of it, so a mark with nothing in front of it has
 		// nothing to attach to. Measured rather than assumed. Resolving a leading SA mark to
 		// CM as well **broke 38 cases** against the 4 it fixed.
-		if i > 0 && sa_mark_of(sa, cps[i]) == .mark {
+		if i > 0 && ucd.sa_mark_of(sa, cps[i]) == .mark {
 			return .cm
 		}
 		return .al
@@ -1357,7 +1359,7 @@ fn effective_class(props &Properties, sa []CodeRange, cps []rune, i int,
 //
 // What is left is the mark proper, which is the class UAX#14 LB4a is actually
 // about: a Latin accent, an Arabic tashkil, a zero width non-joiner.
-fn is_markish(c LineBreakClass) bool {
+fn is_markish(c ucd.LineBreakClass) bool {
 	return c == .cm
 }
 
@@ -1711,7 +1713,7 @@ fn cluster_prefix(line &Line, n int) []f64 {
 // A segment that is entirely spaces has no width at all, which is right rather than an edge case: a run
 // of spaces is not an unbreakable unit a caller has to be able to fit on a line, and giving it the width
 // of one space would make a paragraph of spaces report a non-zero minimum.
-fn segment_width(props &Properties, cps []rune, cum []f64, from int, to int) f64 {
+fn segment_width(props &ucd.Properties, cps []rune, cum []f64, from int, to int) f64 {
 	mut end := to
 	for end > from && is_line_end_space(props, cps[end - 1]) {
 		end--
@@ -1729,7 +1731,7 @@ fn segment_width(props &Properties, cps []rune, cum []f64, from int, to int) f64
 // character that draws nothing and that its own line breaker will discard. The classes are named rather
 // than tested for two characters because a carriage return is a line end on its own account and U+0085
 // is one too, and a caller that had to remember which is which would eventually get it wrong.
-fn is_line_end_space(props &Properties, cp rune) bool {
+fn is_line_end_space(props &ucd.Properties, cp rune) bool {
 	c := props.line_break_of(cp)
 	return c == .sp || c == .lf || c == .bk || c == .cr || c == .nl
 }

@@ -19,7 +19,7 @@ module main
 import os
 
 const ucd_dir = 'ucd'
-const out_file = 'ucd_arabic.v'
+const out_file = 'ucd/ucd_arabic.v'
 
 // unicode_version is written into the generated file.
 const unicode_version = '18.0.0'

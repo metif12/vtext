@@ -1,10 +1,12 @@
 module vtext
 
+import vtext.ucd
+
 // The joining algorithm, checked against the cases UAX#53 spells out and against the
 // Persian and Arabic text this engine exists to render.
 
 fn run(cps []string) []string {
-	p := new_properties()
+	p := ucd.new_properties()
 	s := new_shaper()
 	run := s.shape_arabic(p, runes_of(cps))
 	mut out := []string{cap: run.glyphs.len}
@@ -17,7 +19,7 @@ fn run(cps []string) []string {
 // run_forms is the same, but reporting the shape rather than the codepoint, for the cases
 // where the shape is the thing under test.
 fn run_forms(cps []string) []string {
-	p := new_properties()
+	p := ucd.new_properties()
 	s := new_shaper()
 	run := s.shape_arabic(p, runes_of(cps))
 	mut out := []string{cap: run.glyphs.len}
@@ -30,7 +32,7 @@ fn run_forms(cps []string) []string {
 fn runes_of(fields []string) []rune {
 	mut out := []rune{}
 	for f in fields {
-		out << rune(hex_value(f))
+		out << rune(ucd.hex_value(f))
 	}
 	return out
 }
@@ -91,7 +93,7 @@ fn test_joining_skips_transparent_marks() {
 	// codepoint, so a mark folded into it would be lost at the glyph lookup and never
 	// drawn. The letter no longer covers the mark, and the mark is flagged so the layout
 	// pass places it without moving the pen.
-	p := new_properties()
+	p := ucd.new_properties()
 	s := new_shaper()
 	shaped := s.shape_arabic(p, runes_of(['0628', '064E', '0628']))
 	assert shaped.glyphs.len == 3, 'the mark should be a glyph of its own'
@@ -115,7 +117,7 @@ fn test_joining_controls() {
 	// ZWNJ is non joining, so it is not a letter and does not become a glyph. ZWJ is
 	// join causing, so it does take a shape and is drawn; a font maps it to nothing, and
 	// that is the font layer's business rather than the shaper's.
-	p := new_properties()
+	p := ucd.new_properties()
 	s := new_shaper()
 	between := s.shape_arabic(p, runes_of(['0628', '200C', '0628']))
 	assert between.glyphs.len == 2, 'ZWNJ should not become a glyph'
@@ -184,7 +186,7 @@ fn test_joining_space_breaks_the_word() {
 // A mark that has no presentation form of its own keeps its base codepoint, so the font
 // layer can still find it. U+06A4 is a dual joining letter that does have forms.
 fn test_joining_keeps_an_unformed_mark_as_itself() {
-	p := new_properties()
+	p := ucd.new_properties()
 	s := new_shaper()
 	// U+0651 ARABIC SHADDA has joining type Transparent and a combining class, so it is
 	// passed through as itself rather than shaped, and it becomes a mark glyph.
@@ -200,7 +202,7 @@ fn test_joining_keeps_an_unformed_mark_as_itself() {
 
 // Empty input has to be handled without a special case at every step.
 fn test_joining_empty_and_single() {
-	p := new_properties()
+	p := ucd.new_properties()
 	s := new_shaper()
 	empty := s.shape_arabic(p, []rune{})
 	assert empty.glyphs.len == 0

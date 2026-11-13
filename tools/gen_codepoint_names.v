@@ -34,7 +34,7 @@ module main
 import os
 
 const ucd_file = 'ucd/UnicodeData.txt'
-const out_file = 'ucd_names.v'
+const out_file = 'ucd/ucd_names.v'
 
 // Text accumulates generated source. The builder is passed by value rather than by reference because the
 // same helper exists in gen_tables.v for the same reason.

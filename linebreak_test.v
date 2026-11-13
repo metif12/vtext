@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.ucd
 import os
 
 // Line breaking, per UAX #14.
@@ -418,22 +419,22 @@ fn starts_of(ctx &Context, cps []rune) []int {
 // three characters the committee's own test file uses to spell the whole distinction out: U+00AB is
 // opening, U+00BB is closing, and U+0022 is both.
 fn test_quote_roles_are_read_from_the_ucd() {
-	q := quote_ranges()
-	assert quote_role_of(q, rune(0x00AB)) == .pi, 'U+00AB opens'
-	assert quote_role_of(q, rune(0x00BB)) == .pf, 'U+00BB closes'
-	assert quote_role_of(q, rune(0x0022)) == .both, 'U+0022 can be either'
-	assert quote_role_of(q, rune(0x201C)) == .pi, 'U+201C is a left double quotation mark'
-	assert quote_role_of(q, rune(0x201D)) == .pf, 'U+201D is a right double quotation mark'
+	q := ucd.quote_ranges()
+	assert ucd.quote_role_of(q, rune(0x00AB)) == .pi, 'U+00AB opens'
+	assert ucd.quote_role_of(q, rune(0x00BB)) == .pf, 'U+00BB closes'
+	assert ucd.quote_role_of(q, rune(0x0022)) == .both, 'U+0022 can be either'
+	assert ucd.quote_role_of(q, rune(0x201C)) == .pi, 'U+201C is a left double quotation mark'
+	assert ucd.quote_role_of(q, rune(0x201D)) == .pf, 'U+201D is a right double quotation mark'
 	// The apostrophe is Po and not Pi or Pf, so it is both rather than an opening mark, and a
 	// character that is not a quotation mark at all is the default.
-	assert quote_role_of(q, rune(0x0027)) == .both, 'U+0027 is a quotation mark that is neither'
-	assert quote_role_of(q, `A`) == .none, 'a letter is not a quotation mark'
+	assert ucd.quote_role_of(q, rune(0x0027)) == .both, 'U+0027 is a quotation mark that is neither'
+	assert ucd.quote_role_of(q, `A`) == .none, 'a letter is not a quotation mark'
 	// The hand-written enum and the generated ordinals must not drift apart, or a regeneration
 	// against a newer UCD would silently reassign what every rule below asks for.
-	assert QuoteRole.pi.str() == 'pi', 'the ordinal the generated table uses for an opening mark'
-	assert QuoteRole.pf.str() == 'pf', 'and for a closing one'
-	assert QuoteRole.both.str() == 'both', 'and for one that can be either'
-	assert QuoteRole.none.str() == 'qu_none', 'and for the default, which no range ever names'
+	assert ucd.QuoteRole.pi.str() == 'pi', 'the ordinal the generated table uses for an opening mark'
+	assert ucd.QuoteRole.pf.str() == 'pf', 'and for a closing one'
+	assert ucd.QuoteRole.both.str() == 'both', 'and for one that can be either'
+	assert ucd.QuoteRole.none.str() == 'qu_none', 'and for the default, which no range ever names'
 }
 
 // LB15a: an opening quotation mark holds what follows it, space and marks included.
@@ -761,21 +762,21 @@ fn test_line_break_holds_a_hebrew_letter_like_a_latin_one() {
 // The SA mark table is what lets LB1 split the complex-context class, so it is checked against the
 // marks and U+0E01 is a letter.
 fn test_sa_marks_are_read_from_the_general_category() {
-	m := sa_mark_ranges()
-	assert sa_mark_of(m, rune(0x0E31)) == .mark, 'U+0E31 THAI CHARACTER MAI HAN-AKAT is a mark'
-	assert sa_mark_of(m, rune(0x102C)) == .mark, 'U+102C MYANMAR VOWEL SIGN AA is a mark'
+	m := ucd.sa_mark_ranges()
+	assert ucd.sa_mark_of(m, rune(0x0E31)) == .mark, 'U+0E31 THAI CHARACTER MAI HAN-AKAT is a mark'
+	assert ucd.sa_mark_of(m, rune(0x102C)) == .mark, 'U+102C MYANMAR VOWEL SIGN AA is a mark'
 	// Lao vowel sign mai kan, an Mn outside Thai, and the Tai Viet sign, the same property further out.
-	assert sa_mark_of(m, rune(0x0EB1)) == .mark, 'U+0EB1 LAO VOWEL SIGN MAI KAN is a mark'
-	assert sa_mark_of(m, rune(0xAAB0)) == .mark, 'U+AAB0 TAI VIET MAI KANG is a mark'
+	assert ucd.sa_mark_of(m, rune(0x0EB1)) == .mark, 'U+0EB1 LAO VOWEL SIGN MAI KAN is a mark'
+	assert ucd.sa_mark_of(m, rune(0xAAB0)) == .mark, 'U+AAB0 TAI VIET MAI KANG is a mark'
 	// A letter, and two non-mark marks that are still not SA at all.
-	assert sa_mark_of(m, rune(0x0E01)) == .none, 'U+0E01 THAI CHARACTER KO KAI is a letter'
-	assert sa_mark_of(m, rune(0x0E46)) == .none, 'U+0E46 THAI CHARACTER MAIYAMOK is a letter, not a mark'
-	assert sa_mark_of(m, rune(0x0308)) == .none, 'a combining accent is a mark but is not SA'
-	assert sa_mark_of(m, `A`) == .none, 'a letter that is not SA at all is the default'
+	assert ucd.sa_mark_of(m, rune(0x0E01)) == .none, 'U+0E01 THAI CHARACTER KO KAI is a letter'
+	assert ucd.sa_mark_of(m, rune(0x0E46)) == .none, 'U+0E46 THAI CHARACTER MAIYAMOK is a letter, not a mark'
+	assert ucd.sa_mark_of(m, rune(0x0308)) == .none, 'a combining accent is a mark but is not SA'
+	assert ucd.sa_mark_of(m, `A`) == .none, 'a letter that is not SA at all is the default'
 	// The hand-written enum and the generated ordinals must not drift apart, the way the quotation
 	// role's do not, or a regeneration against a newer UCD would silently reassign the answers.
-	assert SaMark.mark.str() == 'sa_mark', 'the ordinal the generated table uses for a mark'
-	assert SaMark.none.str() == 'sa_none', 'and for the default, which no range ever names'
+	assert ucd.SaMark.mark.str() == 'sa_mark', 'the ordinal the generated table uses for a mark'
+	assert ucd.SaMark.none.str() == 'sa_none', 'and for the default, which no range ever names'
 }
 
 // LB4a with an SA mark, which is the shape the split buys: a mark of any class that follows

@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Line layout: shaped codepoints in, positioned glyphs out.
 //
 // The passes before this one each know about one thing. Normalization knows about canonical
@@ -206,7 +208,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 //
 // It runs on the shaped run before place_glyphs, and it edits advance rather than x. See the comment at
 // the call site for why the order and the choice of field are the two that matter.
-fn apply_spacing(mut glyphs []Glyph, props &Properties, cps []rune, letter_spacing f64,
+fn apply_spacing(mut glyphs []Glyph, props &ucd.Properties, cps []rune, letter_spacing f64,
 	word_spacing f64) {
 	if letter_spacing == 0.0 && word_spacing == 0.0 {
 		return
@@ -231,7 +233,7 @@ fn apply_spacing(mut glyphs []Glyph, props &Properties, cps []rune, letter_spaci
 // pick_in uses the pipeline's script table: one answer to "which characters are spaces" is worth more
 // than two that can drift. The cluster is an index into the caller's own text, not into the
 // decomposed one, because layout mapped it back through the decomposition when it set it.
-fn is_space_at(props &Properties, cps []rune, i int) bool {
+fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
 	if i < 0 || i >= cps.len {
 		return false
 	}
@@ -632,7 +634,7 @@ fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph, script string) ?Offset2
 // inherited script and answers nothing; the base letter's codepoint is what the font
 // wrote its anchors against. An unresolvable base keeps 'arab', which is what every
 // mark used before scripts were asked, so nothing that placed before moves.
-fn mark_script(props &Properties, f &Font, base Glyph) string {
+fn mark_script(props &ucd.Properties, f &Font, base Glyph) string {
 	gid := if base.base_gid != 0 { base.base_gid } else { base.gid }
 	if cp := f.codepoint_for(gid) {
 		tag := props.script_tag_of(cp)

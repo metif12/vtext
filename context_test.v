@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Verifies that one Context serves the whole pipeline, and that the tables it holds
 // are shared rather than rebuilt per call. Normalization and bidi lookups are the two
 // places a caller is most likely to build their own tables by mistake.
@@ -10,7 +12,7 @@ module vtext
 fn runes_of(fields []string) []rune {
 	mut out := []rune{}
 	for f in fields {
-		out << rune(hex_value(f))
+		out << rune(ucd.hex_value(f))
 	}
 	return out
 }

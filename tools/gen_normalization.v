@@ -18,7 +18,7 @@ module main
 import os
 
 const ucd_dir = 'ucd'
-const out_file = 'ucd_normalization.v'
+const out_file = 'ucd/ucd_normalization.v'
 
 // unicode_version is written into the generated file.
 const unicode_version = '18.0.0'

@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Direction is the resolved direction of a paragraph.
 pub enum Direction {
 	ltr  = 0
@@ -41,23 +43,23 @@ pub mut:
 // DirEntry is one entry of the directional status stack built by rules X1 to X8.
 struct DirEntry {
 	level    u8
-	override BidiClass
+	override ucd.BidiClass
 	// isolate marks an isolate initiator, so X6a knows when to stop popping.
 	isolate bool
 }
 
 // no_override is the override value meaning "the character's own class".
-const no_override = BidiClass.class_none
+const no_override = ucd.BidiClass.class_none
 
 // removed is the type given to characters that rule X9 removes from the text.
-const removed = BidiClass.x9_removed
+const removed = ucd.BidiClass.x9_removed
 
 // resolve_paragraph runs the UAX#9 algorithm over cps and returns the resolved
 // levels plus the visual reordering.
 //
 // base_dir drives rules P2 and P3: .ltr and .rtl force the paragraph level, .auto
 // takes it from the first strong character.
-pub fn resolve_paragraph(p &Properties, cps []rune, base_dir Direction) BidiResult {
+pub fn resolve_paragraph(p &ucd.Properties, cps []rune, base_dir Direction) BidiResult {
 	mut result := BidiResult{
 		levels:       []u8{len: cps.len, init: 0}
 		visible:      []bool{len: cps.len, init: true}
@@ -69,7 +71,7 @@ pub fn resolve_paragraph(p &Properties, cps []rune, base_dir Direction) BidiResu
 
 	// Original types, kept because rules W1 to N2 work on a mutable copy and N0
 	// consults the original classes.
-	mut orig := []BidiClass{len: cps.len, init: .l}
+	mut orig := []ucd.BidiClass{len: cps.len, init: .l}
 	for i, cp in cps {
 		orig[i] = p.bidi_class_of(cp)
 	}
@@ -135,7 +137,7 @@ pub fn resolve_paragraph(p &Properties, cps []rune, base_dir Direction) BidiResu
 // first_strong_direction implements P2 and P3 over cps[from..to]: the direction of
 // the first strong character, skipping over isolate runs so a strong character
 // inside an isolate cannot decide the paragraph.
-fn first_strong_direction(p &Properties, cps []rune, from int, to int) Direction {
+fn first_strong_direction(p &ucd.Properties, cps []rune, from int, to int) Direction {
 	mut i := from
 	for i < to {
 		cls := p.bidi_class_of(cps[i])
@@ -158,7 +160,7 @@ fn first_strong_direction(p &Properties, cps []rune, from int, to int) Direction
 
 // matching_pdi returns the index just past the PDI matching an isolate initiator
 // whose contents start at start, or `to` when there is none.
-fn matching_pdi(p &Properties, cps []rune, start int, to int) int {
+fn matching_pdi(p &ucd.Properties, cps []rune, start int, to int) int {
 	mut depth := 1
 	mut i := start
 	for i < to {
@@ -178,7 +180,7 @@ fn matching_pdi(p &Properties, cps []rune, start int, to int) int {
 
 // explicit_levels implements X1 to X9, filling levels and returning the working
 // types in which the X9-removed characters are marked `removed`.
-fn explicit_levels(p &Properties, cps []rune, orig []BidiClass, para_level u8, mut levels []u8) []BidiClass {
+fn explicit_levels(p &ucd.Properties, cps []rune, orig []ucd.BidiClass, para_level u8, mut levels []u8) []ucd.BidiClass {
 	mut types := orig.clone()
 	mut stack := [DirEntry{ level: para_level, override: no_override, isolate: false }]
 	mut overflow_embedding := 0
@@ -211,7 +213,7 @@ fn explicit_levels(p &Properties, cps []rune, orig []BidiClass, para_level u8, m
 			.rli, .lri, .fsi {
 				// X5a to X5c. An FSI takes its direction from the first strong
 				// character between it and its matching PDI.
-				mut d := BidiClass.r
+				mut d := ucd.BidiClass.r
 				if cls == .lri {
 					d = .l
 				} else if cls == .fsi {
@@ -289,7 +291,7 @@ fn explicit_levels(p &Properties, cps []rune, orig []BidiClass, para_level u8, m
 // push_embedding implements the common overflow handling of X2 to X5. It returns
 // the updated stack and overflow counter, because V does not allow a mutable
 // scalar parameter.
-fn push_embedding(stack []DirEntry, new_level u8, ov BidiClass, overflow_embedding int,
+fn push_embedding(stack []DirEntry, new_level u8, ov ucd.BidiClass, overflow_embedding int,
 	overflow_isolate int) ([]DirEntry, int) {
 	if new_level <= bidi_max_depth && overflow_isolate == 0 && overflow_embedding == 0 {
 		if stack.len < 125 {
@@ -326,13 +328,13 @@ fn least_greater(current u8, odd bool) u8 {
 }
 
 // level_direction maps an even level to L and an odd level to R.
-fn level_direction(level u8) BidiClass {
+fn level_direction(level u8) ucd.BidiClass {
 	return if level % 2 == 1 { .r } else { .l }
 }
 
 // isolating_run_sequences implements X10. Each sequence is the flattened list of
 // input indices it covers, in text order.
-fn isolating_run_sequences(types []BidiClass, orig []BidiClass, levels []u8) [][]int {
+fn isolating_run_sequences(types []ucd.BidiClass, orig []ucd.BidiClass, levels []u8) [][]int {
 	mut runs := build_runs(types, levels)
 	if runs.len == 0 {
 		return [][]int{}
@@ -395,7 +397,7 @@ fn isolating_run_sequences(types []BidiClass, orig []BidiClass, levels []u8) [][
 // characters that all carry the same level, even when removed characters sit
 // between them. The list itself is the indices, because a rule that walks a
 // sequence must never see a removed character.
-fn build_runs(types []BidiClass, levels []u8) [][]int {
+fn build_runs(types []ucd.BidiClass, levels []u8) [][]int {
 	mut runs := [][]int{}
 	mut cur := []int{}
 	mut cur_level := u8(0)
@@ -421,7 +423,7 @@ fn build_runs(types []BidiClass, levels []u8) [][]int {
 
 // find_matching_pdi returns the index of the PDI matching the isolate initiator at
 // start, or the text length when there is none.
-fn find_matching_pdi(types []BidiClass, start int, limit int) int {
+fn find_matching_pdi(types []ucd.BidiClass, start int, limit int) int {
 	mut depth := 1
 	mut i := start + 1
 	for i < limit {
@@ -449,8 +451,8 @@ fn flatten_sequence(seq []int) []int {
 }
 
 // slice_types copies the working types of a sequence into a dense array.
-fn slice_types(types []BidiClass, idx []int) []BidiClass {
-	mut out := []BidiClass{len: idx.len}
+fn slice_types(types []ucd.BidiClass, idx []int) []ucd.BidiClass {
+	mut out := []ucd.BidiClass{len: idx.len}
 	for i, k in idx {
 		out[i] = types[k]
 	}
@@ -458,7 +460,7 @@ fn slice_types(types []BidiClass, idx []int) []BidiClass {
 }
 
 // write_back_types copies a sequence's resolved types back into the full array.
-fn write_back_types(mut types []BidiClass, idx []int, values []BidiClass) {
+fn write_back_types(mut types []ucd.BidiClass, idx []int, values []ucd.BidiClass) {
 	for i, k in idx {
 		types[k] = values[i]
 	}
@@ -468,7 +470,7 @@ fn write_back_types(mut types []BidiClass, idx []int, values []BidiClass) {
 //
 // The character on the other side of the boundary is the nearest surviving one: a
 // character X9 removed is not part of the text, so the search steps over it.
-fn boundary_type(types []BidiClass, levels []u8, para_level u8, at_index int, at_start bool) BidiClass {
+fn boundary_type(types []ucd.BidiClass, levels []u8, para_level u8, at_index int, at_start bool) ucd.BidiClass {
 	seq_level := levels[at_index]
 	mut other := para_level
 	if at_start {

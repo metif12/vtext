@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Rule N0 needs the bracket pairs, which the generator emits next to the bidi
 // class table in ucd_bidi.v.
 
@@ -42,11 +44,11 @@ fn parse_bracket_table(data string) []BracketPair {
 		kind := if fields[2] == 'o' { bracket_open } else { bracket_close }
 		mut canonical := u32(0)
 		if fields.len > 3 {
-			canonical = hex_value(fields[3])
+			canonical = ucd.hex_value(fields[3])
 		}
 		entry := BracketPair{
-			cp:        hex_value(fields[0])
-			paired:    hex_value(fields[1])
+			cp:        ucd.hex_value(fields[0])
+			paired:    ucd.hex_value(fields[1])
 			kind:      kind
 			canonical: canonical
 		}
@@ -59,7 +61,7 @@ fn parse_bracket_table(data string) []BracketPair {
 // table is a few hundred entries, so caching would save nothing measurable
 // against the shaping work that surrounds a lookup.
 fn bracket_table() []BracketPair {
-	return parse_bracket_table(bidi_brackets_data)
+	return parse_bracket_table(ucd.bidi_brackets_data)
 }
 
 // find returns the bracket entry for cp, if it has one. The table is sorted by

@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.ucd
+
 // Tests for the inspection API in inspect.v.
 //
 // These are not tests of the engine. The engine already has tests for whether it can shape and draw; what
@@ -446,7 +448,7 @@ fn test_is_variable_and_axes() {
 fn inspect_runes(fields []string) []rune {
 	mut out := []rune{}
 	for f in fields {
-		out << rune(hex_value(f))
+		out << rune(ucd.hex_value(f))
 	}
 	return out
 }

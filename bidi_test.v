@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.ucd
 import os
 
 // The UAX#9 conformance test. BidiCharacterTest.txt is the normative test data:
@@ -37,8 +38,8 @@ fn parse_bidi_case(line string) ?BidiCase {
 		if tok == '' {
 			continue
 		}
-		cps << rune(hex_value(tok))
-		text_parts << '${rune(hex_value(tok)):04X}'
+		cps << rune(ucd.hex_value(tok))
+		text_parts << '${rune(ucd.hex_value(tok)):04X}'
 	}
 	mut want_levels := []int{len: cps.len, init: 0}
 	mut lf := 0
@@ -96,7 +97,7 @@ fn ints_to_string(v []int) string {
 }
 
 // check_case reports why a case failed, or an empty string when it passed.
-fn check_case(p &Properties, c BidiCase) string {
+fn check_case(p &ucd.Properties, c BidiCase) string {
 	got := resolve_paragraph(p, c.cps, c.dir)
 	mut reasons := []string{}
 
@@ -146,7 +147,7 @@ fn test_ucd_bidi_conformance() {
 		println('skipping ${bidi_test_file}: run tools/fetch_ucd.ps1 to get the UCD')
 		return
 	}
-	p := new_properties()
+	p := ucd.new_properties()
 	data := os.read_file(bidi_test_file) or { panic(err) }
 
 	mut checked := 0
@@ -175,7 +176,7 @@ fn test_ucd_bidi_conformance() {
 }
 
 fn test_bidi_known_paragraphs() {
-	p := new_properties()
+	p := ucd.new_properties()
 	// A pure Persian sentence: one level, right to left.
 	persian := 'سلام دنیا'.runes()
 	rtl := resolve_paragraph(p, persian, .auto)
@@ -229,7 +230,7 @@ fn test_bidi_known_paragraphs() {
 }
 
 fn test_bidi_empty_and_single() {
-	p := new_properties()
+	p := ucd.new_properties()
 	empty := resolve_paragraph(p, []rune{}, .auto)
 	assert empty.levels.len == 0
 	assert empty.visual_order.len == 0
@@ -280,7 +281,7 @@ fn test_bidi_bracket_canonical_equivalence() {
 // The two angle-bracket spellings have to resolve as one pair, which is the whole
 // point of the canonical equivalence above.
 fn test_bidi_bracket_canonical_pair_resolves() {
-	p := new_properties()
+	p := ucd.new_properties()
 	// U+2329 opens, U+3009 closes, and the only strong type inside is Latin. In a
 	// left-to-right paragraph N0 gives the pair that direction.
 	span := 'a\u2329b\u3009c'.runes()

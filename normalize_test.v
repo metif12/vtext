@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.ucd
 import os
 
 // Conformance against ucd/NormalizationTest.txt, the UCD's own test data for UAX#15.
@@ -64,7 +65,7 @@ fn parse_codepoint_column(field string) []rune {
 	mut out := []rune{}
 	for tok in field.trim_space().split(' ') {
 		if tok != '' {
-			out << rune(hex_value(tok))
+			out << rune(ucd.hex_value(tok))
 		}
 	}
 	return out
@@ -81,7 +82,7 @@ fn codepoints_to_string(cps []rune) string {
 }
 
 fn test_ucd_normalization_conformance() {
-	props := new_properties()
+	props := ucd.new_properties()
 	n := new_normalizer(props)
 	problem := n.check_tables()
 	assert problem == '', 'normalization tables are malformed: ${problem}'
@@ -161,7 +162,7 @@ fn test_ucd_normalization_conformance() {
 // The two forms have to agree on a handful of cases worth reading, so that a
 // regression in the tables shows up as a specific character rather than as a count.
 fn test_normalize_known_cases() {
-	props := new_properties()
+	props := ucd.new_properties()
 	n := new_normalizer(props)
 
 	// A precomposed character with a grave: NFD splits it, NFC puts it back. e with
@@ -216,7 +217,7 @@ fn test_normalize_known_cases() {
 // The decomposition's mapping, which is what keeps a mark attached to the character it was written
 // after once canonical ordering has moved it somewhere else.
 fn test_nfd_mapped_reports_the_character_a_mark_came_from() {
-	n := new_normalizer(new_properties())
+	n := new_normalizer(ucd.new_properties())
 
 	// The case the layout pass depends on. A shadda is class 33 and a fatha class 30, so NFD puts
 	// the fatha first even though it was written second, and an index into the decomposed text is
@@ -256,7 +257,7 @@ fn test_nfd_mapped_reports_the_character_a_mark_came_from() {
 fn runes_of(fields []string) []rune {
 	mut out := []rune{}
 	for f in fields {
-		out << rune(hex_value(f))
+		out << rune(ucd.hex_value(f))
 	}
 	return out
 }

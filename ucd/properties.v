@@ -1,4 +1,4 @@
-module vtext
+module ucd
 
 // The property accessors return small enums whose ordinals match the generated
 // value name tables exactly. The enums are hand written rather than generated
@@ -224,7 +224,9 @@ pub enum LineBreakClass {
 // The cast is unsafe for the same reason `line_break_of`'s own is, and for the same short while:
 // the ordinal comes from a generated table that `test_value_tables_match_the_enums` holds in step,
 // and 38 is inside it by construction rather than by hope.
-const infx = unsafe { LineBreakClass(38) }
+//
+// Public: the line breaking rules live outside this module and compare against it.
+pub const infx = unsafe { LineBreakClass(38) }
 
 // str returns the UCD name of the class, e.g. 'AL'.
 pub fn (c LineBreakClass) str() string {
@@ -235,7 +237,7 @@ pub fn (c LineBreakClass) str() string {
 // no listed range. Every property reserves ordinal 0 for its default, so a
 // missing range is indistinguishable from an explicit default - which is exactly
 // what the UCD's @missing lines say.
-fn lookup_range(ranges []CodeRange, cp u32, default_value u16) u16 {
+pub fn lookup_range(ranges []CodeRange, cp u32, default_value u16) u16 {
 	mut lo := 0
 	mut hi := ranges.len
 	// Find one past the last range whose lo is <= cp.
@@ -362,7 +364,7 @@ pub fn (r QuoteRole) str() string {
 // The line break table cannot carry this: LineBreak.txt has one QU for all three, so the
 // distinction is read from the general category by tools/gen_tables.v and written to
 // ucd_quote.v, exactly as the bidi class and the joining type are.
-fn quote_role_of(ranges []CodeRange, cp rune) QuoteRole {
+pub fn quote_role_of(ranges []CodeRange, cp rune) QuoteRole {
 	o := lookup_range(ranges, u32(cp), 0)
 	return unsafe { QuoteRole(o) }
 }
@@ -373,7 +375,7 @@ fn quote_role_of(ranges []CodeRange, cp rune) QuoteRole {
 // the table: 28 ranges, read by two rules, so a caller pays one small decode per call instead of
 // every Properties value in the library carrying a table whose other three values are almost never
 // asked for.
-fn quote_ranges() []CodeRange {
+pub fn quote_ranges() []CodeRange {
 	return parse_ranges(quote_ranges_data)
 }
 
@@ -398,7 +400,10 @@ pub fn (m SaMark) str() string {
 }
 
 // sa_mark_of returns the LB1 resolution for cp.
-fn sa_mark_of(ranges []CodeRange, cp rune) SaMark {
+//
+// Public: the line breaking rules live outside this module and ask it per
+// complex-context character.
+pub fn sa_mark_of(ranges []CodeRange, cp rune) SaMark {
 	o := lookup_range(ranges, u32(cp), 0)
 	return unsafe { SaMark(o) }
 }
@@ -409,7 +414,7 @@ fn sa_mark_of(ranges []CodeRange, cp rune) SaMark {
 // same reason: 27 ranges over 191 codepoints, asked about once per complex-context character, so a
 // caller pays one small decode per call instead of every Properties value in the library carrying a
 // table nothing outside an SA character is ever asked about.
-fn sa_mark_ranges() []CodeRange {
+pub fn sa_mark_ranges() []CodeRange {
 	return parse_ranges(sa_mark_ranges_data)
 }
 
@@ -440,26 +445,30 @@ pub fn (w EastAsianWidth) str() string {
 // same reason: a few hundred ranges, asked about only where a rule names an East Asian bracket or
 // quotation mark, so a caller pays one small decode per call instead of every Properties value in
 // the library carrying a table most characters are never asked about.
-fn east_asian_ranges() []CodeRange {
+pub fn east_asian_ranges() []CodeRange {
 	return parse_ranges(east_asian_ranges_data)
 }
 
 // ep_unassigned_ranges decodes the generated unassigned-pictograph table, the caller-decoded way
 // for the caller-decoded reason: 34 ranges, asked about only next to an emoji modifier.
-fn ep_unassigned_ranges() []CodeRange {
+//
+// Public: the caller is the line breaking engine outside this module.
+pub fn ep_unassigned_ranges() []CodeRange {
 	return parse_ranges(ep_unassigned_ranges_data)
 }
 
 // is_ep_unassigned reports whether cp is an unassigned pictograph: Extended_Pictographic with
 // no entry in the UCD. LB30b's second arm holds an emoji modifier to one.
-fn is_ep_unassigned(ranges []CodeRange, cp rune) bool {
+//
+// Public: the line breaking rules live outside this module and ask it per mark.
+pub fn is_ep_unassigned(ranges []CodeRange, cp rune) bool {
 	return lookup_range(ranges, u32(cp), 0) == 1
 }
 
 // is_east_asian reports whether cp is in the $EastAsian set UAX#14 refines three rules with:
 // East_Asian_Width Fullwidth, Wide or Halfwidth. U+2329 LEFT-POINTING ANGLE BRACKET is Wide,
 // so a letter breaks before it; U+0028 LEFT PARENTHESIS is Narrow, so a letter does not.
-fn is_east_asian(ranges []CodeRange, cp rune) bool {
+pub fn is_east_asian(ranges []CodeRange, cp rune) bool {
 	o := lookup_range(ranges, u32(cp), 0)
 	return o == u16(EastAsianWidth.f) || o == u16(EastAsianWidth.h) || o == u16(EastAsianWidth.w)
 }
