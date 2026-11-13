@@ -281,18 +281,30 @@ jobs:
           cp libvtext.dylib examples/c-api/
 
       # ls first: a missing binary or a missing library beside it is otherwise
-      # a bare 127 with no failing command to read. The .exe probe is for
-      # Windows, where the binary is smoke.exe and a bare ./smoke is a
-      # command-not-found rather than a run. The exit code is printed even on
-      # failure, because set -e would otherwise abort the step on a bare
-      # number with no line of output saying whose it was.
-      - name: Run the smoke test
+      # a bare 127 with no failing command to read. The exit code is printed
+      # even on failure: a bare `; code=$?` would never run under set -e, so
+      # the failing call carries its own `||`. Windows runs under cmd rather
+      # than bash: cmd prints the loader's own error when the DLL cannot load,
+      # where bash reports only 127 with no output at all.
+      - name: Run the smoke test (Linux and macOS)
+        if: runner.os != 'Windows'
         shell: bash
         run: |
           ls -la
-          if [ -f smoke.exe ]; then ./smoke.exe ../../testdata/fonts/Amiri-Regular.ttf; code=$?; else ./smoke ../../testdata/fonts/Amiri-Regular.ttf; code=$?; fi
+          code=0
+          ./smoke ../../testdata/fonts/Amiri-Regular.ttf || code=$?
           echo "smoke exit: $code"
           exit $code
+        working-directory: examples/c-api
+
+      - name: Run the smoke test (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          dir
+          smoke.exe ..\..\testdata\fonts\Amiri-Regular.ttf
+          echo smoke exit: %ERRORLEVEL%
+          exit /b %ERRORLEVEL%
         working-directory: examples/c-api
 
       - name: MinGW import library (Windows)
