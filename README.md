@@ -11,6 +11,11 @@ them has its pipeline in the right order. The rest is measured, not assumed:
 line breaking against the Unicode committee's own test, shaping against four
 independent engines, and every remaining difference recorded with its reason.
 
+The goal is one library that does the whole text job — load, shape, lay out,
+rasterize, inspect, subset — where each job is a separate part with its own
+API and its own baseline. See `GOAL.md` for the one paragraph that decides
+scope arguments, and `ROADMAP.md` for where each part stands.
+
 ```v
 import vtext
 
@@ -44,11 +49,34 @@ The pipeline is the one UAX #9 and the OpenType specification describe, in order
 | Order glyphs for drawing | UAX #9 | `layout.v` |
 | Rasterize | | `stbtt.c.v` |
 
-Character data is generated from the UCD into `ucd_*.v`, so there are no runtime tables to load and
-no network access is needed to build.
+Character data is generated from the UCD into `ucd/ucd_*.v` (module `vtext.ucd`),
+so there are no runtime tables to load and no network access is needed to build.
 
 `ROADMAP.md` says what is left in the engine, and lists the examples and the tools that come after
 it.
+
+## Parts
+
+Each job below is a separate module with its own API and its own conformance
+baseline. A caller uses one part or all of them; nothing is pulled in by
+accident. Dependencies run one way — `layout` → `shape` → `font` → `ucd`,
+`capi` → all — and no part imports a tool.
+
+| Part | Directory | What it is | Replaces |
+| --- | --- | --- | --- |
+| `vtext.ucd` | `ucd/` | Generated UCD tables decoded once into `Properties`. No other part reads the UCD directly. Carved out 2026-11-13; the split is verified by the full suite, the fmt gate, the difftest tool, and the C library plus smoke test. | — (shared data) |
+| `vtext.font` | planned | sfnt/TTC containers, cmap, metrics, variation-store reading, instancing. Planned next: it is the only part `shape` and `layout` both stand on. | FreeType loading, fontTools reading |
+| `vtext.shape` | planned | Normalization, bidi, joining, GSUB/GPOS, contextual formats, instancing consumers. | HarfBuzz core |
+| `vtext.layout` | planned | Line breaking, wrapping, measuring, fallback chains, vertical text, kashida/justification, hyphenation. | Pango's layout math |
+| `vtext.raster` | planned | Unhinted stb today; hinting and color as engines behind one box-and-fill contract. | FreeType rendering |
+| `vtext.inspect` | planned | The existing `inspect.v` surface promoted to a library part. | fontTools introspection |
+| `vtext.subset` | planned | `tools/subset.v` promoted to a library; glyf today, CFF/CFF2 after the charstring reader. | fontTools subsetter |
+| `vtext.capi` | `capi.v` | The C face of all of the above; `vtext.h` stays the single header. | — |
+| providers | planned, per-OS | `FontSource` implementations for fontconfig / Core Text / DirectWrite. Optional, never linked by default. | fontconfig & co. |
+
+The split is one part at a time, each verified the way `ucd` was: full suite
+green, fmt gate green, every consumer that CI builds (`shapedump`, the C
+library plus smoke) green. `ROADMAP.md` Phase 6 tracks the order.
 
 ## Supported
 
@@ -136,10 +164,12 @@ Named here so that a caller is not surprised by them.
   puts it. A font that has only a `kern` table is drawn unkerned.
 - **The parts of UAX #14 that need a dictionary or a resolved level.** Segmentation inside a word
   (LB16b, LB17b) and the strict level rules are not implemented. Neither affects Arabic or Persian.
-- **Four UAX #14 cases.** Everything else in the committee's test passes: one needs the Indic
-  syllabic categories this engine does not carry, and three quotation-span breaks need quotation
-  state the pair engine threads but does not span. Both are named in `ROADMAP.md` rather than
-  coded around.
+- **Three UAX #14 cases.** Everything else in the committee's test passes: three
+  quotation-span breaks need quotation state the pair engine threads but does
+  not span. They are named in `ROADMAP.md` rather than coded around. (A fourth,
+  the Batak `[28.14]` case, landed as LB28a's fourth arm; the note that blamed
+  Indic syllabic categories was wrong — it needed a three-character lookahead
+  the engine never wrote.)
 
   Line breaking is measured against the Unicode committee's own test for this version, not described.
   It passes **19,343 of 19,346 cases (99.98%)**, and `linebreak_conformance_test.v` asserts that as a
@@ -572,7 +602,7 @@ v run tools/fmt_check.v        # formatting
 Use `tools/fmt_check.v` rather than `v fmt -verify .`. Two files in this tree cannot be formatted by
 the compiler, and both fail in a way that looks like an ordinary unformatted file. `stbtt.c.v` is
 reported unformatted and `v fmt -w` on it answers "Reformatted file" while writing byte-identical
-content, so there is nothing to fix and no diff to read. `ucd_names.v` is a 1.8 MB generated table
+content, so there is nothing to fix and no diff to read. `ucd/ucd_names.v` is a 1.8 MB generated table
 that `v fmt -w` rewrites by 429,652 lines; it was reverted with `git checkout` and the committed file
 was intact. Both are excluded by the checker **with the reason attached**, so the exclusion is
 visible rather than looking like a preference. The other generated tables are checked, because their
@@ -723,7 +753,6 @@ the iteration, so the struct gets a copy. `parse_mark_to_ligature` does this for
 ```
 reader.v        bounds-checked big-endian byte reading
 sfnt.v          the font file: tables, collections, offsets
-tables.v        shared table directory handling
 cmap.v          codepoint to glyph
 face.v          loads GDEF, GSUB and GPOS for a font
 glyph.v         fallback chain, joining forms, glyph metrics
@@ -733,15 +762,17 @@ joining.v       UAX #53
 gsub.v          OpenType substitution
 gpos.v          OpenType positioning
 layout.v        the pipeline, and mark placement
-properties.v    the UCD lookup tables
 linebreak.v     UAX #14, wrapping, and measuring a paragraph's two widths
 stbtt.c.v       the stb_truetype rasteriser, vendored and public domain
 
 inspect.v       reporting what a font contains: tables, features, scripts, coverage
 trace_api.v     the pipeline's stages, reached one at a time for shapetrace
 
-ucd_*.v         generated from the UCD by the tools in tools/, committed so a build needs no fetch
-ucd_names.v     codepoint names, front coded: the suffixes and the shared prefix lengths
+ucd/            module vtext.ucd: tables.v (decode once into Properties),
+                properties.v (hand-written enums and lookups), and the
+                ucd_*.v files generated from the UCD by the tools in tools/,
+                committed so a build needs no fetch
+ucd/ucd_names.v codepoint names, front coded: the suffixes and the shared prefix lengths
 ```
 
 The tools are in `tools/`, the examples in `examples/`, and `ucd/` holds the Unicode Character Database
@@ -757,9 +788,9 @@ grants redistribution only on the condition that the notice travels with the fil
 is committed rather than downloaded: `tools/fetch_ucd.v` does not fetch it, and a `ucd/*` ignore without an
 exception for it would publish the data with no terms at all.
 
-The generated tables in `ucd_*.v` are derived from those files and are covered by the MIT licence above. A
+The generated tables in `ucd/ucd_*.v` are derived from those files and are covered by the MIT licence above. A
 derivative of the data would have to carry the data's terms for the same reason, so those tables are kept
 out of the MIT grant rather than quietly inside it; the notice travels with the sources they came from, in
 the same directory tree and in the same commit.
 
-`ucd_*.v` are generated character data and are not edited by hand.
+`ucd/ucd_*.v` are generated character data and are not edited by hand.

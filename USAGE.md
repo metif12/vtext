@@ -74,6 +74,44 @@ line := vtext.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 `README.md` documents the pipeline, the font fallback rules, kerning, marks
 and every inspection API in full. This file does not repeat it.
 
+## Parts
+
+The library is splitting into one module per job — `vtext.ucd` first, the
+rest to follow in dependency order (`layout` → `shape` → `font` → `ucd`) —
+so a caller that only needs tables does not pull in shaping, and a caller
+that only shapes does not pull in rasterization. `ROADMAP.md` Phase 6 tracks
+the order; `GOAL.md` says what each part replaces.
+
+The shape of every split is the one `vtext.ucd` set. The part owns its
+sources and its generated data, root code reaches it qualified, and the
+split is verified the same way: full suite green, fmt gate green, every
+consumer green:
+
+```v
+import vtext.ucd
+
+// The decoded tables live one per text system, next to the shaper that uses
+// them, which is why they are built with the context rather than read off a
+// global.
+ctx := vtext.new_context()
+props := ctx.properties // &ucd.Properties, shared between threads and faces
+_ = props.line_break_of(`A`)
+```
+
+Regenerating a part's tables writes into the part, so a regeneration lands
+where the module lives:
+
+```sh
+v run tools/gen_tables.v          # writes ucd/ucd_bidi.v, ucd/ucd_linebreak.v, ...
+v run tools/gen_arabic.v          # writes ucd/ucd_arabic.v
+v run tools/gen_normalization.v   # writes ucd/ucd_normalization.v
+v run tools/gen_codepoint_names.v # writes ucd/ucd_names.v
+```
+
+(`ucd/UnicodeData.txt` — the generator input — is fetched, not committed:
+`v run tools/fetch_ucd.v`. The generated files are committed, so a normal
+build never needs the fetch.)
+
 ## C in five minutes
 
 The C API is `vtext.h` at the repo root, implemented by `capi.v`. Handles are
@@ -161,13 +199,13 @@ gcc; MSVC takes `/STACK:33554432`, same meaning, not run here). With the
 default 1 MB stack the first call into the library faults with a stack
 overflow.
 
-The reason is in the generated tables, not in the call: `ucd_names.v` holds
+The reason is in the generated tables, not in the call: `ucd/ucd_names.v` holds
 two 143,217-element constant arrays, and the compiler materializes them as
 stack compound literals in the module initializer — over 2 MB before a single
 character is shaped. Every in-tree test binary survives this because V links
 executables with a 32 MB reserve; a DLL runs on the host's stack and inherits
 whatever the host reserved. The real fix is generating those tables as parsed
-strings like every other `ucd_*.v` file, which is recorded in `ROADMAP.md`
+strings like every other `ucd/ucd_*.v` file, which is recorded in `ROADMAP.md`
 rather than done here. Until then, reserve the stack.
 
 On Windows the DLL must also sit beside the executable (or on `PATH`); that

@@ -176,7 +176,7 @@ before a mark is allowed only for a `Pi`, or after a hard break, or after a zero
 after a mark is never allowed for a `Pi` and is allowed past a space or a mark for the other two. Two
 rules, worth 245, and the `[15.11]`/`[15.21]` failure counts go from 111 and 139 to one each. The
 distinction is the general category, so it could not be a codepoint list in the source:
-`DerivedGeneralCategory.txt` is fetched, `tools/gen_tables.v` emits a `ucd_quote.v` in the same form as
+`DerivedGeneralCategory.txt` is fetched, `tools/gen_tables.v` emits a `ucd/ucd_quote.v` in the same form as
 its siblings, and nothing was hand-written.
 
 ### And the one rule that was invented rather than missing: a line may end on a combining mark. Worth 922 cases
@@ -1655,10 +1655,10 @@ exports nothing: the compiler only marked the wrappers with the ELF visibility
 attribute, which a PE linker ignores. Fixed upstream in the compiler rather
 than worked around here (the tcc `-export-all-symbols` flag stays as a belt
 until that lands). And a caller thread needs a 32 MB stack, the same reserve V
-gives its own executables: `ucd_names.v` holds two 143,217-element constant
+gives its own executables: `ucd/ucd_names.v` holds two 143,217-element constant
 arrays that the compiler materializes as stack compound literals in the module
 initializer, over 2 MB before a single character is shaped. The real fix is
-generating those tables as parsed strings like every other `ucd_*.v` file;
+generating those tables as parsed strings like every other `ucd/ucd_*.v` file;
 until then the stack is documented, not assumed.
 
 **Device and variation offsets.** One Device record in 341 fonts (SitkaVF),
@@ -1697,6 +1697,52 @@ that looked dominant recomputes an effective sequence per substitution and the
 fix (in-place 1:1 writes, recompute only when length or matching behavior
 changes) removed it. The remaining cost on heavy fonts is the per-pair kern
 walk, which is its own unit.
+
+## Phase 6: the modular replacement
+
+The goal is one library that does the whole text job — load, shape, lay out,
+rasterize, inspect, subset — where each job is a separate part with its own
+API and its own baseline. `GOAL.md` is the one paragraph that decides scope
+arguments; this section is the work list. A caller uses one part or all of
+them, and nothing is pulled in by accident.
+
+Parts and what each one replaces, in the order they unblock each other.
+Dependencies run one way — `layout` → `shape` → `font` → `ucd`, `capi` →
+all — and no part imports a tool.
+
+| Part | Replaces | State |
+| --- | --- | --- |
+| `vtext.ucd` | — (shared data) | Done 2026-11-13: `tables.v`, `properties.v` and the 13 generated `ucd_*.v` files live in `ucd/` as `module ucd`, imported as `vtext.ucd`. Verified the way every split below must be: full suite 32/32 green, fmt gate green, every consumer CI builds (`shapedump`, the C library plus smoke) green. Test files stay at the root; the moved free functions they need (`hex_value`, `lookup_range`, the quote/sa/east-asian/ep helpers, `parse_ranges`/`parse_names`) are `pub` on `ucd`. |
+| `vtext.font` | FreeType's loading side, fontTools' reading side | Planned next: it is the only part `shape` and `layout` both stand on. Carries the sfnt container, cmap, metrics, variation-store reading, and instancing. Owns the Device-table question Phase 5 left open (one record in SitkaVF, none in the corpus). |
+| `vtext.shape` | HarfBuzz core | Planned: normalization, bidi, joining, GSUB/GPOS, contextual formats, instancing consumers. Acceptance is the existing differential baseline extended past Arabic — Indic and Khmer shaping beside HarfBuzz at 0 new and 0 stale. |
+| `vtext.layout` | Pango's layout math | Planned: line breaking, wrapping, measuring, fallback chains, vertical text, kashida and justification as opt-in, hyphenation dictionaries as a `BreakPolicy` with generated tables. The [28.14] arm showed the shape: a rule with its own cases, measured, not described. |
+| `vtext.raster` | FreeType's rendering side | Planned: unhinted stb today; hinting (TT interpreter plus auto-hinter fallback) and color (COLR/CPAL, CBDT/sbix, SVG refusal-with-reason) as engines behind the box-and-fill contract `box_only`/`render_into` already define. Verified per glyph against FreeType and Pillow like the ink leg does now. |
+| `vtext.inspect` | fontTools introspection (read side) | Planned: the existing `inspect.v` surface promoted to a library part. |
+| `vtext.subset` | fontTools subsetter | Planned: `tools/subset.v` promoted to a library; glyf today, CFF/CFF2 after the charstring reader exists. Needs the two API gaps already named: `Font.data()` and a closure API in `inspect.v`. |
+| `vtext.capi` | — (the C face) | Last, since it wraps all of the above. `vtext.h` stays the single header; the header-mirror check stays the proof. |
+| providers | fontconfig / Core Text / DirectWrite | Planned, per-OS, optional: `FontSource` implementations behind the seam, never linked by default. Linux (fontconfig) first, because CI can verify it. |
+
+The seams that keep the parts combinable, each an explicit interface rather
+than an argument about taste: `FontSource` (where fonts come from — file,
+bytes, or a provider), `RasterBackend` (box-for-gid plus fill-this-buffer),
+`BreakPolicy` (UAX #14 default today, dictionaries tomorrow), the
+caller-owned glyph cache (keyed on font id, gid, size, subpixel offset, which
+is the only honest key), and per-part options structs on the proven
+`LayoutOptions` pattern (`ShapeOptions` for features and script behavior,
+`RasterOptions` for subpixel and gamma) rather than one god-struct.
+
+What changed status to make room: kashida and justification are
+`vtext.layout` features now rather than caller homework, hyphenation
+dictionaries are a `BreakPolicy` with generated tables rather than a
+refusal, and system font discovery is a provider rather than a gap. What did
+not change: the engine ends at a positioned glyph with a coverage bitmap,
+the cache stays with the caller, and there are still no HarfBuzz bindings,
+no ports, no font authoring, and no variable instancing.
+
+Acceptance per part, not per release: each part lands with its own
+conformance floor and its own differential baseline, green on all three
+platforms, or it does not land. The ucd carve-out above is the template:
+full suite green, fmt gate green, every consumer green, then commit.
 
 ## Explicitly not planned
 
