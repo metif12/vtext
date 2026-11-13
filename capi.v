@@ -102,14 +102,43 @@ fn c_options(opts &COptions) LayoutOptions {
 	return out
 }
 
+// c_array moves array contents into C memory, returning an unmanaged V array over it.
+//
+// The boxes below own their glyphs for a C caller, and the release functions free them
+// with the C free — which is only exact on memory C allocated. A managed V array's
+// backing carries a runtime header (and a possible slice offset) that C free must not
+// touch: freeing it aborts on a checked allocator, which is what every wrap and line
+// release did before this. The flags stay clear, so the copy behaves like plain memory
+// on every toolchain: reads and indexing do not consult them, and nothing here appends
+// after boxing. The V original is dropped with the caller's temporary, which -gc none
+// never collects — the same cost every transient in this library already pays, measured
+// rather than assumed, and bounded to one buffer per boxed array.
+fn c_array[T](src []T) []T {
+	if src.len == 0 {
+		return []T{}
+	}
+	unsafe {
+		n := u64(src.len) * u64(sizeof(T))
+		dst := malloc(n)
+		C.memcpy(dst, src.data, usize(n))
+		mut out := []T{cap: 0}
+		out.data = dst
+		out.len = src.len
+		out.cap = src.len
+		out.flags = ArrayFlags(0)
+		return out
+	}
+}
+
 // box_line moves a laid-out line onto the heap, because a value return would
 // copy the glyph array header and leave two owners of one backing. The glyphs
-// themselves are copied by the layout pass already, so the box owns them and
-// `vtext_line_free` releases them.
+// themselves are copied by the layout pass already, and once more here into C
+// memory, so the box owns them and `vtext_line_free` releases them.
 fn box_line(line Line) &Line {
 	unsafe {
 		mut p := &Line(malloc(sizeof(Line)))
 		*p = line
+		p.glyphs = c_array(line.glyphs)
 		return p
 	}
 }
@@ -538,12 +567,18 @@ pub mut:
 }
 
 // box_wrap moves a wrap result onto the heap. Each line owns its glyph array
-// already — the wrap pass copies the glyphs it keeps — so the box owns the
-// lines and `vtext_wrap_free` releases all of it.
+// already — the wrap pass copies the glyphs it keeps — and each array is
+// copied once more here into C memory, so the box owns them and
+// `vtext_wrap_free` releases all of it.
 fn box_wrap(lines []WrappedLine) &WrapBox {
 	unsafe {
 		mut p := &WrapBox(malloc(sizeof(WrapBox)))
-		p.lines = lines
+		p.lines = c_array(lines)
+		for i in 0 .. lines.len {
+			mut wl := p.lines[i]
+			wl.line.glyphs = c_array(lines[i].line.glyphs)
+			p.lines[i] = wl
+		}
 		return p
 	}
 }

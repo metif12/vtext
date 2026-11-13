@@ -283,12 +283,16 @@ jobs:
       # ls first: a missing binary or a missing library beside it is otherwise
       # a bare 127 with no failing command to read. The .exe probe is for
       # Windows, where the binary is smoke.exe and a bare ./smoke is a
-      # command-not-found rather than a run.
+      # command-not-found rather than a run. The exit code is printed even on
+      # failure, because set -e would otherwise abort the step on a bare
+      # number with no line of output saying whose it was.
       - name: Run the smoke test
         shell: bash
         run: |
           ls -la
-          if [ -f smoke.exe ]; then ./smoke.exe ../../testdata/fonts/Amiri-Regular.ttf; else ./smoke ../../testdata/fonts/Amiri-Regular.ttf; fi
+          if [ -f smoke.exe ]; then ./smoke.exe ../../testdata/fonts/Amiri-Regular.ttf; code=$?; else ./smoke ../../testdata/fonts/Amiri-Regular.ttf; code=$?; fi
+          echo "smoke exit: $code"
+          exit $code
         working-directory: examples/c-api
 
       - name: MinGW import library (Windows)

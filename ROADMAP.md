@@ -1758,6 +1758,19 @@ initializer, over 2 MB before a single character is shaped. The real fix is
 generating those tables as parsed strings like every other `ucd/ucd_*.v` file;
 until then the stack is documented, not assumed.
 
+A third thing, found because CI stays red on it while Windows stays silent:
+`vtext_wrap_free` and `vtext_line_free` freed the glyph backing with the C free,
+and a managed V array's backing carries a runtime header (and a possible slice
+offset) that C free must not touch. glibc aborts — `free(): invalid size` on
+Ubuntu, exit 134 on macOS — while the Windows heap tolerates the same interior
+pointer, so a local smoke run passed and CI did not. Reproduced under valgrind,
+which names all three frees (both wrap buffers and the line), and fixed by the
+file's own `CBitmap` rule: the boxes copy glyphs into C memory behind unmanaged
+headers (`c_array`), so the existing frees are exact and `vtext.h` does not
+move. Valgrind-clean after, 0 errors from 0 contexts. The `-gc none` transients
+were already dropped uncollected by design; the boxes add one buffer per call
+to the same heap, which is the documented cost, not a new one.
+
 **Device and variation offsets.** One Device record in 341 fonts (SitkaVF),
 zero VariationIndex. `kern_offset_at` with a ppem, per the design already
 written down, verified against that one record; the variation half needs the
