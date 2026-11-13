@@ -263,8 +263,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -L. -lvtext -Wl,--stack,33554432 -o examples/c-api/smoke.exe
+          gcc examples/c-api/smoke.c -L. -lvtext -Wl,--stack,33554432 -static-libgcc -static-libwinpthread -o examples/c-api/smoke.exe
           cp vtext.dll examples/c-api/
+          # The import tables, so a loader failure names its DLL. A missing
+          # MinGW runtime beside the exe dies as STATUS_DLL_NOT_FOUND with no
+          # output; this line is what tells which name it was looking for.
+          objdump -p examples/c-api/smoke.exe | grep 'DLL Name' || true
+          objdump -p vtext.dll | grep 'DLL Name' || true
 
       - name: Build and place the smoke test (Linux)
         if: runner.os == 'Linux'
