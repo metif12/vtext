@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Tests for mark attachment: the GPOS mark-to-base rules, the GDEF table that classifies the
 // glyphs, and the placement they produce.
 //
@@ -379,7 +380,7 @@ fn test_layout_puts_a_mark_at_its_letter_anchor() {
 fn test_mark_offset_in_reads_the_scripts_own_rules() {
 	data := mark_table_bytes([1, 12, 18, 1, 24, 36, 1, 1, 700, 1, 1, 100, 1, 0, 6, 1, 10, 200,
 		1, 4, 1, 30, 400])
-	r := new_reader(data)
+	r := font.new_reader(data)
 	rule := parse_mark_to_base(r, 0) or { panic('a well-formed mark rule should parse') }
 	g := &Gpos{
 		lookups: [GposLookup{
@@ -399,8 +400,8 @@ fn test_mark_offset_in_reads_the_scripts_own_rules() {
 	// parses to nothing rather than half a rule.
 	bad := mark_table_bytes([3, 12, 18, 1, 24, 36, 1, 1, 700, 1, 1, 100, 1, 0, 6, 1, 10, 200, 1,
 		4, 1, 30, 400])
-	assert parse_mark_to_base(new_reader(bad), 0) == none, 'format 3 is not a mark rule'
-	assert parse_mark_to_base(new_reader(data[..10]), 0) == none, 'a cut header parses to nothing'
+	assert parse_mark_to_base(font.new_reader(bad), 0) == none, 'format 3 is not a mark rule'
+	assert parse_mark_to_base(font.new_reader(data[..10]), 0) == none, 'a cut header parses to nothing'
 }
 
 // mark_table_bytes turns a list of sixteen bit words into the bytes a font stores.

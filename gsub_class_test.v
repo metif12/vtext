@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Class and glyph based contextual substitution: type 5 formats 2 and 3, type 6 formats 1 and 2.
 //
 // Format 3 on both sides matches through coverages and was read first; formats 1 and 2 of the
@@ -116,7 +117,7 @@ fn context3_bytes() []u8 {
 }
 
 fn test_gsub_context2_parses_from_bytes() {
-	r := new_reader(context2_bytes())
+	r := font.new_reader(context2_bytes())
 	c := parse_context2(r, 0) or { panic('a well-formed format 2 subtable should parse') }
 	assert c.coverage.len == 2, 'two covered glyphs'
 	assert c.sets.len == 3, 'one set per class value'
@@ -130,12 +131,12 @@ fn test_gsub_context2_parses_from_bytes() {
 	// A format that is not 2 is not this reader's, and a truncated subtable
 	// ends the walk rather than reading past it.
 	bad := bytes_of([1, 8, 1, 14, 1, 1, 10, 1, 4, 1, 5, 2, 20, 1, 1, 7])
-	assert parse_context2(new_reader(bad), 0) == none, 'format 1 is another reader'
-	assert parse_context2(new_reader(context2_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
+	assert parse_context2(font.new_reader(bad), 0) == none, 'format 1 is another reader'
+	assert parse_context2(font.new_reader(context2_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
 }
 
 fn test_gsub_chain1_parses_from_bytes() {
-	r := new_reader(chain1_bytes())
+	r := font.new_reader(chain1_bytes())
 	c := parse_chain1(r, 0) or { panic('a well-formed format 1 subtable should parse') }
 	assert c.coverage.len == 1, 'one coverage range'
 	assert c.coverage[0].first == 10 && c.coverage[0].last == 10, 'covering glyph 10'
@@ -148,12 +149,12 @@ fn test_gsub_chain1_parses_from_bytes() {
 	assert rule.records.len == 1, 'one substitution record'
 	assert rule.records[0].position == 1 && rule.records[0].lookup == 7, 'substituting the second input glyph through lookup 7'
 	bad := bytes_of([2, 8, 11, 15, 20, 2, 0, 24, 1, 1, 10, 1, 5, 1, 3])
-	assert parse_chain1(new_reader(bad), 0) == none, 'format 2 is another reader'
-	assert parse_chain1(new_reader(chain1_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
+	assert parse_chain1(font.new_reader(bad), 0) == none, 'format 2 is another reader'
+	assert parse_chain1(font.new_reader(chain1_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
 }
 
 fn test_gsub_chain2_parses_from_bytes() {
-	r := new_reader(chain2_bytes())
+	r := font.new_reader(chain2_bytes())
 	c := parse_chain2(r, 0) or { panic('a well-formed format 2 subtable should parse') }
 	assert c.coverage.len == 1, 'one coverage range'
 	assert c.sets.len == 2, 'one set per input class value'
@@ -166,12 +167,12 @@ fn test_gsub_chain2_parses_from_bytes() {
 	assert rule.records.len == 1, 'one substitution record'
 	assert rule.records[0].position == 1 && rule.records[0].lookup == 7, 'substituting the second input glyph through lookup 7'
 	bad := bytes_of([1, 4, 1, 7, 1, 1, 10, 1, 2, 1, 5, 2, 20, 1, 30, 1, 1, 7])
-	assert parse_chain2(new_reader(bad), 0) == none, 'format 1 is another reader'
-	assert parse_chain2(new_reader(chain2_bytes()[..10]), 0) == none, 'a cut header parses to nothing'
+	assert parse_chain2(font.new_reader(bad), 0) == none, 'format 1 is another reader'
+	assert parse_chain2(font.new_reader(chain2_bytes()[..10]), 0) == none, 'a cut header parses to nothing'
 }
 
 fn test_gsub_context3_parses_from_bytes() {
-	r := new_reader(context3_bytes())
+	r := font.new_reader(context3_bytes())
 	c := parse_context3(r, 0) or { panic('a well-formed format 3 subtable should parse') }
 	assert c.input.len == 2, 'two input coverages'
 	assert c.backtrack.len == 0 && c.lookahead.len == 0, 'a plain context has no backtrack or lookahead'
@@ -181,8 +182,8 @@ fn test_gsub_context3_parses_from_bytes() {
 	// walks into the next subtable. Amiri lookup 27 is that reader's control: its first
 	// subtable carries a 60 where the offsets end, and the right answer is still 3 records.
 	bad := bytes_of([1, 4, 1, 7, 1, 1, 10, 1, 2, 1, 5, 2, 20, 1, 30, 1, 1, 7])
-	assert parse_context3(new_reader(bad), 0) == none, 'format 1 is another reader'
-	assert parse_context3(new_reader(context3_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
+	assert parse_context3(font.new_reader(bad), 0) == none, 'format 1 is another reader'
+	assert parse_context3(font.new_reader(context3_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
 }
 
 // ligatables_of wraps glyph ids the way the substitution walk sees them: plain base letters
@@ -202,7 +203,7 @@ fn ligatables_of(gids []u16) []Ligatable {
 }
 
 fn test_gsub_context_class_rule_matches_by_class() {
-	r := new_reader(context2_bytes())
+	r := font.new_reader(context2_bytes())
 	c := parse_context2(r, 0) or { panic('the built subtable should parse') }
 	g := &Gsub{}
 	items := ligatables_of([u16(10), u16(11)])
@@ -221,7 +222,7 @@ fn test_gsub_context_class_rule_matches_by_class() {
 }
 
 fn test_gsub_chain_glyph_rule_matches_by_glyph() {
-	r := new_reader(chain1_bytes())
+	r := font.new_reader(chain1_bytes())
 	c := parse_chain1(r, 0) or { panic('the built subtable should parse') }
 	g := &Gsub{}
 	items := ligatables_of([u16(5), u16(10), u16(20), u16(30)])
@@ -239,7 +240,7 @@ fn test_gsub_chain_glyph_rule_matches_by_glyph() {
 }
 
 fn test_gsub_chain_class_rule_matches_by_class() {
-	r := new_reader(chain2_bytes())
+	r := font.new_reader(chain2_bytes())
 	c := parse_chain2(r, 0) or { panic('the built subtable should parse') }
 	g := &Gsub{}
 	items := ligatables_of([u16(5), u16(10), u16(11), u16(30)])

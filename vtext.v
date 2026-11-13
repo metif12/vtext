@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 import vtext.ucd
 
 // vtext is a text shaping and rendering engine written in V.
@@ -128,7 +129,7 @@ pub fn (f &Font) glyph_index(cp rune) u16 {
 // a tool listing a font's glyphs, a subsetter reporting what it kept, a caller mapping a glyph id that
 // came back from a substitution. It is genuinely many-to-one — a font may map several codepoints to one
 // glyph — so the lowest is returned, and glyph 0 has no answer at all because it is .notdef.
-pub fn (f &Font) codepoint_for(gid u16) ?rune {
+pub fn (f &Font) font.codepoint_for(gid u16) ?rune {
 	return f.face.codepoint_for(gid)
 }
 
@@ -157,7 +158,7 @@ pub fn (f &Font) glyph_index_variation(cp rune, selectors []rune) u16 {
 // A font can cover a base and still have no opinion about the sequence, in which case the caller draws
 // the base's text presentation. That is a result rather than a miss, and this is how a fallback chain
 // tells the two apart.
-pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
+pub fn (f &Font) font.has_variation_sequence(cp rune, selector rune) bool {
 	return f.face.has_variation_sequence(cp, selector)
 }
 

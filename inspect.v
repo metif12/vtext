@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Reading what a font contains, for the programs that want to know rather than to draw.
 //
 // Everything here is a report about a font the engine has already read. None of it changes what the engine
@@ -88,7 +89,7 @@ pub fn (f &Font) table_length(tag string) int {
 // an empty string for neither, which is a font that draws nothing at all.
 pub fn (f &Font) outlines() string {
 	sfnt := f.face.sfnt
-	if sfnt.has(tag_glyf) && sfnt.has(tag_loca) {
+	if sfnt.has(font.tag_glyf) && sfnt.has(font.tag_loca) {
 		return 'glyf'
 	}
 	if sfnt.has('CFF ') {
@@ -222,7 +223,7 @@ pub fn (f &Font) cmap_formats() []int {
 // which is what fontcheck reports. An empty list means the font has no cmap
 // table at all rather than one the engine disliked.
 pub fn (f &Font) cmap_table_formats() []int {
-	return raw_cmap_formats(f.face.sfnt.table_data(tag_cmap))
+	return raw_cmap_formats(f.face.sfnt.table_data(font.tag_cmap))
 }
 
 // feature_lookups says how many lookups a script's feature names in a table, or zero when the script
@@ -318,7 +319,7 @@ pub fn (f &Font) glyph_class_counts() [5]int {
 // like that. So this is a fact about the font, and the engine's lack of variation support is a fact about
 // the engine, and neither is dressed up as the other.
 pub fn (f &Font) is_variable() bool {
-	return f.face.sfnt.has(tag_fvar)
+	return f.face.sfnt.has(font.tag_fvar)
 }
 
 // variable_axes lists a variable font's axes, or nothing when the font is not variable.
@@ -371,7 +372,7 @@ fn sort_tags(list []string) []string {
 // counting those as mappings would say a font covers a character it cannot draw. That is the same
 // distinction `glyph_grid` draws, and it is why a font's coverage number and its mapped number are two
 // different numbers.
-fn (c &Cmap) mapped_count() int {
+fn (c &font.Cmap) mapped_count() int {
 	// A format 14 subtable has no opinion about any bare codepoint, so counting by asking would report
 	// zero for a table that names several hundred bases. It is counted from its own tables instead: the
 	// span each default entry covers, plus the bases the non-default table names that no span already

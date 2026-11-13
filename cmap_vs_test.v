@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // cmap variation sequences: formats 13 and 14.
 //
 // A format 14 subtable does not answer "which glyph is this codepoint". It answers "which glyph is this
@@ -231,13 +232,13 @@ fn test_a_selector_with_no_character_in_front_of_it_draws_nothing() {
 fn test_format_13_maps_a_range_to_one_glyph() {
 	// One group: U+0041..U+0045 all become glyph 7. The array is built by assignment rather than as a
 	// literal because this compiler rejects a struct element inside a braced array initializer.
-	mut groups := []CmapGroup{len: 1}
-	groups[0] = CmapGroup{
+	mut groups := []font.CmapGroup{len: 1}
+	groups[0] = font.CmapGroup{
 		start_cp:  0x41
 		end_cp:    0x45
 		start_gid: 7
 	}
-	sub := Cmap{
+	sub := font.Cmap{
 		format: 13
 		groups: groups
 	}
@@ -252,17 +253,17 @@ fn test_format_13_maps_a_range_to_one_glyph() {
 
 // The same shape as format 12 but incrementing, which is what makes reading one as the other wrong.
 fn test_format_13_does_not_advance_the_glyph_the_way_format_12_does() {
-	mut groups := []CmapGroup{len: 1}
-	groups[0] = CmapGroup{
+	mut groups := []font.CmapGroup{len: 1}
+	groups[0] = font.CmapGroup{
 		start_cp:  0x41
 		end_cp:    0x45
 		start_gid: 100
 	}
-	many := Cmap{
+	many := font.Cmap{
 		format: 13
 		groups: groups
 	}
-	incrementing := Cmap{
+	incrementing := font.Cmap{
 		format: 12
 		groups: groups
 	}

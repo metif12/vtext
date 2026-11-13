@@ -1,9 +1,9 @@
-module vtext
+module font
 
 // Cmap is a character-to-glyph mapping subtable, normalised across the formats
 // that matter in practice (0, 4, 6 and 12).
-struct Cmap {
-mut:
+pub struct Cmap {
+pub:
 	format   int
 	platform u16
 	encoding u16
@@ -47,7 +47,8 @@ mut:
 }
 
 // CmapGroup is one startCharCode..endCharCode span of a format 12 subtable.
-struct CmapGroup {
+pub struct CmapGroup {
+pub:
 	start_cp  u32
 	end_cp    u32
 	start_gid u32
@@ -199,7 +200,7 @@ pub fn raw_cmap_formats(data []u8) []int {
 }
 
 // parse_cmap reads every subtable of a font's 'cmap' table, best-scored first.
-fn parse_cmap(data []u8) []Cmap {
+pub fn parse_cmap(data []u8) []Cmap {
 	if data.len < 4 {
 		return []Cmap{}
 	}
@@ -524,7 +525,7 @@ fn parse_vs_non_default(r Reader, records []VsRecord) []VsMapping {
 // lookup_glyph maps a codepoint to a glyph index, or 0 when unmapped.
 // A returned glyph is 0 for ".notdef"; a returned none means "this subtable
 // has no opinion", so the caller can try the next one.
-fn (c &Cmap) lookup_glyph(cp u32) ?u16 {
+pub fn (c &Cmap) lookup_glyph(cp u32) ?u16 {
 	match c.format {
 		0 {
 			if cp > 0xFF || cp >= c.glyph_ids.len {
@@ -761,7 +762,7 @@ fn (c &Cmap) lookup_format4(cp u32) ?u16 {
 }
 
 // glyph_index_for maps cp through the first subtable that has an opinion.
-fn glyph_index_for(cmaps []Cmap, cp u32) u16 {
+pub fn glyph_index_for(cmaps []Cmap, cp u32) u16 {
 	for c in cmaps {
 		if g := c.lookup_glyph(cp) {
 			if g != 0 {
@@ -787,7 +788,7 @@ fn glyph_index_for(cmaps []Cmap, cp u32) u16 {
 //
 // Subtables are asked in the same order the forward direction uses, so a glyph named here is named by the
 // subtable that would have produced it.
-fn codepoint_for(cmaps []Cmap, gid u16) ?u32 {
+pub fn codepoint_for(cmaps []Cmap, gid u16) ?u32 {
 	if gid == 0 {
 		return none
 	}
@@ -810,7 +811,7 @@ fn codepoint_for(cmaps []Cmap, gid u16) ?u32 {
 // Nothing here is consulted for the base on its own, so a font whose format 14 table covers a base
 // still draws that base as text when no selector follows it. That is the difference between a
 // variation sequence and a character, and getting it wrong draws every emoji as text.
-fn glyph_index_variation_for(cmaps []Cmap, base u32, selector u32) u16 {
+pub fn glyph_index_variation_for(cmaps []Cmap, base u32, selector u32) u16 {
 	// The closure is a named function value rather than an inline one because it has to reach this
 	// subtable list, and V will not let an untyped expression become a `fn` parameter.
 	ordinary := fn [cmaps] (cp u32) ?u16 {
@@ -830,7 +831,7 @@ fn glyph_index_variation_for(cmaps []Cmap, base u32, selector u32) u16 {
 // asks only the second one cannot tell "this font cannot draw that sequence" from "this font draws it
 // as the text presentation", and those two need different answers: the first moves on to the next
 // font, the second is a result.
-fn has_variation_sequence(cmaps []Cmap, base u32, selector u32) bool {
+pub fn has_variation_sequence(cmaps []Cmap, base u32, selector u32) bool {
 	ordinary := fn [cmaps] (cp u32) ?u16 {
 		return glyph_index_for(cmaps, cp)
 	}

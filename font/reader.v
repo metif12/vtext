@@ -1,4 +1,4 @@
-module vtext
+module font
 
 // Reader is a bounds-checked big-endian view over a byte slice.
 //
@@ -10,12 +10,12 @@ module vtext
 // the end yields zero rather than panicking. Use has() when a zero and an
 // absent byte must be told apart.
 // imin returns the smaller of two ints. V has no int.min in this version.
-fn imin(a int, b int) int {
+pub fn imin(a int, b int) int {
 	return if a < b { a } else { b }
 }
 
 // imax returns the larger of two ints.
-fn imax(a int, b int) int {
+pub fn imax(a int, b int) int {
 	return if a > b { a } else { b }
 }
 
@@ -35,39 +35,39 @@ fn u32_be(data []u8, off int) u32 {
 	return (u32(u16_be(data, off)) << 16) | u32(u16_be(data, off + 2))
 }
 
-struct Reader {
+pub struct Reader {
 	data []u8
 }
 
-fn new_reader(data []u8) Reader {
+pub fn new_reader(data []u8) Reader {
 	return Reader{
 		data: data
 	}
 }
 
-fn (r &Reader) len() int {
+pub fn (r &Reader) len() int {
 	return r.data.len
 }
 
 // has reports whether off .. off+n lies fully inside the buffer.
-fn (r &Reader) has(off int, n int) bool {
+pub fn (r &Reader) has(off int, n int) bool {
 	return off >= 0 && n >= 0 && off + n <= r.data.len
 }
 
-fn (r &Reader) u8_at(off int) u8 {
+pub fn (r &Reader) u8_at(off int) u8 {
 	return if r.has(off, 1) { r.data[off] } else { 0 }
 }
 
-fn (r &Reader) u16_at(off int) u16 {
+pub fn (r &Reader) u16_at(off int) u16 {
 	return u16_be(r.data, off)
 }
 
-fn (r &Reader) i16_at(off int) i16 {
+pub fn (r &Reader) i16_at(off int) i16 {
 	v := int(r.u16_at(off))
 	return i16(if v >= 0x8000 { v - 0x10000 } else { v })
 }
 
-fn (r &Reader) u32_at(off int) u32 {
+pub fn (r &Reader) u32_at(off int) u32 {
 	return u32_be(r.data, off)
 }
 
@@ -81,25 +81,25 @@ fn (r &Reader) u32_at(off int) u32 {
 // low byte, so a codepoint at the end of a table reads as a different and much larger codepoint — one
 // that is not in the table and therefore answers "no opinion" instead of an error. Reading it as a
 // uint16 instead loses the top eight bits and collides codepoints a quarter of a million apart.
-fn (r &Reader) u24_at(off int) u32 {
+pub fn (r &Reader) u24_at(off int) u32 {
 	if !r.has(off, 3) {
 		return 0
 	}
 	return (u32(r.u8_at(off)) << 16) | (u32(r.u8_at(off + 1)) << 8) | u32(r.u8_at(off + 2))
 }
 
-fn (r &Reader) i32_at(off int) i32 {
+pub fn (r &Reader) i32_at(off int) i32 {
 	v := i64(r.u32_at(off))
 	return i32(if v >= 0x80000000 { v - 0x100000000 } else { v })
 }
 
-fn (r &Reader) u64_at(off int) u64 {
+pub fn (r &Reader) u64_at(off int) u64 {
 	return (u64(r.u32_at(off)) << 32) | u64(r.u32_at(off + 4))
 }
 
 // tag_at reads the 4-byte table tag at off as a string. Non-printable bytes
 // become '.', which keeps malformed tags visible in diagnostics.
-fn (r &Reader) tag_at(off int) string {
+pub fn (r &Reader) tag_at(off int) string {
 	return tag_from_bytes(r.data, off)
 }
 

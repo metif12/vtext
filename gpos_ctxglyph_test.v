@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Chaining-context positioning through glyph ids (format 1).
 //
 // Formats 2 and 3 match through classes and coverages; format 1 matches the
@@ -87,7 +88,7 @@ fn chain_glyph_bytes() []u8 {
 }
 
 fn test_gpos_chain_glyph_parses_from_bytes() {
-	r := new_reader(chain_glyph_bytes())
+	r := font.new_reader(chain_glyph_bytes())
 	c := parse_chain_glyph(r, 0) or { panic('a well-formed format 1 subtable should parse') }
 	assert c.coverage.len == 1, 'one coverage range'
 	assert c.coverage[0].first == 10 && c.coverage[0].last == 10, 'covering glyph 10'
@@ -103,8 +104,8 @@ fn test_gpos_chain_glyph_parses_from_bytes() {
 	// A subtable that is not format 1 is not this reader's, and a truncated one
 	// ends the walk rather than reading past it.
 	bad := bytes_of([3, 8, 1, 14, 1, 1, 10, 1, 4, 1, 5, 2, 20, 1, 30, 1, 1, 7])
-	assert parse_chain_glyph(new_reader(bad), 0) == none, 'format 3 is the coverage reader'
-	assert parse_chain_glyph(new_reader(chain_glyph_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
+	assert parse_chain_glyph(font.new_reader(bad), 0) == none, 'format 3 is the coverage reader'
+	assert parse_chain_glyph(font.new_reader(chain_glyph_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
 }
 
 fn test_gpos_chain_glyph_rule_matches_by_glyph() {

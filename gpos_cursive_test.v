@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 import os
 
 // Cursive attachment under GPOS lookup type 3: a rule says where each covered glyph's stroke enters and
@@ -122,7 +123,7 @@ fn cursive_range_bytes() []u8 {
 // there are none took Andalus's lookup 21 out of the font and failed the kerning tests, because its
 // valueFormat of 3 is a valid anchor format and the offset it makes lands inside the subtable.
 fn test_gpos_cursive_reader_refuses_a_single_position() {
-	r := new_reader(single_pos_bytes())
+	r := font.new_reader(single_pos_bytes())
 	assert parse_cursive(r, 0) == none, 'a value format is not an anchor offset'
 	// The same bytes still have to read as the positioning rule they are.
 	rule := parse_single_position(r, ResolvedSubtable{
@@ -137,7 +138,7 @@ fn test_gpos_cursive_reader_refuses_a_single_position() {
 // A cursive rule is one record per named glyph, and its offsets point past the records to anchors that
 // declare themselves anchors.
 fn test_gpos_cursive_reader_reads_format_one() {
-	r := new_reader(cursive_format1_bytes())
+	r := font.new_reader(cursive_format1_bytes())
 	rule := parse_cursive(r, 0) or { panic('a cursive rule with an anchor was refused') }
 	assert rule.format == 1, 'and it says which format it is'
 	got := rule.offset_for(3) or { panic('no anchors for the covered glyph') }
@@ -149,7 +150,7 @@ fn test_gpos_cursive_reader_reads_format_one() {
 // Format 2 is laid out exactly like format 1, and what it adds is that the count may fall short of the
 // coverage so that trailing covered glyphs take no part in the joining.
 fn test_gpos_cursive_reader_reads_format_two() {
-	r := new_reader(cursive_format2_bytes())
+	r := font.new_reader(cursive_format2_bytes())
 	rule := parse_cursive(r, 0) or { panic('a cursive rule with an exit anchor was refused') }
 	assert rule.format == 2, 'and it says which format it is'
 	got := rule.offset_for(3) or { panic('no anchors for the covered glyph') }
@@ -161,7 +162,7 @@ fn test_gpos_cursive_reader_reads_format_two() {
 // A coverage can be written as ranges, and a glyph per range is still a glyph with a record. Reading the
 // number of ranges as the number of records leaves most of the coverage unanchored.
 fn test_gpos_cursive_reader_counts_the_coverage_in_glyphs() {
-	r := new_reader(cursive_range_bytes())
+	r := font.new_reader(cursive_range_bytes())
 	rule := parse_cursive(r, 0) or { panic('a rule covering a range was refused') }
 	assert rule.marks.len == 2, 'a range of two glyphs has two records'
 	first := rule.offset_for(10) or { panic('the first glyph of the range has no anchors') }

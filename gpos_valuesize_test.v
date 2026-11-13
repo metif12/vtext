@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Tests for the width of a GPOS value record, which is what the reader uses to step from one record to the
 // next.
 //
@@ -56,7 +57,7 @@ fn test_a_record_after_a_variation_index_record_is_still_found() {
 	// Two PairValueRecords of four bytes each. The first has a valueFormat of 0x0004 | 0x0100 — an
 	// xAdvance of -70 and a zero variation index — and the second has 0x0004 with an xAdvance of -30.
 	words := [i16(-70), 0, -30]
-	r := new_reader(bytes_of(words))
+	r := font.new_reader(bytes_of(words))
 	first := read_pair_value(r, 0, 0x0004 | 0x0100)
 	assert first.x_advance == -70, 'the first record reads its own advance, got ${first.x_advance}'
 	// The reader steps by the width the format states. With the variation index uncounted it would stop

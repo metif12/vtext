@@ -17,7 +17,7 @@ is a part with no claim.
 | Part | Replaces | Objective |
 | --- | --- | --- |
 | `vtext.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`. No other part reads the UCD directly. Done 2026-11-13. |
-| `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, cmap, metrics, variation-store reading, instancing. |
+| `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, cmap, metrics, variation-store reading, instancing. Slice 1 landed 2026-11-14: sfnt, cmap and the reader live in `font/` as `module font`, green across the suite, both difftest hosts and the 1 MB smoke. |
 | `vtext.shape` | HarfBuzz core | Normalization, bidi, joining, GSUB/GPOS incl. contextual formats, instancing consumers. |
 | `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, fallback chains, vertical text, kashida/justification, hyphenation. |
 | `vtext.raster` | FreeType's rendering side | Unhinted stb today; hinting (TT interpreter + auto-hinter fallback) and color (COLR/CPAL, CBDT/sbix) as engines behind one box-and-fill contract. |

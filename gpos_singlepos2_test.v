@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // GPOS SinglePos format 2: one value for a whole coverage and a run of exceptions.
 //
 // Format 1 has one value per covered glyph and format 2 has one value for all of them plus a list of
@@ -128,7 +129,7 @@ fn single_pos_format2_bytes() []u8 {
 
 // The shared value applies to every covered glyph that no exception names.
 fn test_single_pos_format_2_gives_every_glyph_the_same_value() {
-	r := new_reader(single_pos_format2_bytes())
+	r := font.new_reader(single_pos_format2_bytes())
 	rule := parse_single_position(r, ResolvedSubtable{
 		kind: gpos_lookup_single_position
 		at:   0
@@ -144,7 +145,7 @@ fn test_single_pos_format_2_gives_every_glyph_the_same_value() {
 
 // An exception overrides the shared value, and it is keyed by coverage index rather than by glyph id.
 fn test_single_pos_format_2_an_exception_overrides_the_shared_value() {
-	r := new_reader(single_pos_format2_bytes())
+	r := font.new_reader(single_pos_format2_bytes())
 	rule := parse_single_position(r, ResolvedSubtable{
 		kind: gpos_lookup_single_position
 		at:   0
@@ -164,7 +165,7 @@ fn test_single_pos_format_2_an_exception_overrides_the_shared_value() {
 // A glyph outside the coverage is not covered by the shared value either. The value belongs to the
 // coverage, not to the lookup.
 fn test_single_pos_format_2_leaves_an_uncovered_glyph_alone() {
-	r := new_reader(single_pos_format2_bytes())
+	r := font.new_reader(single_pos_format2_bytes())
 	rule := parse_single_position(r, ResolvedSubtable{
 		kind: gpos_lookup_single_position
 		at:   0
@@ -193,7 +194,7 @@ fn test_single_pos_format_2_refuses_a_value_count_it_does_not_know() {
 		13,
 		0, // the coverage, format 2
 	])
-	r := new_reader(bad)
+	r := font.new_reader(bad)
 	assert parse_single_position(r, ResolvedSubtable{
 		kind: gpos_lookup_single_position
 		at:   0
@@ -229,7 +230,7 @@ fn test_single_pos_format_2_stops_at_a_record_larger_than_the_coverage() {
 		i16(8),
 		i16(0), // coverage format 2: glyphs 7 and 8
 	]
-	r := new_reader(bytes_of(words))
+	r := font.new_reader(bytes_of(words))
 	rule := parse_single_position(r, ResolvedSubtable{
 		kind: gpos_lookup_single_position
 		at:   0
@@ -248,7 +249,7 @@ fn test_single_pos_format_2_stops_at_a_record_larger_than_the_coverage() {
 // whole reason the parser branches on the format before reading anything else.
 fn test_single_pos_format_1_still_reads_as_format_1() {
 	// A coverage of one glyph and one value, in format 1's shape: no count of values at all.
-	r := new_reader(bytes_of([
+	r := font.new_reader(bytes_of([
 		i16(1),
 		i16(10), // posFormat, coverage offset
 		i16(1), // valueFormat

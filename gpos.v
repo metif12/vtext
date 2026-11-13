@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // OpenType glyph positioning, the GPOS table, and the GDEF table that says what it is talking
 // about.
 //
@@ -93,7 +94,7 @@ mut:
 
 // new_gdef parses the GDEF table, or returns none when the font has none.
 pub fn new_gdef(raw []u8) ?&Gdef {
-	r := new_reader(raw)
+	r := font.new_reader(raw)
 	if r.len() < 12 || r.u16_at(0) != 1 {
 		return none
 	}
@@ -126,7 +127,7 @@ pub fn new_gdef(raw []u8) ?&Gdef {
 // The offsets in it are 32 bits and relative to the start of the MarkGlyphSetsDef rather than to
 // their own entry. That is the one thing about this table a 16-bit offset could not have done: a
 // font is allowed more coverage tables in here than fit in 64KB of 16-bit offsets.
-fn parse_mark_glyph_sets(r &Reader, at int) [][]CoverageRange {
+fn parse_mark_glyph_sets(r &font.Reader, at int) [][]CoverageRange {
 	mut out := [][]CoverageRange{}
 	if r.u16_at(at) != 1 {
 		return out
@@ -217,7 +218,7 @@ fn (c &ClassDef) class_of(gid u16) u16 {
 }
 
 // parse_class_def reads a ClassDef table in either of its two formats.
-fn parse_class_def(r &Reader, at int) ClassDef {
+fn parse_class_def(r &font.Reader, at int) ClassDef {
 	mut c := ClassDef{}
 	format := r.u16_at(at)
 	if format == 1 {
@@ -425,7 +426,7 @@ mut:
 // lookup number, and reading it as a format gives 62 as a mask instead.
 // class_def_at reads the class definition at a subtable-relative offset, or an empty one
 // when the offset is zero or points outside the table.
-fn class_def_at(r &Reader, at int, off int) ClassDef {
+fn class_def_at(r &font.Reader, at int, off int) ClassDef {
 	if off == 0 || !r.has(at + off, 2) {
 		return ClassDef{}
 	}
@@ -439,7 +440,7 @@ fn class_def_at(r &Reader, at int, off int) ClassDef {
 // glyph reader beside them. Class definitions are required; a zero
 // offset parses to an empty table, whose every glyph is class zero — which is exactly
 // what an absent definition means, since zero is the class of everything unnamed.
-fn parse_chain_class(r &Reader, at int) ?ChainClass2 {
+fn parse_chain_class(r &font.Reader, at int) ?ChainClass2 {
 	if r.u16_at(at) != 2 {
 		return none
 	}
@@ -488,7 +489,7 @@ fn parse_chain_class(r &Reader, at int) ?ChainClass2 {
 // list holds every class after it. A rule that fails to parse is skipped rather than
 // placed half-read: the next rule starts at its own offset, so one bad rule cannot shift
 // the rest.
-fn parse_chain_class_rule(r &Reader, at int) ?ChainClassRule {
+fn parse_chain_class_rule(r &font.Reader, at int) ?ChainClassRule {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -552,7 +553,7 @@ fn parse_chain_class_rule(r &Reader, at int) ?ChainClassRule {
 // format 1 is: the covered first glyph selects its set, and a NULL set offset
 // is an empty rule list kept positionally. Each rule names its three sequences
 // as glyph ids, including every input glyph but the covered first.
-fn parse_chain_glyph(r &Reader, at int) ?ChainGlyph1 {
+fn parse_chain_glyph(r &font.Reader, at int) ?ChainGlyph1 {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -598,7 +599,7 @@ fn parse_chain_glyph(r &Reader, at int) ?ChainGlyph1 {
 // every glyph after it. A rule that fails to parse is skipped rather than
 // placed half-read: the next rule starts at its own offset, so one bad rule
 // cannot shift the rest.
-fn parse_chain_glyph_rule(r &Reader, at int) ?ChainGlyphRule {
+fn parse_chain_glyph_rule(r &font.Reader, at int) ?ChainGlyphRule {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -656,7 +657,7 @@ fn parse_chain_glyph_rule(r &Reader, at int) ?ChainGlyphRule {
 	return rule
 }
 
-fn parse_chain_position(r &Reader, at int) ?ChainPosition {
+fn parse_chain_position(r &font.Reader, at int) ?ChainPosition {
 	if r.u16_at(at) != 3 {
 		return none
 	}
@@ -771,7 +772,7 @@ pub fn (f &Font) mark_glyphs_passthrough() bool {
 
 // new_gpos parses the GPOS table, or returns none when the font has none or it does not parse.
 pub fn new_gpos(raw []u8) ?&Gpos {
-	r := new_reader(raw)
+	r := font.new_reader(raw)
 	if r.len() < 10 || r.u16_at(0) != 1 {
 		return none
 	}
@@ -1792,7 +1793,7 @@ fn (rule &PairPos) offset_for(left_gid u16, right_gid u16) ?Anchor {
 }
 
 // parse_gpos_lookups reads the LookupList and the mark-to-base rules.
-fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
+fn parse_gpos_lookups(r &font.Reader, off int) []GposLookup {
 	mut out := []GposLookup{}
 	if !r.has(off, 2) {
 		return out
@@ -1913,7 +1914,7 @@ struct ResolvedSubtable {
 //
 // Fonts wrap their positioning rules in extensions for the same reason they wrap substitution
 // rules, so ignoring the wrapper would leave every mark at the pen position.
-fn resolve_gpos_subtable(r &Reader, kind u16, at int) ResolvedSubtable {
+fn resolve_gpos_subtable(r &font.Reader, kind u16, at int) ResolvedSubtable {
 	if kind != gpos_lookup_extension {
 		return ResolvedSubtable{
 			kind: kind
@@ -2072,7 +2073,7 @@ fn (rule &Cursive) offset_for(gid u16) ?EntryExit {
 // value format, which is a small bitmask and cannot point past a value array that is already there. That
 // is what Andalus's lookup 21 fails: its valueFormat of 3 is a valid anchor format, so the format alone
 // does not separate the two tables and an offset read as a point lands in the middle of the value array.
-fn parse_cursive(r &Reader, at int) ?Cursive {
+fn parse_cursive(r &font.Reader, at int) ?Cursive {
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
 		return none
@@ -2144,7 +2145,7 @@ fn parse_cursive(r &Reader, at int) ?Cursive {
 // A zero offset is always allowed, since it means the anchor is absent rather than misplaced. Every
 // offset that is there has to point past the records and land on something that declares itself an
 // anchor, which is a format between 1 and 3.
-fn cursive_record_plausible(r &Reader, base int, records_end int, p int) bool {
+fn cursive_record_plausible(r &font.Reader, base int, records_end int, p int) bool {
 	for slot in 0 .. 2 {
 		offset := int(r.u16_at(p + 2 * slot))
 		if offset == 0 {
@@ -2252,7 +2253,7 @@ fn placement_of(v PairValue) ?Offset2 {
 // *coverage indices*, so it cannot name more glyphs than the coverage covers. A count larger than that
 // is not a badly-aligned record, it is the end of this table and the beginning of whatever follows, and
 // stopping there is what keeps a format 2 subtable from reading the next lookup's bytes as exceptions.
-fn parse_single_position(r &Reader, resolved ResolvedSubtable) ?SinglePos {
+fn parse_single_position(r &font.Reader, resolved ResolvedSubtable) ?SinglePos {
 	at := resolved.at
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
@@ -2367,7 +2368,7 @@ fn parse_single_position(r &Reader, resolved ResolvedSubtable) ?SinglePos {
 // offset as a count of sets, which is a small number that looks fine, and then walks offsets out of
 // a class definition that is not an array of them. The result is thousands of pair records with
 // numbers in them that are not kerning.
-fn parse_pair_pos(r &Reader, at int) ?PairPos {
+fn parse_pair_pos(r &font.Reader, at int) ?PairPos {
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
 		return none
@@ -2491,7 +2492,7 @@ fn parse_pair_pos(r &Reader, at int) ?PairPos {
 // them is empty. A font that gives the second glyph a value format of zero leaves its record with no
 // fields, and the record still occupies the space the format says it does, so the reader has to step
 // over it to reach the next pair.
-fn parse_pair_set(r &Reader, at int, vf1 u16, vf2 u16) ?PairSet {
+fn parse_pair_set(r &font.Reader, at int, vf1 u16, vf2 u16) ?PairSet {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -2534,7 +2535,7 @@ fn parse_pair_set(r &Reader, at int, vf1 u16, vf2 u16) ?PairSet {
 // wrong numbers: a font that only writes xAdvance yields a record whose xPlacement is the kerning
 // value, which is the same number in the wrong place and produces a letter that has moved rather
 // than a gap that has closed.
-fn read_pair_value(r &Reader, at int, format u16) PairValue {
+fn read_pair_value(r &font.Reader, at int, format u16) PairValue {
 	mut v := PairValue{
 		format: format
 	}
@@ -2606,7 +2607,7 @@ mut:
 // A 0x8000 format is a VariationIndex, which names a delta-set index in the item variation store
 // rather than carrying deltas, and resolves to zero at the default instance — the only instance
 // this engine shapes. It is not a Device table and reads as none here.
-fn read_device(r &Reader, at int, limit int) ?Device {
+fn read_device(r &font.Reader, at int, limit int) ?Device {
 	if !r.has(at, 6) {
 		return none
 	}
@@ -2670,7 +2671,7 @@ fn (d &Device) delta_at(ppem int) int {
 
 // parse_mark_to_base reads one MarkToBasePos subtable. Only format 1 exists in the
 // specification, so there is no second reading to try.
-fn parse_mark_to_base(r &Reader, at int) ?MarkToBase {
+fn parse_mark_to_base(r &font.Reader, at int) ?MarkToBase {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -2748,7 +2749,7 @@ fn parse_mark_to_base(r &Reader, at int) ?MarkToBase {
 // followed, every one of which was read from the wrong place. The numbers looked like counts, so
 // nothing complained. Another version read one shared count for the whole array, which is not in
 // the specification either. The count is per record and the record is reached through an offset.
-fn parse_mark_to_ligature(r &Reader, at int) ?MarkToLigature {
+fn parse_mark_to_ligature(r &font.Reader, at int) ?MarkToLigature {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -2842,14 +2843,14 @@ fn parse_mark_to_ligature(r &Reader, at int) ?MarkToLigature {
 // the first record's own offset. Those are usually small numbers, so a missing anchor silently
 // becomes a real anchor at a plausible-looking place instead of being reported missing. That is
 // how a mark ends up somewhere the font never asked for.
-fn parse_anchor_at(r &Reader, base int, offset int) Anchor {
+fn parse_anchor_at(r &font.Reader, base int, offset int) Anchor {
 	if offset == 0 {
 		return Anchor{}
 	}
 	return parse_anchor(r, base + offset)
 }
 
-fn parse_anchor(r &Reader, at int) Anchor {
+fn parse_anchor(r &font.Reader, at int) Anchor {
 	format := r.u16_at(at)
 	if format < 1 || format > 3 {
 		return Anchor{}

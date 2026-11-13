@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 import os
 
 // test_font_path is where a named font is on this machine: the committed corpus first, the platform's own
@@ -74,21 +75,21 @@ fn amiri_bytes() ?[]u8 {
 
 fn test_parse_sfnt_table_directory() {
 	data := amiri_bytes() or { return }
-	sfnt := parse_sfnt(data) or { panic(err) }
-	assert sfnt.has(tag_head), 'head table missing'
-	assert sfnt.has(tag_hhea), 'hhea table missing'
-	assert sfnt.has(tag_maxp), 'maxp table missing'
-	assert sfnt.has(tag_cmap), 'cmap table missing'
-	assert sfnt.has(tag_hmtx), 'hmtx table missing'
+	sfnt := font.parse_sfnt(data) or { panic(err) }
+	assert sfnt.has(font.tag_head), 'head table missing'
+	assert sfnt.has(font.tag_hhea), 'hhea table missing'
+	assert sfnt.has(font.tag_maxp), 'maxp table missing'
+	assert sfnt.has(font.tag_cmap), 'cmap table missing'
+	assert sfnt.has(font.tag_hmtx), 'hmtx table missing'
 	assert !sfnt.is_cff(), 'Amiri should use glyf outlines'
 	assert sfnt.has_glyf_outlines()
 }
 
 fn test_parse_sfnt_rejects_garbage() {
-	if _ := parse_sfnt([]u8{}) {
+	if _ := font.parse_sfnt([]u8{}) {
 		assert false, 'empty input must not parse'
 	}
-	if _ := parse_sfnt([]u8{len: 32}) {
+	if _ := font.parse_sfnt([]u8{len: 32}) {
 		assert false, 'zeroed input must not parse'
 	}
 	// A truncated but plausible header must still fail cleanly.
@@ -97,7 +98,7 @@ fn test_parse_sfnt_rejects_garbage() {
 	bad[1] = 0x01
 	bad[2] = 0x00
 	bad[3] = 0x00
-	if _ := parse_sfnt(bad) {
+	if _ := font.parse_sfnt(bad) {
 		assert false, 'header with zero tables must not parse'
 	}
 }
