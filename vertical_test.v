@@ -253,3 +253,20 @@ fn test_vertical_line_places_downward() {
 	assert hline.glyphs[2].advance == 16.0
 	assert hline.height == 0, 'height is the vertical mode field'
 }
+
+// c_options carries the vertical flag across the C boundary: nonzero in, true
+// out, zero or null stays horizontal. This is the in-process half of the
+// proof; the smoke test is the C half, which additionally proves the V and C
+// struct layouts agree — a drifted field would arrive as horizontal.
+fn test_c_options_carries_vertical() {
+	on := COptions{
+		features: unsafe { nil }
+		vertical: 1
+	}
+	assert c_options(&on).vertical, 'nonzero vertical arrives'
+	mut off := COptions{
+		features: unsafe { nil }
+	}
+	assert !c_options(&off).vertical, 'zero vertical stays horizontal'
+	assert !c_options(&COptions(unsafe { nil })).vertical, 'null options stay horizontal'
+}

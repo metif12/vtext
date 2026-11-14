@@ -66,6 +66,36 @@ int main(int argc, char **argv) {
 	vtext_glyph_t oob;
 	CHECK(!vtext_line_glyph(line, n, &oob), "out-of-range glyph refused");
 
+	/* Vertical through the C struct: the flag must arrive as laid out, which
+	 * is what proves the V and C option structs agree. Amiri carries no
+	 * vertical metrics, so this also exercises the fallback: advances stay
+	 * horizontal while the pen runs down one column. */
+	vtext_options_t vopts;
+	memset(&vopts, 0, sizeof(vopts));
+	vopts.vertical = 1;
+	const char *vtext_str = "Hello";
+	err[0] = 0;
+	vtext_line_t *vline = vtext_layout_with(ctx, vtext_str, (int)strlen(vtext_str),
+		VTEXT_LTR, fs, 32.0, &vopts, err, sizeof(err));
+	CHECK(vline != 0, "vertical line laid out");
+	if (vline) {
+		int vn = vtext_line_glyph_count(vline);
+		printf("vertical glyphs: %d column height: %.2f\n", vn,
+			vtext_line_column_height(vline));
+		CHECK(vn == 5, "vertical glyph count");
+		double vy = 0.0;
+		for (int i = 0; i < vn; i++) {
+			vtext_glyph_t g;
+			CHECK(vtext_line_glyph(vline, i, &g), "vertical glyph readable");
+			CHECK(g.x == 0.0, "vertical glyph in one column");
+			CHECK(g.y == vy, "vertical pen accumulates");
+			vy += g.advance;
+		}
+		CHECK(vtext_line_column_height(vline) == vy, "column height is the pen");
+		CHECK(vtext_line_width(vline) > 0.0, "column has width");
+		vtext_line_free(vline);
+	}
+
 	/* Wrap at a narrow width: more than one line, covering the whole text. */
 	err[0] = 0;
 	vtext_wrap_t *w = vtext_wrap(ctx, text, (int)strlen(text), VTEXT_AUTO, fs, 32.0, 100.0,

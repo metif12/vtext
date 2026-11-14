@@ -28,6 +28,7 @@ EXPORTS
 	vtext_line_ascent
 	vtext_line_descent
 	vtext_line_height
+	vtext_line_column_height
 	vtext_wrap
 	vtext_wrap_with
 	vtext_wrap_free

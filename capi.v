@@ -103,6 +103,7 @@ fn c_options(opts &COptions) layout.LayoutOptions {
 		out.line_height = opts.line_height
 		out.letter_spacing = opts.letter_spacing
 		out.word_spacing = opts.word_spacing
+		out.vertical = opts.vertical != 0
 	}
 	return out
 }
@@ -165,13 +166,15 @@ fn free_line_box(p &layout.Line) {
 
 // COptions is the C spelling of layout.LayoutOptions, laid out for a C struct of the
 // same shape: `vtext_options_t` in vtext.h. The features string is
-// comma-separated and may be null.
+// comma-separated and may be null. vertical is an int rather than a bool so the
+// field is four bytes on both sides of the boundary: a C int and a V i32.
 pub struct COptions {
 pub mut:
 	features       &u8
 	line_height    f64
 	letter_spacing f64
 	word_spacing   f64
+	vertical       i32
 }
 
 // CBreaks is what a break query hands back: two parallel arrays of len ints,
@@ -425,8 +428,9 @@ pub fn vtext_layout(ctx &shape.Context, text &u8, len int, dir int, fs &shape.Fo
 }
 
 // vtext_layout_with is vtext_layout with the caller's options: discretionary
-// features as a comma-separated string, a line height, and letter and word
-// spacing. Null options are the default, which applies no features.
+// features as a comma-separated string, a line height, letter and word
+// spacing, and a nonzero vertical for one column of vertical text. Null options
+// are the default, which applies no features and lays out horizontally.
 @[export: 'vtext_layout_with']
 pub fn vtext_layout_with(ctx &shape.Context, text &u8, len int, dir int, fs &shape.FontSet, em_px f64,
 	opts &COptions, errbuf &u8, errcap int) &layout.Line {
@@ -530,6 +534,16 @@ pub fn vtext_line_height(line &layout.Line) f64 {
 		return 0.0
 	}
 	return line.line_height
+}
+
+// vtext_line_column_height is the column's length in pixels: the pen's final y
+// in a vertical line. Zero in horizontal mode, where the width is the length.
+@[export: 'vtext_line_column_height']
+pub fn vtext_line_column_height(line &layout.Line) f64 {
+	if line == unsafe { nil } {
+		return 0.0
+	}
+	return line.height
 }
 
 // vtext_wrap lays text out into as many lines as fit max_width. The paragraph

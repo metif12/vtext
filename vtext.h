@@ -36,12 +36,14 @@ typedef struct vtext_bitmap vtext_bitmap_t;
 
 /* Layout options, mirroring LayoutOptions. features is a comma-separated
  * list of discretionary OpenType features (e.g. "liga") and may be NULL.
- * line_height of 0 takes the font's own. */
+ * line_height of 0 takes the font's own. vertical is 0 for a horizontal
+ * line and nonzero for one column of vertical text. */
 typedef struct {
 	const char *features;
 	double line_height;
 	double letter_spacing;
 	double word_spacing;
+	int vertical;
 } vtext_options_t;
 
 /* One drawable glyph: the gid to rasterize, the pen movement, the position
@@ -115,6 +117,7 @@ double vtext_line_width(vtext_line_t *line);
 double vtext_line_ascent(vtext_line_t *line);
 double vtext_line_descent(vtext_line_t *line);
 double vtext_line_height(vtext_line_t *line);
+double vtext_line_column_height(vtext_line_t *line);
 
 vtext_wrap_t *vtext_wrap(vtext_context_t *ctx, const char *text, int len, int dir,
 	vtext_fontset_t *fs, double em_px, double max_width, char *err, int errcap);
