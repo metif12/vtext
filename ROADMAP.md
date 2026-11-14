@@ -1487,7 +1487,11 @@ walks `glyf` and the GSUB lookups itself over the raw bytes. `Font` exposes only
 reads the file a second time with `os.read_bytes(font.path())` — closed 2026-11-14: `Font.data()`
 returns the bytes the face was parsed from, the tool uses them, and a `Font` built with
 `load_font_bytes` subsets the same way a path font does, pinned by `test_font_data_round_trips`.
-The two gaps that remain are the closure API and `codepoint_for` after subsetting.
+The closure gap closed the same day: the fixed-point closure and the rebuild moved to
+`subset/` behind `subset.subset_font`, pinned by `subset_test.v` — red without the library,
+red with the GSUB pass neutered (the Segoe `difficulty` seed keeps 8 from the cmap, the
+closure adds 1 composite and 11 substitution glyphs, kept 21), green with it. The one gap
+that remains is `codepoint_for` after subsetting, because the ids are not contiguous.
 
 ## Differential shaping: four references, one baseline — running 2026-10-16
 
@@ -1867,7 +1871,7 @@ all — and no part imports a tool.
 | `vtext.layout` | Pango's layout math | Slices 4+5 landed 2026-11-14: `linebreak.v` and `layout.v` live in `layout/` as `module layout`, imported as `vtext.layout`. Verified with the rest the full way: suite 34/34, fmt 108/0, consumers, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is vertical text, kashida/justification as opt-in, and hyphenation dictionaries as a `BreakPolicy` with generated tables. The [28.14] arm showed the shape: a rule with its own cases, measured, not described. |
 | `vtext.raster` | FreeType's rendering side | Slice 1 landed 2026-11-14: `GlyphBitmap` with `is_empty`/`ink` lives in `raster/` as `module raster`, imported as `vtext.raster`. The `box_only`/`render_into` calls stay methods on `font.Face` — this compiler defines methods only in the type's own module — so `font` imports the leaf `raster` for the data they trade in, and every `font.GlyphBitmap` site (shape's `Font.rasterize`, `subset`, `shapedump`, `probe`) is now `raster.GlyphBitmap`. Verified the full way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. What remains is hinting (TT interpreter plus auto-hinter fallback) and color (COLR/CPAL, CBDT/sbix, SVG refusal-with-reason) as engines behind the box-and-fill contract `box_only`/`render_into` already define. Verified per glyph against FreeType and Pillow like the ink leg does now. |
 | `vtext.inspect` | fontTools introspection (read side) | Planned: the existing `inspect.v` surface promoted to a library part. |
-| `vtext.subset` | fontTools subsetter | Planned: `tools/subset.v` promoted to a library; glyf today, CFF/CFF2 after the charstring reader exists. Needs the two API gaps already named: `Font.data()` and a closure API in `inspect.v`. |
+| `vtext.subset` | fontTools subsetter | Slice 1 landed 2026-11-14: the closure and the rebuild live in `subset/` as `module subset` behind `subset_font(font, seed)`, and `tools/subset.v` is the CLI around it (shaping the seed, reporting, verifying). The fixed-point loop, the 16-pass bound and the duplicated comment moved with the code; the duplication is gone from the tool. Verified the full way: suite 35/35, fmt 111/0, consumers fail=0, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is CFF/CFF2 after the charstring reader exists. |
 | `vtext.capi` | — (the C face) | Last, since it wraps all of the above. `vtext.h` stays the single header; the header-mirror check stays the proof. |
 | providers | fontconfig / Core Text / DirectWrite | Planned, per-OS, optional: `FontSource` implementations behind the seam, never linked by default. Linux (fontconfig) first, because CI can verify it. |
 
