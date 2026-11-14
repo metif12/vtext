@@ -84,6 +84,12 @@ pub mut:
 	// separators, not a tab or a newline. A newline ends the paragraph and a tab is rare enough in
 	// running text that treating it as a word separator would be a surprise.
 	word_spacing f64
+	// vertical selects vertical writing: the engine collects the font's vert
+	// variants for the run. Today that is the shaping half only — the glyphs
+	// change and the line is still laid out horizontally. Placing them
+	// downward and stacking the lines is the placement slice, which this flag
+	// will also drive.
+	vertical bool
 }
 
 // layout_paragraph runs normalization, the bidirectional algorithm and Arabic joining over
@@ -147,12 +153,20 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		}
 		shaped := ctx.shaper.shape_arabic(ctx.properties, sub)
 		mut run := []shape.Glyph{}
-		// The script of the first letter in the run, which is what the font resolves its
-		// ligature features under. A run of one script has one, and a run is never mixed, since
-		// the bidi pass already split the text at every direction change.
+		// The script of the run, which is what the font resolves its features
+		// under. It is the first script that names one rather than the first
+		// glyph's: Common, Inherited and Unknown have no features of their own,
+		// so a run that opens with a comma or a digit would otherwise resolve
+		// none, and HarfBuzz itemizes the same run under its strong script.
 		mut script := 'arab'
 		if shaped.glyphs.len > 0 {
 			script = shaped.glyphs[0].script
+			for g in shaped.glyphs {
+				if g.script != 'Zyyy' && g.script != 'Zinh' && g.script != 'Zzzz' {
+					script = g.script
+					break
+				}
+			}
 		}
 		for g in shaped.glyphs {
 			// A shaped index counts the restored non-joiners too, so it is an offset
@@ -186,7 +200,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		// same path for the same reason, and it needs the run's direction: the kern folds
 		// into the advance of the visually first glyph of the pair.
 		rtl := seq.len > 0 && bidi.levels[seq[0]] & 1 == 1
-		for glyph in substitute_in_fonts(run, em_px, script, options.features, rtl) {
+		for glyph in substitute_in_fonts(run, em_px, script, options.features, options.vertical, rtl) {
 			placed << glyph
 		}
 	}
@@ -250,7 +264,7 @@ pub fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
 // characters came from different fonts: there is no single glyph to draw them as, and a mark
 // composition that needs the letter before it is out of reach for the same reason.
 pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, features []string,
-	rtl bool) []shape.Glyph {
+	vertical bool, rtl bool) []shape.Glyph {
 	if glyphs.len == 0 {
 		return glyphs
 	}
@@ -270,7 +284,7 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, featu
 			}
 			end++
 		}
-		for glyph in f.substitute_glyphs(glyphs[at..end], script, em_px, features) {
+		for glyph in f.substitute_glyphs(glyphs[at..end], script, em_px, features, vertical) {
 			out << glyph
 		}
 		at = end

@@ -164,7 +164,7 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // that wants one names it in extra, and it is applied after the required features, which is the
 // order the specification gives discretionary features.
 pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
-	extra []string) []Glyph {
+	extra []string, vertical bool) []Glyph {
 	g := f.face.gsub or { return glyphs }
 	mut out := []font.Ligatable{cap: glyphs.len}
 	for i, glyph in glyphs {
@@ -198,6 +198,16 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 	}
 	for feature in ['rlig'] {
 		out = g.substitute(g.lookups_for(script, feature), out)
+	}
+	// Vertical forms come next when the line is vertical, for the same reason
+	// rlig is unconditional: a vertical line whose punctuation draws its
+	// horizontal form is not vertical text. They are collected under the run's
+	// script like every other required feature, which is why the run resolves
+	// Common and Inherited to the strong script in front of this call.
+	if vertical {
+		for feature in ['vert'] {
+			out = g.substitute(g.lookups_for(script, feature), out)
+		}
 	}
 	for feature in extra {
 		out = g.substitute(g.lookups_for(script, feature), out)

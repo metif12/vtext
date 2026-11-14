@@ -3,6 +3,7 @@ module vtext
 import os
 import vtext.font
 import vtext.shape
+import vtext.layout
 
 // Vertical metrics, slice 1: vhea/vmtx/VORG are read, not placed. Placement is
 // a layout question for the slice that lays a vertical line out.
@@ -182,4 +183,32 @@ fn test_vertical_metrics_msgothic() {
 	// Slice 2 target, named here so the metrics slice cannot be mistaken for
 	// the feature: the engine reads the substitution but collects no vert yet.
 	assert 'vert' in f.features('GSUB'), 'vert is the next slice'
+}
+
+// vert substitutes vertical forms in vertical mode: the ideographic comma draws
+// its vertical variant while a CJK letter without one is unchanged. The gids
+// are the fontTools-measured ones for the first member of msgothic.ttc, and the
+// comma leads on purpose: it is Common, so a run script taken from the first
+// glyph would resolve no features at all.
+fn test_vert_substitutes_in_vertical_mode() {
+	data := msgothic_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	text := '、一'
+	hline := layout.layout_paragraph(ctx, text.runes(), .auto, fs, 32.0)
+	assert hline.glyphs.len == 2
+	assert hline.glyphs[0].gid == 2058, 'horizontal comma'
+	assert hline.glyphs[1].gid == 2893, 'horizontal CJK'
+	vopts := layout.LayoutOptions{ vertical: true }
+	vline := layout.layout_paragraph_with(ctx, text.runes(), .auto, fs, 32.0, &vopts)
+	assert vline.glyphs.len == 2
+	assert vline.glyphs[0].gid == 21155, 'vertical comma'
+	assert vline.glyphs[1].gid == 2893, 'CJK letter has no vertical form'
+	// The flag defaults off: an explicit horizontal request shapes the same.
+	hopts := layout.LayoutOptions{}
+	plain := layout.layout_paragraph_with(ctx, text.runes(), .auto, fs, 32.0, &hopts)
+	assert plain.glyphs[0].gid == hline.glyphs[0].gid
+	assert plain.glyphs[1].gid == hline.glyphs[1].gid
 }
