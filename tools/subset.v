@@ -41,6 +41,8 @@ module main
 import os
 import vtext
 import vtext.font
+import vtext.layout
+import vtext.shape
 
 // ---------------------------------------------------------------- arguments
 
@@ -198,7 +200,7 @@ fn main() {
 		exit(1)
 	}
 
-	loaded := vtext.load_font_file(path) or {
+	loaded := shape.load_font_file(path) or {
 		eprintln('cannot load ${path}: ${err.msg()}')
 		exit(1)
 	}
@@ -226,12 +228,12 @@ fn main() {
 		exit(1)
 	}
 
-	ctx := vtext.new_context()
-	fs := vtext.new_font_set()
+	ctx := shape.new_context()
+	fs := shape.new_font_set()
 	fs.add(loaded)
 
 	// The run, shaped by the engine, is the only source of the glyph set.
-	run := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, size)
+	run := layout.layout_paragraph(ctx, text.runes(), .auto, fs, size)
 	missing := uncovered(ctx, loaded, text)
 
 	mut keep := []bool{len: loaded.num_glyphs()}
@@ -314,7 +316,7 @@ fn main() {
 // spans_of maps every tag to where its bytes sit, taken from the engine's own table
 // directory. Using it rather than parsing the directory a second time is what stops this
 // tool and the library disagreeing about where a table starts.
-fn spans_of(f &vtext.Font) map[string]Span {
+fn spans_of(f &shape.Font) map[string]Span {
 	mut out := map[string]Span{}
 	for t in f.tables() {
 		out[t.tag] = Span{
@@ -328,7 +330,7 @@ fn spans_of(f &vtext.Font) map[string]Span {
 // uncovered lists the characters the font has no glyph for, which the run draws as
 // .notdef. A variation selector is not one of them: it has no glyph of its own in any
 // font and is a question about the character in front of it.
-fn uncovered(ctx &vtext.Context, f &vtext.Font, text string) []rune {
+fn uncovered(ctx &shape.Context, f &shape.Font, text string) []rune {
 	mut out := []rune{}
 	for cp in text.runes() {
 		if ctx.properties.is_variation_selector(cp) {
@@ -607,7 +609,7 @@ fn close_ligature(mut keep []bool, d []u8, at int, mut out Closure) {
 
 // build_font assembles the subset.
 //
-// Glyph ids are preserved rather than renumbered, and that is a decision rather than an
+// shape.Glyph ids are preserved rather than renumbered, and that is a decision rather than an
 // omission. Renumbering means rewriting every glyph id in cmap, hmtx, GSUB, GPOS and
 // GDEF, and a wrong rewrite there is a font that loads fine and draws the wrong letter.
 // Preserving ids means those five tables are copied byte for byte, and the only claim
@@ -616,7 +618,7 @@ fn close_ligature(mut keep []bool, d []u8, at int, mut out Closure) {
 // The price is real and worth saying out loud: those tables keep entries for glyphs that
 // no longer have an outline, so the saving is the outline data rather than the whole
 // file. A font that needs them smaller needs a library that renumbers glyph ids.
-fn build_font(f &vtext.Font, d []u8, keep []bool) !Subset {
+fn build_font(f &shape.Font, d []u8, keep []bool) !Subset {
 	spans := spans_of(f)
 	glyf := spans['glyf'] or { return error('no glyf table') }
 	loca := spans['loca'] or { return error('no loca table') }
@@ -726,7 +728,7 @@ fn build_font(f &vtext.Font, d []u8, keep []bool) !Subset {
 // A dropped glyph's loca entry spans a zero length range, which is what an empty glyph in
 // the original font is too. loca keeps an entry for every glyph the font declares, so
 // every id in cmap, GSUB, GPOS, GDEF and hmtx still addresses the glyph it addressed.
-fn rebuild_outlines(f &vtext.Font, d []u8, glyf Span, loca Span, head Span, keep []bool) ([]u8, []u8) {
+fn rebuild_outlines(f &shape.Font, d []u8, glyf Span, loca Span, head Span, keep []bool) ([]u8, []u8) {
 	num := f.num_glyphs()
 	long := be16(d, head.offset + 50) == 1
 	step := if long { 4 } else { 2 }
@@ -815,7 +817,7 @@ fn adjustment_checksum(whole []u8) u32 {
 
 // ---------------------------------------------------------------- reporting
 
-fn report(f &vtext.Font, text string, run vtext.Line, missing []rune, spans map[string]Span,
+fn report(f &shape.Font, text string, run layout.Line, missing []rune, spans map[string]Span,
 	d []u8, subset Subset, keep []bool, run_glyphs []u16, closure Closure, size f64) {
 	println(font_name(f))
 	println('  ${spans.len} tables, ${f.num_glyphs()} glyphs, ${f.units_per_em()} units per em')
@@ -875,7 +877,7 @@ fn say_tables(spans map[string]Span, after map[string]int) {
 	}
 }
 
-fn font_name(f &vtext.Font) string {
+fn font_name(f &shape.Font) string {
 	name := f.path()
 	if name == '' {
 		return 'font'
@@ -892,16 +894,16 @@ fn font_name(f &vtext.Font) string {
 // glyph ids, the positions and the rasterized ink of the whole run against the original
 // font. A green run of this is the only claim the report is allowed to make; everything
 // above it is arithmetic about bytes.
-fn verify(path string, original &vtext.Font, text string, before vtext.Line, size f64,
+fn verify(path string, original &shape.Font, text string, before layout.Line, size f64,
 	kept_glyphs []u16) bool {
-	subset := vtext.load_font_file(path) or {
+	subset := shape.load_font_file(path) or {
 		eprintln('the subset does not load: ${err.msg()}')
 		return false
 	}
-	ctx := vtext.new_context()
-	fs := vtext.new_font_set()
+	ctx := shape.new_context()
+	fs := shape.new_font_set()
 	fs.add(subset)
-	after := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, size)
+	after := layout.layout_paragraph(ctx, text.runes(), .auto, fs, size)
 
 	mut ok := true
 	if after.glyphs.len != before.glyphs.len {

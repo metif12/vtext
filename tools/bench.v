@@ -17,11 +17,12 @@ import os
 import time
 import vtext
 import vtext.shape
+import vtext.layout
 
-fn load_font(paths []string) &vtext.Font {
+fn load_font(paths []string) &shape.Font {
 	for r in paths {
 		if os.exists(r) {
-			return vtext.load_font_file(r) or { panic(err) }
+			return shape.load_font_file(r) or { panic(err) }
 		}
 	}
 	panic('no font found in ${paths}')
@@ -48,16 +49,16 @@ struct Case {
 	name  string
 	cps   []rune
 	base  shape.Direction
-	fonts &vtext.FontSet
+	fonts &shape.FontSet
 }
 
-fn best_of(ctx &vtext.Context, c Case, em_px f64) (i64, i64) {
+fn best_of(ctx &shape.Context, c Case, em_px f64) (i64, i64) {
 	mut best := i64(1 << 60)
 	mut glyphs := 0
 	for _ in 0 .. 5 {
 		start := time.sys_mono_now()
 		for _ in 0 .. 20 {
-			line := vtext.layout_paragraph(ctx, c.cps, c.base, c.fonts, em_px)
+			line := layout.layout_paragraph(ctx, c.cps, c.base, c.fonts, em_px)
 			glyphs = line.glyphs.len
 		}
 		took := i64(time.sys_mono_now() - start)
@@ -69,16 +70,16 @@ fn best_of(ctx &vtext.Context, c Case, em_px f64) (i64, i64) {
 }
 
 fn main() {
-	ctx := vtext.new_context()
+	ctx := shape.new_context()
 	latin_font := load_font(['C:\\Windows\\Fonts\\segoeui.ttf',
 		'testdata/fonts/NotoNaskhArabic-Regular.ttf'])
 	arabic_font := load_font(['testdata/fonts/Amiri-Regular.ttf'])
 	// Segoe UI is tried first for Latin where it exists, because the historical
 	// numbers were measured on it; the corpus face elsewhere so the bench runs
 	// anywhere.
-	mut latin_fs := vtext.new_font_set()
+	mut latin_fs := shape.new_font_set()
 	latin_fs.add(latin_font)
-	mut arabic_fs := vtext.new_font_set()
+	mut arabic_fs := shape.new_font_set()
 	arabic_fs.add(arabic_font)
 	latin_text := 'The quick brown fox jumps over the lazy dog near the river bank at dusk'
 	arabic_text := 'سلام دنیا بر شما ای دوست قدیمی من'

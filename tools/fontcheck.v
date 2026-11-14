@@ -37,6 +37,7 @@ module main
 import os
 import vtext
 import vtext.font
+import vtext.shape
 
 // font.Lookup kinds this engine reads. Everything else in a table is carried by the parser and never applied,
 // which is a fact about the engine and not about the font.
@@ -78,7 +79,7 @@ fn lookup_kind_name(table string, kind int) string {
 			return match kind {
 				1 { 'Single positioning' }
 				2 { 'Pair positioning' }
-				3 { 'font.Cursive positioning' }
+				3 { 'Cursive positioning' }
 				4 { 'Mark to base positioning' }
 				5 { 'Mark to ligature positioning' }
 				6 { 'Mark to mark positioning' }
@@ -119,7 +120,7 @@ fn main() {
 		}
 	}
 
-	loaded := vtext.load_font_file(path) or {
+	loaded := shape.load_font_file(path) or {
 		println('cannot open ${path}: ${err}')
 		exit(1)
 	}

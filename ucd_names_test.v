@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.ucd
 
 // Tests for the generated codepoint name table and for the trace-facing wrappers in trace_api.v.
@@ -147,7 +148,7 @@ fn test_parse_ints_reads_the_generated_delta_tables() {
 }
 
 fn test_joining_type_names_are_words_not_numbers() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// The decision the joining pass makes is phrased in these words, and a report printing "2" and "0" is a
 	// report the reader has to look up.
 	assert joining_type_name(ctx, rune(0x0628)) == 'dual-joining'
@@ -163,7 +164,7 @@ fn test_visual_string_renders_the_characters_not_their_low_bytes() {
 	// Built as runes rather than bytes, because an Arabic character is three bytes and truncating to one
 	// would produce a string that looks right in ASCII and is nothing at all in the script. This function
 	// exists to be read next to a picture, so it has to produce the characters the picture has.
-	bidi := resolve_bidi(new_context(), [rune(0x0628), rune(0x0020), rune(0x0041)], .rtl)
+	bidi := resolve_bidi(shape.new_context(), [rune(0x0628), rune(0x0020), rune(0x0041)], .rtl)
 	assert bidi.visual_order.len == 3
 	visual := bidi.visual_string([rune(0x0628), rune(0x0020), rune(0x0041)])
 	assert visual == 'A ب', 'expected the Latin letter first, got "${visual}"'

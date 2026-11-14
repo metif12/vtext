@@ -27,6 +27,7 @@ import vtext
 import vtext.shape
 import corpus
 import paint
+import vtext.layout
 
 const paragraphs = [
 	'The word سلام means peace.',
@@ -45,21 +46,21 @@ const print_line_h = 22
 const print_gap = 14.0
 
 fn main() {
-	ctx := vtext.new_context()
-	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	fs := vtext.new_script_font_set(arabic, latin)
+	ctx := shape.new_context()
+	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	fs := shape.new_script_font_set(arabic, latin)
 
 	// Resolve every paragraph first, because both the drawing and the printing need the answer and the
 	// two must not be two separate runs of the algorithm.
 	mut results := []shape.BidiResult{cap: paragraphs.len}
-	mut lines := []vtext.Line{cap: paragraphs.len}
+	mut lines := []layout.Line{cap: paragraphs.len}
 	mut widest := 0.0
 	mut ascent := 0.0
 	mut descent := 0.0
 	for text in paragraphs {
 		res := shape.resolve_paragraph(ctx.properties, text.runes(), .auto)
-		line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
+		line := layout.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
 		results << res
 		lines << line
 		if line.width > widest {
@@ -98,7 +99,7 @@ fn main() {
 // The visual order is printed as the characters in the order they will be drawn, which is the only way to
 // read a line that mixes directions without seeing it. A reader comparing that with the logical order
 // above it can see exactly which characters moved and which did not.
-fn print_result(text string, res shape.BidiResult, line vtext.Line) {
+fn print_result(text string, res shape.BidiResult, line layout.Line) {
 	println('"${text}"')
 	println('  paragraph level ${res.paragraph_level}, ${res.isolating_sequences} isolating sequence(s)')
 
@@ -144,7 +145,7 @@ fn print_result(text string, res shape.BidiResult, line vtext.Line) {
 
 // draw_paragraph paints one laid out line and rules the paragraph's edges, so a right-to-left line is
 // visibly anchored to the right rather than merely happening to end there.
-fn draw_paragraph(mut canvas paint.Canvas, line vtext.Line, baseline f64) {
+fn draw_paragraph(mut canvas paint.Canvas, line layout.Line, baseline f64) {
 	for g in line.draw_order() {
 		if f := g.font {
 			canvas.draw_glyph_at(f, g, baseline, em_px, f64(margin))

@@ -25,6 +25,8 @@ import math
 import vtext
 import corpus
 import paint
+import vtext.layout
+import vtext.shape
 
 // Two fonts that both cover Latin, and differ in how hard they kern.
 //
@@ -76,9 +78,9 @@ const row_gap = 60.0
 const rule_level = u8(205)
 
 fn main() {
-	ctx := vtext.new_context()
-	kerned := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	plain := vtext.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	ctx := shape.new_context()
+	kerned := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	plain := shape.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 
 	// What the two fonts say about themselves, printed because the picture only means something next to
 	// it: a difference in the spacing is a difference in the font, not in the engine.
@@ -112,7 +114,7 @@ fn main() {
 	mut ascent := 0.0
 	mut descent := 0.0
 	for f in [kerned, plain] {
-		line := vtext.layout_paragraph(ctx, word.runes(), .ltr, vtext.new_font_set_of(f), em_px)
+		line := layout.layout_paragraph(ctx, word.runes(), .ltr, shape.new_font_set_of(f), em_px)
 		if line.width > widest {
 			widest = line.width
 		}
@@ -129,7 +131,7 @@ fn main() {
 	mut canvas := paint.new_canvas(canvas_w, canvas_h, 0xff)
 	mut baseline := f64(margin) + ascent
 	for f in [kerned, plain] {
-		line := vtext.layout_paragraph(ctx, word.runes(), .ltr, vtext.new_font_set_of(f), em_px)
+		line := layout.layout_paragraph(ctx, word.runes(), .ltr, shape.new_font_set_of(f), em_px)
 		draw_row(mut canvas, f, line, baseline, ascent, descent)
 		baseline += ascent + descent + row_gap
 	}
@@ -146,7 +148,7 @@ fn main() {
 // The pen is marked with a full-height line and the advance with a short one at the foot, so the three
 // things a reader needs to tell apart are three different marks: where the pen was, where it went, and
 // how far it moved.
-fn draw_row(mut canvas paint.Canvas, f &vtext.Font, line vtext.Line, baseline f64, ascent f64,
+fn draw_row(mut canvas paint.Canvas, f &shape.Font, line layout.Line, baseline f64, ascent f64,
 	descent f64) {
 	for g in line.glyphs {
 		canvas.draw_glyph_at(f, g, baseline, em_px, f64(margin))

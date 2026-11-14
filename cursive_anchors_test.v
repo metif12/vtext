@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // Tests for reading a font's cursive anchors: where a letter's stroke enters and leaves.
 //
@@ -13,8 +14,8 @@ import os
 
 // corpus_font loads one of the licensed fonts the suite ships, so these answer the same on a machine
 // with no Arabic fonts installed as on one with them.
-fn corpus_font(name string) &Font {
-	return load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
+fn corpus_font(name string) &shape.Font {
+	return shape.load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
 }
 
 // Amiri declares its rule directly, Nastaliq through an extension, and Naskh has none at all. Between

@@ -17,6 +17,8 @@ import os
 import vtext
 import corpus
 import paint
+import vtext.layout
+import vtext.shape
 
 // Two fonts, because the Latin line at the top of the picture is drawn with the same call as the Arabic
 // below it and neither font covers the other's script.
@@ -26,7 +28,7 @@ import paint
 // of the two characters it covers.
 const arabic_text = 'مَرْحَبًا بِالْعَالَمِ'
 
-// A Latin line above it, so the picture shows both directions from the same FontSet and the same call.
+// A Latin line above it, so the picture shows both directions from the same shape.FontSet and the same call.
 const latin_text = 'Ligature: ffi. Kerning: AV. Mark: a with a grave.'
 
 const em_px = 44.0
@@ -44,10 +46,10 @@ const caret_level = u8(110)
 fn main() {
 	debug := os.args.len > 1 && os.args[1] == '-debug'
 
-	ctx := vtext.new_context()
-	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	fs := vtext.new_script_font_set(arabic, latin)
+	ctx := shape.new_context()
+	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	fs := shape.new_script_font_set(arabic, latin)
 
 	mut width := 0
 	mut ascent := 0.0
@@ -84,9 +86,9 @@ fn main() {
 //
 // The boxes are drawn from the same glyph list the letters are drawn from, so a box that does not
 // enclose its letter means the two disagree about where the glyph is, which is worth being able to see.
-fn draw(mut canvas &paint.Canvas, fs &vtext.FontSet, ctx &vtext.Context, text string, baseline f64,
+fn draw(mut canvas &paint.Canvas, fs &shape.FontSet, ctx &shape.Context, text string, baseline f64,
 	debug bool) {
-	line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
+	line := layout.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
 	for g in line.glyphs {
 		if f := g.font {
 			canvas.draw_glyph(f, g, baseline, em_px)

@@ -1,6 +1,6 @@
 // fallback shows one paragraph drawn from two fonts, with every glyph marked by the font it came from.
 //
-// A FontSet is an ordered list of fonts and a character is drawn from the first one that covers it. That
+// A shape.FontSet is an ordered list of fonts and a character is drawn from the first one that covers it. That
 // is the whole mechanism, and this example is the only way to see it, because a line drawn correctly
 // looks exactly like a line drawn from one font. So every glyph here is underlined in the colour of the
 // font it came from, and the underline is drawn from the glyph list rather than from the text: the engine
@@ -27,6 +27,9 @@ module main
 import vtext
 import corpus
 import paint
+import vtext.font
+import vtext.layout
+import vtext.shape
 
 // A font that covers Latin, Greek and Cyrillic and no Arabic, and a font that covers Arabic.
 
@@ -49,12 +52,12 @@ const second_level = u8(230)
 const missing_level = u8(70)
 
 fn main() {
-	ctx := vtext.new_context()
-	first := vtext.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	second := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	ctx := shape.new_context()
+	first := shape.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	second := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	// Order is preference: a character both fonts cover comes from the first, and one only the second
 	// covers comes from the second.
-	fs := vtext.new_font_set_of(first, second)
+	fs := shape.new_font_set_of(first, second)
 
 	// What each font covers is printed, because the picture only means something next to it. A reader who
 	// does not know that Consolas has no Arabic cannot tell a working fallback from a coincidence.
@@ -70,9 +73,9 @@ fn main() {
 	mut widest := 0.0
 	mut ascent := 0.0
 	mut descent := 0.0
-	mut drawn := []vtext.Line{cap: lines.len}
+	mut drawn := []layout.Line{cap: lines.len}
 	for text in lines {
-		line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
+		line := layout.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
 		drawn << line
 		if line.width > widest {
 			widest = line.width
@@ -140,7 +143,7 @@ fn main() {
 // The x is the glyph's own place within its line plus the margin, because the glyph is drawn at the margin
 // rather than at zero. That is the same offset the glyph itself was drawn at, and using a different one
 // here would put every underline somewhere other than under its glyph.
-fn underline_glyph(c &paint.Canvas, g vtext.Glyph, baseline f64, level u8) {
+fn underline_glyph(c &paint.Canvas, g shape.Glyph, baseline f64, level u8) {
 	y := int(baseline) + underline_h
 	x0 := int(g.x) + margin
 	w := int(g.advance)

@@ -1,6 +1,7 @@
 module corpus
 
 import os
+import vtext.font
 
 // The resolution order is the whole of this module, so it is tested rather than argued about: the
 // corpus must win over the platform directory when it carries the font, and the platform directory

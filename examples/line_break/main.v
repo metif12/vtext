@@ -30,6 +30,8 @@ module main
 import vtext
 import corpus
 import paint
+import vtext.layout
+import vtext.shape
 
 const latin_text = 'The quick brown fox jumps over the lazy dog and keeps on running until it is tired.'
 
@@ -45,25 +47,25 @@ const case_gap = 34.0
 const column_gap = 40.0
 
 fn main() {
-	ctx := vtext.new_context()
-	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	fs := vtext.new_script_font_set(arabic, latin)
+	ctx := shape.new_context()
+	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	fs := shape.new_script_font_set(arabic, latin)
 
 	// Wrap first and measure, so the canvas is sized from what was produced rather than from a guess. A
 	// fixed height crops the last line the moment a width or a word changes, which is how the first
 	// version of the hello example drew two lines and a half.
 	print_breaks(ctx, latin_text)
 	print_breaks(ctx, arabic_text)
-	mut latin_runs := [][]vtext.WrappedLine{cap: widths.len}
-	mut arabic_runs := [][]vtext.WrappedLine{cap: 1}
+	mut latin_runs := [][]layout.WrappedLine{cap: widths.len}
+	mut arabic_runs := [][]layout.WrappedLine{cap: 1}
 	for w in widths {
-		runs := vtext.wrap_paragraph(ctx, latin_text.runes(), .auto, fs, em_px, w)
+		runs := layout.wrap_paragraph(ctx, latin_text.runes(), .auto, fs, em_px, w)
 		latin_runs << runs
 		print_paragraph(latin_text, w, runs)
 	}
 	arabic_width := 220.0
-	arabic_runs << vtext.wrap_paragraph(ctx, arabic_text.runes(), .auto, fs, em_px, arabic_width)
+	arabic_runs << layout.wrap_paragraph(ctx, arabic_text.runes(), .auto, fs, em_px, arabic_width)
 	print_paragraph(arabic_text, arabic_width, arabic_runs[0])
 	println('')
 
@@ -149,9 +151,9 @@ fn main() {
 // print_breaks reports where the engine may end a line, so the wrapping below can be
 // checked against the breaks rather than believed: every line but the last must end at
 // one of these, and a line that ends anywhere else is a wrapper that invents its own.
-fn print_breaks(ctx &vtext.Context, text string) {
+fn print_breaks(ctx &shape.Context, text string) {
 	cps := text.runes()
-	breaks := vtext.break_opportunities(ctx, cps, true)
+	breaks := layout.break_opportunities(ctx, cps, true)
 	mut at := []int{}
 	for b in breaks {
 		if b.is_mandatory {
@@ -167,7 +169,7 @@ fn print_breaks(ctx &vtext.Context, text string) {
 // The ranges are the check that matters and they are printed rather than drawn: a wrapper that loses a
 // space between two lines, or emits the same range twice, is visible here and nowhere else. The widths are
 // printed next to the margin so an overlong line can be spotted in the text alone.
-fn print_paragraph(text string, width f64, runs []vtext.WrappedLine) {
+fn print_paragraph(text string, width f64, runs []layout.WrappedLine) {
 	println('width ${width:.0f}: ${runs.len} lines')
 	cps := text.runes()
 	for l in runs {
@@ -181,7 +183,7 @@ fn print_paragraph(text string, width f64, runs []vtext.WrappedLine) {
 }
 
 // draw_line paints one wrapped line at an x offset.
-fn draw_line(mut canvas paint.Canvas, l vtext.WrappedLine, x f64, baseline f64) {
+fn draw_line(mut canvas paint.Canvas, l layout.WrappedLine, x f64, baseline f64) {
 	for g in l.line.draw_order() {
 		if f := g.font {
 			// The offset is the column's left edge and nothing else. The glyph keeps the x the engine

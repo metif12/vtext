@@ -6,7 +6,7 @@ module font
 // offsets from a table directory, so a cursor buys nothing and would force a
 // mutable receiver on every accessor.
 //
-// Font data comes from untrusted files, so every read is clamped: going past
+// shape.Font data comes from untrusted files, so every read is clamped: going past
 // the end yields zero rather than panicking. Use has() when a zero and an
 // absent byte must be told apart.
 // imin returns the smaller of two ints. V has no int.min in this version.

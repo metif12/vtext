@@ -822,7 +822,7 @@ pub fn glyph_index_for(cmaps []Cmap, cp u32) u16 {
 // codepoint_for maps a glyph back to the lowest codepoint any subtable gives it, or none when no subtable
 // does.
 //
-// Glyph 0 is .notdef, and every font maps something to it, so it is deliberately not found: a caller
+// shape.Glyph 0 is .notdef, and every font maps something to it, so it is deliberately not found: a caller
 // asking what character this glyph stands for has a glyph that draws nothing, and the useful answer is
 // that there isn't one rather than the lowest control character the font happens to reference.
 //

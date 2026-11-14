@@ -26,6 +26,8 @@ import math
 import vtext
 import corpus
 import paint
+import vtext.layout
+import vtext.shape
 
 // Row is one rendering of the line and the options that produced it.
 struct Row {
@@ -80,22 +82,22 @@ const bracket_gap = 14.0
 const rule_level = u8(205)
 
 fn main() {
-	ctx := vtext.new_context()
-	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	fs := vtext.new_script_font_set(arabic, latin)
+	ctx := shape.new_context()
+	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	fs := shape.new_script_font_set(arabic, latin)
 
 	// Every row is laid out and measured with the same options, so the printed measure and
 	// the drawn line cannot disagree about the width of the text.
-	mut lines := []vtext.Line{cap: rows.len}
-	mut measures := []vtext.TextMetrics{cap: rows.len}
+	mut lines := []layout.Line{cap: rows.len}
+	mut measures := []layout.TextMetrics{cap: rows.len}
 	for r in rows {
-		mut opts := vtext.LayoutOptions{}
+		mut opts := layout.LayoutOptions{}
 		opts.letter_spacing = r.letter_spacing
 		opts.word_spacing = r.word_spacing
 		opts.line_height = r.line_height
-		lines << vtext.layout_paragraph_with(ctx, text.runes(), .auto, fs, em_px, &opts)
-		measures << vtext.measure_paragraph_with(ctx, text.runes(), .auto, fs, em_px, &opts)
+		lines << layout.layout_paragraph_with(ctx, text.runes(), .auto, fs, em_px, &opts)
+		measures << layout.measure_paragraph_with(ctx, text.runes(), .auto, fs, em_px, &opts)
 	}
 
 	for i, r in rows {

@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 import vtext.font
 // Tests for mark attachment: the GPOS mark-to-base rules, the GDEF table that classifies the
 // glyphs, and the placement they produce.
@@ -65,12 +67,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn gpos_font(name string) ?&Font {
+fn gpos_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // naskh is the corpus font the mark tests read.
@@ -79,7 +81,7 @@ fn gpos_font(name string) ?&Font {
 // mark-to-mark rules, which is everything these assertions ask of Arial and Tahoma. The corpus holds no
 // font without mark attachment, so the negative half of that test is now its own test and says which font
 // it wants.
-fn naskh() ?&Font {
+fn naskh() ?&shape.Font {
 	return gpos_font('NotoNaskhArabic-Regular.ttf')
 }
 
@@ -90,7 +92,7 @@ fn naskh() ?&Font {
 // the same beh. It answers all three at a vertical anchor of zero, which is why the two tests that need the
 // marks separated vertically stay on Arial and skip where Arial is absent, and why the one that needs GDEF
 // mark attachment classes does the same: no committed font carries that table.
-fn amiri() ?&Font {
+fn amiri() ?&shape.Font {
 	return gpos_font('Amiri-Regular.ttf')
 }
 
@@ -175,7 +177,7 @@ fn test_gpos_reports_no_mark_rules_on_a_font_that_has_none() {
 // high ends of it. The bitmap's top field is the low end and the height reaches up from there,
 // which is the convention the rasteriser stores and the reason a mark's ink sits above its own
 // origin rather than on it.
-fn ink_span(f &Font, gid u16, em_px f64) (f64, f64) {
+fn ink_span(f &shape.Font, gid u16, em_px f64) (f64, f64) {
 	bmp := f.rasterize(gid, em_px, 0, 0)
 	if bmp.is_empty() {
 		return 0, 0
@@ -185,7 +187,7 @@ fn ink_span(f &Font, gid u16, em_px f64) (f64, f64) {
 
 // in_pixels converts a length in design units to pixels at this size, which is what the layout
 // pass does and what a test comparing an offset with a rasterized height has to do as well.
-fn in_pixels(f &Font, units i32, em_px f64) f64 {
+fn in_pixels(f &shape.Font, units i32, em_px f64) f64 {
 	return f64(units) * em_px / f64(f.face.units_per_em)
 }
 
@@ -197,7 +199,7 @@ fn approx(got f64, want f64, tol f64) bool {
 }
 
 // glyph_at_cluster returns the glyph that came from the input character at that index.
-fn glyph_at_cluster(glyphs []Glyph, cluster int) ?Glyph {
+fn glyph_at_cluster(glyphs []shape.Glyph, cluster int) ?shape.Glyph {
 	for g in glyphs {
 		if g.cluster == cluster {
 			return g
@@ -316,8 +318,8 @@ fn test_dubai_composes_and_places_a_mark_on_its_letter() {
 	assert off.y != 0 || off.x != 0, 'the font has to say where the mark goes'
 	// And through the whole pipeline the mark is lifted off the baseline onto the letter, which is
 	// the visible difference between a mark that has been placed and one that has not.
-	ctx := new_context()
-	line := layout_paragraph(ctx, [beh, fatha], .rtl, new_font_set_of(dubai), 32)
+	ctx := shape.new_context()
+	line := layout.layout_paragraph(ctx, [beh, fatha], .rtl, shape.new_font_set_of(dubai), 32)
 	assert line.glyphs.len == 2, 'the letter and the mark are both drawn'
 	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
 	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
@@ -347,10 +349,10 @@ fn test_dubai_composes_and_places_a_mark_on_its_letter() {
 // not taller than the font. That is a fact about Amiri rather than about the placement, so the assertion
 // itself is the honest thing to keep and the font is what has to be present.
 fn test_layout_puts_a_mark_at_its_letter_anchor() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	arial := gpos_font('arial.ttf') or { return }
-	fs := new_font_set_of(arial)
-	line := layout_paragraph(ctx, [`ب`, fatha], .rtl, fs, 32)
+	fs := shape.new_font_set_of(arial)
+	line := layout.layout_paragraph(ctx, [`ب`, fatha], .rtl, fs, 32)
 	assert line.glyphs.len == 2, 'the letter and the mark are both drawn'
 	base := glyph_at_cluster(line.glyphs, 0) or { panic('no letter glyph') }
 	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
@@ -417,12 +419,12 @@ fn mark_table_bytes(words []int) []u8 {
 }
 
 fn test_layout_leaves_an_unplaced_mark_at_the_pen() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	arabic := amiri() or { return }
-	fs := new_font_set_of(arabic)
+	fs := shape.new_font_set_of(arabic)
 	// A fatha on its own, with no letter for it to attach to, which is what a stray vowel at
 	// the start of a word looks like.
-	line := layout_paragraph(ctx, [fatha], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [fatha], .rtl, fs, 32)
 	assert line.glyphs.len == 1
 	g := line.glyphs[0]
 	assert g.is_mark

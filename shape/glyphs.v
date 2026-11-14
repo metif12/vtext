@@ -1,6 +1,5 @@
-module vtext
+module shape
 
-import vtext.shape
 import vtext.font
 
 // The font layer: turning a shaped codepoint into something drawable.
@@ -238,7 +237,7 @@ pub fn (fs &FontSet) glyph_variation_in(ctx &Context, cp rune, selectors []rune,
 }
 
 // glyph_variation_for looks a codepoint with variation selectors up in one font.
-fn (f &Font) glyph_variation_for(cp rune, selectors []rune, em_px f64) Glyph {
+pub fn (f &Font) glyph_variation_for(cp rune, selectors []rune, em_px f64) Glyph {
 	gid := f.glyph_index_variation(cp, selectors)
 	return Glyph{
 		gid:     gid
@@ -305,7 +304,7 @@ pub fn (fs &FontSet) covers(cp rune) bool {
 // the answer comes from the pipeline's own generated tables rather than from a range check
 // written a second time. A flat FontSet ignores it entirely, so this costs a flat chain
 // nothing.
-pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg shape.ShapedGlyph, em_px f64) []Glyph {
+pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Glyph {
 	if sg.base.len == 0 {
 		return []Glyph{}
 	}

@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 import os
 
@@ -59,17 +60,17 @@ fn skip_missing(name string) {
 
 // kern_font opens a font from the corpus or from the platform's own directory, and answers none when
 // neither has it so the test can say which font it wanted.
-fn kern_font(name string) ?&Font {
+fn kern_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // exact_kern is the kerning for a pair as one integer, for a test that compares against a number rather
 // than a sign.
-fn exact_kern(f &Font, left string, right string) i32 {
+fn exact_kern(f &shape.Font, left string, right string) i32 {
 	off := f.kern_offset(f.glyph_index(left.runes()[0]), f.glyph_index(right.runes()[0]),
 		'latn') or { return 0 }
 	return off.x

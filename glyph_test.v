@@ -58,12 +58,12 @@ fn skip_missing(name string) {
 }
 
 // load_test_font loads a font for a test, or reports that it cannot and lets the test skip.
-fn load_test_font(name string) ?&Font {
+fn load_test_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // The two corpus fonts this file reads, and why each is the one for the job.
@@ -74,11 +74,11 @@ fn load_test_font(name string) ?&Font {
 // nastaliq maps none of the Arabic presentation forms: it carries the base letters and keeps their shapes
 // in GSUB, which is the shape the form-missing branches need. It replaces both Dubai (which also lacks the
 // forms) and Consolas (which has no Arabic at all).
-fn amiri() ?&Font {
+fn amiri() ?&shape.Font {
 	return load_test_font('Amiri-Regular.ttf')
 }
 
-fn nastaliq() ?&Font {
+fn nastaliq() ?&shape.Font {
 	return load_test_font('NotoNastaliqUrdu-Regular.ttf')
 }
 
@@ -112,7 +112,7 @@ fn test_mark_glyph_has_no_advance() {
 fn test_font_set_prefers_the_first_font() {
 	latin := amiri() or { return }
 	arabic := load_test_font('NotoNaskhArabic-Regular.ttf') or { return }
-	fs := new_font_set()
+	fs := shape.new_font_set()
 	fs.add(latin)
 	fs.add(arabic)
 	assert fs.len() == 2
@@ -123,7 +123,7 @@ fn test_font_set_prefers_the_first_font() {
 
 // picked is pick with the chain known to be non-empty, which keeps the assertions about
 // which font was chosen readable.
-fn picked(fs &FontSet, cp rune) &Font {
+fn picked(fs &shape.FontSet, cp rune) &shape.Font {
 	return fs.pick(cp) or { panic('the chain is not empty') }
 }
 
@@ -133,7 +133,7 @@ fn test_font_set_falls_through_to_a_later_font() {
 	formless := nastaliq() or { return }
 	arabic := amiri() or { return }
 	assert !formless.has_glyph(rune(0xFEFB)), 'the Nastaliq font is not expected to cover the lam-alef form'
-	fs := new_font_set()
+	fs := shape.new_font_set()
 	fs.add(formless)
 	fs.add(arabic)
 	// The ligature form is only in the second font, so the chain has to reach it.
@@ -146,8 +146,8 @@ fn test_font_set_falls_through_to_a_later_font() {
 
 fn test_font_set_lands_on_the_preferred_font_when_nothing_covers() {
 	f := amiri() or { return }
-	fs := new_font_set_of(f)
-	ctx := new_context()
+	fs := shape.new_font_set_of(f)
+	ctx := shape.new_context()
 	assert fs.len() == 1
 	// Nothing in the chain covers it, so the first font answers with .notdef. Dropping the
 	// character instead would silently reflow the line.
@@ -156,7 +156,7 @@ fn test_font_set_lands_on_the_preferred_font_when_nothing_covers() {
 }
 
 fn test_empty_font_set_answers_safely() {
-	fs := new_font_set()
+	fs := shape.new_font_set()
 	assert fs.len() == 0
 	// An empty chain is a wiring mistake rather than a missing character, and it stays
 	// distinct from one so that pick can report it.
@@ -174,8 +174,8 @@ fn test_empty_font_set_answers_safely() {
 fn test_shaped_glyphs_prefers_the_form_when_a_font_has_it() {
 	// Amiri carries the presentation forms, so the form is what gets drawn.
 	arabic := amiri() or { return }
-	fs := new_font_set_of(arabic)
-	ctx := new_context()
+	fs := shape.new_font_set_of(arabic)
+	ctx := shape.new_context()
 	sg := shape.ShapedGlyph{
 		cps:  [rune(0xFE8F)] // ARABIC LETTER BEH ISOLATED FORM
 		base: [rune(0x0628)]
@@ -193,8 +193,8 @@ fn test_shaped_glyphs_falls_back_to_the_base_letter() {
 	formless := nastaliq() or { return }
 	assert !formless.has_glyph(rune(0xFE8F))
 	assert formless.has_glyph(rune(0x0628))
-	fs := new_font_set_of(formless)
-	ctx := new_context()
+	fs := shape.new_font_set_of(formless)
+	ctx := shape.new_context()
 	sg := shape.ShapedGlyph{
 		cps:  [rune(0xFE8F)]
 		base: [rune(0x0628)]
@@ -214,8 +214,8 @@ fn test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw() {
 	// The Nastaliq font has no Arabic presentation forms at all, so the base route is the only one left.
 	// What is under test is that the pair becomes two glyphs with the right shapes.
 	formless := nastaliq() or { return }
-	fs := new_font_set_of(formless)
-	ctx := new_context()
+	fs := shape.new_font_set_of(formless)
+	ctx := shape.new_context()
 	sg := shape.ShapedGlyph{
 		cps:  [rune(0xFEFC)] // ARABIC LIGATURE LAM WITH ALEF FINAL FORM
 		base: [rune(0x0644), rune(0x0627)]
@@ -248,8 +248,8 @@ fn test_shaped_glyphs_asks_the_whole_chain_about_the_form() {
 	// are it. What is under test is that the whole chain is walked rather than the first font answered,
 	// and a chain whose two members are the same font still walks twice.
 	formless := nastaliq() or { return }
-	ctx := new_context()
-	fs := new_font_set()
+	ctx := shape.new_context()
+	fs := shape.new_font_set()
 	fs.add(formless)
 	fs.add(formless)
 	sg := shape.ShapedGlyph{
@@ -265,8 +265,8 @@ fn test_shaped_glyphs_asks_the_whole_chain_about_the_form() {
 
 fn test_shaped_glyphs_keeps_a_mark_flagged_and_advanceless() {
 	arabic := amiri() or { return }
-	fs := new_font_set_of(arabic)
-	ctx := new_context()
+	fs := shape.new_font_set_of(arabic)
+	ctx := shape.new_context()
 	sg := shape.ShapedGlyph{
 		cps:     [rune(0x064E)] // ARABIC FATHA
 		base:    [rune(0x064E)]
@@ -280,7 +280,7 @@ fn test_shaped_glyphs_keeps_a_mark_flagged_and_advanceless() {
 }
 
 fn test_shaped_glyphs_with_no_base_characters_draws_nothing() {
-	fs := new_font_set_of(amiri() or { return })
-	ctx := new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
 	assert fs.shaped_glyphs(ctx, shape.ShapedGlyph{ cps: [rune(0x41)], base: []rune{} }, 32).len == 0
 }

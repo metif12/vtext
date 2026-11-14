@@ -14,6 +14,7 @@ module main
 import vtext
 import paint
 import corpus
+import vtext.shape
 
 // The fonts this example asks for by role, rather than by name. Which file fills a role is the
 // `corpus` module's decision: the committed corpus first, the platform's own directory last and only
@@ -53,11 +54,11 @@ const line_gap = 26.0
 const em_px = 28.0
 
 fn main() {
-	ctx := vtext.new_context()
-	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or {
+	ctx := shape.new_context()
+	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or {
 		panic('cannot open a Latin font: ${err}')
 	}
-	arabic := vtext.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or {
+	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or {
 		panic('cannot open an Arabic font: ${err}')
 	}
 	// One set with both fonts in it, so a character the Latin font has no glyph for is found in the
@@ -69,7 +70,7 @@ fn main() {
 	// reaches Traditional Arabic at all, and reversing it draws the English word in a naskh face. The
 	// set is given per script instead: Arabic goes to the Arabic font and everything else to the Latin
 	// one, which is what handing over two fonts and one mixed line was supposed to mean.
-	fs := vtext.new_script_font_set(arabic, latin)
+	fs := shape.new_script_font_set(arabic, latin)
 
 	// The canvas is sized from the text: the widest line sets the width, and the tallest ascent plus
 	// the line heights set the height.

@@ -34,6 +34,8 @@ module main
 
 import os
 import vtext
+import vtext.shape
+import vtext.font
 
 // The feature tags the engine's shaping path can act on. A feature that is not in here is either used for
 // something else or simply not implemented, and printing the whole list against this one is what makes
@@ -63,26 +65,26 @@ fn main() {
 		exit(1)
 	}
 
-	font := vtext.load_font_file(path) or {
+	loaded := shape.load_font_file(path) or {
 		println('cannot open ${path}: ${err}')
 		exit(1)
 	}
 
 	println('font            ${path}')
-	println('glyphs          ${font.num_glyphs()}')
-	println('units per em    ${font.units_per_em()}')
-	println('outlines        ${if font.outlines() == '' { 'none' } else { font.outlines() }}')
-	println('monospaced      ${font.is_monospaced()}')
-	println('variable        ${font.is_variable()}')
-	if font.is_variable() {
-		for axis in font.variable_axes() {
+	println('glyphs          ${loaded.num_glyphs()}')
+	println('units per em    ${loaded.units_per_em()}')
+	println('outlines        ${if loaded.outlines() == '' { 'none' } else { loaded.outlines() }}')
+	println('monospaced      ${loaded.is_monospaced()}')
+	println('variable        ${loaded.is_variable()}')
+	if loaded.is_variable() {
+		for axis in loaded.variable_axes() {
 			println('  axis ${axis.tag}  ${axis.minimum} .. ${axis.deflt} .. ${axis.maximum}')
 		}
 	}
 
 	println('')
 	println('tables')
-	tables := font.tables()
+	tables := loaded.tables()
 	for t in tables {
 		mut mark := ' '
 		// Tables the engine reads are worth marking, because a font carrying thirty tables is mostly
@@ -96,40 +98,40 @@ fn main() {
 
 	println('')
 	println('cmap')
-	formats := font.cmap_formats()
-	counts := font.cmap_counts()
+	formats := loaded.cmap_formats()
+	counts := loaded.cmap_counts()
 	println('  subtables     ${formats.len}')
 	for i, format in formats {
 		println('  format ${format}  maps ${counts[i]} codepoints')
 	}
 
 	println('')
-	println('glyph classes   ${font.glyph_class_counts()}')
-	println('  by name       ${class_names(font)}')
+	println('glyph classes   ${loaded.glyph_class_counts()}')
+	println('  by name       ${class_names(loaded)}')
 
 	println('')
-	println('GSUB  lookups ${font.num_lookups('GSUB')}')
-	report_table(font, 'GSUB', engine_uses_gsub, verbose)
+	println('GSUB  lookups ${loaded.num_lookups('GSUB')}')
+	report_table(loaded, 'GSUB', engine_uses_gsub, verbose)
 
 	println('')
-	println('GPOS  lookups ${font.num_lookups('GPOS')}')
-	report_table(font, 'GPOS', engine_uses_gpos, verbose)
+	println('GPOS  lookups ${loaded.num_lookups('GPOS')}')
+	report_table(loaded, 'GPOS', engine_uses_gpos, verbose)
 
 	println('')
 	println('what this engine can do with this font')
-	report_capabilities(font)
+	report_capabilities(loaded)
 }
 
 // class_names renders the glyph class counts with their names rather than their indexes, because a report
 // that said "4904 of class 1" is in the font's language and not the reader's.
-fn class_names(font vtext.Font) string {
-	counts := font.glyph_class_counts()
+fn class_names(f shape.Font) string {
+	counts := f.glyph_class_counts()
 	mut parts := []string{}
 	for i, n in counts {
 		if n == 0 {
 			continue
 		}
-		parts << '${vtext.glyph_class_names[i]}=${n}'
+		parts << '${shape.glyph_class_names[i]}=${n}'
 	}
 	return parts.join(' ')
 }
@@ -139,22 +141,22 @@ fn class_names(font vtext.Font) string {
 // The two lists are printed as a whole rather than interleaved, because the point is the difference
 // between them and interleaving hides it. A feature the font offers and the engine ignores is not an
 // error in either; it is the thing a caller needs to know.
-fn report_table(font &vtext.Font, table string, engine_uses []string, verbose bool) {
-	scripts := font.scripts(table)
+fn report_table(f &shape.Font, table string, engine_uses []string, verbose bool) {
+	scripts := f.scripts(table)
 	println('  scripts       ${scripts.len}')
 	for s in scripts {
 		println('    ${s}')
 	}
 
-	features := font.features(table)
+	features := f.features(table)
 	println('  features      ${features.len}')
 	mut used := []string{}
 	mut unused := []string{}
-	for f in features {
-		if f in engine_uses {
-			used << f
+	for feat in features {
+		if feat in engine_uses {
+			used << feat
 		} else {
-			unused << f
+			unused << feat
 		}
 	}
 	println('  engine uses   ${used.join(' ')}')
@@ -167,39 +169,39 @@ fn report_table(font &vtext.Font, table string, engine_uses []string, verbose bo
 	// them. A feature with no lookups is a font that names it and does not implement it, which is a
 	// different problem from the engine skipping one.
 	println('  feature lookup counts')
-	for f in features {
-		if f !in engine_uses {
+	for feat in features {
+		if feat !in engine_uses {
 			continue
 		}
 		// Printed per script rather than summed, because the same feature can have a different lookup
 		// list under two scripts and a sum would be a number about neither.
 		mut shown := false
 		for s in scripts {
-			n := font.feature_lookups(table, s, f)
+			n := f.feature_lookups(table, s, feat)
 			if n == 0 {
 				continue
 			}
-			println('    ${f} under ${s}  ${n} lookups')
+			println('    ${feat} under ${s}  ${n} lookups')
 			shown = true
 		}
 		if !shown {
-			println('    ${f}  no script names it with any lookups')
+			println('    ${feat}  no script names it with any lookups')
 		}
 	}
 }
 
 // report_capabilities prints what this engine can do with this font, which is the question a caller has
 // and the one the tables above cannot answer on their own.
-fn report_capabilities(font &vtext.Font) {
-	println('  substitutes       ${yes_no(font.has_gsub())}')
-	println('  kerns             ${yes_no(font.kerns('arab'))} (arab)')
-	println('  kerns             ${yes_no(font.kerns('latn'))} (latn)')
-	println('  context positions ${yes_no(font.contextually_positions('arab'))} (arab)')
-	println('  marks on marks    ${yes_no(font.stacks_marks())}')
-	println('  marks on ligs     ${yes_no(font.places_marks_on_ligatures())}')
+fn report_capabilities(f &shape.Font) {
+	println('  substitutes       ${yes_no(f.has_gsub())}')
+	println('  kerns             ${yes_no(f.kerns('arab'))} (arab)')
+	println('  kerns             ${yes_no(f.kerns('latn'))} (latn)')
+	println('  context positions ${yes_no(f.contextually_positions('arab'))} (arab)')
+	println('  marks on marks    ${yes_no(f.stacks_marks())}')
+	println('  marks on ligs     ${yes_no(f.places_marks_on_ligatures())}')
 	// A font that declares a cursive feature but gets none of it applied is the case this section exists
 	// for, so the declaration and the capability are printed next to each other on purpose.
-	if 'curs' in font.features('GPOS') {
+	if 'curs' in f.features('GPOS') {
 		println('  curs declared     yes')
 		println('  curs applied      no (not implemented)')
 	}

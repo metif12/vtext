@@ -432,7 +432,7 @@ pub fn new_gsub(raw []u8, gdef ?&Gdef) ?&Gsub {
 	if r.len() < 10 || r.u16_at(0) != 1 {
 		return none
 	}
-	// The three lists the header points at have to be inside the table. Font data is
+	// The three lists the header points at have to be inside the table. shape.Font data is
 	// untrusted, so a header claiming an offset past the end is not a table to be read
 	// leniently: it is a table to be refused.
 	script_list := int(r.u16_at(4))

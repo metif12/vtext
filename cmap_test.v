@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 // Tests for the cmap parser, and in particular for the one bug in it that mattered most.
 //
 // The bug is worth a file of its own. Format 4 addresses its glyphIdArray through a byte offset
@@ -70,12 +71,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn cmap_font(name string) ?&Font {
+fn cmap_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // corpus_cmap_fonts are the committed fonts this file reads.

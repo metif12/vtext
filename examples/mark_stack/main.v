@@ -32,6 +32,8 @@ module main
 import vtext
 import corpus
 import paint
+import vtext.layout
+import vtext.shape
 
 // Row is one line of the picture: some text and what it is there to show.
 struct Row {
@@ -85,10 +87,10 @@ const column_gap = 40.0
 const baseline_level = u8(205)
 
 fn main() {
-	ctx := vtext.new_context()
-	latin := vtext.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := vtext.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	fs := vtext.new_script_font_set(arabic, latin)
+	ctx := shape.new_context()
+	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	fs := shape.new_script_font_set(arabic, latin)
 
 	// What the font says it can do. Every row below depends on these three answers, and printing them
 	// means a reader does not have to take the picture's word for which rules were used.
@@ -101,7 +103,7 @@ fn main() {
 	// sized from the text rather than from a guess.
 	mut widest := 0.0
 	for row in rows {
-		line := vtext.layout_paragraph(ctx, row.text.runes(), .auto, fs, em_px)
+		line := layout.layout_paragraph(ctx, row.text.runes(), .auto, fs, em_px)
 		if line.width > widest {
 			widest = line.width
 		}
@@ -116,7 +118,7 @@ fn main() {
 	mut canvas := paint.new_canvas(canvas_w, canvas_h, 0xff)
 	mut baseline := f64(margin) + ascent
 	for row in rows {
-		line := vtext.layout_paragraph(ctx, row.text.runes(), .auto, fs, em_px)
+		line := layout.layout_paragraph(ctx, row.text.runes(), .auto, fs, em_px)
 		draw_row(mut canvas, line, baseline, column)
 		println('')
 		println('${row.about}')
@@ -134,7 +136,7 @@ fn main() {
 
 // draw_row paints one row twice: as the engine placed it, and with the offsets discarded, with the
 // baseline rule under each so the difference can be seen rather than believed.
-fn draw_row(mut canvas paint.Canvas, line vtext.Line, baseline f64, column f64) {
+fn draw_row(mut canvas paint.Canvas, line layout.Line, baseline f64, column f64) {
 	// The rules go down first so the ink of a letter or a mark is drawn over them rather than under them.
 	canvas.rect(margin, int(baseline), int(f64(margin) + column) - column_gap_px(), int(baseline),
 		baseline_level)
@@ -163,8 +165,8 @@ fn column_gap_px() int {
 // Clearing y is the whole of it, and it works because the engine stores a mark's anchor result in y: it
 // puts the mark at the base's x plus the anchor's x, and at minus the anchor's y scaled to pixels. A
 // glyph whose y is zero sits where the pen put it.
-fn at_pen(g vtext.Glyph) vtext.Glyph {
-	return vtext.Glyph{
+fn at_pen(g shape.Glyph) shape.Glyph {
+	return shape.Glyph{
 		gid:     g.gid
 		x:       g.x
 		y:       0.0

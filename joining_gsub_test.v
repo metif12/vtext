@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 import vtext.font
 // Tests for Arabic joining applied through the font's own GSUB features.
 //
@@ -10,16 +12,16 @@ import vtext.font
 
 import os
 
-fn corpus_font(name string) &Font {
-	return load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
+fn corpus_font(name string) &shape.Font {
+	return shape.load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
 }
 
 // laid_out shapes a string with one font and returns the line, which is the only way to ask the pipeline
 // what it actually did rather than what a lookup table says it should have.
-fn laid_out(f &Font, text string) Line {
-	fs := new_font_set()
+fn laid_out(f &shape.Font, text string) layout.Line {
+	fs := shape.new_font_set()
 	fs.add(f)
-	return layout_paragraph(new_context(), text.runes(), .rtl, fs, 1000.0)
+	return layout.layout_paragraph(shape.new_context(), text.runes(), .rtl, fs, 1000.0)
 }
 
 // The joining rules are font.MultipleSubst, and most of them replace one glyph with several. Nastaliq is the

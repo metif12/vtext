@@ -21,8 +21,10 @@ import math
 import vtext
 import paint
 import corpus
+import vtext.layout
+import vtext.shape
 
-// Two Arabic-capable fonts that cover Persian as well, so one FontSet serves every row.
+// Two Arabic-capable fonts that cover Persian as well, so one shape.FontSet serves every row.
 
 // Case is one word and the feature that changes it.
 struct Case {
@@ -59,19 +61,19 @@ const row_gap = 30.0
 const label_gap = 26.0
 
 fn main() {
-	ctx := vtext.new_context()
+	ctx := shape.new_context()
 
 	// Every case is laid out twice, once with the required features alone and once with the
 	// discretionary one, and both are kept so the numbers printed and the rows drawn come from the same
 	// layout rather than from two passes that could disagree.
-	mut lines := []vtext.Line{cap: cases.len * 2}
+	mut lines := []layout.Line{cap: cases.len * 2}
 	for ci, c in cases {
-		f := vtext.load_font_file(c.font) or { panic('cannot open ${c.font}: ${err}') }
-		fs := vtext.new_font_set_of(f)
-		off := vtext.layout_paragraph(ctx, c.text.runes(), .auto, fs, em_px)
-		mut opts := vtext.LayoutOptions{}
+		f := shape.load_font_file(c.font) or { panic('cannot open ${c.font}: ${err}') }
+		fs := shape.new_font_set_of(f)
+		off := layout.layout_paragraph(ctx, c.text.runes(), .auto, fs, em_px)
+		mut opts := layout.LayoutOptions{}
 		opts.features = [c.feature]
-		on := vtext.layout_paragraph_with(ctx, c.text.runes(), .auto, fs, em_px, &opts)
+		on := layout.layout_paragraph_with(ctx, c.text.runes(), .auto, fs, em_px, &opts)
 		lines << off
 		lines << on
 
@@ -108,7 +110,7 @@ fn main() {
 	mut canvas := paint.new_canvas(int(canvas_w), int(canvas_h), 0xff)
 	mut baseline := f64(margin + label_gap) + ascent
 	for ci, c in cases {
-		f := vtext.load_font_file(c.font) or { continue }
+		f := shape.load_font_file(c.font) or { continue }
 		draw(mut canvas, f, lines[ci * 2], baseline)
 		draw(mut canvas, f, lines[ci * 2 + 1], baseline + row_h)
 		// The baseline under each row of the pair, so a reader can see which two go together.
@@ -125,7 +127,7 @@ const label_level = u8(210)
 
 // draw paints one laid out line and rules the pen at each glyph, so a substitution is visible as a
 // different number of rules and a change of width as a different distance between the last two.
-fn draw(mut canvas paint.Canvas, f &vtext.Font, line vtext.Line, baseline f64) {
+fn draw(mut canvas paint.Canvas, f &shape.Font, line layout.Line, baseline f64) {
 	for g in line.glyphs {
 		canvas.draw_glyph_at(f, g, baseline, em_px, f64(margin))
 	}

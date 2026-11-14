@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.layout
 import vtext.shape
 import vtext.font
 
@@ -79,12 +80,12 @@ fn c_dir(dir int) shape.Direction {
 	return .ltr
 }
 
-// c_options fills a LayoutOptions from the C struct, or the default when the
+// c_options fills a layout.LayoutOptions from the C struct, or the default when the
 // caller passes null. Features arrive as one comma-separated string because a
 // C caller has no string array to hand over; an empty entry is skipped rather
 // than looked up, so a trailing comma is harmless.
-fn c_options(opts &COptions) LayoutOptions {
-	mut out := LayoutOptions{}
+fn c_options(opts &COptions) layout.LayoutOptions {
+	mut out := layout.LayoutOptions{}
 	if opts == unsafe { nil } {
 		return out
 	}
@@ -137,9 +138,9 @@ fn c_array[T](src []T) []T {
 // copy the glyph array header and leave two owners of one backing. The glyphs
 // themselves are copied by the layout pass already, and once more here into C
 // memory, so the box owns them and `vtext_line_free` releases them.
-fn box_line(line Line) &Line {
+fn box_line(line layout.Line) &layout.Line {
 	unsafe {
-		mut p := &Line(malloc(sizeof(Line)))
+		mut p := &layout.Line(malloc(sizeof(layout.Line)))
 		*p = line
 		p.glyphs = c_array(line.glyphs)
 		return p
@@ -149,7 +150,7 @@ fn box_line(line Line) &Line {
 // free_line_box releases the line and the glyphs on it. A glyph carries no
 // heap of its own — its font is borrowed from the caller's set — so the
 // backing is the only thing to free besides the shell.
-fn free_line_box(p &Line) {
+fn free_line_box(p &layout.Line) {
 	if p == unsafe { nil } {
 		return
 	}
@@ -161,7 +162,7 @@ fn free_line_box(p &Line) {
 	}
 }
 
-// COptions is the C spelling of LayoutOptions, laid out for a C struct of the
+// COptions is the C spelling of layout.LayoutOptions, laid out for a C struct of the
 // same shape: `vtext_options_t` in vtext.h. The features string is
 // comma-separated and may be null.
 pub struct COptions {
@@ -182,7 +183,7 @@ pub mut:
 	len       i32
 }
 
-// CMetrics is the C spelling of TextMetrics, by value: five doubles and no
+// CMetrics is the C spelling of layout.TextMetrics, by value: five doubles and no
 // ownership, so there is nothing to free.
 pub struct CMetrics {
 pub mut:
@@ -217,14 +218,14 @@ pub fn vtext_version() &u8 {
 // which is a lot compared with shaping a short string, so a caller builds one
 // and keeps it for the text system rather than one per call.
 @[export: 'vtext_context_new']
-pub fn vtext_context_new() &Context {
-	return new_context()
+pub fn vtext_context_new() &shape.Context {
+	return shape.new_context()
 }
 
 // vtext_context_free releases a context. Tables are decoded per context, so
 // one that is still shaping must not be freed under itself.
 @[export: 'vtext_context_free']
-pub fn vtext_context_free(ctx &Context) {
+pub fn vtext_context_free(ctx &shape.Context) {
 	if ctx == unsafe { nil } {
 		return
 	}
@@ -236,14 +237,14 @@ pub fn vtext_context_free(ctx &Context) {
 // vtext_font_load_file reads and parses a font from disk, or null with the
 // reason in err.
 @[export: 'vtext_font_load_file']
-pub fn vtext_font_load_file(path &u8, errbuf &u8, errcap int) &Font {
+pub fn vtext_font_load_file(path &u8, errbuf &u8, errcap int) &shape.Font {
 	if path == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: font path is null')
 		return unsafe { nil }
 	}
 	unsafe {
 		s := tos_clone(path)
-		f := load_font_file(s) or {
+		f := shape.load_font_file(s) or {
 			set_error(errbuf, errcap, 'vtext: cannot load font "${s}": ${err}')
 			return nil
 		}
@@ -254,13 +255,13 @@ pub fn vtext_font_load_file(path &u8, errbuf &u8, errcap int) &Font {
 // vtext_font_load_bytes parses a font already held in memory. The bytes are
 // copied, so the caller owns them throughout.
 @[export: 'vtext_font_load_bytes']
-pub fn vtext_font_load_bytes(data &u8, len int, errbuf &u8, errcap int) &Font {
+pub fn vtext_font_load_bytes(data &u8, len int, errbuf &u8, errcap int) &shape.Font {
 	bytes := c_bytes(data, len)
 	if bytes.len == 0 {
 		set_error(errbuf, errcap, 'vtext: font bytes are empty')
 		return unsafe { nil }
 	}
-	f := load_font_bytes(bytes) or {
+	f := shape.load_font_bytes(bytes) or {
 		set_error(errbuf, errcap, 'vtext: cannot parse font: ${err}')
 		return unsafe { nil }
 	}
@@ -271,7 +272,7 @@ pub fn vtext_font_load_bytes(data &u8, len int, errbuf &u8, errcap int) &Font {
 // shaped from it names it per glyph, so a font is freed after the set and the
 // lines that used it rather than before.
 @[export: 'vtext_font_free']
-pub fn vtext_font_free(f &Font) {
+pub fn vtext_font_free(f &shape.Font) {
 	if f == unsafe { nil } {
 		return
 	}
@@ -283,8 +284,8 @@ pub fn vtext_font_free(f &Font) {
 // vtext_fontset_new returns an empty fallback chain. A codepoint is drawn
 // with the first font that really covers it.
 @[export: 'vtext_fontset_new']
-pub fn vtext_fontset_new() &FontSet {
-	return new_font_set()
+pub fn vtext_fontset_new() &shape.FontSet {
+	return shape.new_font_set()
 }
 
 // vtext_fontset_new_script returns a chain that prefers a font for the script
@@ -292,18 +293,18 @@ pub fn vtext_fontset_new() &FontSet {
 // else to the general one, which is what a flat order cannot express when both
 // fonts cover both scripts.
 @[export: 'vtext_fontset_new_script']
-pub fn vtext_fontset_new_script(primary &Font, general &Font, errbuf &u8, errcap int) &FontSet {
+pub fn vtext_fontset_new_script(primary &shape.Font, general &shape.Font, errbuf &u8, errcap int) &shape.FontSet {
 	if primary == unsafe { nil } || general == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: script font set needs two fonts')
 		return unsafe { nil }
 	}
-	return new_script_font_set(primary, general)
+	return shape.new_script_font_set(primary, general)
 }
 
 // vtext_fontset_free releases the chain, not the fonts in it: they are
 // borrowed, so the caller frees them after the set.
 @[export: 'vtext_fontset_free']
-pub fn vtext_fontset_free(fs &FontSet) {
+pub fn vtext_fontset_free(fs &shape.FontSet) {
 	if fs == unsafe { nil } {
 		return
 	}
@@ -315,7 +316,7 @@ pub fn vtext_fontset_free(fs &FontSet) {
 // vtext_fontset_add appends a font as the least preferred one, returning 1 on
 // success and 0 with the reason in err.
 @[export: 'vtext_fontset_add']
-pub fn vtext_fontset_add(fs &FontSet, f &Font, errbuf &u8, errcap int) int {
+pub fn vtext_fontset_add(fs &shape.FontSet, f &shape.Font, errbuf &u8, errcap int) int {
 	if fs == unsafe { nil } || f == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: font set and font must both be non-null')
 		return 0
@@ -328,7 +329,7 @@ pub fn vtext_fontset_add(fs &FontSet, f &Font, errbuf &u8, errcap int) int {
 // the font for the caller to free or null with the reason in err. The set
 // borrows it either way.
 @[export: 'vtext_fontset_add_file']
-pub fn vtext_fontset_add_file(fs &FontSet, path &u8, errbuf &u8, errcap int) &Font {
+pub fn vtext_fontset_add_file(fs &shape.FontSet, path &u8, errbuf &u8, errcap int) &shape.Font {
 	if fs == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: font set is null')
 		return unsafe { nil }
@@ -343,7 +344,7 @@ pub fn vtext_fontset_add_file(fs &FontSet, path &u8, errbuf &u8, errcap int) &Fo
 
 // vtext_font_units_per_em is the design grid the font is drawn on.
 @[export: 'vtext_font_units_per_em']
-pub fn vtext_font_units_per_em(f &Font) int {
+pub fn vtext_font_units_per_em(f &shape.Font) int {
 	if f == unsafe { nil } {
 		return 0
 	}
@@ -352,7 +353,7 @@ pub fn vtext_font_units_per_em(f &Font) int {
 
 // vtext_font_ascent is the distance above the baseline in pixels at em_px.
 @[export: 'vtext_font_ascent']
-pub fn vtext_font_ascent(f &Font, em_px f64) f64 {
+pub fn vtext_font_ascent(f &shape.Font, em_px f64) f64 {
 	if f == unsafe { nil } {
 		return 0.0
 	}
@@ -361,7 +362,7 @@ pub fn vtext_font_ascent(f &Font, em_px f64) f64 {
 
 // vtext_font_descent is the distance below the baseline in pixels, positive.
 @[export: 'vtext_font_descent']
-pub fn vtext_font_descent(f &Font, em_px f64) f64 {
+pub fn vtext_font_descent(f &shape.Font, em_px f64) f64 {
 	if f == unsafe { nil } {
 		return 0.0
 	}
@@ -370,7 +371,7 @@ pub fn vtext_font_descent(f &Font, em_px f64) f64 {
 
 // vtext_font_line_height is the baseline-to-baseline distance in pixels.
 @[export: 'vtext_font_line_height']
-pub fn vtext_font_line_height(f &Font, em_px f64) f64 {
+pub fn vtext_font_line_height(f &shape.Font, em_px f64) f64 {
 	if f == unsafe { nil } {
 		return 0.0
 	}
@@ -379,7 +380,7 @@ pub fn vtext_font_line_height(f &Font, em_px f64) f64 {
 
 // vtext_font_is_monospace reports whether every glyph shares one advance.
 @[export: 'vtext_font_is_monospace']
-pub fn vtext_font_is_monospace(f &Font) int {
+pub fn vtext_font_is_monospace(f &shape.Font) int {
 	if f == unsafe { nil } {
 		return 0
 	}
@@ -390,7 +391,7 @@ pub fn vtext_font_is_monospace(f &Font) int {
 // .notdef, which for a codepoint the font does not cover is the correct answer
 // rather than a miss.
 @[export: 'vtext_font_glyph_index']
-pub fn vtext_font_glyph_index(f &Font, cp u32) u16 {
+pub fn vtext_font_glyph_index(f &shape.Font, cp u32) u16 {
 	if f == unsafe { nil } {
 		return 0
 	}
@@ -401,7 +402,7 @@ pub fn vtext_font_glyph_index(f &Font, cp u32) u16 {
 // needs this distinction: a font that maps cp to .notdef is not a candidate
 // for it.
 @[export: 'vtext_font_has_glyph']
-pub fn vtext_font_has_glyph(f &Font, cp u32) int {
+pub fn vtext_font_has_glyph(f &shape.Font, cp u32) int {
 	if f == unsafe { nil } {
 		return 0
 	}
@@ -412,42 +413,42 @@ pub fn vtext_font_has_glyph(f &Font, cp u32) int {
 // glyphs left to right, ready to draw. dir is 0 for ltr, 1 for rtl, anything
 // else takes the direction from the first strong character.
 @[export: 'vtext_layout']
-pub fn vtext_layout(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_px f64,
-	errbuf &u8, errcap int) &Line {
+pub fn vtext_layout(ctx &shape.Context, text &u8, len int, dir int, fs &shape.FontSet, em_px f64,
+	errbuf &u8, errcap int) &layout.Line {
 	if ctx == unsafe { nil } || fs == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: context and font set must both be non-null')
 		return unsafe { nil }
 	}
 	cps := c_text(text, len)
-	return box_line(layout_paragraph(ctx, cps, c_dir(dir), fs, em_px))
+	return box_line(layout.layout_paragraph(ctx, cps, c_dir(dir), fs, em_px))
 }
 
 // vtext_layout_with is vtext_layout with the caller's options: discretionary
 // features as a comma-separated string, a line height, and letter and word
 // spacing. Null options are the default, which applies no features.
 @[export: 'vtext_layout_with']
-pub fn vtext_layout_with(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_px f64,
-	opts &COptions, errbuf &u8, errcap int) &Line {
+pub fn vtext_layout_with(ctx &shape.Context, text &u8, len int, dir int, fs &shape.FontSet, em_px f64,
+	opts &COptions, errbuf &u8, errcap int) &layout.Line {
 	if ctx == unsafe { nil } || fs == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: context and font set must both be non-null')
 		return unsafe { nil }
 	}
 	cps := c_text(text, len)
 	options := c_options(opts)
-	return box_line(layout_paragraph_with(ctx, cps, c_dir(dir), fs, em_px, &options))
+	return box_line(layout.layout_paragraph_with(ctx, cps, c_dir(dir), fs, em_px, &options))
 }
 
 // vtext_line_free releases a laid-out line and the glyphs on it. The fonts the
 // glyphs name are borrowed from the caller's set and are not touched.
 @[export: 'vtext_line_free']
-pub fn vtext_line_free(line &Line) {
+pub fn vtext_line_free(line &layout.Line) {
 	free_line_box(line)
 }
 
 // vtext_line_glyph_count is how many drawable glyphs are on the line. A mark
 // and its base are both present and share a position, so this counts marks too.
 @[export: 'vtext_line_glyph_count']
-pub fn vtext_line_glyph_count(line &Line) int {
+pub fn vtext_line_glyph_count(line &layout.Line) int {
 	if line == unsafe { nil } {
 		return 0
 	}
@@ -458,7 +459,7 @@ pub fn vtext_line_glyph_count(line &Line) int {
 // of range. The glyph's font comes from `vtext_line_glyph_font`, because the
 // caller needs it to rasterize and a glyph without its font is not drawable.
 @[export: 'vtext_line_glyph']
-pub fn vtext_line_glyph(line &Line, i int, out &CGlyph) int {
+pub fn vtext_line_glyph(line &layout.Line, i int, out &CGlyph) int {
 	if line == unsafe { nil } || out == unsafe { nil } {
 		return 0
 	}
@@ -481,7 +482,7 @@ pub fn vtext_line_glyph(line &Line, i int, out &CGlyph) int {
 // caller's set. Null only when the chain was empty, which is a wiring mistake
 // rather than a missing character.
 @[export: 'vtext_line_glyph_font']
-pub fn vtext_line_glyph_font(line &Line, i int) &Font {
+pub fn vtext_line_glyph_font(line &layout.Line, i int) &shape.Font {
 	if line == unsafe { nil } {
 		return unsafe { nil }
 	}
@@ -493,7 +494,7 @@ pub fn vtext_line_glyph_font(line &Line, i int) &Font {
 
 // vtext_line_width is the total advance of the line in pixels.
 @[export: 'vtext_line_width']
-pub fn vtext_line_width(line &Line) f64 {
+pub fn vtext_line_width(line &layout.Line) f64 {
 	if line == unsafe { nil } {
 		return 0.0
 	}
@@ -504,7 +505,7 @@ pub fn vtext_line_width(line &Line) f64 {
 // and below the baseline in pixels. A mark that reaches above the font's own
 // ascent makes the ascent larger, which is what stops a caller clipping it.
 @[export: 'vtext_line_ascent']
-pub fn vtext_line_ascent(line &Line) f64 {
+pub fn vtext_line_ascent(line &layout.Line) f64 {
 	if line == unsafe { nil } {
 		return 0.0
 	}
@@ -512,7 +513,7 @@ pub fn vtext_line_ascent(line &Line) f64 {
 }
 
 @[export: 'vtext_line_descent']
-pub fn vtext_line_descent(line &Line) f64 {
+pub fn vtext_line_descent(line &layout.Line) f64 {
 	if line == unsafe { nil } {
 		return 0.0
 	}
@@ -523,7 +524,7 @@ pub fn vtext_line_descent(line &Line) f64 {
 // caller's line height when there is one, otherwise the largest natural line
 // height among the fonts that contributed a glyph.
 @[export: 'vtext_line_height']
-pub fn vtext_line_height(line &Line) f64 {
+pub fn vtext_line_height(line &layout.Line) f64 {
 	if line == unsafe { nil } {
 		return 0.0
 	}
@@ -535,14 +536,14 @@ pub fn vtext_line_height(line &Line) f64 {
 // costs no extra shaping. A word wider than the width goes on a line of its
 // own rather than being split.
 @[export: 'vtext_wrap']
-pub fn vtext_wrap(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_px f64,
+pub fn vtext_wrap(ctx &shape.Context, text &u8, len int, dir int, fs &shape.FontSet, em_px f64,
 	max_width f64, errbuf &u8, errcap int) &WrapBox {
 	if ctx == unsafe { nil } || fs == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: context and font set must both be non-null')
 		return unsafe { nil }
 	}
 	cps := c_text(text, len)
-	return box_wrap(wrap_paragraph(ctx, cps, c_dir(dir), fs, em_px, max_width))
+	return box_wrap(layout.wrap_paragraph(ctx, cps, c_dir(dir), fs, em_px, max_width))
 }
 
 // vtext_wrap_with is vtext_wrap with the caller's options. The options must
@@ -550,7 +551,7 @@ pub fn vtext_wrap(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_px f
 // features was shaped without them, and the two disagree about the width of
 // the same text.
 @[export: 'vtext_wrap_with']
-pub fn vtext_wrap_with(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_px f64,
+pub fn vtext_wrap_with(ctx &shape.Context, text &u8, len int, dir int, fs &shape.FontSet, em_px f64,
 	max_width f64, opts &COptions, errbuf &u8, errcap int) &WrapBox {
 	if ctx == unsafe { nil } || fs == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: context and font set must both be non-null')
@@ -558,7 +559,7 @@ pub fn vtext_wrap_with(ctx &Context, text &u8, len int, dir int, fs &FontSet, em
 	}
 	cps := c_text(text, len)
 	options := c_options(opts)
-	return box_wrap(wrap_paragraph_with(ctx, cps, c_dir(dir), fs, em_px, max_width, &options))
+	return box_wrap(layout.wrap_paragraph_with(ctx, cps, c_dir(dir), fs, em_px, max_width, &options))
 }
 
 // WrapBox owns one wrap call: the lines and, inside each, the glyphs. A line
@@ -566,14 +567,14 @@ pub fn vtext_wrap_with(ctx &Context, text &u8, len int, dir int, fs &FontSet, em
 // which is why there is no per-line free.
 pub struct WrapBox {
 pub mut:
-	lines []WrappedLine
+	lines []layout.WrappedLine
 }
 
 // box_wrap moves a wrap result onto the heap. Each line owns its glyph array
 // already — the wrap pass copies the glyphs it keeps — and each array is
 // copied once more here into C memory, so the box owns them and
 // `vtext_wrap_free` releases all of it.
-fn box_wrap(lines []WrappedLine) &WrapBox {
+fn box_wrap(lines []layout.WrappedLine) &WrapBox {
 	unsafe {
 		mut p := &WrapBox(malloc(sizeof(WrapBox)))
 		p.lines = c_array(lines)
@@ -617,7 +618,7 @@ pub fn vtext_wrap_line_count(w &WrapBox) int {
 // vtext_wrap_line returns line i, borrowed from the box. Null when i is out of
 // range; otherwise valid until `vtext_wrap_free`.
 @[export: 'vtext_wrap_line']
-pub fn vtext_wrap_line(w &WrapBox, i int) &Line {
+pub fn vtext_wrap_line(w &WrapBox, i int) &layout.Line {
 	if w == unsafe { nil } {
 		return unsafe { nil }
 	}
@@ -657,7 +658,7 @@ pub fn vtext_wrap_line_to(w &WrapBox, i int) int {
 // taken, and the ink extent with the resolved line height. Both widths come
 // out of one shaping. Returns 1 and fills out, or 0 with the reason in err.
 @[export: 'vtext_measure']
-pub fn vtext_measure(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_px f64,
+pub fn vtext_measure(ctx &shape.Context, text &u8, len int, dir int, fs &shape.FontSet, em_px f64,
 	out &CMetrics, errbuf &u8, errcap int) int {
 	return vtext_measure_with(ctx, text, len, dir, fs, em_px, unsafe { nil }, out, errbuf,
 		errcap)
@@ -667,7 +668,7 @@ pub fn vtext_measure(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_p
 // taken with different options is a measurement of a different line, so the
 // box and the line are sized with the same ones.
 @[export: 'vtext_measure_with']
-pub fn vtext_measure_with(ctx &Context, text &u8, len int, dir int, fs &FontSet, em_px f64,
+pub fn vtext_measure_with(ctx &shape.Context, text &u8, len int, dir int, fs &shape.FontSet, em_px f64,
 	opts &COptions, out &CMetrics, errbuf &u8, errcap int) int {
 	if ctx == unsafe { nil } || fs == unsafe { nil } || out == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: context, font set and output must all be non-null')
@@ -675,7 +676,7 @@ pub fn vtext_measure_with(ctx &Context, text &u8, len int, dir int, fs &FontSet,
 	}
 	cps := c_text(text, len)
 	options := c_options(opts)
-	m := measure_paragraph_with(ctx, cps, c_dir(dir), fs, em_px, &options)
+	m := layout.measure_paragraph_with(ctx, cps, c_dir(dir), fs, em_px, &options)
 	unsafe {
 		out.min_content_width = m.min_content_width
 		out.max_content_width = m.max_content_width
@@ -691,14 +692,14 @@ pub fn vtext_measure_with(ctx &Context, text &u8, len int, dir int, fs &FontSet,
 // err when the context is missing; an empty text is an empty answer, not an
 // error.
 @[export: 'vtext_breaks']
-pub fn vtext_breaks(ctx &Context, text &u8, len int, mandatory_first int, errbuf &u8,
+pub fn vtext_breaks(ctx &shape.Context, text &u8, len int, mandatory_first int, errbuf &u8,
 	errcap int) &CBreaks {
 	if ctx == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: context must be non-null')
 		return unsafe { nil }
 	}
 	cps := c_text(text, len)
-	ops := break_opportunities(ctx, cps, mandatory_first != 0)
+	ops := layout.break_opportunities(ctx, cps, mandatory_first != 0)
 	unsafe {
 		mut b := &CBreaks(malloc(sizeof(CBreaks)))
 		b.len = i32(ops.len)
@@ -755,7 +756,7 @@ pub mut:
 // with the ink box placed relative to the pen on the baseline. sub_x and
 // sub_y snap the position to quarter-pixel bins: four is one whole pixel.
 @[export: 'vtext_rasterize']
-pub fn vtext_rasterize(f &Font, gid u16, em_px f64, sub_x int, sub_y int, errbuf &u8,
+pub fn vtext_rasterize(f &shape.Font, gid u16, em_px f64, sub_x int, sub_y int, errbuf &u8,
 	errcap int) &CBitmap {
 	if f == unsafe { nil } {
 		set_error(errbuf, errcap, 'vtext: font must be non-null')

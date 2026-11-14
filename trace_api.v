@@ -221,32 +221,13 @@ pub fn codepoint_name_index(cp rune) int {
 	return -1
 }
 
-// normalize_nfd is the canonical decomposition of UAX#15, which is what the pipeline runs before shaping.
-//
-// This is the decomposition rather than a normalized string, because the indices are what a trace needs: a
-// mark written after another mark is reordered ahead of it, and a caller reading the output needs to see
-// which input character each resulting codepoint came from.
-pub fn (ctx &Context) normalize_nfd(cps []rune) []rune {
-	decomposed, _ := ctx.normalizer.nfd_mapped(cps)
-	return decomposed
-}
-
 // resolve_bidi is the paragraph-level resolution of UAX#9.
 //
 // base_dir is what P2 and P3 take when the text does not imply a direction. shape.Direction.auto is the honest
 // answer for a trace, because it is what a caller who did not know would have passed, and a bug that only
 // appears under one of the forced directions would otherwise be invisible here.
-pub fn resolve_bidi(ctx &Context, cps []rune, base_dir shape.Direction) shape.BidiResult {
+pub fn resolve_bidi(ctx &shape.Context, cps []rune, base_dir shape.Direction) shape.BidiResult {
 	return shape.resolve_paragraph(ctx.properties, cps, base_dir)
-}
-
-// shape_for_trace runs the joining pass over a run in logical order, which is the stage between bidi and
-// the font.
-//
-// The run it returns is the same one layout_paragraph gets, not a copy of it computed differently: a
-// trace that reshapes to describe the pipeline would be describing itself.
-pub fn (ctx &Context) shape_for_trace(cps []rune) shape.ShapedRun {
-	return ctx.shaper.shape_arabic(ctx.properties, cps)
 }
 
 // joining_type_name is a codepoint's joining type as a word, for a trace that prints the property.
@@ -254,6 +235,6 @@ pub fn (ctx &Context) shape_for_trace(cps []rune) shape.ShapedRun {
 // The codepoints here are the ones the decision hinges on, and a decision phrased in numbers has to be
 // re-read as numbers. Right-joining, dual-joining, non-joining and transparent are four different answers
 // to "can this letter touch its neighbour", and only the fourth is invisible.
-pub fn joining_type_name(ctx &Context, cp rune) string {
+pub fn joining_type_name(ctx &shape.Context, cp rune) string {
 	return ctx.properties.joining_type_name(cp)
 }

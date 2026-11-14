@@ -16,6 +16,8 @@ import math
 import hash.crc32
 import compress.zlib
 import vtext
+import vtext.layout
+import vtext.shape
 
 // How many subpixel units make one pixel.
 //
@@ -59,7 +61,7 @@ pub fn (mut c Canvas) blend(x int, y int, coverage u8) {
 //
 // All of the positioning is the engine's: it has already chosen the glyph, decided where the pen goes,
 // and placed any mark. This only asks the font for the glyph's pixels and puts them where they belong.
-pub fn (mut c Canvas) draw_glyph(f &vtext.Font, g vtext.Glyph, baseline f64, em_px f64) {
+pub fn (mut c Canvas) draw_glyph(f &shape.Font, g shape.Glyph, baseline f64, em_px f64) {
 	c.draw_glyph_at(f, g, baseline, em_px, 0.0)
 }
 
@@ -68,7 +70,7 @@ pub fn (mut c Canvas) draw_glyph(f &vtext.Font, g vtext.Glyph, baseline f64, em_
 //
 // The shift is added to the pen rather than baked into the glyph, so the copy is the same glyph in the
 // same place in its own line and nothing about the engine's output is altered to make room for it.
-pub fn (mut c Canvas) draw_glyph_at(f &vtext.Font, g vtext.Glyph, baseline f64, em_px f64, dx f64) {
+pub fn (mut c Canvas) draw_glyph_at(f &shape.Font, g shape.Glyph, baseline f64, em_px f64, dx f64) {
 	// The pen is at a fractional place and the rasteriser takes a subpixel offset in quarters of a
 	// pixel, so the fractional part is handed over in those units and the whole pixel is dropped.
 	pen := g.x + dx
@@ -93,14 +95,14 @@ pub fn (mut c Canvas) draw_glyph_at(f &vtext.Font, g vtext.Glyph, baseline f64, 
 }
 
 // draw_line lays out one string and paints every glyph of it with the baseline at baseline.
-pub fn (mut c Canvas) draw_line(fs &vtext.FontSet, ctx &vtext.Context, text string, baseline f64,
+pub fn (mut c Canvas) draw_line(fs &shape.FontSet, ctx &shape.Context, text string, baseline f64,
 	em_px f64) {
 	// A V string is a byte array, so iterating one yields UTF-8 bytes rather than characters: the two
 	// bytes of U+0645 arrive as two runes and the text turns into Latin-1 noise. .runes() decodes.
 	cps := text.runes()
 	// .auto takes the direction from the first strong character, so one call lays out text of either
 	// direction correctly and the caller does not have to know which is which.
-	line := vtext.layout_paragraph(ctx, cps, .auto, fs, em_px)
+	line := layout.layout_paragraph(ctx, cps, .auto, fs, em_px)
 	for g in line.glyphs {
 		if f := g.font {
 			c.draw_glyph(f, g, baseline, em_px)
@@ -112,8 +114,8 @@ pub fn (mut c Canvas) draw_line(fs &vtext.FontSet, ctx &vtext.Context, text stri
 //
 // The engine is asked the same question twice when a caller sizes a canvas from a first layout and then
 // draws it, which is a little wasteful and keeps the example to one code path.
-pub fn measure(fs &vtext.FontSet, ctx &vtext.Context, text string, em_px f64) (int, f64, f64) {
-	line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
+pub fn measure(fs &shape.FontSet, ctx &shape.Context, text string, em_px f64) (int, f64, f64) {
+	line := layout.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
 	return int(math.ceil(line.width)), line.ascent, line.descent
 }
 

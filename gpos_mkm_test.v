@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 // Tests for mark-to-mark: two marks on one letter, where the upper one attaches to the lower one
 // rather than to the letter underneath.
 //
@@ -74,12 +76,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn mkm_font(name string) ?&Font {
+fn mkm_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // nastaliq is the corpus font the stacking tests read.
@@ -88,7 +90,7 @@ fn mkm_font(name string) ?&Font {
 // height from the shadda alone, which is the whole of what these tests assert and what Amiri cannot show,
 // because Amiri draws all of its marks at one vertical anchor. Measured at a 64 pixel em, Nastaliq puts the
 // stacked mark 10.4 pixels off the shadda's own height; the three Noto Naskh faces do not move it at all.
-fn nastaliq() ?&Font {
+fn nastaliq() ?&shape.Font {
 	return mkm_font('NotoNastaliqUrdu-Regular.ttf')
 }
 
@@ -140,9 +142,9 @@ fn test_mkm_fonts_that_can_stack_report_it() {
 fn test_mkm_a_mark_above_a_shadda_is_higher() {
 	f := mkm_font('tahoma.ttf') or { return }
 	// beh, shadda, fatha. The fatha belongs on the shadda.
-	ctx := new_context()
-	stacked := layout_paragraph(ctx, runes(mkm_beh, mkm_shadda, mkm_fatha), .rtl,
-		new_font_set_of(f), 64.0)
+	ctx := shape.new_context()
+	stacked := layout.layout_paragraph(ctx, runes(mkm_beh, mkm_shadda, mkm_fatha), .rtl,
+		shape.new_font_set_of(f), 64.0)
 	assert stacked.glyphs.len == 3, 'three characters give three glyphs, got ${stacked.glyphs.len}'
 	// The line is right to left and the marks come before the letter, so the shadda is the one drawn
 	// first among the two marks and the fatha the second. Which of the two has the greater cluster
@@ -171,18 +173,18 @@ fn test_mkm_a_mark_above_a_shadda_is_higher() {
 // the fault that survives a mark-to-mark lookup being present but its classes being ignored.
 fn test_mkm_different_marks_land_differently() {
 	f := mkm_font('tahoma.ttf') or { return }
-	ctx := new_context()
+	ctx := shape.new_context()
 	mut with_fatha := []rune{}
 	with_fatha << mkm_beh
 	with_fatha << mkm_shadda
 	with_fatha << mkm_fatha
-	a := layout_paragraph(ctx, with_fatha, .rtl, new_font_set_of(f), 64.0)
-	ctx2 := new_context()
+	a := layout.layout_paragraph(ctx, with_fatha, .rtl, shape.new_font_set_of(f), 64.0)
+	ctx2 := shape.new_context()
 	mut with_damma := []rune{}
 	with_damma << mkm_beh
 	with_damma << mkm_shadda
 	with_damma << mkm_damma
-	b := layout_paragraph(ctx2, with_damma, .rtl, new_font_set_of(f), 64.0)
+	b := layout.layout_paragraph(ctx2, with_damma, .rtl, shape.new_font_set_of(f), 64.0)
 	assert a.glyphs.len == 3 && b.glyphs.len == 3
 	// The first mark is the shadda in both, and the second is the one that differs.
 	mut a_second := a.glyphs[0]
@@ -207,17 +209,17 @@ fn test_mkm_different_marks_land_differently() {
 // something other than the upper mark, which would look right and be wrong.
 fn test_mkm_the_upper_mark_moves_relative_to_the_letter() {
 	f := mkm_font('tahoma.ttf') or { return }
-	ctx := new_context()
+	ctx := shape.new_context()
 	mut with_fatha := []rune{}
 	with_fatha << mkm_beh
 	with_fatha << mkm_shadda
 	with_fatha << mkm_fatha
-	a := layout_paragraph(ctx, with_fatha, .rtl, new_font_set_of(f), 64.0)
-	ctx2 := new_context()
+	a := layout.layout_paragraph(ctx, with_fatha, .rtl, shape.new_font_set_of(f), 64.0)
+	ctx2 := shape.new_context()
 	mut shadda_only := []rune{}
 	shadda_only << mkm_beh
 	shadda_only << mkm_shadda
-	b := layout_paragraph(ctx2, shadda_only, .rtl, new_font_set_of(f), 64.0)
+	b := layout.layout_paragraph(ctx2, shadda_only, .rtl, shape.new_font_set_of(f), 64.0)
 	assert a.glyphs.len == 3 && b.glyphs.len == 2
 	// The shadda is the mark with cluster one in both lines.
 	mut a_shadda := a.glyphs[0]
@@ -250,11 +252,11 @@ fn test_mkm_the_upper_mark_moves_relative_to_the_letter() {
 // that always looked for a mark to stack on would leave a lone mark unplaced.
 fn test_mkm_a_lone_mark_is_unaffected() {
 	f := mkm_font('tahoma.ttf') or { return }
-	ctx := new_context()
+	ctx := shape.new_context()
 	mut cps := []rune{}
 	cps << mkm_beh
 	cps << mkm_fatha
-	line := layout_paragraph(ctx, cps, .rtl, new_font_set_of(f), 64.0)
+	line := layout.layout_paragraph(ctx, cps, .rtl, shape.new_font_set_of(f), 64.0)
 	assert line.glyphs.len == 2, 'a letter and a mark are two glyphs, got ${line.glyphs.len}'
 	mark := line.glyphs[0]
 	assert mark.is_mark, 'the first glyph in a right to left line is the mark'

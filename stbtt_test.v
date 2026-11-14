@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // The box query and the rasterizer must agree about where a glyph's ink is.
 //
@@ -18,7 +19,7 @@ import vtext.font
 // What this file does not test is that measure_line calls box_only. Proving which of two functions a
 // caller reached needs a counter on font.Face, and a mutable field added for a test is a worse cost than the
 // performance it would guard: it would make every loaded font's face mutable, which is the one thing
-// about Font that is currently load-bearing. The call site is one line, and the numbers it produces are
+// about shape.Font that is currently load-bearing. The call site is one line, and the numbers it produces are
 // pinned by the sweep below whichever path it takes.
 
 import os
@@ -77,12 +78,12 @@ fn skip_missing(name string) {
 }
 
 // font_from loads a font for a test, or reports that it cannot and lets the test skip.
-fn font_from(name string) ?&Font {
+fn font_from(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // amiri is the corpus font these tests sweep.
@@ -91,7 +92,7 @@ fn font_from(name string) ?&Font {
 // every glyph in it has an outline, so the sweep covers everything the sweep is for. The width of the
 // repertoire is what the original assertion wanted from Segoe UI; the glyph count is what makes the sweep
 // worth running at all.
-fn amiri() ?&Font {
+fn amiri() ?&shape.Font {
 	return font_from('Amiri-Regular.ttf')
 }
 

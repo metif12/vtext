@@ -17,14 +17,15 @@ API and its own baseline. See `GOAL.md` for the one paragraph that decides
 scope arguments, and `ROADMAP.md` for where each part stands.
 
 ```v
-import vtext
+import vtext.layout
+import vtext.shape
 
 fn main() {
-	ctx := vtext.new_context()
-	fs := vtext.new_font_set()
-	fs.add(vtext.load_font_file('C:\\Windows\\Fonts\\tahoma.ttf') or { panic(err) })
+	ctx := shape.new_context()
+	fs := shape.new_font_set()
+	fs.add(shape.load_font_file('C:\\Windows\\Fonts\\tahoma.ttf') or { panic(err) })
 
-	line := vtext.layout_paragraph(ctx, 'بِه'.runes(), .rtl, fs, 32.0)
+	line := layout.layout_paragraph(ctx, 'بِه'.runes(), .rtl, fs, 32.0)
 	font := fs.pick(`ب`) or { panic('no font') }
 	for g in line.glyphs {
 		bitmap := font.rasterize(g.gid, 32.0, 0, 0)
@@ -40,14 +41,14 @@ The pipeline is the one UAX #9 and the OpenType specification describe, in order
 
 | Stage | Spec | File |
 | --- | --- | --- |
-| Decompose and order combining marks | UAX #15 | `normalize.v` |
-| Resolve paragraph direction and runs | UAX #9 | `bidi.v`, `bidi_rules.v` |
-| Pick the Arabic joining form | UAX #53 | `joining.v` |
-| Choose and order fonts | | `glyph.v` |
-| Substitute glyphs | OpenType GSUB | `gsub.v` |
-| Place combining marks | OpenType GPOS | `gpos.v` |
-| Order glyphs for drawing | UAX #9 | `layout.v` |
-| Rasterize | | `stbtt.c.v` |
+| Decompose and order combining marks | UAX #15 | `shape/normalize.v` |
+| Resolve paragraph direction and runs | UAX #9 | `shape/bidi.v`, `shape/bidi_rules.v` |
+| Pick the Arabic joining form | UAX #53 | `shape/joining.v` |
+| Choose and order fonts | | `shape/glyphs.v` |
+| Substitute glyphs | OpenType GSUB | `font/gsub.v` |
+| Place combining marks | OpenType GPOS | `font/gpos.v` |
+| Order glyphs for drawing | UAX #9 | `layout/layout.v` |
+| Rasterize | | `font/stbtt.c.v` |
 
 Character data is generated from the UCD into `ucd/ucd_*.v` (module `vtext.ucd`),
 so there are no runtime tables to load and no network access is needed to build.
@@ -65,11 +66,11 @@ accident. Dependencies run one way — `layout` → `shape` → `font` → `ucd`
 | Part | Directory | What it is | Replaces |
 | --- | --- | --- | --- |
 | `vtext.ucd` | `ucd/` | Generated UCD tables decoded once into `Properties`. No other part reads the UCD directly. Carved out 2026-11-13; the split is verified by the full suite, the fmt gate, the difftest tool, and the C library plus smoke test. | — (shared data) |
-| `vtext.font` | planned | sfnt/TTC containers, cmap, metrics, variation-store reading, instancing. Planned next: it is the only part `shape` and `layout` both stand on. | FreeType loading, fontTools reading |
-| `vtext.shape` | planned | Normalization, bidi, joining, GSUB/GPOS, contextual formats, instancing consumers. | HarfBuzz core |
-| `vtext.layout` | planned | Line breaking, wrapping, measuring, fallback chains, vertical text, kashida/justification, hyphenation. | Pango's layout math |
+| `vtext.font` | `font/` | sfnt/TTC containers, cmap, Face with metrics, GSUB/GPOS/GDEF, stb raster primitives, glyph introspection. Carved out in three slices; each verified by suite, fmt, difftest and smoke. | FreeType loading, fontTools reading |
+| `vtext.shape` | `shape/` | Normalization, bidi, joining, the text-system Context, Font/FontSet/Glyph currency. Carved out in two slices; same verification. | HarfBuzz core |
+| `vtext.layout` | `layout/` | Line breaking, wrapping, measuring, fallback-driven layout. Files moved; same verification. | Pango's layout math |
 | `vtext.raster` | planned | Unhinted stb today; hinting and color as engines behind one box-and-fill contract. | FreeType rendering |
-| `vtext.inspect` | planned | The existing `inspect.v` surface promoted to a library part. | fontTools introspection |
+| `vtext.inspect` | planned | The `shape/inspect.v` surface promoted to a library part. | fontTools introspection |
 | `vtext.subset` | planned | `tools/subset.v` promoted to a library; glyf today, CFF/CFF2 after the charstring reader. | fontTools subsetter |
 | `vtext.capi` | `capi.v` | The C face of all of the above; `vtext.h` stays the single header. | — |
 | providers | planned, per-OS | `FontSource` implementations for fontconfig / Core Text / DirectWrite. Optional, never linked by default. | fontconfig & co. |
@@ -238,13 +239,13 @@ baseline entries are reported as unverifiable rather than stale.
 ### Laying out a line
 
 ```v
-ctx := vtext.new_context()
-fs := vtext.new_font_set()
-fs.add(vtext.load_font_file('tahoma.ttf') or { panic(err) })
-fs.add(vtext.load_font_file('segoeui.ttf') or { panic(err) })
+ctx := shape.new_context()
+fs := shape.new_font_set()
+fs.add(shape.load_font_file('tahoma.ttf') or { panic(err) })
+fs.add(shape.load_font_file('segoeui.ttf') or { panic(err) })
 
 // The third argument is the paragraph direction; .auto reads it from the text.
-line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, 32.0)
+line := layout.layout_paragraph(ctx, text.runes(), .auto, fs, 32.0)
 ```
 
 `em_px` is the size of an em square in pixels, so 32.0 gives roughly a 32-pixel line.
@@ -254,7 +255,7 @@ line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, 32.0)
 `FontSet` is an ordered fallback chain. A codepoint is drawn with the first font that has a glyph for it.
 
 ```v
-fs := vtext.new_font_set()
+fs := shape.new_font_set()
 fs.add(arabic_font)  // first choice
 fs.add(latin_font)   // used for codepoints the first has no glyph for
 ```
@@ -268,7 +269,7 @@ that English word in a Latin one".
 
 ```v
 // Arabic goes to the Arabic font, everything else to the Latin one.
-fs := vtext.new_script_font_set(arabic_font, latin_font)
+fs := shape.new_script_font_set(arabic_font, latin_font)
 fs.pick_in(ctx, rune(0x0628))  // -> arabic_font
 fs.pick_in(ctx, rune(0x41))    // -> latin_font
 ```
@@ -342,10 +343,10 @@ run over the run.
 
 ```v
 // liga is what Persian letter pairs need, and it changes the width of the text, so it is opt-in.
-mut opts := vtext.LayoutOptions{}
+mut opts := layout.LayoutOptions{}
 opts.features = ['liga']
 
-line := vtext.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
+line := layout.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 ```
 
 ### Line options
@@ -355,13 +356,13 @@ them change measurements, so anything that sizes a box has to use the same optio
 with.
 
 ```v
-mut opts := vtext.LayoutOptions{}
+mut opts := layout.LayoutOptions{}
 opts.features = ['liga']
 opts.line_height = 28.0       // 0 takes the font's own
 opts.letter_spacing = 0.5
 opts.word_spacing = 2.0
 
-line := vtext.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
+line := layout.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 next_baseline := baseline + line.line_height
 ```
 
@@ -387,7 +388,7 @@ two sources for one decision with no stated precedence.
 The two widths a layout engine needs before it draws anything, from one shaping pass.
 
 ```v
-m := vtext.measure_paragraph(ctx, text.runes(), .rtl, fs, 32.0)
+m := layout.measure_paragraph(ctx, text.runes(), .rtl, fs, 32.0)
 m.min_content_width   // narrowest: the widest unbreakable unit
 m.max_content_width   // widest: no break taken at all
 m.ascent, m.descent, m.line_height
@@ -429,7 +430,7 @@ A paragraph laid out to fit a width, with the input range each line came from. T
 is shaped once and the lines are cut out of it, so trying a narrower width costs no extra shaping.
 
 ```v
-for w in vtext.wrap_paragraph(ctx, text.runes(), .rtl, fs, 32.0, 400.0) {
+for w in layout.wrap_paragraph(ctx, text.runes(), .rtl, fs, 32.0, 400.0) {
 	draw(w.line)         // the glyphs, positioned, ready to draw
 	caret_at(w.from, w.to)  // the range of the caller's text this line holds
 }
@@ -753,21 +754,23 @@ the iteration, so the struct gets a copy. `parse_mark_to_ligature` does this for
 ## Layout
 
 ```
-reader.v        bounds-checked big-endian byte reading
-sfnt.v          the font file: tables, collections, offsets
-cmap.v          codepoint to glyph
-face.v          loads GDEF, GSUB and GPOS for a font
-glyph.v         fallback chain, joining forms, glyph metrics
-normalize.v     UAX #15
-bidi.v          UAX #9
-joining.v       UAX #53
-gsub.v          OpenType substitution
-gpos.v          OpenType positioning
-layout.v        the pipeline, and mark placement
-linebreak.v     UAX #14, wrapping, and measuring a paragraph's two widths
-stbtt.c.v       the stb_truetype rasteriser, vendored and public domain
+shape/context.v   the text system: decoded tables, shaper and normalizer handles
+shape/font.v      the loaded font: metrics, glyph lookup and rasterisation
+shape/glyphs.v    fallback chain, joining forms, glyph metrics
+shape/inspect.v   reporting what a font contains: tables, features, scripts, coverage
+shape/joining.v   UAX #53
+shape/normalize.v UAX #15
+shape/bidi.v      UAX #9
+font/reader.v     bounds-checked big-endian byte reading
+font/sfnt.v       the font file: tables, collections, offsets
+font/cmap.v       codepoint to glyph
+font/face.v       loads GDEF, GSUB and GPOS for a font
+font/gsub.v       OpenType substitution
+font/gpos.v       OpenType positioning
+font/stbtt.c.v    the stb_truetype rasteriser, vendored and public domain
+layout/layout.v   the pipeline, and mark placement
+layout/linebreak.v UAX #14, wrapping, and measuring a paragraph's two widths
 
-inspect.v       reporting what a font contains: tables, features, scripts, coverage
 trace_api.v     the pipeline's stages, reached one at a time for shapetrace
 
 ucd/            module vtext.ucd: tables.v (decode once into Properties),

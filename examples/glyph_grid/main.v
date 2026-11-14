@@ -26,6 +26,7 @@ module main
 import vtext
 import corpus
 import paint
+import vtext.shape
 
 // The codepoint range scanned. Everything above this is not scanned.
 const scan_first = 0
@@ -41,7 +42,7 @@ const many_level = u8(150)
 const none_level = u8(225)
 
 fn main() {
-	f := vtext.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	f := shape.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	glyphs := f.num_glyphs()
 	println(corpus.font('consola.ttf', 'Amiri-Regular.ttf'))
 	println('  ${glyphs} glyphs, ${f.units_per_em()} units per em')
@@ -128,7 +129,7 @@ fn main() {
 // The glyph is rasterised at a fraction of the cell rather than at the cell itself, so a glyph whose ink
 // is as wide as its cell cannot overlap its neighbour: an overlap in a grid like this reads as a glyph in
 // the wrong cell, which is exactly the misreading the grid exists to prevent.
-fn draw_cell(mut canvas paint.Canvas, f &vtext.Font, gid u16, x int, y int, level u8) {
+fn draw_cell(mut canvas paint.Canvas, f &shape.Font, gid u16, x int, y int, level u8) {
 	bitmap := f.rasterize(gid, f64(cell) * 0.8, 0, 0)
 	if bitmap.is_empty() {
 		return

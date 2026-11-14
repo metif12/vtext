@@ -1,4 +1,4 @@
-module vtext
+module layout
 
 import vtext.shape
 import vtext.ucd
@@ -23,7 +23,7 @@ import vtext.ucd
 // and a break that is required are different kinds, because a caller may skip
 // the first and may not skip the second. Collapsing them means either losing a
 // newline or wrapping text in the middle of a paragraph.
-enum BreakKind {
+pub enum BreakKind {
 	no        // the text forbids a break here
 	allowed   // a break may go here
 	mandatory // the text requires one
@@ -78,7 +78,7 @@ pub:
 //
 // The returned list is in logical order, not visual order, because the caller
 // is walking the text and not the page.
-pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []BreakOpportunity {
+pub fn break_opportunities(ctx &shape.Context, cps []rune, mandatory_first bool) []BreakOpportunity {
 	props := ctx.properties
 	n := cps.len
 	if n == 0 {
@@ -183,7 +183,7 @@ pub fn break_opportunities(ctx &Context, cps []rune, mandatory_first bool) []Bre
 // both ways. A caller laying out one paragraph asks for mandatory breaks to be
 // marked, and a caller measuring a single line asks for the newline to be treated as
 // a space instead, which is a different question about the same positions.
-fn is_mandatory_break_at(classes []ucd.LineBreakClass, pos int, n int, mandatory_first bool) bool {
+pub fn is_mandatory_break_at(classes []ucd.LineBreakClass, pos int, n int, mandatory_first bool) bool {
 	if !mandatory_first || pos <= 0 || pos > n {
 		return false
 	}
@@ -199,7 +199,7 @@ fn is_mandatory_break_at(classes []ucd.LineBreakClass, pos int, n int, mandatory
 // does not apply falls through to the next rather than returning nothing,
 // because "no rule matched" and "a later rule matched" are the same thing to
 // every rule below it.
-fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass, quote []ucd.CodeRange,
+pub fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass, quote []ucd.CodeRange,
 	ea []ucd.CodeRange, eu []ucd.CodeRange, prev_broke bool, closes_span bool, i int) BreakKind {
 	left := classes[i]
 	right := classes[i + 1]
@@ -1158,7 +1158,7 @@ fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass, q
 // `QU_Pi × SP × SP × R` is one thing, and both are answered by the character the run grew out
 // of. A run ends at the first character that is neither a space nor a mark, so it stops at a
 // quotation mark itself, at a zero width space and at real text.
-fn run_origin(classes []ucd.LineBreakClass, i int) int {
+pub fn run_origin(classes []ucd.LineBreakClass, i int) int {
 	mut j := i
 	for j > 0 && is_space_or_mark(classes[j - 1]) {
 		j--
@@ -1171,7 +1171,7 @@ fn run_origin(classes []ucd.LineBreakClass, i int) int {
 // The mark is spelled `.cm` rather than asked of `is_markish`, because `effective_class` has
 // already folded every markish class into `.cm` by LB4a: what a caller reads here is the
 // resolved run, not the table's own spelling of it.
-fn is_space_or_mark(c ucd.LineBreakClass) bool {
+pub fn is_space_or_mark(c ucd.LineBreakClass) bool {
 	return c == .sp || c == .cm
 }
 
@@ -1182,7 +1182,7 @@ fn is_space_or_mark(c ucd.LineBreakClass) bool {
 // is what happens when a line is copied out of a document and pasted back
 // somewhere that does not know it was a line. Without this the text reads as
 // two words with a space where the hyphen was.
-fn is_break_after_hyphen_break(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass,
+pub fn is_break_after_hyphen_break(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass,
 	i int) bool {
 	// i is the position of the right-hand character, so the hyphen is at i-1 and
 	// whatever the hyphen broke is at i-2.
@@ -1204,7 +1204,7 @@ fn is_break_after_hyphen_break(props &ucd.Properties, cps []rune, classes []ucd.
 }
 
 // is_mandatory_break reports whether this class is one the text must break at.
-fn is_mandatory_break(c ucd.LineBreakClass) bool {
+pub fn is_mandatory_break(c ucd.LineBreakClass) bool {
 	return c == .lf || c == .bk || c == .cr || c == .nl
 }
 
@@ -1225,7 +1225,7 @@ fn is_mandatory_break(c ucd.LineBreakClass) bool {
 // The inseparable class is spelled .insp here because .is is a V keyword, and it matters: a
 // character that cannot be separated from its neighbour is the one case where a break on either
 // side would put two marks on different lines.
-fn is_prohibited_start(c ucd.LineBreakClass) bool {
+pub fn is_prohibited_start(c ucd.LineBreakClass) bool {
 	return c == .cl || c == .cp || c == .ex || c == .insp || c == .sy
 }
 
@@ -1251,7 +1251,7 @@ fn is_prohibited_start(c ucd.LineBreakClass) bool {
 //
 // LB12a's glue is here too, though not in this function: it is spelled out at its own site because
 // its exclusion list is the point of it.
-fn is_prohibited_start_after_space(c ucd.LineBreakClass) bool {
+pub fn is_prohibited_start_after_space(c ucd.LineBreakClass) bool {
 	return c == .qu || c == .ba || c == .hh || c == .hy || c == .ns
 		|| c == ucd.infx
 }
@@ -1272,7 +1272,7 @@ fn is_prohibited_start_after_space(c ucd.LineBreakClass) bool {
 // pair below answers. IS is not in it either: LB29 holds `IS × (AL|HL)` as its own
 // pair and LB25 holds `IS × NU` the same way, so no break the file asks for needs
 // the class list — `× 002C ÷ 1B05 ÷` is [31.01].
-fn is_prohibited_end(c ucd.LineBreakClass) bool {
+pub fn is_prohibited_end(c ucd.LineBreakClass) bool {
 	return c == .op || c == .qu || c == .bb
 }
 
@@ -1288,7 +1288,7 @@ fn is_prohibited_end(c ucd.LineBreakClass) bool {
 // own. A word joiner is left alone: it is already a class of its own, and it is the one that forbids
 // a break on both sides of it, which is what makes it the character a caller reaches for when a
 // word must not be split.
-fn effective_class(props &ucd.Properties, sa []ucd.CodeRange, cps []rune, i int,
+pub fn effective_class(props &ucd.Properties, sa []ucd.CodeRange, cps []rune, i int,
 	so_far []ucd.LineBreakClass) ucd.LineBreakClass {
 	raw := props.line_break_of(cps[i])
 	if raw == .zwj {
@@ -1406,11 +1406,11 @@ fn effective_class(props &ucd.Properties, sa []ucd.CodeRange, cps []rune, i int,
 //
 // What is left is the mark proper, which is the class UAX#14 LB4a is actually
 // about: a Latin accent, an Arabic tashkil, a zero width non-joiner.
-fn is_markish(c ucd.LineBreakClass) bool {
+pub fn is_markish(c ucd.LineBreakClass) bool {
 	return c == .cm
 }
 
-fn clamp_index(i int, n int) int {
+pub fn clamp_index(i int, n int) int {
 	if i < 0 {
 		return 0
 	}
@@ -1458,7 +1458,7 @@ pub mut:
 // anyway would mean breaking inside a word.
 //
 // No discretionary features are applied. Use wrap_paragraph_with to ask for any.
-pub fn wrap_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64,
+pub fn wrap_paragraph(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64,
 	max_width f64) []WrappedLine {
 	return wrap_paragraph_with(ctx, cps, base_dir, fs, em_px, max_width, &LayoutOptions{})
 }
@@ -1469,7 +1469,7 @@ pub fn wrap_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs &Fo
 // cannot pass anything, and the paragraph was then shaped without the features the caller asked for while
 // the same text laid out with layout_paragraph_with was shaped with them. The two disagreed about the width
 // of the same text, which is the one thing a text engine must never do.
-pub fn wrap_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64,
+pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64,
 	max_width f64, options &LayoutOptions) []WrappedLine {
 	if cps.len == 0 {
 		return []WrappedLine{}
@@ -1573,7 +1573,7 @@ pub fn wrap_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction, f
 // already have their advances, so adding them up costs nothing and shaping them again would cost the
 // whole pipeline. The width a line needs is the sum of the advances of the glyphs on it, which is
 // what line.width already is for a whole line.
-fn width_of_range(full &Line, from int, to int) f64 {
+pub fn width_of_range(full &Line, from int, to int) f64 {
 	mut w := f64(0)
 	for g in full.glyphs {
 		if g.cluster >= from && g.cluster < to {
@@ -1593,13 +1593,13 @@ fn width_of_range(full &Line, from int, to int) f64 {
 // The x of each glyph is then made relative to the line's own left edge, because a line is drawn
 // from its own left and not from the left of the paragraph it was cut out of. A mark shares the x
 // of the base it sits on, so it moves with it and needs nothing of its own.
-fn slice_for_range(full &Line, from int, to int) Line {
+pub fn slice_for_range(full &Line, from int, to int) Line {
 	mut line := Line{
 		ascent:      full.ascent
 		descent:     full.descent
 		line_height: full.line_height
 	}
-	mut kept := []Glyph{}
+	mut kept := []shape.Glyph{}
 	for g in full.glyphs {
 		if g.cluster >= from && g.cluster < to {
 			kept << g
@@ -1674,7 +1674,7 @@ pub:
 // no use for 400 positioned glyphs and would have to throw them away.
 //
 // No discretionary features are applied. Use measure_paragraph_with to ask for any.
-pub fn measure_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64) TextMetrics {
+pub fn measure_paragraph(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64) TextMetrics {
 	return measure_paragraph_with(ctx, cps, base_dir, fs, em_px, &LayoutOptions{})
 }
 
@@ -1684,7 +1684,7 @@ pub fn measure_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs 
 // produce for the same text and the same options. A measurement taken without the features, or taken with
 // a different line height, is a measurement of a different line, and a caller that sizes a box from it
 // has sized the box for something it will not draw.
-pub fn measure_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64,
+pub fn measure_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64,
 	options &LayoutOptions) TextMetrics {
 	if cps.len == 0 {
 		return TextMetrics{}
@@ -1734,7 +1734,7 @@ pub fn measure_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction
 // advance on its first character and a mark puts none anywhere, and both are right here: neither widens
 // a line that is cut at its edge, which is what keeps the segments of a right-to-left paragraph summing to
 // the same total as the paragraph.
-fn cluster_prefix(line &Line, n int) []f64 {
+pub fn cluster_prefix(line &Line, n int) []f64 {
 	mut by_cluster := []f64{len: n}
 	for g in line.glyphs {
 		// A cluster outside the caller's text is not expected, and is not worth trusting: the
@@ -1760,7 +1760,7 @@ fn cluster_prefix(line &Line, n int) []f64 {
 // A segment that is entirely spaces has no width at all, which is right rather than an edge case: a run
 // of spaces is not an unbreakable unit a caller has to be able to fit on a line, and giving it the width
 // of one space would make a paragraph of spaces report a non-zero minimum.
-fn segment_width(props &ucd.Properties, cps []rune, cum []f64, from int, to int) f64 {
+pub fn segment_width(props &ucd.Properties, cps []rune, cum []f64, from int, to int) f64 {
 	mut end := to
 	for end > from && is_line_end_space(props, cps[end - 1]) {
 		end--
@@ -1778,7 +1778,7 @@ fn segment_width(props &ucd.Properties, cps []rune, cum []f64, from int, to int)
 // character that draws nothing and that its own line breaker will discard. The classes are named rather
 // than tested for two characters because a carriage return is a line end on its own account and U+0085
 // is one too, and a caller that had to remember which is which would eventually get it wrong.
-fn is_line_end_space(props &ucd.Properties, cp rune) bool {
+pub fn is_line_end_space(props &ucd.Properties, cp rune) bool {
 	c := props.line_break_of(cp)
 	return c == .sp || c == .lf || c == .bk || c == .cr || c == .nl
 }

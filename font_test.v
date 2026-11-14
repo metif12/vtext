@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 import os
 
@@ -165,7 +166,7 @@ fn test_rasterize_glyph() {
 		}
 	}
 	assert inked > 0, 'A bitmap is entirely blank'
-	// Glyph 0 is .notdef and must rasterise to something.
+	// shape.Glyph 0 is .notdef and must rasterise to something.
 	notdef := face.rasterize_glyph(0, 32.0, 0, 0)
 	assert !notdef.is_empty(), '.notdef produced no bitmap'
 }

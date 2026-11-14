@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 // Tests for mark-to-ligature: a mark written after a fused pair belongs to one component of that
 // pair, and the font says which by giving that component the anchors and leaving the others empty.
 //
@@ -66,12 +68,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn mtl_font(name string) ?&Font {
+fn mtl_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 //
@@ -103,9 +105,9 @@ const mtl_fonts = ['NotoNaskhArabic-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf'
 	'NotoNaskhArabic-Variable.ttf']
 
 // did not fuse them.
-fn the_pair(font &Font) u16 {
-	ctx := new_context()
-	line := layout_paragraph(ctx, runes(mtl_lam, mtl_alef), .rtl, new_font_set_of(font), 64.0)
+fn the_pair(font &shape.Font) u16 {
+	ctx := shape.new_context()
+	line := layout.layout_paragraph(ctx, runes(mtl_lam, mtl_alef), .rtl, shape.new_font_set_of(font), 64.0)
 	if line.glyphs.len != 1 {
 		return 0
 	}
@@ -113,9 +115,9 @@ fn the_pair(font &Font) u16 {
 }
 
 // the_line lays out lam, alef and one mark, and returns the mark glyph and where it landed.
-fn the_line(font &Font, mark rune) (u16, f64, f64) {
-	ctx := new_context()
-	line := layout_paragraph(ctx, runes(mtl_lam, mtl_alef, mark), .rtl, new_font_set_of(font), 64.0)
+fn the_line(font &shape.Font, mark rune) (u16, f64, f64) {
+	ctx := shape.new_context()
+	line := layout.layout_paragraph(ctx, runes(mtl_lam, mtl_alef, mark), .rtl, shape.new_font_set_of(font), 64.0)
 	// The pair and the mark, in visual order, which in a right to left line puts the mark first.
 	if line.glyphs.len != 2 {
 		return 0, 0.0, 0.0
@@ -245,8 +247,8 @@ fn test_mtl_two_marks_land_in_different_places() {
 // The control is the thing that already worked, so it is the thing a change here can break.
 fn test_mtl_a_mark_on_a_letter_still_works() {
 	f := mtl_font('tahoma.ttf') or { return }
-	ctx := new_context()
-	line := layout_paragraph(ctx, runes(mtl_beh, mtl_fatha), .rtl, new_font_set_of(f), 64.0)
+	ctx := shape.new_context()
+	line := layout.layout_paragraph(ctx, runes(mtl_beh, mtl_fatha), .rtl, shape.new_font_set_of(f), 64.0)
 	assert line.glyphs.len == 2, 'a letter and a mark are two glyphs, got ${line.glyphs.len}'
 	mark := line.glyphs[0]
 	assert mark.is_mark, 'the first glyph in a right to left line is the mark'

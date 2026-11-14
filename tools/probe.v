@@ -9,6 +9,7 @@ import os
 import strings
 import vtext
 import vtext.font
+import vtext.shape
 
 const ramps = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@']
 
@@ -42,7 +43,7 @@ fn main() {
 	text := arg(2, 'Av')
 	em := 32.0
 
-	mut loaded := vtext.load_font_file(font_path) or { panic(err) }
+	mut loaded := shape.load_font_file(font_path) or { panic(err) }
 	println('font=${font_path}')
 	println('upem=${loaded.units_per_em()} glyphs=${loaded.num_glyphs()} cff=${loaded.is_cff_outlined()}')
 	println('ascent=${loaded.ascent(em):.1} descent=${loaded.descent(em):.1} line=${loaded.line_height(em):.1}')

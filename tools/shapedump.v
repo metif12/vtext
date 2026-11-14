@@ -39,6 +39,7 @@ import os
 import vtext
 import vtext.font
 import vtext.shape
+import vtext.layout
 
 fn main() {
 	mut font_path := ''
@@ -83,9 +84,9 @@ fn main() {
 	for h in cps_hex {
 		cps << rune(hex_word(h))
 	}
-	f := vtext.load_font_file(font_path) or { panic('cannot open ${font_path}: ${err}') }
-	fs := vtext.new_font_set_of(f)
-	ctx := vtext.new_context()
+	f := shape.load_font_file(font_path) or { panic('cannot open ${font_path}: ${err}') }
+	fs := shape.new_font_set_of(f)
+	ctx := shape.new_context()
 	base := if dir == 'ltr' {
 		shape.Direction.ltr
 	} else if dir == 'rtl' {
@@ -100,7 +101,7 @@ fn main() {
 		dump_wrapped(ctx, cps, base, fs, size, upem, wrap_px)
 		return
 	}
-	line := vtext.layout_paragraph(ctx, cps, base, fs, size)
+	line := layout.layout_paragraph(ctx, cps, base, fs, size)
 	mut pen := 0.0
 	dump_glyphs(line.glyphs, size, upem, 0)
 	println('# width_px=${line.width:.3f}')
@@ -110,8 +111,8 @@ fn main() {
 // `# line i:` comment carries the measured width and input range, and every
 // glyph row carries its line index as a thirteenth column. A reader that
 // only knows the twelve-column form keeps working: it checks len >= 12.
-fn dump_wrapped(ctx &vtext.Context, cps []rune, base shape.Direction, fs &vtext.FontSet, size f64, upem f64, max_width f64) {
-	lines := vtext.wrap_paragraph(ctx, cps, base, fs, size, max_width)
+fn dump_wrapped(ctx &shape.Context, cps []rune, base shape.Direction, fs &shape.FontSet, size f64, upem f64, max_width f64) {
+	lines := layout.wrap_paragraph(ctx, cps, base, fs, size, max_width)
 	for li, wl in lines {
 		println('# line ${li}: width=${wl.line.width:.3f} from=${wl.from} to=${wl.to}')
 		dump_glyphs(wl.line.glyphs, size, upem, li)
@@ -135,7 +136,7 @@ fn cov_hex(bm font.GlyphBitmap) string {
 	return out.bytestr()
 }
 
-fn dump_glyphs(glyphs []vtext.Glyph, size f64, upem f64, line_idx int) {
+fn dump_glyphs(glyphs []shape.Glyph, size f64, upem f64, line_idx int) {
 	mut pen := 0.0
 	for g in glyphs {
 		x_off := (g.x - pen) / size * upem

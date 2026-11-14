@@ -33,6 +33,9 @@ module main
 
 import os
 import vtext
+import vtext.layout
+import vtext.shape
+import vtext.font
 
 // name_of_cp is a codepoint as a name when the UCD has one and as a hex value when it does not. The
 // fallback matters: a trace full of U+FB50 says less than a trace that says LAM WITH ALEF, and the
@@ -72,20 +75,20 @@ fn main() {
 		font_paths = [args[0]]
 		text = args[1..].join(' ')
 	}
-	mut fonts := []&vtext.Font{}
+	mut fonts := []&shape.Font{}
 	for p in font_paths {
-		fonts << vtext.load_font_file(p) or { panic('cannot open ${p}: ${err}') }
+		fonts << shape.load_font_file(p) or { panic('cannot open ${p}: ${err}') }
 	}
 	if text == '' {
 		println('usage: v run tools/shapetrace.v <font.ttf> <text>')
 		exit(1)
 	}
 
-	ctx := vtext.new_context()
+	ctx := shape.new_context()
 	fs := if fonts.len == 1 {
-		vtext.new_font_set_of(fonts[0])
+		shape.new_font_set_of(fonts[0])
 	} else {
-		vtext.new_script_font_set(fonts[1], fonts[0])
+		shape.new_script_font_set(fonts[1], fonts[0])
 	}
 
 	cps := text.trim_right(' ').runes()
@@ -151,7 +154,7 @@ fn main() {
 
 	// 5. Fonts and glyphs. This is where a trace says which font answered, which the eye cannot.
 	println('5. fonts and glyphs')
-	line := vtext.layout_paragraph(ctx, normalized, .auto, fs, 32.0)
+	line := layout.layout_paragraph(ctx, normalized, .auto, fs, 32.0)
 	mut by_font := map[string][]int{}
 	for g in line.glyphs {
 		mut key := 'none'

@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 // Pair adjustment is kerning: the font says a pair of glyphs is too far apart or too close, and the
 // engine moves the first one. The tests read the expected answer out of the font's own tables, so
 // they cannot pass by agreeing with a wrong parse.
@@ -57,12 +59,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn kern_font(name string) ?&Font {
+fn kern_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // amiri is the corpus font the Latin kerning tests read.
@@ -71,7 +73,7 @@ fn kern_font(name string) ?&Font {
 // A against V is -62, T against o is -97, and the reverse order gives the same number because a class matrix
 // has no direction in it. Times New Roman is a Windows font the corpus does not carry, and none of the
 // assertions below depends on which face answers, so the corpus one answers them everywhere.
-fn amiri() ?&Font {
+fn amiri() ?&shape.Font {
 	return kern_font('Amiri-Regular.ttf')
 }
 
@@ -198,9 +200,9 @@ fn test_gpos_kerning_reads_the_arabic_script_rules() {
 // decision the font made and small next to an em.
 fn test_gpos_kerning_applies_to_the_shaped_glyphs_of_a_line() {
 	f := amiri() or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	// A word whose middle two letters the font classes together, taken from the pair the rules name.
-	line := layout_paragraph(new_context(), runes(0x0645, 0x064A, 0x0628, 0x0627), .rtl, fs, 32.0)
+	line := layout.layout_paragraph(shape.new_context(), runes(0x0645, 0x064A, 0x0628, 0x0627), .rtl, fs, 32.0)
 	assert line.glyphs.len >= 2, 'the line shaped to more than one glyph'
 	// Whatever the font does with this pair, it must not be a crash and it must be a decision the
 	// font made rather than a number that came from nowhere.

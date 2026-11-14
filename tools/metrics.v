@@ -22,6 +22,9 @@ module main
 
 import os
 import vtext
+import vtext.layout
+import vtext.shape
+import vtext.font
 
 fn arg(i int, fallback string) string {
 	if i < os.args.len {
@@ -96,20 +99,20 @@ fn main() {
 		exit(1)
 	}
 
-	font := vtext.load_font_file(path) or {
+	loaded := shape.load_font_file(path) or {
 		eprintln('cannot load ${path}: ${err}')
 		exit(1)
 	}
 
-	println('${font_name(font)}')
+	println('${font_name(loaded)}')
 	println('  ${path}')
-	println('  ${font.num_glyphs()} glyphs, ${font.units_per_em()} units per em, ${outline(font)}')
+	println('  ${loaded.num_glyphs()} glyphs, ${loaded.units_per_em()} units per em, ${outline(loaded)}')
 	println('')
 
-	print_vertical(font, size)
-	print_widths(font, size)
-	print_glyphs(font, size, parses(option('--glyphs', '0'), 0))
-	print_selected(font, size)
+	print_vertical(loaded, size)
+	print_widths(loaded, size)
+	print_glyphs(loaded, size, parses(option('--glyphs', '0'), 0))
+	print_selected(loaded, size)
 }
 
 // font_name is the font's family name where it can be had cheaply, and its file name where it cannot.
@@ -117,7 +120,7 @@ fn main() {
 // The family name is not in the inspection API and adding a name-table reader for a tool's title line
 // would be a poor trade, so this says which file it is, which is what a person reading the output needs
 // anyway.
-fn font_name(f &vtext.Font) string {
+fn font_name(f &shape.Font) string {
 	name := f.path()
 	if name == '' {
 		return 'font'
@@ -126,7 +129,7 @@ fn font_name(f &vtext.Font) string {
 	return parts[parts.len - 1]
 }
 
-fn outline(f &vtext.Font) string {
+fn outline(f &shape.Font) string {
 	if f.is_cff_outlined() {
 		return 'CFF outlines'
 	}
@@ -138,7 +141,7 @@ fn outline(f &vtext.Font) string {
 // The three sources are hhea, OS/2 and what this engine picked, because they disagree in real fonts and
 // the disagreement is the whole reason this tool exists. A caller that hard-codes one of them gets that
 // font's answer and every other font's wrong one.
-fn print_vertical(f &vtext.Font, size f64) {
+fn print_vertical(f &shape.Font, size f64) {
 	println('vertical metrics at ${size:.0} pixels')
 	println('  ascent        ${f.ascent(size):8.2f}')
 	println('  descent       ${f.descent(size):8.2f}')
@@ -147,10 +150,10 @@ fn print_vertical(f &vtext.Font, size f64) {
 	println('  monospaced    ${f.is_monospaced()}')
 	// The ink the engine reports for a real line, which is not the font's number and is the one a
 	// caller drawing something actually needs.
-	ctx := vtext.new_context()
-	fs := vtext.new_font_set()
+	ctx := shape.new_context()
+	fs := shape.new_font_set()
 	fs.add(f)
-	line := vtext.layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, size)
+	line := layout.layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, size)
 	println('  ink of "Hxbdfpq" ${line.ascent:8.2f} above, ${line.descent:8.2f} below')
 	if line.ascent > f.ascent(size) {
 		println('    the ink reaches above the font own ascent, which is what a mark does and the reason')
@@ -161,7 +164,7 @@ fn print_vertical(f &vtext.Font, size f64) {
 
 // print_widths reports the shape of the font's advances rather than all of them, because a font has
 // thousands of glyphs and the interesting facts are the extremes and the spread.
-fn print_widths(f &vtext.Font, size f64) {
+fn print_widths(f &shape.Font, size f64) {
 	n := f.num_glyphs()
 	if n == 0 {
 		return
@@ -213,7 +216,7 @@ fn print_widths(f &vtext.Font, size f64) {
 // The codepoint is deliberately absent: nothing in the public API maps a glyph id back to a character, and
 // a tool that built its own reverse table would be the second reader this file says it does not have. The
 // character a glyph stands for is what tools/glyphdump is for.
-fn print_glyphs(f &vtext.Font, size f64, n int) {
+fn print_glyphs(f &shape.Font, size f64, n int) {
 	if n <= 0 {
 		return
 	}
@@ -255,7 +258,7 @@ fn print_glyphs(f &vtext.Font, size f64, n int) {
 //
 // A glyph is named by id, and a codepoint is the more useful thing to name, so both are accepted: a
 // value that is a glyph id and also a codepoint prints both readings rather than choosing one.
-fn print_selected(f &vtext.Font, size f64) {
+fn print_selected(f &shape.Font, size f64) {
 	value := option('--glyph', '')
 	if value == '' {
 		return

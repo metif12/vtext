@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.layout
 import vtext.shape
 import vtext.font
 // cmap variation sequences: formats 13 and 14.
@@ -8,7 +9,7 @@ import vtext.font
 // codepoint given the selectors that follow it", and the selector is consumed by the lookup rather than
 // looked up on its own. That is why this is a separate pair of functions and a separate field on
 // shape.ShapedGlyph rather than a parameter: everything else in the library, from the fallback chain to
-// Glyph.cluster, is built on a glyph lookup being a pure function of one rune.
+// shape.Glyph.cluster, is built on a glyph lookup being a pure function of one rune.
 //
 // The fonts used here are the ten on this machine that carry a format 14 subtable, and the count came
 // from reading each subtable's format field directly across all 352 files in the fonts directory.
@@ -74,12 +75,12 @@ fn skip_missing(name string) {
 
 // vs_font loads a font from the corpus or from the platform's font directory, which is where the format 14
 // fixtures are, and answers none when neither has it.
-fn vs_font(name string) ?&Font {
+fn vs_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 fn test_a_format_14_subtable_is_read_and_reported() {
@@ -193,18 +194,18 @@ fn test_a_base_outside_the_default_table_has_no_opinion() {
 // The whole point, end to end: a text with the selector draws differently from the same text without
 // it. A reader looking at this would see the text and the same text as emoji.
 fn test_layout_uses_the_variation_sequence_when_the_text_has_one() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := vs_font('seguiemj.ttf') or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	// mmrtext's non-default mapping is the one with two different glyphs to compare, and U+1000 is a
 	// Myanmar letter so the line is left to right.
 	m := vs_font('mmrtext.ttf') or { return }
-	mm := new_font_set_of(m)
+	mm := shape.new_font_set_of(m)
 
 	base := rune(0x1000)
 	sel := rune(0xFE00)
-	plain := layout_paragraph(ctx, [base], .ltr, mm, 32.0)
-	sequenced := layout_paragraph(ctx, [base, sel], .ltr, mm, 32.0)
+	plain := layout.layout_paragraph(ctx, [base], .ltr, mm, 32.0)
+	sequenced := layout.layout_paragraph(ctx, [base, sel], .ltr, mm, 32.0)
 
 	assert plain.glyphs.len == 1, 'one character is one glyph, got ${plain.glyphs.len}'
 	assert sequenced.glyphs.len == 1, 'the selector is not a glyph of its own, so still one, got ${sequenced.glyphs.len}'
@@ -212,18 +213,18 @@ fn test_layout_uses_the_variation_sequence_when_the_text_has_one() {
 	assert sequenced.glyphs[0].cluster == 0, 'the glyph reports the character it came from, not the selector'
 
 	// The emoji font is the same shape: one glyph either way, and the selector does not add one.
-	heart := layout_paragraph(ctx, [rune(0x2764)], .auto, fs, 32.0)
-	heart_emoji := layout_paragraph(ctx, [rune(0x2764), rune(0xFE0F)], .auto, fs, 32.0)
+	heart := layout.layout_paragraph(ctx, [rune(0x2764)], .auto, fs, 32.0)
+	heart_emoji := layout.layout_paragraph(ctx, [rune(0x2764), rune(0xFE0F)], .auto, fs, 32.0)
 	assert heart.glyphs.len == 1 && heart_emoji.glyphs.len == 1, 'a selector must never add a glyph: ${heart.glyphs.len} and ${heart_emoji.glyphs.len}'
 }
 
 // A selector with nothing in front of it has no character to select, and drawing .notdef in its place
 // would put a hollow box on the line for a character the reader cannot see.
 fn test_a_selector_with_no_character_in_front_of_it_draws_nothing() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	m := vs_font('mmrtext.ttf') or { return }
-	fs := new_font_set_of(m)
-	line := layout_paragraph(ctx, [rune(0xFE00)], .ltr, fs, 32.0)
+	fs := shape.new_font_set_of(m)
+	line := layout.layout_paragraph(ctx, [rune(0xFE00)], .ltr, fs, 32.0)
 	assert line.glyphs.len == 0, 'a leading selector should draw nothing, got ${line.glyphs.len} glyphs'
 	assert line.width == 0.0, 'and take no width'
 }

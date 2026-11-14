@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 import os
 
@@ -230,12 +231,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn cursive_real_font(name string) ?&Font {
+fn cursive_real_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 fn test_gpos_dubai_curs_feature_reaches_a_cursive_rule() {
@@ -266,7 +267,7 @@ fn test_gpos_dubai_curs_feature_reaches_a_cursive_rule() {
 fn test_gpos_cursive_is_read_from_real_fonts() {
 	mut found := map[string]int{}
 	for name in ['Amiri-Regular.ttf', 'NotoNaskhArabic-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf'] {
-		f := load_font_file(os.join_path('testdata', 'fonts', name)) or {
+		f := shape.load_font_file(os.join_path('testdata', 'fonts', name)) or {
 			panic('cannot load ${name}: ${err}')
 		}
 		gpos := f.face.gpos or { panic('${name} has no GPOS') }
@@ -306,7 +307,7 @@ fn test_gpos_cursive_is_read_from_real_fonts() {
 // thousand-unit em. A record array read from the wrong offset produces anchors that are plainly not
 // points, so this is the check that separates a rule from a plausible-looking mistake.
 fn test_gpos_cursive_anchors_are_points_in_font_units() {
-	f := load_font_file(os.join_path('testdata', 'fonts', 'Amiri-Regular.ttf')) or { panic(err) }
+	f := shape.load_font_file(os.join_path('testdata', 'fonts', 'Amiri-Regular.ttf')) or { panic(err) }
 	gpos := f.face.gpos or { panic('no GPOS') }
 	mut checked := 0
 	for l in gpos.lookups {

@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // A rule under the kern feature positions a glyph based on what is around it.
 //
@@ -59,12 +60,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn ctx_font(name string) ?&Font {
+fn ctx_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // amiri is the corpus font these tests read.
@@ -72,7 +73,7 @@ fn ctx_font(name string) ?&Font {
 // It carries the kern feature and four chaining-context positioning lookups under arab, and it reaches them
 // from a codepoint, so a rule can be asked about the text it was written for. Andalus, which the exact
 // numbers below were read out of, is a Windows font the corpus does not carry.
-fn amiri() ?&Font {
+fn amiri() ?&shape.Font {
 	return ctx_font('Amiri-Regular.ttf')
 }
 

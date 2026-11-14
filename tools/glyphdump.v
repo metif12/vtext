@@ -28,6 +28,9 @@ import os
 import math
 import vtext
 import paint
+import vtext.layout
+import vtext.shape
+import vtext.font
 
 // The sheet's shape. Sixteen across is a width that fits a screen and still gives each cell room for a
 // letter at the sizes a specimen is looked at; the cell is the em plus a gap, so nothing is cropped when
@@ -95,20 +98,20 @@ fn main() {
 	first := parses(option('--first', '0'), 0)
 	count := parses(option('--count', '256'), 256)
 
-	font := vtext.load_font_file(path) or {
+	loaded := shape.load_font_file(path) or {
 		eprintln('cannot load ${path}: ${err}')
 		exit(1)
 	}
-	total := font.num_glyphs()
+	total := loaded.num_glyphs()
 	if total == 0 {
 		eprintln('${path} has no glyphs')
 		exit(1)
 	}
 	println('${base_name(path)}')
-	println('  ${total} glyphs, ${font.units_per_em()} units per em')
+	println('  ${total} glyphs, ${loaded.units_per_em()} units per em')
 
 	if flag('--text') {
-		dump_text(font, option('--text', ''), size)
+		dump_text(loaded, option('--text', ''), size)
 		return
 	}
 	dir := option('--each', '')
@@ -117,11 +120,11 @@ fn main() {
 		if limit == 0 {
 			limit = total
 		}
-		dump_each(font, dir, first, limit, size)
+		dump_each(loaded, dir, first, limit, size)
 		return
 	}
 	name := option('--sheet', 'sheet.png')
-	dump_sheet(font, first, count, size, flag('--boxes'), name)
+	dump_sheet(loaded, first, count, size, flag('--boxes'), name)
 }
 
 // base_name is the file's own name, which is what the output is titled with.
@@ -138,7 +141,7 @@ mut:
 	last  int
 }
 
-fn range_of(f &vtext.Font, first int, count int) Range {
+fn range_of(f &shape.Font, first int, count int) Range {
 	total := int(f.num_glyphs())
 	mut lo := first
 	if lo < 0 {
@@ -158,7 +161,7 @@ fn range_of(f &vtext.Font, first int, count int) Range {
 //
 // The baseline runs through every row rather than each cell being centred on its own ink, because a
 // specimen is read for shape and a baseline is what shows whether two letters sit at the same height.
-fn dump_sheet(f &vtext.Font, first int, count int, size f64, boxes bool, name string) {
+fn dump_sheet(f &shape.Font, first int, count int, size f64, boxes bool, name string) {
 	r := range_of(f, first, count)
 	n := r.last - r.first + 1
 	rows := (n + columns - 1) / columns
@@ -186,12 +189,12 @@ fn dump_sheet(f &vtext.Font, first int, count int, size f64, boxes bool, name st
 	println('  sheet covers glyphs ${r.first}..${r.last}, ${rows} rows of ${columns}')
 }
 
-// glyph_at builds the Glyph the drawing call takes, for one glyph at a known pen position.
+// glyph_at builds the shape.Glyph the drawing call takes, for one glyph at a known pen position.
 //
 // The advance is the font's own and the cluster is left alone: neither matters to a rasteriser, and
 // setting them from guesses would make the tool a second source of answers about the font.
-fn glyph_at(f &vtext.Font, gid u16, x f64, y f64) vtext.Glyph {
-	return vtext.Glyph{
+fn glyph_at(f &shape.Font, gid u16, x f64, y f64) shape.Glyph {
+	return shape.Glyph{
 		gid:     gid
 		advance: f.glyph_advance(gid, 1000.0)
 		x:       x
@@ -202,7 +205,7 @@ fn glyph_at(f &vtext.Font, gid u16, x f64, y f64) vtext.Glyph {
 
 // draw_box outlines where a glyph's ink actually is, which is the number a caller comparing rasterisers
 // needs and cannot see in the picture.
-fn draw_box(mut canvas &paint.Canvas, f &vtext.Font, gid u16, x f64, baseline f64, size f64) {
+fn draw_box(mut canvas &paint.Canvas, f &shape.Font, gid u16, x f64, baseline f64, size f64) {
 	bmp := f.rasterize(gid, size, 0, 0)
 	if bmp.is_empty() {
 		return
@@ -217,7 +220,7 @@ fn draw_box(mut canvas &paint.Canvas, f &vtext.Font, gid u16, x f64, baseline f6
 // This is the form to compare against another rasteriser. The image is the glyph and the box it says it
 // has, with nothing else in the frame, so two of these that differ differ in the glyph rather than in
 // where somebody chose to put it.
-fn dump_each(f &vtext.Font, dir string, first int, count int, size f64) {
+fn dump_each(f &shape.Font, dir string, first int, count int, size f64) {
 	os.mkdir_all(dir) or {
 		eprintln('cannot make ${dir}: ${err}')
 		exit(1)
@@ -262,16 +265,16 @@ fn dump_each(f &vtext.Font, dir string, first int, count int, size f64) {
 // The table is the point. A caller who has just looked at a word and wants to know why it is the wrong
 // shape cannot answer that from the picture, and the two columns that matter are the glyph id and the
 // character it stands for: a substitution shows up as a glyph id that is not the character's own.
-fn dump_text(f &vtext.Font, text string, size f64) {
+fn dump_text(f &shape.Font, text string, size f64) {
 	if text == '' {
 		eprintln('--text needs a string after it')
 		exit(1)
 	}
-	ctx := vtext.new_context()
-	fs := vtext.new_font_set()
+	ctx := shape.new_context()
+	fs := shape.new_font_set()
 	fs.add(f)
 	cps := text.runes()
-	line := vtext.layout_paragraph(ctx, cps, .auto, fs, size)
+	line := layout.layout_paragraph(ctx, cps, .auto, fs, size)
 
 	margin := 16
 	w := int(math.ceil(line.width)) + 2 * margin

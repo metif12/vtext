@@ -1,9 +1,11 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 import vtext.ucd
 import os
 
-// Line breaking, per UAX #14.
+// layout.Line breaking, per UAX #14.
 //
 // The tests check the rules against text where the answer is not a matter of
 // taste: a closing bracket may not start a line, a letter and the accent on it
@@ -21,9 +23,9 @@ fn word(cps ...int) []rune {
 
 // A space is a break, which is the rule everything else is measured against.
 fn test_line_break_breaks_after_a_space() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// "ab cd": the only opportunity is after the space, at index three.
-	ops := break_opportunities(ctx, word(0x61, 0x62, 0x20, 0x63, 0x64), true)
+	ops := layout.break_opportunities(ctx, word(0x61, 0x62, 0x20, 0x63, 0x64), true)
 	// The end of the text is always there, and so is the one after the space.
 	assert ops.len == 2, 'one space and the end of the text'
 	assert ops[0].start == 3, 'the break is after the space'
@@ -35,8 +37,8 @@ fn test_line_break_breaks_after_a_space() {
 // rules: a permissive default that allowed a break anywhere would split a word
 // rather than the line after it.
 fn test_line_break_does_not_split_a_word() {
-	ctx := new_context()
-	ops := break_opportunities(ctx, word(0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68), true)
+	ctx := shape.new_context()
+	ops := layout.break_opportunities(ctx, word(0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68), true)
 	// Only the end of the text.
 	assert ops.len == 1
 	assert ops[0].start == 8
@@ -49,14 +51,14 @@ fn test_line_break_does_not_split_a_word() {
 // This is LB28's other two pairs, which were implemented only for two letters. It is a Latin case, not a
 // CJK one, which is the part worth noticing: the rule was missing for the script this library is best at.
 fn test_line_break_does_not_split_a_word_at_a_letter_digit_boundary() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// H 2 O
-	ops := break_opportunities(ctx, word(0x48, 0x32, 0x4F), true)
+	ops := layout.break_opportunities(ctx, word(0x48, 0x32, 0x4F), true)
 	assert ops.len == 1, 'only the end of the text is a break, got ${ops.len}'
 	assert ops[0].start == 3, 'and it is after the last character'
 
 	// The other direction: a digit followed by a letter, as in "19C".
-	ops2 := break_opportunities(ctx, word(0x31, 0x39, 0x43), true)
+	ops2 := layout.break_opportunities(ctx, word(0x31, 0x39, 0x43), true)
 	assert ops2.len == 1, 'a digit then a letter is the same pair the other way round, got ${ops2.len}'
 }
 
@@ -65,9 +67,9 @@ fn test_line_break_does_not_split_a_word_at_a_letter_digit_boundary() {
 // A full stop between two digits is LB23b's business and is already handled; this is the separator
 // followed by a letter, which is the pair a version number like "v1.2" is made of.
 fn test_line_break_keeps_an_infix_separator_with_the_letter_after_it() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 1 , 0 0 0  — the comma is U+002C, class IS.
-	ops := break_opportunities(ctx, word(0x31, 0x2C, 0x30, 0x30, 0x30), true)
+	ops := layout.break_opportunities(ctx, word(0x31, 0x2C, 0x30, 0x30, 0x30), true)
 	assert ops.len == 1, 'a thousands separator does not open a break, got ${ops.len}'
 	assert ops[0].start == 5, 'and the only break is the end of the text'
 }
@@ -82,11 +84,11 @@ fn test_line_break_keeps_an_infix_separator_with_the_letter_after_it() {
 // The distinction matters for the same reason the Devanagari case does: a prebase mark carries an accent
 // and belongs to what follows it, while an aksara is a letter in its own right.
 fn test_line_break_may_end_before_an_aksara() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// U+2757 U+1B05: an ambiguous character resolved to a letter, then an aksara.
 	cps := [rune(0x2757), rune(0x1B05)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [1, 2], 'a break falls between them and at the end, got ${starts}'
@@ -103,7 +105,7 @@ fn test_line_break_may_end_before_an_aksara() {
 // `× 2757 ÷ 1B44 ÷` is the shape that changed, and so is the same shape with 11003, and with every
 // letter of the file in the first position. Worth 132 cases.
 fn test_line_break_may_end_before_an_aksara_prebase_and_a_virama() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// U+2757 is AI, resolved to a letter by LB1. U+11003 is AP, U+1B44 is VI.
 	mut wanted := [rune(0x2757), rune(0x11003), rune(0x1B44)]
 	// Each pair in turn, so a failure names the pair rather than the run.
@@ -113,7 +115,7 @@ fn test_line_break_may_end_before_an_aksara_prebase_and_a_virama() {
 			cps << wanted[j % 3]
 		}
 		mut starts := []int{}
-		for o in break_opportunities(ctx, cps, true) {
+		for o in layout.break_opportunities(ctx, cps, true) {
 			starts << o.start
 		}
 		assert starts == [1, 2], 'no mark rule holds 2757 to 11003 or to 1B44, got ${starts}'
@@ -130,12 +132,12 @@ fn test_line_break_may_end_before_an_aksara_prebase_and_a_virama() {
 // prebase and the virama are still held *to* what precedes them is the same
 // test as the one above read backwards, so it is not written twice.
 fn test_line_break_keeps_a_mark_after_an_aksara_prebase() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 11003 0308, which is the file's own `× 2757 ÷ 11003 × 0308 ÷`: a break
 	// before the prebase, and none before the combining mark that follows it.
 	cps := [rune(0x2757), rune(0x11003), rune(0x0308)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [1, 3], 'a break before the prebase and none before the mark, got ${starts}'
@@ -153,11 +155,11 @@ fn test_line_break_keeps_a_mark_after_an_aksara_prebase() {
 // two measured 3041 to 2914 failures, so it is worth 127 cases and 13 are broken,
 // all of them LB26 sub-rules this engine does not implement.
 fn test_line_break_breaks_between_two_hangul_syllables() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// U+CABD and U+C774: the committee's own case, and one such per syllable.
 	cps := [rune(0xCABD), rune(0xC774)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [1, 2], 'a break falls before a hangul syllable, got ${starts}'
@@ -165,11 +167,11 @@ fn test_line_break_breaks_between_two_hangul_syllables() {
 
 // ...and in the other order, which is the direction the class rule actually covered.
 fn test_line_break_breaks_between_a_hangul_syllable_and_what_follows_it() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// U+AC00 HANGUL SYLLABLE GA (H2), U+0301 COMBINING ACUTE ACCENT (CM).
 	cps := [rune(0xAC00), rune(0x0301)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [2], 'the mark still holds the syllable, got ${starts}'
@@ -187,11 +189,11 @@ fn test_line_break_breaks_between_a_hangul_syllable_and_what_follows_it() {
 // bracket and a non-starter are held together by LB16, and two alphabetics are
 // not. Both would refuse a break, but only NS does.
 fn test_line_break_keeps_a_small_kana_with_what_precedes_it() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 3041: no break at one, and the text ends at two.
 	cps := [rune(0x2757), rune(0x3041)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [2], 'a non-starter may not begin a line, got ${starts}'
@@ -200,7 +202,7 @@ fn test_line_break_keeps_a_small_kana_with_what_precedes_it() {
 	// Resolving CJ to AL would leave this pair to the permissive default.
 	cps2 := [rune(0x007D), rune(0x3041)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert starts2 == [2], 'a non-starter is held by LB16, got ${starts2}'
@@ -209,7 +211,7 @@ fn test_line_break_keeps_a_small_kana_with_what_precedes_it() {
 	// `× 2757 × 0020 ÷ 3041 ÷` is the committee's own case.
 	cps3 := [rune(0x2757), rune(0x0020), rune(0x3041)]
 	mut starts3 := []int{}
-	for o in break_opportunities(ctx, cps3, true) {
+	for o in layout.break_opportunities(ctx, cps3, true) {
 		starts3 << o.start
 	}
 	assert starts3 == [2, 3], 'a space breaks before a non-starter, got ${starts3}'
@@ -222,11 +224,11 @@ fn test_line_break_keeps_a_small_kana_with_what_precedes_it() {
 // neighbour in both directions. `× 2757 × EFFFD ÷` is the shape and it is tagged
 // [28.0] — two alphabetics, no break.
 fn test_line_break_keeps_two_unknown_characters_together() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 EFFFD: no break at one, and the text ends at two.
 	cps := [rune(0x2757), rune(0xEFFFD)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [2], 'an unknown character breaks like a letter, got ${starts}'
@@ -234,7 +236,7 @@ fn test_line_break_keeps_two_unknown_characters_together() {
 	// And a digit after one is LB23, the letter-digit pair.
 	cps2 := [rune(0x30), rune(0xEFFFD), rune(0x30)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert starts2 == [3], 'an unknown character holds a letter-digit pair, got ${starts2}'
@@ -249,11 +251,11 @@ fn test_line_break_keeps_two_unknown_characters_together() {
 // which this engine's tables do not carry, so SA resolves to AL across the board.
 // That is worth 45 of the failures it was measured against.
 fn test_line_break_keeps_a_complex_context_character_with_a_letter() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 0E01: no break at one, and the text ends at two.
 	cps := [rune(0x2757), rune(0x0E01)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [2], 'a complex-context character breaks like a letter, got ${starts}'
@@ -263,8 +265,8 @@ fn test_line_break_keeps_a_complex_context_character_with_a_letter() {
 // "ab (cd)" is seven characters, and the two opportunities are after the space at
 // index three and at the end of the text. Neither is inside the brackets.
 fn test_line_break_keeps_brackets_with_their_text() {
-	ctx := new_context()
-	ops := break_opportunities(ctx, word(0x61, 0x62, 0x20, 0x28, 0x63, 0x64, 0x29), true)
+	ctx := shape.new_context()
+	ops := layout.break_opportunities(ctx, word(0x61, 0x62, 0x20, 0x28, 0x63, 0x64, 0x29), true)
 	mut starts := []int{}
 	for o in ops {
 		starts << o.start
@@ -276,7 +278,7 @@ fn test_line_break_keeps_brackets_with_their_text() {
 // an "e" and the accent that belongs to it, which is invisible in the layout
 // and obvious to a reader.
 fn test_line_break_keeps_a_mark_with_its_letter() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// a, e, U+0301, space, b: five characters, and the only opportunity is the
 	// space at index three. Not between the e and its acute, which would be at
 	// index two.
@@ -286,7 +288,7 @@ fn test_line_break_keeps_a_mark_with_its_letter() {
 	cps << rune(0x0301)
 	cps << ` `
 	cps << `b`
-	ops := break_opportunities(ctx, cps, true)
+	ops := layout.break_opportunities(ctx, cps, true)
 	mut starts := []int{}
 	for o in ops {
 		starts << o.start
@@ -300,13 +302,13 @@ fn test_line_break_keeps_a_mark_with_its_letter() {
 // A newline is a newline, and it is reported as mandatory so a caller does not
 // skip it the way it skips the optional ones.
 fn test_line_break_reports_a_mandatory_break() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	mut cps := []rune{}
 	cps << `a`
 	cps << `b`
 	cps << `\n`
 	cps << `c`
-	ops := break_opportunities(ctx, cps, true)
+	ops := layout.break_opportunities(ctx, cps, true)
 	mut mandatory := []int{}
 	for o in ops {
 		if o.is_mandatory {
@@ -319,13 +321,13 @@ fn test_line_break_reports_a_mandatory_break() {
 // Arabic has no spaces between the letters of a word, and the tests would be
 // checking a fiction if the only text exercised were Latin.
 fn test_line_break_finds_the_spaces_in_arabic() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// "سلام دنیا": two words with a space between them.
 	mut cps := []rune{}
 	for cp in [0x0633, 0x0644, 0x0627, 0x0645, 0x0020, 0x062F, 0x0646, 0x06CC, 0x0627] {
 		cps << rune(cp)
 	}
-	ops := break_opportunities(ctx, cps, true)
+	ops := layout.break_opportunities(ctx, cps, true)
 	mut starts := []int{}
 	for o in ops {
 		starts << o.start
@@ -354,7 +356,7 @@ fn test_line_break_finds_the_spaces_in_arabic() {
 // measured and costs 312 cases. `ROADMAP.md` carries the decision so it can be argued with rather than
 // discovered by someone wrapping Persian text and wondering.
 fn test_line_break_glues_the_joiner_on_both_sides() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// space, peh, ZWNJ, alef, space: five characters.
 	mut cps := []rune{}
 	cps << ` `
@@ -362,7 +364,7 @@ fn test_line_break_glues_the_joiner_on_both_sides() {
 	cps << rune(0x200C) // ZWNJ
 	cps << rune(0x0627) // alef
 	cps << ` `
-	ops := break_opportunities(ctx, cps, true)
+	ops := layout.break_opportunities(ctx, cps, true)
 	mut starts := []int{}
 	for o in ops {
 		starts << o.start
@@ -378,7 +380,7 @@ fn test_line_break_glues_the_joiner_on_both_sides() {
 // A word joiner is a different thing from a non-joiner and it is what actually forbids a break,
 // which is the distinction a caller needs if a word must not be split.
 fn test_line_break_a_word_joiner_forbids_a_break_on_both_sides() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// a, WJ, b, space: four characters. The WJ must keep the a and the b together, so the only
 	// opportunity is the space.
 	mut cps := []rune{}
@@ -386,7 +388,7 @@ fn test_line_break_a_word_joiner_forbids_a_break_on_both_sides() {
 	cps << rune(0x2060) // word joiner
 	cps << `b`
 	cps << ` `
-	ops := break_opportunities(ctx, cps, true)
+	ops := layout.break_opportunities(ctx, cps, true)
 	mut starts := []int{}
 	for o in ops {
 		starts << o.start
@@ -400,16 +402,16 @@ fn test_line_break_a_word_joiner_forbids_a_break_on_both_sides() {
 // Empty text has no opportunities, and saying so is better than returning one
 // that points past the end.
 fn test_line_break_of_empty_text_has_no_breaks() {
-	ctx := new_context()
-	assert break_opportunities(ctx, []rune{}, true).len == 0
-	assert break_opportunities(ctx, word(0x61), true).len == 1
+	ctx := shape.new_context()
+	assert layout.break_opportunities(ctx, []rune{}, true).len == 0
+	assert layout.break_opportunities(ctx, word(0x61), true).len == 1
 }
 
 // starts_of is the break positions of a text as a sorted list, which is what every assertion below
 // is asked about.
-fn starts_of(ctx &Context, cps []rune) []int {
+fn starts_of(ctx &shape.Context, cps []rune) []int {
 	mut out := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		out << o.start
 	}
 	return out
@@ -443,7 +445,7 @@ fn test_quote_roles_are_read_from_the_ucd() {
 // the marker between the space and the symbol. The pair with the space on the other side answers
 // the other way, which is why this cannot be one rule about a space and a quotation mark.
 fn test_an_opening_quotation_mark_holds_a_space_in_front_of_what_follows() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// « SP ×: the space is held, so there is no break before the symbol.
 	assert starts_of(ctx, word(0x00AB, 0x20, 0x2757)) == [3], 'LB15a: an opening mark does not let go across a space'
 	// The same with a combining mark standing in the space's place, and with both: 69 lines of each
@@ -463,7 +465,7 @@ fn test_an_opening_quotation_mark_holds_a_space_in_front_of_what_follows() {
 // the marker between the space and the mark. LB19 already forbids a break straight into one, so
 // this is the space that is being decided rather than the quotation mark.
 fn test_a_closing_quotation_mark_holds_a_space_in_front_of_it() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// SP × «: no break, so the closing mark stays on the line with the text before it.
 	assert starts_of(ctx, word(0x2757, 0x20, 0x00BB)) == [3], 'LB15b: a space before a closing mark does not break'
 	// The other two kinds do break, which is the same `SP × QU` pair answering both ways.
@@ -479,7 +481,7 @@ fn test_a_closing_quotation_mark_holds_a_space_in_front_of_it() {
 // width space starts a new unit and is not glued to the quotation mark in front of it. Without the
 // exception LB15b would eat that break.
 fn test_a_zero_width_space_detaches_the_space_from_the_quotation_mark() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	assert starts_of(ctx, word(0x200B, 0x20, 0x00BB)) == [2, 3], 'a zero width space is a break of its own and the space after it breaks too'
 }
 
@@ -491,7 +493,7 @@ fn test_a_zero_width_space_detaches_the_space_from_the_quotation_mark() {
 // closing mark is held by LB15b, so there is none between it and the mark. Every other space breaks
 // after itself, which is LB18 and is what the space in the middle does.
 fn test_a_quoted_run_with_spaces_inside_it_stays_whole() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// « SP a SP b SP »
 	assert starts_of(ctx, word(0x00AB, 0x20, 0x61, 0x20, 0x62, 0x20, 0x00BB)) == [4, 7], 'quoted speech is quoted, not split at its own quotation marks'
 }
@@ -511,28 +513,28 @@ fn test_a_quoted_run_with_spaces_inside_it_stays_whole() {
 // host with neither the corpus nor a platform font directory prints a skip rather than panicking,
 // because a file that panics is a file that proves nothing on three quarters of the machines this
 // is supposed to run on.
-fn wrap_font() &FontSet {
-	fs := new_font_set()
+fn wrap_font() &shape.FontSet {
+	fs := shape.new_font_set()
 	p := corpus_font_path('Amiri-Regular.ttf') or {
 		skip_missing('Amiri-Regular.ttf')
 		exit(0)
 	}
-	fs.add(load_font_file(p) or { panic(err) })
+	fs.add(shape.load_font_file(p) or { panic(err) })
 	return fs
 }
 
 // A width wide enough for the whole text gives one line, and it is the same line laying the
 // paragraph out on its own would give.
 fn test_wrap_gives_one_line_when_the_text_fits() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := wrap_font()
 	// "one two" at a very large width.
 	mut cps := []rune{}
 	for c in [0x6F, 0x6E, 0x65, 0x20, 0x74, 0x77, 0x6F] {
 		cps << rune(c)
 	}
-	plain := layout_paragraph(ctx, cps, .ltr, fs, 32.0)
-	lines := wrap_paragraph(ctx, cps, .ltr, fs, 32.0, 10000.0)
+	plain := layout.layout_paragraph(ctx, cps, .ltr, fs, 32.0)
+	lines := layout.wrap_paragraph(ctx, cps, .ltr, fs, 32.0, 10000.0)
 	assert lines.len == 1, 'the whole text fits on one line'
 	assert lines[0].line.width == plain.width, 'and it is the same width as laying it out whole'
 	assert lines[0].from == 0 && lines[0].to == cps.len
@@ -541,15 +543,15 @@ fn test_wrap_gives_one_line_when_the_text_fits() {
 // A width that fits neither word gives two lines, each holding one word, and together they hold
 // every character.
 fn test_wrap_breaks_at_the_space_when_the_text_is_too_wide() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := wrap_font()
 	mut cps := []rune{}
 	for c in [0x6F, 0x6E, 0x65, 0x20, 0x74, 0x77, 0x6F] {
 		cps << rune(c)
 	}
-	plain := layout_paragraph(ctx, cps, .ltr, fs, 32.0)
+	plain := layout.layout_paragraph(ctx, cps, .ltr, fs, 32.0)
 	// Half the whole paragraph, which is not enough for both words.
-	lines := wrap_paragraph(ctx, cps, .ltr, fs, 32.0, plain.width / 2.0)
+	lines := layout.wrap_paragraph(ctx, cps, .ltr, fs, 32.0, plain.width / 2.0)
 	assert lines.len == 2, 'one line per word'
 	// The break falls after the space rather than before it, which is what UAX#14's LB7 says: a
 	// line does not end on a space, it ends on the last thing before the next word starts. The
@@ -561,14 +563,14 @@ fn test_wrap_breaks_at_the_space_when_the_text_is_too_wide() {
 // The lines have to be drawable, which means their glyphs start at zero and their widths add up to
 // no more than the paragraph they were cut out of.
 fn test_wrap_produces_lines_that_start_at_their_own_left_edge() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := wrap_font()
 	mut cps := []rune{}
 	for c in [0x6F, 0x6E, 0x65, 0x20, 0x74, 0x77, 0x6F] {
 		cps << rune(c)
 	}
-	plain := layout_paragraph(ctx, cps, .ltr, fs, 32.0)
-	lines := wrap_paragraph(ctx, cps, .ltr, fs, 32.0, plain.width / 2.0)
+	plain := layout.layout_paragraph(ctx, cps, .ltr, fs, 32.0)
+	lines := layout.wrap_paragraph(ctx, cps, .ltr, fs, 32.0, plain.width / 2.0)
 	for line in lines {
 		if line.line.glyphs.len == 0 {
 			continue
@@ -582,29 +584,29 @@ fn test_wrap_produces_lines_that_start_at_their_own_left_edge() {
 // A word wider than the whole line goes on a line of its own and overflows rather than being split,
 // because a caller cannot map a click on one half of a broken word back to the text.
 fn test_wrap_does_not_split_a_word_wider_than_the_line() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := wrap_font()
 	// One word, no spaces, at a width that cannot hold it.
 	mut cps := []rune{}
 	for c in [0x77, 0x6F, 0x72, 0x64] {
 		cps << rune(c)
 	}
-	lines := wrap_paragraph(ctx, cps, .ltr, fs, 32.0, 1.0)
+	lines := layout.wrap_paragraph(ctx, cps, .ltr, fs, 32.0, 1.0)
 	assert lines.len == 1, 'one line, overflowing'
 	assert lines[0].line.glyphs.len == cps.len, 'with every glyph of the word on it'
 }
 
 // Arabic wraps at its spaces, and a letter and its mark stay on the same line.
 fn test_wrap_breaks_an_arabic_word_at_its_space() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := wrap_font()
 	// "سلام دنیا": two words with a space between them.
 	mut cps := []rune{}
 	for c in [0x0633, 0x0644, 0x0627, 0x0645, 0x0020, 0x062F, 0x0646, 0x06CC, 0x0627] {
 		cps << rune(c)
 	}
-	plain := layout_paragraph(ctx, cps, .rtl, fs, 32.0)
-	lines := wrap_paragraph(ctx, cps, .rtl, fs, 32.0, plain.width / 2.0)
+	plain := layout.layout_paragraph(ctx, cps, .rtl, fs, 32.0)
+	lines := layout.wrap_paragraph(ctx, cps, .rtl, fs, 32.0, plain.width / 2.0)
 	assert lines.len == 2, 'one line per word'
 	// The first word is the four characters before the space. The space belongs to the first line
 	// because a line ends on the last thing before the next word rather than on the space itself,
@@ -616,24 +618,24 @@ fn test_wrap_breaks_an_arabic_word_at_its_space() {
 // A newline ends the paragraph, so what follows it is a line of its own rather than something the
 // width decides.
 fn test_wrap_treats_a_newline_as_the_end_of_the_paragraph() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := wrap_font()
 	// "ab\ncd" at a width that would fit all of it on one line.
 	mut cps := []rune{}
 	for c in [0x61, 0x62, 0x0A, 0x63, 0x64] {
 		cps << rune(c)
 	}
-	lines := wrap_paragraph(ctx, cps, .ltr, fs, 32.0, 10000.0)
+	lines := layout.wrap_paragraph(ctx, cps, .ltr, fs, 32.0, 10000.0)
 	assert lines.len == 2, 'the newline ends it, whatever the width'
 }
 
 // Empty text is one empty line rather than none, so a caller writing text into a view always has
 // something to measure.
 fn test_wrap_of_empty_text_gives_one_empty_line() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := wrap_font()
-	assert wrap_paragraph(ctx, []rune{}, .ltr, fs, 32.0, 100.0).len == 0
-	assert wrap_paragraph(ctx, word(0x61), .ltr, fs, 32.0, 100.0).len == 1
+	assert layout.wrap_paragraph(ctx, []rune{}, .ltr, fs, 32.0, 100.0).len == 0
+	assert layout.wrap_paragraph(ctx, word(0x61), .ltr, fs, 32.0, 100.0).len == 1
 }
 
 // A mark does not hold what comes after it, and that is the biggest single thing
@@ -648,11 +650,11 @@ fn test_wrap_of_empty_text_gives_one_empty_line() {
 // break: a letter, a mark, and then a Balinese letter, and the line may end
 // between the mark and the letter.
 fn test_line_break_breaks_after_a_mark() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 AI, 0308 CM, 1B05 AK.
 	cps := [rune(0x2757), rune(0x0308), rune(0x1B05)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert 2 in starts, 'a line may end between the mark and the letter, got ${starts}'
@@ -662,11 +664,11 @@ fn test_line_break_breaks_after_a_mark() {
 // than merely profitable. A line may not end *before* a mark, so a mark still
 // holds what is in front of it.
 fn test_line_break_still_holds_before_a_mark() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 1B05 AK, 0308 CM.
 	cps := [rune(0x1B05), rune(0x0308)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [2], 'the mark still holds what is in front of it, got ${starts}'
@@ -679,11 +681,11 @@ fn test_line_break_still_holds_before_a_mark() {
 // committee reads the pair as two letters and not as a mark and a letter. This
 // is the 768 cases that removing the blanket rule broke.
 fn test_line_break_holds_two_letters_across_a_mark() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 AI, 0308 CM, 2757 AI.
 	cps := [rune(0x2757), rune(0x0308), rune(0x2757)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [3], 'two letters hold across the mark between them, got ${starts}'
@@ -692,11 +694,11 @@ fn test_line_break_holds_two_letters_across_a_mark() {
 // ...and the letter after a mark is held by a digit on the other side of the
 // mark too, which is LB23's letter-digit pair reading through the same way.
 fn test_line_break_holds_a_letter_and_a_digit_across_a_mark() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 AI, 0308 CM, 0030 NU.
 	cps := [rune(0x2757), rune(0x0308), rune(0x0030)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [3], 'a letter and a digit hold across the mark, got ${starts}'
@@ -712,25 +714,25 @@ fn test_line_break_holds_a_letter_and_a_digit_across_a_mark() {
 // test asserted the opposite — a break after the mark — from a reading that measured
 // +3 net and was reverted once the width table landed.
 fn test_line_break_allows_open_punctuation_after_a_mark_but_not_a_letter() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 AI, 0308 CM, 0028 OP: held, like the bare pair.
 	cps := [rune(0x2757), rune(0x0308), rune(0x0028)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [3], 'open punctuation is held across the mark too, got ${starts}'
 	// And without the mark, the same pair is held.
 	cps2 := [rune(0x2757), rune(0x0028)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert 1 !in starts2, 'and after a bare letter, got ${starts2}'
 	// Control: the East Asian bracket breaks where the narrow one holds.
 	cps3 := [rune(0x2757), rune(0x2329)]
 	mut starts3 := []int{}
-	for o in break_opportunities(ctx, cps3, true) {
+	for o in layout.break_opportunities(ctx, cps3, true) {
 		starts3 << o.start
 	}
 	assert 1 in starts3, 'but an East Asian bracket parts, got ${starts3}'
@@ -742,18 +744,18 @@ fn test_line_break_allows_open_punctuation_after_a_mark_but_not_a_letter() {
 // reads a Hebrew letter as the same kind of letter as a Latin one. HL was
 // missing from both sides of the rule.
 fn test_line_break_holds_a_hebrew_letter_like_a_latin_one() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 AI, 0308 CM, 05D0 HL.
 	cps := [rune(0x2757), rune(0x0308), rune(0x05D0)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert 2 !in starts, 'a Hebrew letter is held like a Latin one, got ${starts}'
 	// And the same two with no mark between them.
 	cps2 := [rune(0x2757), rune(0x05D0)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert 1 !in starts2, 'and directly as well, got ${starts2}'
@@ -785,7 +787,7 @@ fn test_sa_marks_are_read_from_the_general_category() {
 // refusal on the marker between the pair — no break — which is what LB4a says for a Latin accent
 // (`× 2757 × 0308 × 2757 ÷`) and now says for a Thai sign too.
 fn test_an_sa_mark_after_a_character_is_held_to_it() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	assert starts_of(ctx, word(0xFE6A, 0x0E31)) == [2], 'a Thai sign is held to what precedes it'
 	assert starts_of(ctx, word(0x1B05, 0x102C)) == [2], 'and a Myanmar vowel sign is too'
 	// The letter one of the same class is not, which is the whole point of the split: U+0E01 is SA
@@ -807,18 +809,18 @@ fn test_an_sa_mark_after_a_character_is_held_to_it() {
 // Measured 2026-10-12: 36 cases gained and none broken, and the control is the change itself —
 // with `left` where `pair_left` now sits, the score returns to exactly the baseline.
 fn test_line_break_holds_a_numeral_and_its_letter_across_a_mark() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// FE6A PO, 0308 CM, 2757 AI.
 	cps := [rune(0xFE6A), rune(0x0308), rune(0x2757)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [3], 'the numeral holds its letter across the mark, got ${starts}'
 	// And the other direction, a prefix numeral, which is the same rule.
 	cps2 := [rune(0x0024), rune(0x0308), rune(0x2757)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert starts2 == [3], 'and a prefix numeral does too, got ${starts2}'
@@ -833,18 +835,18 @@ fn test_line_break_holds_a_numeral_and_its_letter_across_a_mark() {
 // `× 0020 ÷ 0024 ÷` is [18.0], which is why they are not in `is_prohibited_start` — moving them
 // there measured 16 fixed against 537 newly broken.
 fn test_line_break_holds_a_letter_to_a_numeral_but_not_a_space() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 AI, 0024 PR: no break between them.
 	cps := [rune(0x2757), rune(0x0024)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert 1 !in starts, 'a letter holds to a prefix numeral, got ${starts}'
 	// A space in front of the same numeral is a break.
 	cps2 := [rune(0x0020), rune(0x0024)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert 1 in starts2, 'and a space breaks in front of one, got ${starts2}'
@@ -866,7 +868,7 @@ fn test_line_break_holds_a_letter_to_a_numeral_but_not_a_space() {
 // Every shape below is one the file names, and each is checked in both directions so a later edit
 // that widens the refusal back out cannot hide behind one passing case.
 fn test_line_break_breaks_before_a_prefix_numeral_the_file_asks_to() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// A break-after character, a close bracket and a non-starter all break before both classes.
 	// U+3000 BA, U+232A CL, U+3005 NS.
 	for cp in [0x3000, 0x232A, 0x3005] {
@@ -888,7 +890,7 @@ fn test_line_break_breaks_before_a_prefix_numeral_the_file_asks_to() {
 // where the file answers it nine ways; the word-initial refusal is LB20a's pair and
 // the numeric `HY × NU` half is LB25's.
 fn test_line_break_records_the_hyphen_and_close_punctuation_over_refusal() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// The engine breaks where the file asks: a hyphen parts from a prefix numeral.
 	assert starts_of(ctx, word(0x002D, 0x0024)) == [1, 2], 'a hyphen breaks before a prefix numeral'
 	// And a word-initial hyphen still holds the letter after it — LB20a, [20.1].
@@ -903,7 +905,7 @@ fn test_line_break_records_the_hyphen_and_close_punctuation_over_refusal() {
 // text is the base in its turn — `pair_left` is `.cm` exactly when the mark run reaches the start,
 // and the file tags CM × PR [24.03] as well.
 fn test_line_break_holds_a_letter_a_hebrew_letter_or_a_digit_to_a_numeral() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 2757 AI -> AL, 05D0 HL, 0030 NU, against both a prefix and a postfix.
 	for cp in [0x2757, 0x05D0, 0x0030] {
 		assert starts_of(ctx, word(cp, 0x20A9)) == [2], 'held to a prefix numeral, cp ${cp:04x}'
@@ -925,7 +927,7 @@ fn test_line_break_holds_a_letter_a_hebrew_letter_or_a_digit_to_a_numeral() {
 // why these are two rules and not one list. Both read through a mark: `× 270A × 0308 × FE6A ÷` is
 // tagged [23.13] and `× AC00 × 0308 × FE6A ÷` is tagged [27.01].
 fn test_line_break_holds_an_emoji_an_ideograph_or_a_syllable_to_a_postfix_only() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// U+270A EB, U+231A ID, U+AC00 H2: held to a postfix.
 	for cp in [0x270A, 0x231A, 0xAC00] {
 		assert starts_of(ctx, word(cp, 0xFE6A)) == [2], 'held to a postfix numeral, cp ${cp:04x}'
@@ -955,7 +957,7 @@ fn test_line_break_holds_an_emoji_an_ideograph_or_a_syllable_to_a_postfix_only()
 // `× 00B4 × 0308 ÷ FFFC ÷` is tagged [20.01], so an object replacement character still breaks
 // through a mark hanging on an acute accent.
 fn test_line_break_holds_a_mark_to_an_open_punctuation_or_a_word_joiner() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// U+0028 OP, U+FEFF WJ, U+00AB QU, U+00B4 BB, each with a mark and a postfix after it.
 	assert starts_of(ctx, word(0x0028, 0x0308, 0xFE6A)) == [3], 'an open punctuation holds across a mark'
 	assert starts_of(ctx, word(0xFEFF, 0x0308, 0xFE6A)) == [3], 'a word joiner holds across a mark'
@@ -982,7 +984,7 @@ fn test_line_break_holds_a_mark_to_an_open_punctuation_or_a_word_joiner() {
 // from before the LB9 exception landed. The committee's file has no `SP × CM × R`
 // break in this shape; the bare `× 0020 × FE6A ÷` is what the mark inherits.
 fn test_line_break_a_mark_on_a_space_or_a_hard_break_is_unresolved() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// The engine holds the mark to the numeral, and these are the shapes.
 	for cp in [0x0020, 0x200B, 0x000A, 0x000B, 0x000D, 0x0085] {
 		assert starts_of(ctx, word(cp, 0x0308, 0xFE6A)) == [1, 3], 'a mark on a space or a hard break resolves to a letter, cp ${cp:04x}'
@@ -1049,25 +1051,25 @@ fn skip_missing(name string) {
 // gains: the Balinese and Brahmic letters, the jamo, the ideographs, the emoji and the regional
 // indicators it was gluing to the bracket.
 fn test_line_break_holds_a_letter_after_a_close_punctuation_but_not_an_aksara() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 0029 CP, 2757 AI->AL: held.
 	cps := [rune(0x0029), rune(0x2757)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [2], 'a close bracket holds a letter, got ${starts}'
 	// 0029 CP, 1B05 AK: a break, which is what the list was refusing.
 	cps2 := [rune(0x0029), rune(0x1B05)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert 1 in starts2, 'and parts from a Brahmic letter, got ${starts2}'
 	// 0029 CP, 0030 NU: a digit is held the same way a letter is.
 	cps3 := [rune(0x0029), rune(0x0030)]
 	mut starts3 := []int{}
-	for o in break_opportunities(ctx, cps3, true) {
+	for o in layout.break_opportunities(ctx, cps3, true) {
 		starts3 << o.start
 	}
 	assert starts3 == [2], 'and a digit, got ${starts3}'
@@ -1078,25 +1080,25 @@ fn test_line_break_holds_a_letter_after_a_close_punctuation_but_not_an_aksara() 
 // with no ÷ counterpart in either shape, however `is_prohibited_end` failed to answer them — it
 // reads `left`, which is the space itself, so it can only ever forbid the break at the parenthesis.
 fn test_line_break_holds_a_space_run_to_an_open_punctuation() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// 0028 OP, 0020 SP, 2757 AI->AL: held, [14.0].
 	cps := [rune(0x0028), rune(0x0020), rune(0x2757)]
 	mut starts := []int{}
-	for o in break_opportunities(ctx, cps, true) {
+	for o in layout.break_opportunities(ctx, cps, true) {
 		starts << o.start
 	}
 	assert starts == [3], 'an open bracket holds the run, got ${starts}'
 	// 0028 OP, 0308 CM, 0020 SP, 2757 AI->AL: held through the mark too.
 	cps2 := [rune(0x0028), rune(0x0308), rune(0x0020), rune(0x2757)]
 	mut starts2 := []int{}
-	for o in break_opportunities(ctx, cps2, true) {
+	for o in layout.break_opportunities(ctx, cps2, true) {
 		starts2 << o.start
 	}
 	assert starts2 == [4], 'and across a mark in the run, got ${starts2}'
 	// Control: the same run hanging from a letter breaks, which is LB18.
 	cps3 := [rune(0x2757), rune(0x0020), rune(0x2757)]
 	mut starts3 := []int{}
-	for o in break_opportunities(ctx, cps3, true) {
+	for o in layout.break_opportunities(ctx, cps3, true) {
 		starts3 << o.start
 	}
 	assert 2 in starts3, 'but a letter lets the space go, got ${starts3}'

@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.layout
 import vtext.shape
 // Conformance against the Unicode line breaking test, and a floor under the score.
 //
@@ -178,7 +179,7 @@ fn test_line_breaking_conformance_against_the_unicode_test() {
 		println('no ${path}; the UCD data is committed, so run tools/fetch_ucd.v if it is missing')
 		return
 	}
-	ctx := new_context()
+	ctx := shape.new_context()
 	mut total := 0
 	mut passed := 0
 	mut first_failures := []string{}
@@ -193,7 +194,7 @@ fn test_line_breaking_conformance_against_the_unicode_test() {
 		}
 		total++
 		mut at := map[int]bool{}
-		for g in break_opportunities(ctx, cps, false) {
+		for g in layout.break_opportunities(ctx, cps, false) {
 			at[g.start] = true
 		}
 		mut ok := true
@@ -221,11 +222,11 @@ fn test_line_breaking_conformance_against_the_unicode_test() {
 // Two ambiguous characters must not break apart: U+2757 is the test file's own example, and the table calls
 // it AI, which no pair rule matched, so it fell through to the permissive default at the end of the chain.
 fn test_two_ambiguous_characters_stay_together() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// U+2757 U+2757: no break between them, and a break after the run.
 	cps := [rune(0x2757), rune(0x2757)]
 	mut at := map[int]bool{}
-	for g in break_opportunities(ctx, cps, false) {
+	for g in layout.break_opportunities(ctx, cps, false) {
 		at[g.start] = true
 	}
 	assert !at[1], 'two ambiguous characters are letters, and letters do not part'

@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 // Chaining-context positioning: a font moves a glyph based on what is around it.
 //
 // The tests check the parse against the font's own tables rather than against a shape written out
@@ -60,12 +62,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn ctx_font(name string) ?&Font {
+fn ctx_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // The corpus fonts that carry chaining-context positioning rules.
@@ -198,14 +200,14 @@ fn test_gpos_contextual_rules_name_glyphs_the_pipeline_cannot_reach() {
 fn test_gpos_contextual_does_nothing_on_text_it_does_not_match() {
 	f := ctx_font('tahoma.ttf') or { return }
 	gpos := f.face.gpos or { panic('tahoma has no gpos') }
-	ctx := new_context()
-	fs := new_font_set_of(f)
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(f)
 	// Latin letters, which are in none of Tahoma's Arabic patterns.
 	mut cps := []rune{}
 	for c in [`a`, `b`, `c`, `d`, `e`] {
 		cps << c
 	}
-	line := layout_paragraph(ctx, cps, .ltr, fs, 32.0)
+	line := layout.layout_paragraph(ctx, cps, .ltr, fs, 32.0)
 	mut gids := []u16{}
 	for g in line.glyphs {
 		gids << g.gid
@@ -219,10 +221,10 @@ fn test_gpos_contextual_does_nothing_on_text_it_does_not_match() {
 
 // ctx_produced is every glyph a spread of marked letters produces, which is what a pattern's coverage
 // has to be checked against.
-fn ctx_produced(f &Font, base int) map[int]bool {
+fn ctx_produced(f &shape.Font, base int) map[int]bool {
 	mut produced := map[int]bool{}
-	ctx := new_context()
-	fs := new_font_set_of(f)
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(f)
 	bases := [base, 0x0644, 0x0645, 0x0646, 0x064A, 0x0643, 0x0629, 0x0647]
 	marks := [0x0651, 0x064E, 0x0650, 0x064F, 0x0652, 0x064B, 0x064C, 0x064D]
 	for b in bases {
@@ -232,7 +234,7 @@ fn ctx_produced(f &Font, base int) map[int]bool {
 				cps << rune(b)
 				cps << rune(m1)
 				cps << rune(m2)
-				line := layout_paragraph(ctx, cps, .rtl, fs, 32.0)
+				line := layout.layout_paragraph(ctx, cps, .rtl, fs, 32.0)
 				for g in line.glyphs {
 					produced[int(g.gid)] = true
 				}

@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 // Tests for mapping a glyph back to the character the font draws it for.
 //
 // The forward direction is a table and this one is a search, so the cases that matter are the ones where
@@ -8,8 +9,8 @@ module vtext
 
 import os
 
-fn corpus_font(name string) &Font {
-	return load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
+fn corpus_font(name string) &shape.Font {
+	return shape.load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
 }
 
 // corpus_font_path is where a named font is, with the platform's own directory as a fallback so a Windows
@@ -80,7 +81,7 @@ fn test_codepoint_for_returns_the_lowest_codepoint_for_a_shared_glyph() {
 	}
 }
 
-// Glyph 0 is .notdef and every font maps something to it. Naming it would answer "what character draws
+// shape.Glyph 0 is .notdef and every font maps something to it. Naming it would answer "what character draws
 // nothing" with the lowest control character the font happens to reference, which is the one answer a
 // caller cannot use.
 fn test_codepoint_for_has_no_answer_for_notdef() {

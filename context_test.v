@@ -3,7 +3,7 @@ module vtext
 import vtext.shape
 import vtext.ucd
 
-// Verifies that one Context serves the whole pipeline, and that the tables it holds
+// Verifies that one shape.Context serves the whole pipeline, and that the tables it holds
 // are shared rather than rebuilt per call. Normalization and bidi lookups are the two
 // places a caller is most likely to build their own tables by mistake.
 
@@ -29,12 +29,12 @@ fn cps_to_string(cps []rune) string {
 }
 
 fn test_context_holds_real_tables() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	assert ctx.properties.combining_ranges.len > 200, 'the context should hold real tables'
 	assert ctx.normalizer.decompositions.len > 1000, 'the normalizer should hold real tables'
 	assert ctx.normalizer.nfd_no.len > 100, 'the NFD quick check set should be populated'
 	assert ctx.normalizer.nfc_no.len > 10, 'the NFC quick check set should be populated'
-	// The joining tables belong to the same Context, because joining keys on
+	// The joining tables belong to the same shape.Context, because joining keys on
 	// Joining_Type and the presentation forms are part of the same pipeline.
 	assert ctx.shaper.forms.len > 200, 'the shaper should hold real tables'
 	assert ctx.shaper.ligatures.len == 8, 'the lam-alef ligatures should be present'
@@ -43,7 +43,7 @@ fn test_context_holds_real_tables() {
 // The whole Arabic path, from typed text to shaped codepoints: normalize, then join.
 // Persian SALAM, where the lam and the alef have to fuse.
 fn test_context_shapes_persian_text() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// sin lam alef meem, written as escapes rather than as literal characters: a non-ASCII
 	// literal makes the C backend emit a broken initialiser for a []rune.
 	typed := '\u0633\u0644\u0627\u0645'.runes()
@@ -64,7 +64,7 @@ fn test_context_shapes_persian_text() {
 }
 
 fn test_context_normalizes_arabic_text() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// Arabic text has no canonical decompositions, so NFD is the identity and NFC has
 	// nothing to compose. This is the shape of the string the shaper will be handed
 	// most of the time, and it must not allocate in the common path.
@@ -79,7 +79,7 @@ fn test_context_normalizes_arabic_text() {
 }
 
 fn test_context_normalizes_latin_with_marks() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// e + combining acute, which is what a text source that does not normalize emits.
 	src := runes_of(['0065', '0301'])
 	assert cps_to_string(ctx.normalizer.nfc(src)) == '00E9'
@@ -89,7 +89,7 @@ fn test_context_normalizes_latin_with_marks() {
 }
 
 fn test_context_resolves_a_bidi_paragraph() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// The bidi rules need the property tables the context holds, so this is the
 	// integration point between the two halves of the module.
 	persian := runes_of(['0633', '0644', '0627', '0645'])
@@ -104,7 +104,7 @@ fn test_context_resolves_a_bidi_paragraph() {
 // breaks: the levels have to split into a run and its surroundings, and the run has to
 // come back out the other way up in the visual order.
 fn test_context_bidi_mixed_script_paragraph() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	mixed := runes_of(['0633', '0644', '0627', '0645', '0020', '0061', '0062', '0020', '0031',
 		'0032', '0033'])
 	res := shape.resolve_paragraph(ctx.properties, mixed, .auto)

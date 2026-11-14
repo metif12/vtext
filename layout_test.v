@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.layout
 import vtext.shape
 import vtext.font
 // Tests for line layout: the passes meeting, in the order a caller sees them.
@@ -14,7 +15,7 @@ fn approx(got f64, want f64, tol f64) bool {
 }
 
 // glyph_at_cluster returns the glyph that came from the input character at that index.
-fn glyph_at_cluster(glyphs []Glyph, cluster int) ?Glyph {
+fn glyph_at_cluster(glyphs []shape.Glyph, cluster int) ?shape.Glyph {
 	for g in glyphs {
 		if g.cluster == cluster {
 			return g
@@ -81,12 +82,12 @@ fn skip_missing(name string) {
 }
 
 // font_from loads a font for a test, or reports that it cannot and lets the test skip.
-fn font_from(name string) ?&Font {
+fn font_from(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // The corpus fonts these tests read.
@@ -96,11 +97,11 @@ fn font_from(name string) ?&Font {
 //
 // nastaliq is a Nastaliq face that maps none of the Arabic presentation forms and no Latin at all, which is
 // what the form-missing and the fallback tests need: a preferred font that has to be passed over.
-fn amiri() ?&Font {
+fn amiri() ?&shape.Font {
 	return font_from('Amiri-Regular.ttf')
 }
 
-fn nastaliq() ?&Font {
+fn nastaliq() ?&shape.Font {
 	return font_from('NotoNastaliqUrdu-Regular.ttf')
 }
 
@@ -110,8 +111,8 @@ fn nastaliq() ?&Font {
 // joining pass did is what actually reaches the screen and the glyph counts are decided by
 // the pipeline rather than by whichever font happens to be installed. Dubai is behind it as
 // a real second opinion, and is the font the base-letter tests use on its own.
-fn persian_fonts() &FontSet {
-	fs := new_font_set()
+fn persian_fonts() &shape.FontSet {
+	fs := shape.new_font_set()
 	amiri := amiri() or { return fs }
 	fs.add(amiri)
 	return fs
@@ -122,17 +123,17 @@ fn persian_fonts() &FontSet {
 // It has to be a font whose liga actually narrows the line, which is what makes the assertion mean
 // something: measured, neither of the two corpus fonts that carry Latin narrows this word under liga, so
 // the pair the measurement was taken on is the one it keeps.
-fn liga_fonts() &FontSet {
-	fs := new_font_set()
+fn liga_fonts() &shape.FontSet {
+	fs := shape.new_font_set()
 	f := font_from('segoeui.ttf') or { return fs }
 	fs.add(f)
 	return fs
 }
 
 fn test_layout_latin_line_runs_left_to_right() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
-	line := layout_paragraph(ctx, [`a`, `b`, `c`], .ltr, fs, 32)
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
+	line := layout.layout_paragraph(ctx, [`a`, `b`, `c`], .ltr, fs, 32)
 	assert line.paragraph_level == 0, 'a forced LTR paragraph is level 0'
 	assert line.glyphs.len == 3, 'three letters should give three glyphs'
 	// Visual order is logical order here, and the clusters are the input positions.
@@ -150,11 +151,11 @@ fn test_layout_latin_line_runs_left_to_right() {
 }
 
 fn test_layout_rtl_line_reverses_the_glyphs() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	// sin lam alef meem. The lam and the alef are one glyph, so four characters give three
 	// glyphs, and the paragraph is right to left so they come back reversed.
-	line := layout_paragraph(ctx, [`س`, `ل`, `ا`, `م`], .auto, fs, 32)
+	line := layout.layout_paragraph(ctx, [`س`, `ل`, `ا`, `م`], .auto, fs, 32)
 	assert line.paragraph_level == 1, '.auto should read the direction off the text'
 	assert line.glyphs.len == 3, 'the lam-alef is one glyph, so 3 not 4'
 	// The meem is the first character written and the leftmost drawn.
@@ -171,10 +172,10 @@ fn test_layout_rtl_line_reverses_the_glyphs() {
 }
 
 fn test_layout_covers_every_visible_character() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	cps := [`س`, `ل`, `ا`, `م`]
-	line := layout_paragraph(ctx, cps, .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, cps, .rtl, fs, 32)
 	mut seen := map[int]bool{}
 	for g in line.glyphs {
 		seen[g.cluster] = true
@@ -187,10 +188,10 @@ fn test_layout_covers_every_visible_character() {
 }
 
 fn test_layout_places_a_mark_on_its_letter() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	// beh + fatha: the mark is a glyph of its own, but it costs nothing and sits on the beh.
-	line := layout_paragraph(ctx, [`ب`, rune(0x064E)], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`ب`, rune(0x064E)], .rtl, fs, 32)
 	assert line.glyphs.len == 2, 'the mark is a glyph of its own'
 	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
 	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
@@ -206,7 +207,7 @@ fn test_layout_places_a_mark_on_its_letter() {
 	}
 	scale := 32.0 / f64(f.units_per_em())
 	assert approx(mark.x - base.x, f64(off.x) * scale, 0.01), 'the mark sits at the font horizontal anchor'
-	// Font y is positive upwards and the line's is positive downwards, so the mark's y is the
+	// shape.Font y is positive upwards and the line's is positive downwards, so the mark's y is the
 	// negation of the font's.
 	assert approx(mark.y, -f64(off.y) * scale, 0.01), 'the mark sits at the font vertical anchor'
 	// A mark must not widen the line, and the two glyphs are the only ones on it.
@@ -214,7 +215,7 @@ fn test_layout_places_a_mark_on_its_letter() {
 }
 
 fn test_layout_mark_on_shaped_base_uses_shaped_anchor() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	// beh + kasra + seen: the beh is initial, so the glyph on screen is a presentation
 	// form, not the base letter — and the base letter's own anchor is the isolated
@@ -222,7 +223,7 @@ fn test_layout_mark_on_shaped_base_uses_shaped_anchor() {
 	// is what HarfBuzz reads: kasra on initial beh is -178 in Amiri, against 276 for
 	// the isolated base. Reading the base anchor here puts the mark hundreds of units
 	// wide of where the font puts it.
-	line := layout_paragraph(ctx, [`ب`, rune(0x0650), `س`], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`ب`, rune(0x0650), `س`], .rtl, fs, 32)
 	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
 	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
 	assert mark.is_mark && !base.is_mark, 'only the mark is a mark'
@@ -238,13 +239,13 @@ fn test_layout_mark_on_shaped_base_uses_shaped_anchor() {
 }
 
 fn test_layout_zwnj_breaks_join_through_bidi() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	// yeh meem ZWNJ feh: the non-joiner is X9-shape.removed from bidi sequences, but joining
 	// has to see it. Shaped without it, the meem joins into the feh and takes the
 	// medial form, and نیم‌فاصله renders joined; with it the meem is final and the
 	// feh, with nothing after it and the join behind it broken, is isolated.
-	line := layout_paragraph(ctx, [rune(0x06CC), rune(0x0645), rune(0x200C), rune(0x0641)], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [rune(0x06CC), rune(0x0645), rune(0x200C), rune(0x0641)], .rtl, fs, 32)
 	assert line.glyphs.len == 3, 'the non-joiner is dropped, not drawn'
 	meem := glyph_at_cluster(line.glyphs, 1) or { panic('no meem glyph') }
 	feh := glyph_at_cluster(line.glyphs, 3) or { panic('no feh glyph') }
@@ -253,14 +254,14 @@ fn test_layout_zwnj_breaks_join_through_bidi() {
 }
 
 fn test_layout_applies_pair_kern_to_advance() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := amiri() or { return }
-	mut fs := new_font_set()
+	mut fs := shape.new_font_set()
 	fs.add(f)
 	// AV in Amiri kerns by -62 design units on the A: the kern folds into the advance
 	// of the visually first glyph of the pair, which HarfBuzz reports as 550 against
 	// the hmtx 612. Without the kern pass both advances come straight from hmtx.
-	line := layout_paragraph(ctx, [rune(0x0041), rune(0x0056)], .ltr, fs, 1000)
+	line := layout.layout_paragraph(ctx, [rune(0x0041), rune(0x0056)], .ltr, fs, 1000)
 	a := glyph_at_cluster(line.glyphs, 0) or { panic('no A glyph') }
 	v := glyph_at_cluster(line.glyphs, 1) or { panic('no V glyph') }
 	assert a.advance > 549.0 && a.advance < 551.0, 'the kern tightened A, got ${a.advance}'
@@ -268,22 +269,22 @@ fn test_layout_applies_pair_kern_to_advance() {
 }
 
 fn test_layout_applies_class_kern_to_latin_pair() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := amiri() or { return }
-	mut fs := new_font_set()
+	mut fs := shape.new_font_set()
 	fs.add(f)
 	// life in Amiri kerns f against e by -11 through lookup 43's class matrix, which is a
 	// different road from AV's rule: the pair is found by class rather than named outright.
 	// Without the kern pass both advances come straight from hmtx.
-	line := layout_paragraph(ctx, [rune(0x006C), rune(0x0069), rune(0x0066), rune(0x0065)], .ltr, fs, 1000)
+	line := layout.layout_paragraph(ctx, [rune(0x006C), rune(0x0069), rune(0x0066), rune(0x0065)], .ltr, fs, 1000)
 	ef := glyph_at_cluster(line.glyphs, 2) or { panic('no f glyph') }
 	assert ef.advance > 288.0 && ef.advance < 290.0, 'the kern tightened f, got ${ef.advance}'
 }
 
 fn test_layout_draws_marks_after_letters() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
-	line := layout_paragraph(ctx, [`ب`, rune(0x064E)], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`ب`, rune(0x064E)], .rtl, fs, 32)
 	order := line.draw_order()
 	assert order.len == 2
 	// The mark shares a position with its letter, so whichever is painted last is on top,
@@ -292,11 +293,11 @@ fn test_layout_draws_marks_after_letters() {
 }
 
 fn test_layout_mixed_script_uses_fallback() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	// A Persian letter with a Latin digit, which is the shape of a real line with a number
 	// in it.
-	line := layout_paragraph(ctx, [`س`, `1`], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`س`, `1`], .rtl, fs, 32)
 	assert line.glyphs.len == 2
 	letter := glyph_at_cluster(line.glyphs, 0) or { panic('no letter glyph') }
 	digit := glyph_at_cluster(line.glyphs, 1) or { panic('no digit glyph') }
@@ -319,15 +320,15 @@ fn test_layout_mixed_script_uses_fallback() {
 // which makes the disagreement structural rather than accidental, and Segoe UI carries the
 // whole Arabic block.
 fn test_layout_falls_back_when_the_preferred_font_lacks_the_codepoint() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	mono := nastaliq() or { return }
 	arabic := amiri() or { return }
 	assert !mono.has_glyph(rune(0xFEFB)) && arabic.has_glyph(rune(0xFEFB))
-	fs := new_font_set()
+	fs := shape.new_font_set()
 	fs.add(mono)
 	fs.add(arabic)
 
-	line := layout_paragraph(ctx, [`س`, `ل`, `ا`, `م`], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`س`, `ل`, `ا`, `م`], .rtl, fs, 32)
 	assert line.glyphs.len == 3, 'the lam-alef is one glyph, so 3 not 4'
 	for g in line.glyphs {
 		// The glyph has to come from the font that actually has the character, not from the
@@ -344,11 +345,11 @@ fn test_layout_falls_back_when_the_preferred_font_lacks_the_codepoint() {
 // 825 minus the 1139 advance is exactly -314. The arab mark tables have no such
 // rule, so before scripts were asked the mark stayed at the pen.
 fn test_layout_places_a_latin_mark_from_latin_rules() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	arial := font_from('arial.ttf') or { return }
-	mut fs := new_font_set()
+	mut fs := shape.new_font_set()
 	fs.add(arial)
-	line := layout_paragraph(ctx, [`q`, rune(0x0301)], .ltr, fs, 32)
+	line := layout.layout_paragraph(ctx, [`q`, rune(0x0301)], .ltr, fs, 32)
 	mark := glyph_at_cluster(line.glyphs, 1) or { panic('no mark glyph') }
 	base := glyph_at_cluster(line.glyphs, 0) or { panic('no base glyph') }
 	assert mark.is_mark && !base.is_mark, 'only the acute is a mark'
@@ -367,15 +368,15 @@ fn test_layout_places_a_latin_mark_from_latin_rules() {
 // GSUB table rather than in the cmap, so the form codepoint the joining pass produced is
 // .notdef in it.
 fn test_layout_draws_the_base_letter_when_the_form_is_missing() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	formless := font_from('DUBAI-REGULAR.TTF') or { return }
-	fs := new_font_set_of(formless)
+	fs := shape.new_font_set_of(formless)
 	// A lone beh is an isolated beh, U+FE8F, which Dubai does not have. It does have the
 	// base letter, so that is what gets drawn.
 	assert !formless.has_glyph(rune(0xFE8F)), 'this test is about a font without the form'
 	assert formless.has_glyph(rune(0x0628)), 'the Nastaliq font carries the base letter'
 
-	line := layout_paragraph(ctx, [`ب`], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`ب`], .rtl, fs, 32)
 	assert line.glyphs.len == 1, 'the base letter stands in for the missing form'
 	g := line.glyphs[0]
 	assert g.gid == formless.glyph_index(rune(0x0628)), 'the base letter is what is drawn'
@@ -401,7 +402,7 @@ struct ExpectedLetter {
 // its Arabic shapes only in a substitution table comes out with each letter in the shape the
 // joining pass chose, and each glyph carrying its own advance.
 fn test_layout_shapes_persian_through_gsub() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	// Majalla is the font that shows this. It carries most of its Arabic presentation forms in
 	// the cmap but is missing some of them, so the letters whose forms it lacks can only be
 	// drawn correctly shaped by going through the table. Dubai, which carries almost none of
@@ -414,7 +415,7 @@ fn test_layout_shapes_persian_through_gsub() {
 	// so choosing one of those would leave this asserting half of what it claims to.
 	arabic := font_from('trado.ttf') or { return }
 	assert arabic.has_gsub(), 'this test is about a font that shapes through GSUB'
-	fs := new_font_set_of(arabic)
+	fs := shape.new_font_set_of(arabic)
 
 	// beh sin lam kaf yeh meem. A word with a letter in each position is the only way to reach
 	// the medial and final forms: a letter on its own is isolated, and a probe that forgets
@@ -424,7 +425,7 @@ fn test_layout_shapes_persian_through_gsub() {
 	// all of them but the yeh, so the yeh has to be shaped through the table instead, and that
 	// one letter is what makes the word worth testing.
 	word := [`ب`, `س`, `ل`, `ک`, `ی`, `م`]
-	line := layout_paragraph(ctx, word, .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, word, .rtl, fs, 32)
 	assert line.paragraph_level == 1, 'Persian resolves to a right-to-left paragraph'
 	assert line.glyphs.len == 6, 'six letters give six glyphs'
 	assert line.glyphs[0].cluster == 5, 'the meem is written last and drawn leftmost'
@@ -496,10 +497,10 @@ fn test_layout_shapes_persian_through_gsub() {
 // A font that keeps its shapes in the cmap needs no substitution, and a font that has both
 // uses the cmap form: it is available without a second lookup, and both name the same shape.
 fn test_layout_prefers_the_cmap_form_over_substitution() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	segoe := amiri() or { return }
-	fs := new_font_set_of(segoe)
-	line := layout_paragraph(ctx, [`س`], .rtl, fs, 32)
+	fs := shape.new_font_set_of(segoe)
+	line := layout.layout_paragraph(ctx, [`س`], .rtl, fs, 32)
 	assert line.glyphs.len == 1
 	g := line.glyphs[0]
 	assert g.gid == segoe.glyph_index(rune(0xFEB1)), 'the isolated sin form comes from the cmap'
@@ -517,14 +518,14 @@ fn test_layout_prefers_the_cmap_form_over_substitution() {
 // covered, at the font seam, by test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw in
 // glyph_test.v, which reaches the same branch without needing a font that does not exist.
 fn test_a_ligature_covers_both_of_its_characters() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	arabic := amiri() or { return }
-	fs := new_font_set_of(arabic)
+	fs := shape.new_font_set_of(arabic)
 	// A lam and an alef with nothing either side of them: the pair is isolated.
 	assert arabic.has_glyph(rune(0xFEFB)), 'the font has the isolated form of the pair'
 	assert arabic.has_glyph(rune(0x0644)) && arabic.has_glyph(rune(0x0627)), 'it has both base letters'
 
-	line := layout_paragraph(ctx, [`ل`, `ا`], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`ل`, `ا`], .rtl, fs, 32)
 	// One glyph for two characters, and it is the ligature rather than either letter.
 	assert line.glyphs.len == 1, 'the pair should be one glyph, got ${line.glyphs.len}'
 	fused := line.glyphs[0]
@@ -542,12 +543,12 @@ fn test_a_ligature_covers_both_of_its_characters() {
 // The same line laid out with only a font that has neither the letter nor the form has to
 // report .notdef rather than quietly borrowing from a font the caller did not ask for.
 fn test_layout_reports_notdef_when_no_font_covers() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	mono := font_from('consola.ttf') or { return }
-	fs := new_font_set_of(mono)
+	fs := shape.new_font_set_of(mono)
 	// The form is missing, so the base letter is asked for instead, and that is missing too.
 	assert !mono.has_glyph(rune(0x0628))
-	line := layout_paragraph(ctx, [`ب`], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`ب`], .rtl, fs, 32)
 	assert line.glyphs.len == 1, 'the character is still placed, it is just not drawn properly'
 	g := line.glyphs[0]
 	assert g.gid == 0, 'no font in the chain has this letter, so it is .notdef'
@@ -557,7 +558,7 @@ fn test_layout_reports_notdef_when_no_font_covers() {
 // Rule X9 removes the characters that only exist to steer the algorithm, so they are never
 // drawn. U+2060 WORD JOINER is one of them: a format character with no glyph and no width.
 fn test_layout_strips_x9_removed_format_controls() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	word_joiner := rune(0x2060)
 	assert ctx.properties.bidi_class_of(word_joiner) == .bn, 'U+2060 is meant to be BN'
@@ -565,8 +566,8 @@ fn test_layout_strips_x9_removed_format_controls() {
 	// survive are the same two, in the same order, as wide, at the same places. Only the
 	// cluster numbers move, because the control did take an input position of its own, and
 	// so the second letter is the third character written.
-	marked := layout_paragraph(ctx, [`س`, word_joiner, `م`], .rtl, fs, 32)
-	plain := layout_paragraph(ctx, [`س`, `م`], .rtl, fs, 32)
+	marked := layout.layout_paragraph(ctx, [`س`, word_joiner, `م`], .rtl, fs, 32)
+	plain := layout.layout_paragraph(ctx, [`س`, `م`], .rtl, fs, 32)
 	assert marked.glyphs.len == 2, 'the format control is not drawn'
 	assert marked.glyphs.len == plain.glyphs.len
 	mut marked_clusters := []int{}
@@ -587,20 +588,20 @@ fn test_layout_strips_x9_removed_format_controls() {
 }
 
 fn test_layout_empty_input_gives_an_empty_line() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
-	line := layout_paragraph(ctx, []rune{}, .auto, fs, 32)
+	line := layout.layout_paragraph(ctx, []rune{}, .auto, fs, 32)
 	assert line.glyphs.len == 0
 	assert line.width == 0
 	assert line.ascent == 0 && line.descent == 0
 }
 
 fn test_layout_zwnj_drops_out_and_keeps_the_rest() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	// beh ZWNJ beh: the non-joiner breaks the join, so both behs are isolated, and the
 	// control itself contributes no glyph.
-	line := layout_paragraph(ctx, [`ب`, rune(0x200C), `ب`], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [`ب`, rune(0x200C), `ب`], .rtl, fs, 32)
 	assert line.glyphs.len == 2, 'the ZWNJ is not drawn'
 	for g in line.glyphs {
 		assert g.gid != 0
@@ -610,16 +611,16 @@ fn test_layout_zwnj_drops_out_and_keeps_the_rest() {
 // A mark's cluster is the character the reader wrote, not the position the mark ended up in after
 // normalization reordered it.
 fn test_layout_a_mark_reports_its_own_character_after_reordering() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := amiri() or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	beh := f.glyph_index(0x0628)
 	shadda := f.glyph_index(0x0651)
 	fatha := f.glyph_index(0x064E)
 	// Written as beh, shadda, fatha. A shadda is a higher combining class than a fatha, so
 	// decomposition has to swap them, which used to hand each mark the other's cluster and leave
 	// the shadda looking for a base it was not written after.
-	line := layout_paragraph(ctx, [rune(0x0628), rune(0x0651), rune(0x064E)], .rtl, fs, 64)
+	line := layout.layout_paragraph(ctx, [rune(0x0628), rune(0x0651), rune(0x064E)], .rtl, fs, 64)
 	mut seen := map[int]int{}
 	for g in line.glyphs {
 		seen[g.cluster] = g.gid
@@ -633,13 +634,13 @@ fn test_layout_a_mark_reports_its_own_character_after_reordering() {
 // come out of the same number. That is the whole assertion: a spacing pass that moved x instead of
 // advance would make these two disagree and the line would still draw correctly.
 fn test_letter_spacing_adds_to_every_letter_advance() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	cps := [`a`, `b`, `c`]
-	plain := layout_paragraph(ctx, cps, .ltr, fs, 32)
-	mut opts := LayoutOptions{}
+	plain := layout.layout_paragraph(ctx, cps, .ltr, fs, 32)
+	mut opts := layout.LayoutOptions{}
 	opts.letter_spacing = 2.0
-	spaced := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+	spaced := layout.layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
 
 	assert spaced.glyphs.len == plain.glyphs.len, 'spacing must not change how many glyphs there are'
 	for i in 0 .. spaced.glyphs.len {
@@ -659,13 +660,13 @@ fn test_letter_spacing_adds_to_every_letter_advance() {
 // Negative spacing tightens rather than failing, because that is what a caller setting a negative value
 // is asking for and a text engine that refused would force them to scale the font instead.
 fn test_letter_spacing_can_be_negative() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	cps := [`a`, `b`, `c`, `d`, `e`, `f`]
-	plain := layout_paragraph(ctx, cps, .ltr, fs, 32)
-	mut opts := LayoutOptions{}
+	plain := layout.layout_paragraph(ctx, cps, .ltr, fs, 32)
+	mut opts := layout.LayoutOptions{}
 	opts.letter_spacing = -1.5
-	spaced := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+	spaced := layout.layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
 	assert approx(spaced.width, plain.width - 9.0, 0.001), 'six letters tightened by 1.5 each'
 	assert spaced.width < plain.width
 }
@@ -673,14 +674,14 @@ fn test_letter_spacing_can_be_negative() {
 // A mark is not a letter. It shares its base's position and has no advance, so paying it letter spacing
 // would charge one character twice and push everything after it along by a spacing nobody asked for.
 fn test_a_combining_mark_does_not_take_letter_spacing() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	naskh := font_from('tahoma.ttf') or { return }
-	fs := new_font_set_of(naskh)
+	fs := shape.new_font_set_of(naskh)
 	cps := [rune(0x0628), rune(0x064E)] // beh with a fatha
-	plain := layout_paragraph(ctx, cps, .rtl, fs, 32)
-	mut opts := LayoutOptions{}
+	plain := layout.layout_paragraph(ctx, cps, .rtl, fs, 32)
+	mut opts := layout.LayoutOptions{}
 	opts.letter_spacing = 2.0
-	spaced := layout_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
+	spaced := layout.layout_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
 
 	mut marks := 0
 	for g in spaced.glyphs {
@@ -698,20 +699,20 @@ fn test_a_combining_mark_does_not_take_letter_spacing() {
 // make it indistinguishable from letter spacing, which is the difference between a property and a second
 // name for one.
 fn test_word_spacing_moves_only_the_spaces() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	cps := [`a`, ` `, `b`, ` `, `c`] // two spaces
-	plain := layout_paragraph(ctx, cps, .ltr, fs, 32)
-	mut opts := LayoutOptions{}
+	plain := layout.layout_paragraph(ctx, cps, .ltr, fs, 32)
+	mut opts := layout.LayoutOptions{}
 	opts.word_spacing = 3.0
-	spaced := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+	spaced := layout.layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
 	assert approx(spaced.width, plain.width + 6.0, 0.001), 'two spaces widened by 3 each'
 
-	mut with_both := LayoutOptions{}
+	mut with_both := layout.LayoutOptions{}
 	with_both.letter_spacing = 1.0
 	with_both.word_spacing = 3.0
 	// Three letters, two spaces: five characters for the letter spacing and two more for the word spacing.
-	both := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &with_both)
+	both := layout.layout_paragraph_with(ctx, cps, .ltr, fs, 32, &with_both)
 	assert approx(both.width, plain.width + 5.0 + 6.0, 0.001), 'letter spacing applies to all five characters and word spacing to the two spaces'
 }
 
@@ -719,16 +720,16 @@ fn test_word_spacing_moves_only_the_spaces() {
 // rather than the first one's, because a paragraph that fell back mid-line is spaced for the tallest face
 // in it.
 fn test_line_height_defaults_to_the_font_and_takes_an_override() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := amiri() or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	cps := [`a`, `b`, `c`]
-	line := layout_paragraph(ctx, cps, .ltr, fs, 32)
+	line := layout.layout_paragraph(ctx, cps, .ltr, fs, 32)
 	assert approx(line.line_height, f.line_height(32.0), 0.001), 'line height ${line.line_height} should be the font own ${f.line_height(32.0)}'
 
-	mut opts := LayoutOptions{}
+	mut opts := layout.LayoutOptions{}
 	opts.line_height = 50.0
-	tall := layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
+	tall := layout.layout_paragraph_with(ctx, cps, .ltr, fs, 32, &opts)
 	assert tall.line_height == 50.0, 'the caller asked for 50 and got ${tall.line_height}'
 	// The box moved and the ink did not. This is the distinction the field exists to make: ascent and
 	// descent are how far the ink reaches, and shrinking them to fit a smaller box would be reporting an
@@ -740,12 +741,12 @@ fn test_line_height_defaults_to_the_font_and_takes_an_override() {
 // Every wrapped line reports the paragraph's line height, because a caller stacking them by one number
 // has to get the same answer from each. A line that reported its own would make the stack drift.
 fn test_wrapped_lines_all_report_the_same_line_height() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	cps := 'the quick brown fox jumps over the lazy dog'.runes()
-	mut opts := LayoutOptions{}
+	mut opts := layout.LayoutOptions{}
 	opts.line_height = 44.0
-	runs := wrap_paragraph_with(ctx, cps, .ltr, fs, 32, 200.0, &opts)
+	runs := layout.wrap_paragraph_with(ctx, cps, .ltr, fs, 32, 200.0, &opts)
 	assert runs.len > 2, 'this text should wrap into several lines at 200, got ${runs.len}'
 	for w in runs {
 		assert w.line.line_height == 44.0, 'every line reports the same box, got ${w.line.line_height}'
@@ -757,16 +758,16 @@ fn test_wrapped_lines_all_report_the_same_line_height() {
 // The comparison is computed rather than hardcoded so the test says what it means: if the font happened
 // to make the first word the widest one tomorrow, this would still be the right assertion.
 fn test_min_content_width_is_the_widest_word_without_its_space() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	cps := 'the quick brown fox'.runes()
-	m := measure_paragraph(ctx, cps, .ltr, fs, 32)
+	m := layout.measure_paragraph(ctx, cps, .ltr, fs, 32)
 
 	words := [[`t`, `h`, `e`], [`q`, `u`, `i`, `c`, `k`], [`b`, `r`, `o`, `w`, `n`], [`f`, `o`,
 		`x`]]
 	mut widest := f64(0)
 	for w in words {
-		x := layout_paragraph(ctx, w, .ltr, fs, 32).width
+		x := layout.layout_paragraph(ctx, w, .ltr, fs, 32).width
 		if x > widest {
 			widest = x
 		}
@@ -779,13 +780,13 @@ fn test_min_content_width_is_the_widest_word_without_its_space() {
 // wrapped line carries the space that ended it, so taking the number from wrap_paragraph gives a minimum
 // width one space too wide on every word.
 fn test_min_content_width_excludes_the_trailing_space_a_wrapped_line_carries() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := amiri() or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	cps := 'the quick brown fox'.runes()
-	m := measure_paragraph(ctx, cps, .ltr, fs, 32)
+	m := layout.measure_paragraph(ctx, cps, .ltr, fs, 32)
 
-	runs := wrap_paragraph(ctx, cps, .ltr, fs, 32, 0.0)
+	runs := layout.wrap_paragraph(ctx, cps, .ltr, fs, 32, 0.0)
 	mut from_wrapped := f64(0)
 	for w in runs {
 		if w.line.width > from_wrapped {
@@ -800,9 +801,9 @@ fn test_min_content_width_excludes_the_trailing_space_a_wrapped_line_carries() {
 // A paragraph of spaces has no unbreakable unit in it, so it collapses to nothing. Charging it one space
 // would mean a paragraph that is entirely whitespace reports a non-zero minimum width.
 fn test_a_paragraph_of_spaces_collapses_to_nothing() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
-	m := measure_paragraph(ctx, '   '.runes(), .ltr, fs, 32)
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
+	m := layout.measure_paragraph(ctx, '   '.runes(), .ltr, fs, 32)
 	assert m.min_content_width == 0.0, 'spaces alone are not content, got ${m.min_content_width}'
 	assert m.max_content_width > 0.0, 'the space still has a width when it is laid out'
 }
@@ -811,11 +812,11 @@ fn test_a_paragraph_of_spaces_collapses_to_nothing() {
 // these two could disagree, a caller measuring a box and a caller drawing into it would be sizing
 // different lines.
 fn test_measurement_agrees_with_layout() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	cps := 'the quick brown fox'.runes()
-	m := measure_paragraph(ctx, cps, .ltr, fs, 32)
-	line := layout_paragraph(ctx, cps, .ltr, fs, 32)
+	m := layout.measure_paragraph(ctx, cps, .ltr, fs, 32)
+	line := layout.layout_paragraph(ctx, cps, .ltr, fs, 32)
 	assert approx(m.max_content_width, line.width, 0.001), 'measured ${m.max_content_width} against laid out ${line.width}'
 	assert approx(m.ascent, line.ascent, 0.001)
 	assert approx(m.descent, line.descent, 0.001)
@@ -833,11 +834,11 @@ fn test_measurement_agrees_with_layout() {
 // The same holds in the other direction, where visual order is the reverse of the writing and a
 // measurement that indexed glyphs by position would report the wrong segment widths.
 fn test_measurement_works_for_a_right_to_left_paragraph() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := persian_fonts()
 	cps := 'سلام دنیا'.runes()
-	m := measure_paragraph(ctx, cps, .rtl, fs, 32)
-	line := layout_paragraph(ctx, cps, .rtl, fs, 32)
+	m := layout.measure_paragraph(ctx, cps, .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, cps, .rtl, fs, 32)
 	assert approx(m.max_content_width, line.width, 0.001), 'measured ${m.max_content_width} against laid out ${line.width}'
 	assert m.min_content_width > 0.0, 'there is content'
 	assert m.min_content_width < m.max_content_width, 'two words break, so the narrowest is smaller'
@@ -849,9 +850,9 @@ fn test_measurement_works_for_a_right_to_left_paragraph() {
 }
 
 fn test_measurement_of_empty_text_is_all_zeroes() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
-	m := measure_paragraph(ctx, []rune{}, .ltr, fs, 32)
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
+	m := layout.measure_paragraph(ctx, []rune{}, .ltr, fs, 32)
 	assert m.min_content_width == 0.0 && m.max_content_width == 0.0
 	assert m.ascent == 0.0 && m.descent == 0.0
 }
@@ -867,11 +868,11 @@ fn test_measurement_of_empty_text_is_all_zeroes() {
 // The assertion is recomputed from the font's own boxes rather than written down, so it stays true if a
 // font's metrics change and fails if the formula does.
 fn test_line_extent_is_the_ink_each_glyph_reaches() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := font_from('segoeui.ttf') or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	cps := 'Hxbdfpq'.runes()
-	line := layout_paragraph(ctx, cps, .ltr, fs, 16.0)
+	line := layout.layout_paragraph(ctx, cps, .ltr, fs, 16.0)
 
 	mut want_ascent := f64(0)
 	mut want_descent := f64(0)
@@ -899,9 +900,9 @@ fn test_line_extent_is_the_ink_each_glyph_reaches() {
 // The measured numbers, because the test above would pass if the engine and the test agreed on the
 // same wrong reading of the box. These are what the glyphs actually reach, read off the font.
 fn test_line_extent_matches_the_measured_ink_of_a_latin_line() {
-	ctx := new_context()
-	fs := new_font_set_of(font_from('segoeui.ttf') or { return })
-	line := layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, 16.0)
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(font_from('segoeui.ttf') or { return })
+	line := layout.layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, 16.0)
 	// At 16 pixels: f reaches 13 above the baseline and stops there, and p and q reach 4 below.
 	assert line.ascent == 13.0, 'the tallest ink here is the f at 13, got ${line.ascent}'
 	assert line.descent == 4.0, 'the deepest ink here is the descender of p and q at 4, got ${line.descent}'
@@ -914,16 +915,16 @@ fn test_line_extent_matches_the_measured_ink_of_a_latin_line() {
 // line of Latin with no descenders still needs the room the font asked for, or a line of mixed text
 // would change height as a descender scrolled past it.
 fn test_a_line_with_no_descenders_reports_no_descent_from_them() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := font_from('segoeui.ttf') or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	// H and x both sit on the baseline at 16 pixels, so their ink reaches 0 below it.
-	line := layout_paragraph(ctx, 'Hx'.runes(), .ltr, fs, 16.0)
+	line := layout.layout_paragraph(ctx, 'Hx'.runes(), .ltr, fs, 16.0)
 	assert line.descent == f.descent(16.0), 'nothing here descends, so the descent is the font own ${f.descent(16.0)}, got ${line.descent}'
 	assert line.ascent == 12.0, 'the H reaches 12 above, got ${line.ascent}'
 
 	// And with a descender the number becomes that descender rather than the whole line's height.
-	with_p := layout_paragraph(ctx, 'Hxp'.runes(), .ltr, fs, 16.0)
+	with_p := layout.layout_paragraph(ctx, 'Hxp'.runes(), .ltr, fs, 16.0)
 	assert with_p.descent == 4.0, 'the p reaches 4 below, got ${with_p.descent}'
 }
 
@@ -934,10 +935,10 @@ fn test_a_line_with_no_descenders_reports_no_descent_from_them() {
 // it has to keep holding after the extent was corrected: before, it passed because the extent was
 // roughly double what it should be.
 fn test_the_ink_can_reach_past_the_font_own_metrics() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := font_from('segoeui.ttf') or { return }
-	fs := new_font_set_of(f)
-	line := layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, 16.0)
+	fs := shape.new_font_set_of(f)
+	line := layout.layout_paragraph(ctx, 'Hxbdfpq'.runes(), .ltr, fs, 16.0)
 	assert line.ascent > f.ascent(16.0), '${line.ascent} against the font own ${f.ascent(16.0)}: the f is taller than the ascender'
 	assert line.descent > f.descent(16.0), '${line.descent} against the font own ${f.descent(16.0)}: p and q descend further than the descender'
 	// And both stay inside a plausible multiple of the em, which is the cheap check that would have
@@ -953,13 +954,13 @@ fn test_the_ink_can_reach_past_the_font_own_metrics() {
 // clears the font's ascender is the font's business and Tahoma's says it does not at 48 pixels. What is
 // not the font's business is where the engine put the mark, and that is what this pins.
 fn test_a_mark_is_measured_where_it_was_placed_and_not_where_it_would_sit() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	f := amiri() or { return }
-	fs := new_font_set_of(f)
+	fs := shape.new_font_set_of(f)
 	size := 48.0
-	marked := layout_paragraph(ctx, [rune(0x0628), rune(0x064E)], .rtl, fs, size)
+	marked := layout.layout_paragraph(ctx, [rune(0x0628), rune(0x064E)], .rtl, fs, size)
 	base := glyph_at_cluster(marked.glyphs, 0) or { panic('no glyph for the beh') }
-	mut mark := Glyph{}
+	mut mark := shape.Glyph{}
 	for g in marked.glyphs {
 		if g.is_mark {
 			mark = g
@@ -991,14 +992,14 @@ fn test_a_mark_is_measured_where_it_was_placed_and_not_where_it_would_sit() {
 // The extent has to survive being measured through the box query rather than the pixels, which is what
 // measure_line uses and what the equivalence test in stbtt_test.v proves produces the same numbers.
 fn test_line_extent_is_the_same_at_every_size() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	cps := 'Hxp'.runes()
 	// The ratio of ink to em is roughly constant, so a doubling of the size should roughly double both
 	// numbers. A formula that added the box height to the top would still pass this, which is why the
 	// test above recomputes the extent instead.
-	small := layout_paragraph(ctx, cps, .ltr, fs, 16.0)
-	large := layout_paragraph(ctx, cps, .ltr, fs, 32.0)
+	small := layout.layout_paragraph(ctx, cps, .ltr, fs, 16.0)
+	large := layout.layout_paragraph(ctx, cps, .ltr, fs, 32.0)
 	assert approx(large.ascent, small.ascent * 2.0, 1.5), '${small.ascent} at 16 and ${large.ascent} at 32 should be about double'
 	assert approx(large.descent, small.descent * 2.0, 1.5), '${small.descent} at 16 and ${large.descent} at 32 should be about double'
 }
@@ -1007,7 +1008,7 @@ fn test_line_extent_is_the_same_at_every_size() {
 // options at all, so a paragraph wrapped with liga on was measured without it and every width it reported
 // was of a line nobody would draw.
 fn test_wrapping_and_measuring_agree_about_features() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	fs := liga_fonts()
 	// An empty chain is not a line that measured to zero: it is this host not having the font the
 	// measurement was taken on, and saying so is the difference between a skip and a wrong answer.
@@ -1016,19 +1017,19 @@ fn test_wrapping_and_measuring_agree_about_features() {
 		return
 	}
 	cps := 'فارسی'.runes()
-	mut opts := LayoutOptions{}
+	mut opts := layout.LayoutOptions{}
 	opts.features = ['liga']
 
-	laid := layout_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
-	measured := measure_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
+	laid := layout.layout_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
+	measured := layout.measure_paragraph_with(ctx, cps, .rtl, fs, 32, &opts)
 	assert approx(measured.max_content_width, laid.width, 0.001), 'measured ${measured.max_content_width} against laid out ${laid.width}'
 
-	runs := wrap_paragraph_with(ctx, cps, .rtl, fs, 32, 10000.0, &opts)
+	runs := layout.wrap_paragraph_with(ctx, cps, .rtl, fs, 32, 10000.0, &opts)
 	assert runs.len == 1, 'the whole paragraph fits, got ${runs.len} lines'
 	assert approx(runs[0].line.width, laid.width, 0.001), 'wrapped ${runs[0].line.width} against laid out ${laid.width}'
 
 	// And the feature is doing something, or agreeing about it would be untested.
-	plain := measure_paragraph(ctx, cps, .rtl, fs, 32)
+	plain := layout.measure_paragraph(ctx, cps, .rtl, fs, 32)
 	assert laid.width < plain.max_content_width, 'liga should narrow this line: ${laid.width} against ${plain.max_content_width}'
 }
 
@@ -1041,12 +1042,12 @@ fn test_wrapping_and_measuring_agree_about_features() {
 // decomposed index as an original cluster puts the first Latin letter a whole word to the right,
 // drawn as "ello h" for "hello". Going through the origin mapping keeps them aligned.
 fn test_layout_keeps_a_latin_run_together_after_nfd_splits_a_character() {
-	ctx := new_context()
-	fs := new_font_set_of(amiri() or { return })
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(amiri() or { return })
 	// U+0622, space, "hello", space, U+0633 U+0644 U+0627 U+0645.
 	cps := [rune(0x0622), rune(0x0020), rune(0x0068), rune(0x0065), rune(0x006C), rune(0x006C),
 		rune(0x006F), rune(0x0020), rune(0x0633), rune(0x0644), rune(0x0627), rune(0x0645)]
-	line := layout_paragraph(ctx, cps, .auto, fs, 32.0)
+	line := layout.layout_paragraph(ctx, cps, .auto, fs, 32.0)
 	// Collect the Latin glyphs in visual (left-to-right) order. Their clusters must run 2,3,4,5,6:
 	// h first, then e, l, l, o. If NFD drift misaligns the lookup, the leftmost Latin glyph reports
 	// cluster 3 ('e') and 'h' appears a word to the right, which is the "ello h" failure.
@@ -1067,11 +1068,11 @@ fn test_layout_keeps_a_latin_run_together_after_nfd_splits_a_character() {
 // codepoint alone is not enough to route by: a combining mark is Inherited script, so the
 // joining pass stamps it with its base's, and this is where that stamp has to arrive.
 fn test_a_mark_through_a_script_set_comes_from_the_primary_font() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	primary := amiri() or { return }
 	general := nastaliq() or { return }
-	fs := new_script_font_set(primary, general)
-	line := layout_paragraph(ctx, [rune(0x0628), rune(0x064E)], .rtl, fs, 32.0)
+	fs := shape.new_script_font_set(primary, general)
+	line := layout.layout_paragraph(ctx, [rune(0x0628), rune(0x064E)], .rtl, fs, 32.0)
 	mut found := false
 	for g in line.glyphs {
 		if !g.is_mark {

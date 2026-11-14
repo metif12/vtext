@@ -23,6 +23,7 @@ module main
 
 import gg
 import os
+import vtext.shape
 
 fn main() {
 	if os.args.len < 2 {

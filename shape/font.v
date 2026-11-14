@@ -1,6 +1,5 @@
-module vtext
+module shape
 
-import vtext.shape
 import vtext.font
 import vtext.ucd
 
@@ -22,38 +21,10 @@ import vtext.ucd
 
 import os
 
-// Context holds the decoded Unicode tables the pipeline needs, and is built once per
-// text system. The tables are immutable, so a single Context can be shared between
-// threads and between faces.
-//
-// Building one costs a few hundred microseconds, which is a lot compared with
-// shaping a short string, so this is not something to do per call.
-pub struct Context {
-pub:
-	// properties holds the character properties: bidi class, joining type and group,
-	// combining class, script, grapheme class and line break class.
-	properties &ucd.Properties
-	// normalizer holds the canonical decomposition and composition tables of UAX#15.
-	normalizer &shape.Normalizer
-	// shaper holds the Arabic presentation forms, which the joining pass maps onto.
-	shaper &shape.Shaper
-}
-
-// new_context decodes every table. The caller owns the result and keeps it for the
-// lifetime of the text system.
-pub fn new_context() &Context {
-	tables := ucd.new_properties()
-	return &Context{
-		properties: tables
-		normalizer: shape.new_normalizer(*tables)
-		shaper:     shape.new_shaper()
-	}
-}
-
 // Font is a loaded font file. It is the entry point for metrics, glyph lookup
 // and rasterisation.
 pub struct Font {
-mut:
+pub mut:
 	face &font.Face
 	path string
 }

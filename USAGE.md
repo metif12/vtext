@@ -16,14 +16,15 @@ export VMODULES=$HOME/Projects
 ```
 
 ```v
-import vtext
+import vtext.layout
+import vtext.shape
 
 fn main() {
-	ctx := vtext.new_context()
-	fs := vtext.new_font_set()
-	fs.add(vtext.load_font_file('testdata/fonts/Amiri-Regular.ttf') or { panic(err) })
+	ctx := shape.new_context()
+	fs := shape.new_font_set()
+	fs.add(shape.load_font_file('testdata/fonts/Amiri-Regular.ttf') or { panic(err) })
 
-	line := vtext.layout_paragraph(ctx, 'Hello سلام'.runes(), .auto, fs, 32.0)
+	line := layout.layout_paragraph(ctx, 'Hello سلام'.runes(), .auto, fs, 32.0)
 	println('width: ${line.width} glyphs: ${line.glyphs.len}')
 	for g in line.glyphs {
 		font := g.font or { continue }
@@ -42,17 +43,17 @@ Wrapping, measuring and breaking are separate calls over the same pipeline:
 
 ```v
 // As many lines as fit 400 px, shaped once and cut out of one layout.
-for w in vtext.wrap_paragraph(ctx, text.runes(), .auto, fs, 32.0, 400.0) {
+for w in layout.wrap_paragraph(ctx, text.runes(), .auto, fs, 32.0, 400.0) {
 	draw(w.line) // glyphs, positioned, ready to draw
 	caret_at(w.from, w.to) // the input range this line holds
 }
 
 // The two widths a layout engine needs before it draws anything.
-m := vtext.measure_paragraph(ctx, text.runes(), .auto, fs, 32.0)
+m := layout.measure_paragraph(ctx, text.runes(), .auto, fs, 32.0)
 // m.min_content_width, m.max_content_width, m.ascent, m.descent, m.line_height
 
 // Break positions, for a caller that decides the width itself.
-for b in vtext.break_opportunities(ctx, text.runes(), true) {
+for b in layout.break_opportunities(ctx, text.runes(), true) {
 	// b.start is the input index; b.is_mandatory marks hard breaks
 }
 ```
@@ -63,12 +64,12 @@ the features was shaped without them, so the box and the line are sized with
 the same options or they disagree about the width of the same text:
 
 ```v
-mut opts := vtext.LayoutOptions{}
+mut opts := layout.LayoutOptions{}
 opts.features = ['liga']
 opts.line_height = 28.0
 opts.letter_spacing = 0.5
 opts.word_spacing = 2.0
-line := vtext.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
+line := layout.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 ```
 
 `README.md` documents the pipeline, the font fallback rules, kerning, marks
@@ -76,8 +77,8 @@ and every inspection API in full. This file does not repeat it.
 
 ## Parts
 
-The library is splitting into one module per job — `vtext.ucd` first, the
-rest to follow in dependency order (`layout` → `shape` → `font` → `ucd`) —
+The library is split into one module per job — `vtext.ucd` first, then `vtext.font`,
+`vtext.shape` and `vtext.layout` in dependency order (`layout` → `shape` → `font` → `ucd`) —
 so a caller that only needs tables does not pull in shaping, and a caller
 that only shapes does not pull in rasterization. `ROADMAP.md` Phase 6 tracks
 the order; `GOAL.md` says what each part replaces.
@@ -88,12 +89,13 @@ split is verified the same way: full suite green, fmt gate green, every
 consumer green:
 
 ```v
+import vtext.shape
 import vtext.ucd
 
 // The decoded tables live one per text system, next to the shaper that uses
 // them, which is why they are built with the context rather than read off a
 // global.
-ctx := vtext.new_context()
+ctx := shape.new_context()
 props := ctx.properties // &ucd.Properties, shared between threads and faces
 _ = props.line_break_of(`A`)
 ```

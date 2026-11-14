@@ -2,6 +2,7 @@ module main
 
 import os
 import vtext
+import vtext.shape
 
 // Rasterization at quarter-pixel offsets.
 //
@@ -37,13 +38,13 @@ fn face_path(base string) string {
 	return ''
 }
 
-fn load_any() !&vtext.Font {
+fn load_any() !&shape.Font {
 	for base in ['segoeui.ttf', 'arial.ttf', 'DejaVuSans.ttf', 'Helvetica.ttc'] {
 		p := face_path(base)
 		if p == '' {
 			continue
 		}
-		if f := vtext.load_font_file(p) {
+		if f := shape.load_font_file(p) {
 			return f
 		}
 	}

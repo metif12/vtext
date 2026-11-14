@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.layout
 import vtext.shape
 import vtext.font
 // Tests for the GSUB parser and the positional substitution built on it.
@@ -69,12 +70,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn gsub_font(name string) ?&Font {
+fn gsub_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // amiri is the corpus font these tests read.
@@ -82,13 +83,13 @@ fn gsub_font(name string) ?&Font {
 // It carries a GSUB table with the arab script and fina, init and medi features with lookups behind them,
 // a ccmp with ligature rules in it, and no isol feature at all, which is exactly the shape several
 // assertions below ask of Majalla and Dubai.
-fn amiri() ?&Font {
+fn amiri() ?&shape.Font {
 	return gsub_font('Amiri-Regular.ttf')
 }
 
 // nastaliq is the corpus font with no Latin and no presentation forms, for the chain that has to be walked
 // by a font that cannot answer for the character either side of a seam.
-fn nastaliq() ?&Font {
+fn nastaliq() ?&shape.Font {
 	return gsub_font('NotoNastaliqUrdu-Regular.ttf')
 }
 
@@ -145,7 +146,7 @@ const test_shadda = rune(0x0651)
 //
 // The test files are compiled one at a time, so a helper has to live in the file that uses it
 // rather than in a shared one.
-fn glyph_at_cluster(glyphs []Glyph, cluster int) ?Glyph {
+fn glyph_at_cluster(glyphs []shape.Glyph, cluster int) ?shape.Glyph {
 	for g in glyphs {
 		if g.cluster == cluster {
 			return g
@@ -155,8 +156,8 @@ fn glyph_at_cluster(glyphs []Glyph, cluster int) ?Glyph {
 }
 
 // fs_of is the common case of a chain holding exactly the one font under test.
-fn fs_of(f &Font) &FontSet {
-	fs := new_font_set()
+fn fs_of(f &shape.Font) &shape.FontSet {
+	fs := shape.new_font_set()
 	fs.add(f)
 	return fs
 }
@@ -166,11 +167,11 @@ fn fs_of(f &Font) &FontSet {
 // test makes: canonical ordering puts the fathatan first, because its combining class is lower
 // than the shadda's, and the rule is written in that order.
 fn test_ligature_fuses_two_marks_into_one() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	arial := gsub_font('arial.ttf') or { return }
-	fs := new_font_set_of(arial)
+	fs := shape.new_font_set_of(arial)
 	// beh, fathatan, shadda: three characters in, and the two marks become one glyph.
-	line := layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs, 32)
+	line := layout.layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs, 32)
 	assert line.glyphs.len == 2, 'the two marks should fuse into one glyph, got ${line.glyphs.len}'
 
 	letter := glyph_at_cluster(line.glyphs, 0) or { panic('no letter glyph') }
@@ -188,9 +189,9 @@ fn test_ligature_fuses_two_marks_into_one() {
 // A ligature has to keep the first character's position, or a ligated stretch of text can no
 // longer be traced back to the character a caret belongs to.
 fn test_ligature_keeps_the_first_characters_cluster() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	arial := gsub_font('arial.ttf') or { return }
-	line := layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs_of(arial), 32)
+	line := layout.layout_paragraph(ctx, [test_beh, fathatan, test_shadda], .rtl, fs_of(arial), 32)
 	// The fused mark stands for two characters and reports the earlier one, which is what lets
 	// the rest of the pipeline walk the input without losing track.
 	fused := glyph_at_cluster(line.glyphs, 1) or { panic('no fused mark glyph') }
@@ -203,10 +204,10 @@ fn test_ligature_keeps_the_first_characters_cluster() {
 // A fatha and a shadda are not the pair this font fuses, so the run has to come through
 // untouched. Applying a rule that does not match would be worse than not looking.
 fn test_ligature_leaves_a_pair_the_font_does_not_fuse() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	arial := amiri() or { return }
 	// A fatha and a sukun: no rule in the font joins them.
-	line := layout_paragraph(ctx, [test_beh, test_fatha, sukun], .rtl, fs_of(arial), 32)
+	line := layout.layout_paragraph(ctx, [test_beh, test_fatha, sukun], .rtl, fs_of(arial), 32)
 	assert line.glyphs.len == 3, 'three characters should give three glyphs'
 	for i in 0 .. 3 {
 		g := glyph_at_cluster(line.glyphs, i) or { panic('no glyph at ${i}') }
@@ -266,11 +267,11 @@ fn test_ligature_does_not_straddle_two_fonts() {
 	// one script throughout.
 	arabic := amiri() or { return }
 	latin := nastaliq() or { return }
-	fs := new_font_set()
+	fs := shape.new_font_set()
 	fs.add(arabic)
 	fs.add(latin)
-	ctx := new_context()
-	line := layout_paragraph(ctx, [test_beh, test_beh, test_beh], .rtl, fs, 32)
+	ctx := shape.new_context()
+	line := layout.layout_paragraph(ctx, [test_beh, test_beh, test_beh], .rtl, fs, 32)
 	assert line.glyphs.len == 3, 'every character should still be drawn'
 	for i in 0 .. 3 {
 		g := glyph_at_cluster(line.glyphs, i) or { panic('no glyph at ${i}') }
@@ -737,7 +738,7 @@ fn test_a_lookup_that_ignores_marks_cannot_see_them() {
 fn test_discretionary_features_are_off_unless_asked_for() {
 	f := gsub_font('tahoma.ttf') or { return }
 	fs := fs_of(f)
-	ctx := new_context()
+	ctx := shape.new_context()
 	f_gid := f.glyph_index(`f`)
 	i_gid := f.glyph_index(`i`)
 	assert f_gid != 0 && i_gid != 0, 'the letters have to be in the font for this to mean anything'
@@ -751,21 +752,21 @@ fn test_discretionary_features_are_off_unless_asked_for() {
 	}
 	assert has_rule, 'Tahoma should have a dlig rule joining f and i'
 	// The default line is the two letters.
-	plain := layout_paragraph(ctx, [`f`, `i`], .ltr, fs, 32)
+	plain := layout.layout_paragraph(ctx, [`f`, `i`], .ltr, fs, 32)
 	assert plain.glyphs.len == 2, 'without the feature the two letters stay two glyphs'
 	assert plain.glyphs[0].gid == f_gid && plain.glyphs[1].gid == i_gid, 'and they are the letters'
 	// Asked for, they become one glyph, and it is a third one rather than either of the letters.
-	opt := &LayoutOptions{
+	opt := &layout.LayoutOptions{
 		features: ['dlig']
 	}
-	fused := layout_paragraph_with(ctx, [`f`, `i`], .ltr, fs, 32, opt)
+	fused := layout.layout_paragraph_with(ctx, [`f`, `i`], .ltr, fs, 32, opt)
 	assert fused.glyphs.len == 1, 'with the feature the pair should be one glyph, got ${fused.glyphs.len}'
 	assert fused.glyphs[0].gid != f_gid && fused.glyphs[0].gid != i_gid, 'the fused glyph is one of its own'
 	// And asking for a feature the font has no rule for changes nothing, rather than failing.
-	nothing := &LayoutOptions{
+	nothing := &layout.LayoutOptions{
 		features: ['zzzz']
 	}
-	unchanged := layout_paragraph_with(ctx, [`f`, `i`], .ltr, fs, 32, nothing)
+	unchanged := layout.layout_paragraph_with(ctx, [`f`, `i`], .ltr, fs, 32, nothing)
 	assert unchanged.glyphs.len == 2, 'an unknown feature leaves the line alone'
 }
 
@@ -779,18 +780,18 @@ fn test_a_character_keeps_every_glyph_made_of_it() {
 	// The list is built by appending rather than written as a literal. A multi-line struct array
 	// literal is accepted by this compiler and evaluates to an empty slice, which would make this
 	// test pass for the wrong reason if it asserted nothing about the input.
-	mut placed := []Glyph{}
-	placed << Glyph{
+	mut placed := []shape.Glyph{}
+	placed << shape.Glyph{
 		gid:     10
 		cluster: 0
 		advance: 5
 	}
-	placed << Glyph{
+	placed << shape.Glyph{
 		gid:     11
 		cluster: 0
 		advance: 0
 	}
-	placed << Glyph{
+	placed << shape.Glyph{
 		gid:     12
 		cluster: 1
 		advance: 7
@@ -802,7 +803,7 @@ fn test_a_character_keeps_every_glyph_made_of_it() {
 		visual_order:    [0, 1]
 		paragraph_level: 0
 	}
-	line := place_glyphs(placed, bidi, [0, 1])
+	line := layout.place_glyphs(placed, bidi, [0, 1])
 	assert line.len == 3, 'all three glyphs should be drawn, got ${line.len}'
 	assert line[0].gid == 10 && line[1].gid == 11, 'both glyphs of character zero, in order'
 	assert line[2].gid == 12, 'and then the next character'
@@ -1389,7 +1390,7 @@ fn changed_by(g &font.Gsub, items []font.Ligatable, feature string) ?font.Lookup
 // run_in_logical_order rebuilds the substitution input from a laid out line, which comes back in
 // visual order. A lookup asked to match a run that has been reversed finds nothing, for the same
 // reason a rule written against the logical order does not match a reversed one.
-fn run_in_logical_order(line Line) []font.Ligatable {
+fn run_in_logical_order(line layout.Line) []font.Ligatable {
 	mut items := []font.Ligatable{}
 	for i in 0 .. line.glyphs.len {
 		g := glyph_at_cluster(line.glyphs, i) or { continue }
@@ -1417,13 +1418,13 @@ fn test_a_chaining_context_substitutes_on_real_text() {
 	}
 	assert chains > 0, 'Majalla should have chaining context rules under calt'
 	fs := fs_of(majalla)
-	ctx := new_context()
+	ctx := shape.new_context()
 	text := [calt_beh, calt_noon, calt_noon]
-	plain := layout_paragraph(ctx, text, .rtl, fs, 32)
-	opt := &LayoutOptions{
+	plain := layout.layout_paragraph(ctx, text, .rtl, fs, 32)
+	opt := &layout.LayoutOptions{
 		features: ['calt']
 	}
-	composed := layout_paragraph_with(ctx, text, .rtl, fs, 32, opt)
+	composed := layout.layout_paragraph_with(ctx, text, .rtl, fs, 32, opt)
 	assert plain.glyphs.len == 3 && composed.glyphs.len == 3, 'the feature rewrites rather than fusing here'
 	// The middle letter is the one that changed, and the two ends are untouched.
 	first := glyph_at_cluster(plain.glyphs, 1) or { panic('no middle glyph') }
@@ -1446,13 +1447,13 @@ fn test_a_chaining_context_expands_one_character_into_several_on_real_text() {
 	at := gsub_font('ARABTYPE.TTF') or { return }
 	g := at.face.gsub or { panic('no gsub') }
 	fs := fs_of(at)
-	ctx := new_context()
+	ctx := shape.new_context()
 	text := [calt_sin, calt_fah, calt_fah]
-	plain := layout_paragraph(ctx, text, .rtl, fs, 32)
-	opt := &LayoutOptions{
+	plain := layout.layout_paragraph(ctx, text, .rtl, fs, 32)
+	opt := &layout.LayoutOptions{
 		features: ['calt']
 	}
-	composed := layout_paragraph_with(ctx, text, .rtl, fs, 32, opt)
+	composed := layout.layout_paragraph_with(ctx, text, .rtl, fs, 32, opt)
 	assert plain.glyphs.len == 3, 'three characters should start as three glyphs, got ${plain.glyphs.len}'
 	assert composed.glyphs.len > plain.glyphs.len, 'the composition should produce more glyphs than it started with, got ${composed.glyphs.len}'
 	// Every character of the line is still drawn, and at least one of them is now drawn by more
@@ -1492,12 +1493,12 @@ fn test_a_plain_ligature_still_fuses_a_pair_on_real_text() {
 	// most obviously wanted.
 	at := gsub_font('ARABTYPE.TTF') or { return }
 	fs := fs_of(at)
-	ctx := new_context()
-	plain := layout_paragraph(ctx, [calt_meem, calt_meem], .rtl, fs, 32)
-	opt := &LayoutOptions{
+	ctx := shape.new_context()
+	plain := layout.layout_paragraph(ctx, [calt_meem, calt_meem], .rtl, fs, 32)
+	opt := &layout.LayoutOptions{
 		features: ['liga']
 	}
-	fused := layout_paragraph_with(ctx, [calt_meem, calt_meem], .rtl, fs, 32, opt)
+	fused := layout.layout_paragraph_with(ctx, [calt_meem, calt_meem], .rtl, fs, 32, opt)
 	assert plain.glyphs.len == 2, 'the pair should start as two glyphs'
 	assert fused.glyphs.len == 1, 'the pair should fuse into one glyph, got ${fused.glyphs.len}'
 	// The fused glyph belongs to the first character, which is what keeps it traceable to the
@@ -1519,14 +1520,14 @@ fn test_a_plain_ligature_still_fuses_a_pair_on_real_text() {
 fn test_a_ligature_still_fuses_at_the_end_of_a_long_run() {
 	at := gsub_font('ARABTYPE.TTF') or { return }
 	fs := fs_of(at)
-	ctx := new_context()
-	opt := &LayoutOptions{
+	ctx := shape.new_context()
+	opt := &layout.LayoutOptions{
 		features: ['liga']
 	}
 
 	// The pair alone, then the same pair behind a run of filler long enough that a quadratic copy of
 	// the tail would show up as a difference in the answer if the bound were wrong.
-	alone := layout_paragraph_with(ctx, [calt_meem, calt_meem], .rtl, fs, 32, opt)
+	alone := layout.layout_paragraph_with(ctx, [calt_meem, calt_meem], .rtl, fs, 32, opt)
 	assert alone.glyphs.len == 1, 'the pair fuses on its own, got ${alone.glyphs.len}'
 
 	mut filler := []rune{cap: 400}
@@ -1538,10 +1539,10 @@ fn test_a_ligature_still_fuses_at_the_end_of_a_long_run() {
 
 	// The same run without the feature, as the control: it has to come out one glyph longer, or the
 	// difference below would be the filler's doing rather than the ligature's.
-	plain := layout_paragraph(ctx, filler, .rtl, fs, 32)
+	plain := layout.layout_paragraph(ctx, filler, .rtl, fs, 32)
 	assert plain.glyphs.len == 400, 'the run should be one glyph per character to begin with, got ${plain.glyphs.len}'
 
-	buried := layout_paragraph_with(ctx, filler, .rtl, fs, 32, opt)
+	buried := layout.layout_paragraph_with(ctx, filler, .rtl, fs, 32, opt)
 	assert buried.glyphs.len == 399, 'the pair at the end should fuse, got ${buried.glyphs.len} glyphs for 400 characters'
 
 	// Exactly which clusters survive is the sharper half of the assertion. A bound that truncated a

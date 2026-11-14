@@ -84,12 +84,12 @@ fn skip_missing(name string) {
 // sp2_font is the real font the extension length is checked against. Amiri is asked for because it wraps
 // every one of its 30 single-position lookups in an extension, which is the shape the length has to be
 // carried through.
-fn sp2_font() ?&Font {
+fn sp2_font() ?&shape.Font {
 	p := corpus_font_path('Amiri-Regular.ttf') or {
 		skip_missing('Amiri-Regular.ttf')
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // single_pos_format2_bytes builds a format 2 subtable over three glyphs.

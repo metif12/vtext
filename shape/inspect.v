@@ -1,4 +1,4 @@
-module vtext
+module shape
 
 import vtext.font
 
@@ -330,7 +330,7 @@ pub fn (f &Font) variable_axes() []font.VariableAxis {
 //
 // The list is sorted into a copy rather than in place. The caller's list belongs to the caller, and a
 // report function that reordered what it was handed would be a surprise with a number in it.
-fn sort_table_info(list []TableInfo) []TableInfo {
+pub fn sort_table_info(list []TableInfo) []TableInfo {
 	mut out := list.clone()
 	for i in 1 .. out.len {
 		mut k := i
@@ -343,7 +343,7 @@ fn sort_table_info(list []TableInfo) []TableInfo {
 }
 
 // sort_tags orders a list of tags, for the same reason sort_table_info orders a table list.
-fn sort_tags(list []string) []string {
+pub fn sort_tags(list []string) []string {
 	mut out := list.clone()
 	for i in 1 .. out.len {
 		mut k := i

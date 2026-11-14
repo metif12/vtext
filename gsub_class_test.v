@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // Class and glyph based contextual substitution: type 5 formats 2 and 3, type 6 formats 1 and 2.
 //
@@ -59,12 +60,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn class_font(name string) ?&Font {
+fn class_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // bytes_of turns a list of sixteen bit words into the bytes a font stores, in the

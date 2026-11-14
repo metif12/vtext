@@ -1,4 +1,4 @@
-module vtext
+module layout
 
 import vtext.shape
 import vtext.font
@@ -21,7 +21,7 @@ pub mut:
 	// glyphs are the drawable glyphs in visual order, left to right. A combining mark
 	// shares the x of the letter it sits on, so a mark and its base are both present and
 	// both at the same place.
-	glyphs []Glyph
+	glyphs []shape.Glyph
 	// width is the total advance of the line in pixels, marks included, which for a mark is
 	// nothing.
 	width f64
@@ -94,13 +94,13 @@ pub mut:
 // line of unknown language.
 //
 // No discretionary features are applied. Use layout_paragraph_with to ask for any.
-pub fn layout_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet,
+pub fn layout_paragraph(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet,
 	em_px f64) Line {
 	return layout_paragraph_with(ctx, cps, base_dir, fs, em_px, &LayoutOptions{})
 }
 
 // layout_paragraph_with is layout_paragraph with the caller's options applied.
-pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet,
+pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet,
 	em_px f64, options &LayoutOptions) Line {
 	// Joining keys on joining types, and a precomposed character is a different codepoint
 	// with a different one, so the text has to be decomposed before it is shaped. The
@@ -118,7 +118,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction,
 	// Shape each isolating run sequence on its own, then look the shaped codepoints up. The
 	// result is in logical order still, tagged with the input character each glyph came
 	// from, because that tag is the only thing that survives reordering.
-	mut placed := []Glyph{cap: decomposed.len}
+	mut placed := []shape.Glyph{cap: decomposed.len}
 	for seq in bidi.sequences {
 		// The bidi pass takes X9-shape.removed characters out of its sequences, and a zero
 		// width non-joiner is one of them — its bidi class is BN. But joining has to
@@ -146,7 +146,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction,
 			sub_idx << i
 		}
 		shaped := ctx.shaper.shape_arabic(ctx.properties, sub)
-		mut run := []Glyph{}
+		mut run := []shape.Glyph{}
 		// The script of the first letter in the run, which is what the font resolves its
 		// ligature features under. A run of one script has one, and a run is never mixed, since
 		// the bidi pass already split the text at every direction change.
@@ -210,7 +210,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction,
 //
 // It runs on the shaped run before place_glyphs, and it edits advance rather than x. See the comment at
 // the call site for why the order and the choice of field are the two that matter.
-fn apply_spacing(mut glyphs []Glyph, props &ucd.Properties, cps []rune, letter_spacing f64,
+pub fn apply_spacing(mut glyphs []shape.Glyph, props &ucd.Properties, cps []rune, letter_spacing f64,
 	word_spacing f64) {
 	if letter_spacing == 0.0 && word_spacing == 0.0 {
 		return
@@ -235,7 +235,7 @@ fn apply_spacing(mut glyphs []Glyph, props &ucd.Properties, cps []rune, letter_s
 // pick_in uses the pipeline's script table: one answer to "which characters are spaces" is worth more
 // than two that can drift. The cluster is an index into the caller's own text, not into the
 // decomposed one, because layout mapped it back through the decomposition when it set it.
-fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
+pub fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
 	if i < 0 || i >= cps.len {
 		return false
 	}
@@ -249,12 +249,12 @@ fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
 // letters a ligature would have fused are drawn apart. That is the honest answer for a line whose
 // characters came from different fonts: there is no single glyph to draw them as, and a mark
 // composition that needs the letter before it is out of reach for the same reason.
-fn substitute_in_fonts(glyphs []Glyph, em_px f64, script string, features []string,
-	rtl bool) []Glyph {
+pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, features []string,
+	rtl bool) []shape.Glyph {
 	if glyphs.len == 0 {
 		return glyphs
 	}
-	mut out := []Glyph{cap: glyphs.len}
+	mut out := []shape.Glyph{cap: glyphs.len}
 	mut at := 0
 	for at < glyphs.len {
 		f := glyphs[at].font or {
@@ -289,7 +289,7 @@ fn substitute_in_fonts(glyphs []Glyph, em_px f64, script string, features []stri
 // The kern folds into the advance of the visually first glyph of the pair — the first
 // logical glyph going left to right, the second going right to left — which is where
 // HarfBuzz reports it: AV tightens A's advance, and e-f in an RTL run tightens f's.
-fn kern_pairs(mut glyphs []Glyph, em_px f64, script string, rtl bool) {
+pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool) {
 	if glyphs.len < 2 {
 		return
 	}
@@ -330,8 +330,8 @@ fn kern_pairs(mut glyphs []Glyph, em_px f64, script string, rtl bool) {
 // permutation is walked and each character is asked for its glyph, which draws out exactly
 // one glyph per character that has one and passes over the ones a glyph already drawn
 // stands for.
-fn place_glyphs(placed []Glyph, bidi shape.BidiResult, origin []int) []Glyph {
-	mut out := []Glyph{cap: placed.len}
+pub fn place_glyphs(placed []shape.Glyph, bidi shape.BidiResult, origin []int) []shape.Glyph {
+	mut out := []shape.Glyph{cap: placed.len}
 	mut by_cluster := map[int][]int{}
 	for i, g in placed {
 		// A character can own more than one glyph, which is what a substitution that splits one
@@ -390,7 +390,7 @@ fn place_glyphs(placed []Glyph, bidi shape.BidiResult, origin []int) []Glyph {
 // refuses the pair outright: "cannot use `vtext.Line` as `&&vtext.Line`". A value
 // receiver is what the rest of this file already uses (`fn (mut lx Lexer) next`) and it
 // does propagate the mutation to the caller's `mut` local.
-fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {
+pub fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {
 	mut natural := f64(0)
 	for g in line.glyphs {
 		line.width = larger(line.width, g.x + g.advance)
@@ -436,7 +436,7 @@ fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {
 // ascending input position. The code sorts descending and always did, so the first copy described the
 // opposite of what happened and the second copy described it correctly; two comments, one of them
 // wrong, is worse than one.
-fn mark_indices_by_cluster(glyphs []Glyph) []int {
+pub fn mark_indices_by_cluster(glyphs []shape.Glyph) []int {
 	mut marks := []int{}
 	for i in 0 .. glyphs.len {
 		if glyphs[i].is_mark {
@@ -457,7 +457,7 @@ fn mark_indices_by_cluster(glyphs []Glyph) []int {
 }
 
 // larger is the larger of two pixel measurements.
-fn larger(a f64, b f64) f64 {
+pub fn larger(a f64, b f64) f64 {
 	return if a > b { a } else { b }
 }
 
@@ -478,7 +478,7 @@ fn larger(a f64, b f64) f64 {
 // carrying a stray vowel, is left at the pen position.
 // A `mut` value receiver for the reason given on measure_line: `mut line &Line` as a
 // parameter is a pair V 0.5.2 will not accept at a `position_marks(mut line, ...)` call.
-fn position_marks(mut line Line, em_px f64, ctx &Context) {
+pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context) {
 	// Two passes, and the order matters. The line is in visual order, and in a right-to-left
 	// line a mark comes before the letter it belongs to, so collecting the letters and then
 	// placing the marks in one pass would find the mark's base already behind it. Collecting
@@ -615,7 +615,7 @@ fn position_marks(mut line Line, em_px f64, ctx &Context) {
 // reads. base_gid is only ever set on the Arabic presentation-form path, so 'arab' is
 // that path's own script rather than a guess; a font with no such rule answers the
 // base glyph and the last step behaves as before.
-fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph, script string) ?font.Offset2 {
+pub fn shaped_mark_offset(f &shape.Font, mark_gid u16, base shape.Glyph, script string) ?font.Offset2 {
 	if off := f.mark_offset_in(mark_gid, base.gid, false, script) {
 		return off
 	}
@@ -636,7 +636,7 @@ fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph, script string) ?font.Of
 // inherited script and answers nothing; the base letter's codepoint is what the font
 // wrote its anchors against. An unresolvable base keeps 'arab', which is what every
 // mark used before scripts were asked, so nothing that placed before moves.
-fn mark_script(props &ucd.Properties, f &Font, base Glyph) string {
+pub fn mark_script(props &ucd.Properties, f &shape.Font, base shape.Glyph) string {
 	gid := if base.base_gid != 0 { base.base_gid } else { base.gid }
 	if cp := f.codepoint_for(gid) {
 		tag := props.script_tag_of(cp)
@@ -652,8 +652,8 @@ fn mark_script(props &ucd.Properties, f &Font, base Glyph) string {
 //
 // A mark occupies the same place as the letter it belongs to, so whichever is painted second
 // ends up on top. The mark has to be that one, otherwise the letter hides its own accents.
-pub fn (l &Line) draw_order() []Glyph {
-	mut out := []Glyph{cap: l.glyphs.len}
+pub fn (l &Line) draw_order() []shape.Glyph {
+	mut out := []shape.Glyph{cap: l.glyphs.len}
 	for g in l.glyphs {
 		if !g.is_mark {
 			out << g

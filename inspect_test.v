@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.shape
+import vtext.layout
 import vtext.ucd
 
 // Tests for the inspection API in inspect.v.
@@ -74,12 +76,12 @@ fn skip_missing(name string) {
 	println(line)
 }
 
-fn inspect_font(name string) ?&Font {
+fn inspect_font(name string) ?&shape.Font {
 	p := corpus_font_path(name) or {
 		skip_missing(name)
 		return none
 	}
-	return load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
 }
 
 // inspect_font_path is the same font as a path, for the test that strips a table out of the file.
@@ -226,8 +228,8 @@ fn test_glyph_class_counts_come_from_gdef() {
 	assert counts[3] > 300, 'Segoe UI has marks, got ${counts[3]}'
 	assert counts[4] == 0, 'Segoe UI has no components'
 	assert counts[0] == 0, 'GDEF classifies every glyph in Segoe UI'
-	assert glyph_class_names[3] == 'mark', 'class 3 is a mark'
-	assert glyph_class_names[1] == 'base', 'class 1 is a base'
+	assert shape.glyph_class_names[3] == 'mark', 'class 3 is a mark'
+	assert shape.glyph_class_names[1] == 'base', 'class 1 is a base'
 }
 
 fn test_glyph_class_counts_without_gdef_are_all_unclassified() {
@@ -239,7 +241,7 @@ fn test_glyph_class_counts_without_gdef_are_all_unclassified() {
 	seg := inspect_font_path('segoeui.ttf') or { return }
 	data := os.read_bytes(seg) or { panic(err) }
 	stripped := remove_table(data, 'GDEF')
-	f := load_font_bytes(stripped) or { panic(err) }
+	f := shape.load_font_bytes(stripped) or { panic(err) }
 
 	counts := f.glyph_class_counts()
 	assert !f.has_table('GDEF'), 'the stripped font should have no GDEF'
@@ -282,7 +284,7 @@ fn remove_table(data []u8, tag string) []u8 {
 }
 
 fn test_script_font_set_picks_the_face_its_script_was_given_for() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	segoe := inspect_font('NotoNaskhArabic-Regular.ttf') or { return }
 	trado := inspect_font('Amiri-Regular.ttf') or { return }
 
@@ -294,7 +296,7 @@ fn test_script_font_set_picks_the_face_its_script_was_given_for() {
 	assert segoe.has_glyph(rune(0x41)), 'Segoe UI covers A'
 	assert trado.has_glyph(rune(0x41)), 'Traditional Arabic covers A too'
 
-	fs := new_script_font_set(trado, segoe)
+	fs := shape.new_script_font_set(trado, segoe)
 
 	// The point of the type: the specialised font wins inside its script and the general font covers
 	// everything else. Measured by asking the set, not by looking at a line.
@@ -306,18 +308,18 @@ fn test_script_font_set_picks_the_face_its_script_was_given_for() {
 
 	// And the whole point of the bug this was written for: the same set in the old order would have
 	// picked Segoe for beh, because Segoe is first and Segoe covers beh.
-	flat := new_font_set_of(segoe, trado)
+	flat := shape.new_font_set_of(segoe, trado)
 	flat_arabic := flat.pick(rune(0x0628)) or { panic('beh should resolve') }
 	assert flat_arabic == segoe, 'a flat chain latin-first really does pick the Latin font'
 	assert flat_arabic != arabic, 'which is the difference this type exists to express'
 }
 
 fn test_script_font_set_falls_back_for_what_its_primary_lacks() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	segoe := inspect_font('NotoNaskhArabic-Regular.ttf') or { return }
 	trado := inspect_font('Amiri-Regular.ttf') or { return }
 
-	fs := new_script_font_set(trado, segoe)
+	fs := shape.new_script_font_set(trado, segoe)
 
 	// A character the Arabic font has no glyph for still has to come from somewhere, and it must come
 	// from the general font rather than from .notdef. Arabic Presentation Forms are the case that
@@ -332,18 +334,18 @@ fn test_script_font_set_falls_back_for_what_its_primary_lacks() {
 	// different storage for the same promise.
 	uncovered := fs.pick_in(ctx, rune(0x10FFFF)) or { panic('a miss should still name a font') }
 	assert uncovered == segoe, 'a per-script set falls back the way a flat chain does'
-	flat_miss := new_font_set_of(segoe, trado).pick(rune(0x10FFFF)) or { panic('a miss names a font') }
+	flat_miss := shape.new_font_set_of(segoe, trado).pick(rune(0x10FFFF)) or { panic('a miss names a font') }
 	assert flat_miss == segoe, 'and the flat chain says the same'
 }
 
 fn test_a_flat_font_set_ignores_the_context_entirely() {
-	ctx := new_context()
+	ctx := shape.new_context()
 	segoe := inspect_font('NotoNaskhArabic-Regular.ttf') or { return }
 	trado := inspect_font('Amiri-Regular.ttf') or { return }
 
 	// The property that lets a caller swap one set for the other without touching anything else: with no
 	// primary and no general, pick_in is exactly pick.
-	fs := new_font_set_of(segoe, trado)
+	fs := shape.new_font_set_of(segoe, trado)
 	for cp, expected in {
 		rune(0x0628): segoe
 		rune(0x41):   segoe
@@ -453,12 +455,12 @@ fn inspect_runes(fields []string) []rune {
 	return out
 }
 
-fn test_break_opportunity_fields_are_readable_from_outside() { // BreakOpportunity is public because break_opportunities is, and a public function returning a
+fn test_break_opportunity_fields_are_readable_from_outside() { // layout.BreakOpportunity is public because break_opportunities is, and a public function returning a
 	// private struct leaves its caller able to count the results and nothing else.
-	ctx := new_context()
-	mut out := []BreakOpportunity{}
+	ctx := shape.new_context()
+	mut out := []layout.BreakOpportunity{}
 
-	for op in break_opportunities(ctx, inspect_runes(['61', '20', '62']), false) {
+	for op in layout.break_opportunities(ctx, inspect_runes(['61', '20', '62']), false) {
 		out << op
 	}
 	assert out.len > 0, 'there should be breaks in "a b"'
@@ -473,7 +475,7 @@ fn test_break_opportunity_fields_are_readable_from_outside() { // BreakOpportuni
 	// line. A caller splitting an already-shaped line filters on the cluster instead, which is the rule
 	// slice_for_range uses.
 	mut saw_space := false
-	for op in break_opportunities(ctx, inspect_runes(['61', '20', '62']), false) {
+	for op in layout.break_opportunities(ctx, inspect_runes(['61', '20', '62']), false) {
 		assert op.start >= 0, 'a break starts somewhere'
 		if op.start == 2 {
 			saw_space = true
@@ -484,7 +486,7 @@ fn test_break_opportunity_fields_are_readable_from_outside() { // BreakOpportuni
 }
 
 fn test_mandatory_breaks_are_marked() {
-	ctx := new_context()
+	ctx := shape.new_context()
 
 	// A newline requires a break and a caller may not skip it the way it skips the others. The flag is
 	// the only way to tell the two apart from outside the module, which is why it became public.
@@ -501,7 +503,7 @@ fn test_mandatory_breaks_are_marked() {
 	// is a break that must not happen.
 	mut mandatory_at := -1
 	mut other := []int{}
-	for op in break_opportunities(ctx, inspect_runes(['61', '0A', '62']), true) {
+	for op in layout.break_opportunities(ctx, inspect_runes(['61', '0A', '62']), true) {
 		if op.is_mandatory {
 			mandatory_at = op.start
 		} else {
@@ -515,7 +517,7 @@ fn test_mandatory_breaks_are_marked() {
 	// A space is a break a caller may take or leave. Reporting it as mandatory would make a caller treat
 	// every space as a paragraph end.
 	mut space_mandatory := false
-	for op in break_opportunities(ctx, inspect_runes(['61', '20', '62']), true) {
+	for op in layout.break_opportunities(ctx, inspect_runes(['61', '20', '62']), true) {
 		if op.start == 2 {
 			space_mandatory = op.is_mandatory
 		}
@@ -556,17 +558,17 @@ fn fake_sfnt(tags []string) []u8 {
 }
 
 fn test_outlines_names_cff2_where_no_corpus_font_can() {
-	cff := load_font_bytes(fake_sfnt(['CFF '])) or {
+	cff := shape.load_font_bytes(fake_sfnt(['CFF '])) or {
 		panic('a one-table CFF sfnt did not load: ${err}')
 	}
 	assert cff.outlines() == 'CFF ', 'expected CFF outlines, got ${cff.outlines()}'
 
-	cff2 := load_font_bytes(fake_sfnt(['CFF2'])) or {
+	cff2 := shape.load_font_bytes(fake_sfnt(['CFF2'])) or {
 		panic('a one-table CFF2 sfnt did not load: ${err}')
 	}
 	assert cff2.outlines() == 'CFF2', 'expected CFF2 outlines, got ${cff2.outlines()}'
 
-	neither := load_font_bytes(fake_sfnt(['head'])) or {
+	neither := shape.load_font_bytes(fake_sfnt(['head'])) or {
 		panic('a one-table head-only sfnt did not load: ${err}')
 	}
 	assert neither.outlines() == '', 'a font with neither outline table reports none, got ${neither.outlines()}'
