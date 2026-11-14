@@ -53,10 +53,24 @@ pub mut:
 	weight     int
 	width      int
 	// name table, filled in lazily.
-	family_name    string
-	style_name     string
-	advances       []u16
-	lsbs           []i16
+	family_name string
+	style_name  string
+	advances    []u16
+	lsbs        []i16
+	// Vertical metrics from vhea/vmtx, read the same way as the horizontal ones:
+	// advances and top side bearings per glyph, sharing the monospaced-tail rule.
+	v_advances []u16
+	v_tsbs     []i16
+	// The vertical em box from vhea. Zero when the font has no vhea, which is
+	// how has_vertical_metrics knows there is nothing vertical to report.
+	v_ascender  f64
+	v_descender f64
+	v_line_gap  f64
+	// vorg_default_y is the vertical origin when VORG names none explicitly for
+	// a glyph, and vorg_y holds the ones it does name. With no VORG table the
+	// default is the top of the vertical em box.
+	vorg_default_y int
+	vorg_y         map[u16]int
 	stb_ok         bool
 	units_per_em_f f64
 }
@@ -97,6 +111,9 @@ pub fn new_face(data []u8) !&Face {
 	face.read_head()
 	face.read_hhea_maxp()
 	face.read_hmtx()
+	face.read_vhea()
+	face.read_vmtx()
+	face.read_vorg()
 	face.read_os2()
 	face.read_post()
 	face.cmaps = parse_cmap(sfnt.table_data(tag_cmap))
@@ -186,6 +203,77 @@ pub fn (mut f Face) read_hmtx() {
 		}
 		f.advances[i] = f.glyphs[i].advance
 		f.lsbs[i] = f.glyphs[i].lsb
+	}
+}
+
+// read_vhea reads the vertical em box. No fallback is set here: the horizontal
+// metrics already guarantee a usable line height, and vertical presence is what
+// has_vertical_metrics reports.
+pub fn (mut f Face) read_vhea() {
+	if rec := f.sfnt.record(tag_vhea) {
+		r := new_reader(f.sfnt.data)
+		f.v_ascender = f64(r.i16_at(rec.offset + 4))
+		f.v_descender = f64(r.i16_at(rec.offset + 6))
+		f.v_line_gap = f64(r.i16_at(rec.offset + 8))
+	}
+}
+
+// read_vmtx reads vertical advances and top side bearings the way read_hmtx
+// reads the horizontal ones: numOfLongVerMetrics long records, then a tail of
+// bearings sharing the last advance.
+pub fn (mut f Face) read_vmtx() {
+	vhea := f.sfnt.record(tag_vhea) or { return }
+	vmtx := f.sfnt.record(tag_vmtx) or { return }
+	r := new_reader(f.sfnt.data)
+	mut num_v := int(r.u16_at(vhea.offset + 34))
+	if num_v <= 0 {
+		num_v = if f.num_glyphs > 0 { f.num_glyphs } else { 1 }
+	}
+	if f.num_glyphs <= 0 {
+		f.num_glyphs = num_v
+	}
+	f.v_advances = []u16{len: f.num_glyphs}
+	f.v_tsbs = []i16{len: f.num_glyphs}
+	mut last_advance := u16(0)
+	for i in 0 .. f.num_glyphs {
+		if i < num_v {
+			off := vmtx.offset + i * 4
+			if !r.has(off, 4) {
+				break
+			}
+			last_advance = r.u16_at(off)
+			f.v_advances[i] = last_advance
+			f.v_tsbs[i] = r.i16_at(off + 2)
+		} else {
+			// Monospaced tail: the advance repeats, tsb is a separate array.
+			off := vmtx.offset + num_v * 4 + (i - num_v) * 2
+			f.v_advances[i] = last_advance
+			f.v_tsbs[i] = if r.has(off, 2) { r.i16_at(off) } else { 0 }
+		}
+	}
+}
+
+// read_vorg reads the vertical origins: an explicit y per glyph where the font
+// names one, and a default for the rest. With no VORG table the default is the
+// top of the vertical em box — the vertical ascender when the font names one,
+// the horizontal ascender otherwise, which read_hhea_maxp guarantees is usable.
+pub fn (mut f Face) read_vorg() {
+	f.vorg_y = map[u16]int{}
+	f.vorg_default_y = int(if f.v_ascender != 0 { f.v_ascender } else { f.ascender })
+	if rec := f.sfnt.record(tag_vorg) {
+		r := new_reader(f.sfnt.data)
+		if r.u16_at(rec.offset) != 1 {
+			return // unknown version; keep the default
+		}
+		f.vorg_default_y = int(r.i16_at(rec.offset + 4))
+		n := int(r.u16_at(rec.offset + 6))
+		for i in 0 .. n {
+			off := rec.offset + 8 + i * 4
+			if !r.has(off, 4) {
+				break
+			}
+			f.vorg_y[r.u16_at(off)] = int(r.i16_at(off + 2))
+		}
 	}
 }
 
@@ -344,6 +432,36 @@ pub fn (f &Face) glyph_lsb(gid u16) i16 {
 		return f.lsbs[gid]
 	}
 	return 0
+}
+
+// has_vertical_metrics reports whether the font carries vhea/vmtx: CJK fonts
+// do, and it is what a vertical line is measured with.
+pub fn (f &Face) has_vertical_metrics() bool {
+	return f.v_advances.len > 0
+}
+
+// vertical_advance_units returns the vertical advance in design units: how far
+// the pen moves down past this glyph in a vertical line.
+pub fn (f &Face) vertical_advance_units(gid u16) u16 {
+	if int(gid) < f.v_advances.len {
+		return f.v_advances[gid]
+	}
+	return 0
+}
+
+// vertical_tsb returns the top side bearing in design units: how far the ink
+// reaches down from the vertical origin.
+pub fn (f &Face) vertical_tsb(gid u16) i16 {
+	if int(gid) < f.v_tsbs.len {
+		return f.v_tsbs[gid]
+	}
+	return 0
+}
+
+// vertical_origin_units returns the y of the vertical origin in design units:
+// the VORG entry when the font names one for this glyph, else the default.
+pub fn (f &Face) vertical_origin_units(gid u16) int {
+	return f.vorg_y[gid] or { f.vorg_default_y }
 }
 
 // scale converts design units to pixels at the given em size.

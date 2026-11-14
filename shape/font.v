@@ -400,6 +400,25 @@ pub fn (f &Font) glyph_advance(gid u16, em_px f64) f64 {
 	return f.face.glyph_advance(gid, em_px)
 }
 
+// has_vertical_metrics reports whether the font carries vhea/vmtx: CJK fonts
+// do, and it is what a vertical line is measured with.
+pub fn (f &Font) has_vertical_metrics() bool {
+	return f.face.has_vertical_metrics()
+}
+
+// vertical_advance is the vertical advance of a glyph in pixels: how far the
+// pen moves down past this glyph in a vertical line.
+pub fn (f &Font) vertical_advance(gid u16, em_px f64) f64 {
+	return f.face.scale(f64(f.face.vertical_advance_units(gid)), em_px)
+}
+
+// vertical_origin_y is the glyph's vertical origin in pixels above the
+// baseline: the VORG entry when the font names one for this glyph, else the
+// top of the vertical em box.
+pub fn (f &Font) vertical_origin_y(gid u16, em_px f64) f64 {
+	return f.face.scale(f64(f.face.vertical_origin_units(gid)), em_px)
+}
+
 // underline_thickness is the recommended underline weight in pixels.
 pub fn (f &Font) underline_thickness(em_px f64) f64 {
 	return f.face.scale(f.face.underline_thickness, em_px)
