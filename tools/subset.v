@@ -205,10 +205,9 @@ fn main() {
 		eprintln('cannot load ${path}: ${err.msg()}')
 		exit(1)
 	}
-	data := os.read_bytes(path) or {
-		eprintln('cannot read ${path}: ${err.msg()}')
-		exit(1)
-	}
+	// The bytes come from the loaded font rather than from a second read of the
+	// path, which is what stops a font held in memory from being subsettable.
+	data := loaded.data()
 
 	// This subsetter rebuilds loca and glyf. A CFF font's charstrings are a different
 	// language and the library exposes no reader for them, so this refuses rather than

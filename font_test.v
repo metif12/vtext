@@ -171,6 +171,22 @@ fn test_rasterize_glyph() {
 	assert !notdef.is_empty(), '.notdef produced no bitmap'
 }
 
+// data returns the bytes a font was parsed from, so a tool that rebuilds the
+// file works on a memory font the same way it works on one with a path.
+fn test_font_data_round_trips() {
+	data := amiri_bytes() or { return }
+	// From a path: the same bytes the file holds.
+	from_path := shape.load_font_file(corpus_font_path('Amiri-Regular.ttf') or { return }) or {
+		panic(err)
+	}
+	assert from_path.data() == data, 'data() is not the file it was loaded from'
+	// From memory: the same bytes the caller handed over, which the tool could
+	// never reach before because it re-read the path.
+	from_bytes := shape.load_font_bytes(data) or { panic(err) }
+	assert from_bytes.data() == data, 'data() is not the bytes it was parsed from'
+	assert from_bytes.path() == '', 'a memory font still reports no path'
+}
+
 // The Persian letters are asked of a corpus Arabic font rather than of Dubai, because the question is
 // whether an Arabic font maps them, and the corpus has three that do.
 fn test_persian_codepoints_map_in_an_arabic_font() {

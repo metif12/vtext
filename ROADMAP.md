@@ -1484,10 +1484,10 @@ subset is still 140768 bytes — 83204 of them `gvar` this cannot prune.
 
 **Three API gaps it hit, none of them blocking.** There is no closure API in `inspect.v`, so the tool
 walks `glyf` and the GSUB lookups itself over the raw bytes. `Font` exposes only `path()`, so the tool
-reads the file a second time with `os.read_bytes(font.path())` — which means a `Font` built with
-`load_font_bytes` cannot be subsetted at all, and a `Font.data()` is the single smallest addition that
-would help. And `Font.codepoint_for` cannot name a glyph after subsetting, because the ids are not
-contiguous.
+reads the file a second time with `os.read_bytes(font.path())` — closed 2026-11-14: `Font.data()`
+returns the bytes the face was parsed from, the tool uses them, and a `Font` built with
+`load_font_bytes` subsets the same way a path font does, pinned by `test_font_data_round_trips`.
+The two gaps that remain are the closure API and `codepoint_for` after subsetting.
 
 ## Differential shaping: four references, one baseline — running 2026-10-16
 

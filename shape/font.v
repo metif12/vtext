@@ -54,6 +54,16 @@ pub fn (f &Font) path() string {
 	return f.path
 }
 
+// data returns the bytes the face was parsed from: the whole file, which for a
+// collection member is the whole collection, because the table offsets the
+// inspection API reports are file offsets. It is a copy, made once per call, so
+// the caller owns it outright and a font built from memory is subsettable the
+// same way one built from a path is — the tool used to re-read the path, which
+// meant a memory font could not be subsetted at all.
+pub fn (f &Font) data() []u8 {
+	return f.face.sfnt.data.clone()
+}
+
 // units_per_em is the font's design grid size.
 pub fn (f &Font) units_per_em() int {
 	return f.face.units_per_em
