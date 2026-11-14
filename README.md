@@ -66,12 +66,12 @@ accident. Dependencies run one way — `layout` → `shape` → `font` → `ucd`
 | Part | Directory | What it is | Replaces |
 | --- | --- | --- | --- |
 | `vtext.ucd` | `ucd/` | Generated UCD tables decoded once into `Properties`. No other part reads the UCD directly. Carved out 2026-11-13; the split is verified by the full suite, the fmt gate, the difftest tool, and the C library plus smoke test. | — (shared data) |
-| `vtext.font` | `font/` | sfnt/TTC containers, cmap, Face with metrics, GSUB/GPOS/GDEF, stb raster primitives, glyph introspection. Carved out in three slices; each verified by suite, fmt, difftest and smoke. | FreeType loading, fontTools reading |
+| `vtext.font` | `font/` | sfnt/TTC containers, cmap, Face with metrics, GSUB/GPOS/GDEF, stb bindings with the Face box/fill calls. Carved out in three slices; each verified by suite, fmt, difftest and smoke. | FreeType loading, fontTools reading |
 | `vtext.shape` | `shape/` | Normalization, bidi, joining, the text-system Context, Font/FontSet/Glyph currency. Carved out in two slices; same verification. | HarfBuzz core |
 | `vtext.layout` | `layout/` | Line breaking, wrapping, measuring, fallback-driven layout. Files moved; same verification. | Pango's layout math |
-| `vtext.raster` | planned | Unhinted stb today; hinting and color as engines behind one box-and-fill contract. | FreeType rendering |
-| `vtext.inspect` | planned | The `shape/inspect.v` surface promoted to a library part. | fontTools introspection |
-| `vtext.subset` | planned | `tools/subset.v` promoted to a library; glyf today, CFF/CFF2 after the charstring reader. | fontTools subsetter |
+| `vtext.raster` | `raster/` | `GlyphBitmap` behind the box-and-fill contract; unhinted stb today, hinting and color later. Landed slice 1, same verification. | FreeType rendering |
+| `vtext.inspect` | settled in `shape/` | The `shape/inspect.v` API on `shape.Font`; a separate part would cycle. | fontTools introspection |
+| `vtext.subset` | `subset/` | `subset_font` closure and rebuild with `tools/subset.v` as the CLI; glyf today, CFF/CFF2 after the charstring reader. Landed slice 1, same verification. | fontTools subsetter |
 | `vtext.capi` | `capi.v` | The C face of all of the above; `vtext.h` stays the single header. | — |
 | providers | planned, per-OS | `FontSource` implementations for fontconfig / Core Text / DirectWrite. Optional, never linked by default. | fontconfig & co. |
 
