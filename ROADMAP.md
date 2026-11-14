@@ -909,6 +909,10 @@ named as the next slice's target). What remains is everything that draws: the
 vertical origin applied to placement, the writing mode, and the substitution of
 vertical forms. No Arabic or Persian need, and worth doing only with CJK —
 MS Gothic on this machine is what the slice is measured on, skipped elsewhere.
+Slice 2 is the mode that threads it: collecting `vert` per CJK run behind a
+vertical flag, placing advances downward from the origins read here, validated
+against Pango vertical runs on WSL the way the pixel legs validate horizontal
+ones — a rule with its own cases, measured, not described.
 
 ## Phase 2: reach
 
@@ -1837,9 +1841,12 @@ no `kern_offset_at` plumbing, because no font carries a table and no layout call
 VariationIndex resolves to zero at the default instance — the only one shaped — so skipping is
 correct and the stepping is what `gpos_valuesize_test.v` pins.
 
-**CFF subsetting.** The subsetter refuses CFF for want of a charstring
-reader. Unblocks subsetting for OpenType-CFF, which is the other half of the
-fonts on this machine.
+**CFF subsetting.** Deferred with a measurement, not queued behind other work: 0 CFF
+or CFF2 faces in 379 faces scanned 2026-11-14, on a machine whose corpus the
+scan predates. A charstring reader verified only against tables built to match
+it is the fixture-matching-the-reader failure this repository rejects twice
+already, so the subsetter keeps refusing CFF with the reason in the message
+until a real CFF font gives the reader something to be wrong about.
 
 **Vertical text.** Origin, writing mode, vertical forms — only with CJK, as
 Phase 1 already says, and measured against vertical runs rather than
@@ -1881,7 +1888,7 @@ all — and no part imports a tool.
 | `vtext.layout` | Pango's layout math | Slices 4+5 landed 2026-11-14: `linebreak.v` and `layout.v` live in `layout/` as `module layout`, imported as `vtext.layout`. Verified with the rest the full way: suite 34/34, fmt 108/0, consumers, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is vertical placement and forms (metrics landed as `has_vertical_metrics`/`vertical_advance`/`vertical_origin_y`, measured on MS Gothic), kashida/justification as opt-in, and hyphenation dictionaries as a `BreakPolicy` with generated tables. The [28.14] arm showed the shape: a rule with its own cases, measured, not described. |
 | `vtext.raster` | FreeType's rendering side | Slice 1 landed 2026-11-14: `GlyphBitmap` with `is_empty`/`ink` lives in `raster/` as `module raster`, imported as `vtext.raster`. The `box_only`/`render_into` calls stay methods on `font.Face` — this compiler defines methods only in the type's own module — so `font` imports the leaf `raster` for the data they trade in, and every `font.GlyphBitmap` site (shape's `Font.rasterize`, `subset`, `shapedump`, `probe`) is now `raster.GlyphBitmap`. Verified the full way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. What remains is hinting (TT interpreter plus auto-hinter fallback) and color (COLR/CPAL, CBDT/sbix, SVG refusal-with-reason) as engines behind the box-and-fill contract `box_only`/`render_into` already define. Verified per glyph against FreeType and Pillow like the ink leg does now. |
 | `vtext.inspect` | fontTools introspection (read side) | Decided 2026-11-14: stays as the inspection API on `shape.Font` in `shape/inspect.v`, not a separate part. The surface is sixteen `Font` methods, and the methods-live-with-the-type rule proven twice in the `font` slices forbids moving them; a thin `inspect/` of free functions taking `shape.Font` would cycle `shape` → `inspect` → `shape` through `TableInfo`. `fontdump`, `fontcheck` and `shapetrace` already build on it. |
-| `vtext.subset` | fontTools subsetter | Slice 1 landed 2026-11-14: the closure and the rebuild live in `subset/` as `module subset` behind `subset_font(font, seed)`, and `tools/subset.v` is the CLI around it (shaping the seed, reporting, verifying). The fixed-point loop, the 16-pass bound and the duplicated comment moved with the code; the duplication is gone from the tool. Verified the full way: suite 35/35, fmt 111/0, consumers fail=0, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is CFF/CFF2 after the charstring reader exists. |
+| `vtext.subset` | fontTools subsetter | Slice 1 landed 2026-11-14: the closure and the rebuild live in `subset/` as `module subset` behind `subset_font(font, seed)`, and `tools/subset.v` is the CLI around it (shaping the seed, reporting, verifying). The fixed-point loop, the 16-pass bound and the duplicated comment moved with the code; the duplication is gone from the tool. Verified the full way: suite 35/35, fmt 111/0, consumers fail=0, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is CFF/CFF2, explicitly deferred above: 0 faces measured, so a reader would be verified only against tables built to match it. |
 | `vtext.capi` | — (the C face) | Last, since it wraps all of the above. `vtext.h` stays the single header; the header mirror is now proven by `tools/capicheck.v` (48 exports, both directions, CI-gated before the library builds) rather than by the link alone. `subset` is wrapped (`vtext_subset`/`vtext_subset_free`, exercised by the smoke test); raster stays at the combined box-and-fill call by decision, its fields already readable through the bitmap accessors. |
 | providers | fontconfig / Core Text / DirectWrite | Linux (fontconfig) landed 2026-11-14: `providers/fontconfig.v` (`module providers`) resolves a family through `FcFontMatch` and reports the matched family beside the path, so a silent substitution is visible to the caller; Core Text and DirectWrite stay unwritten, and off Linux the provider answers none. Pinned by `providers_fontconfig_test.v` (self-naming match + substitution report, skip-guarded off Linux and on fontless hosts; wrong-family revert fails). CI installs the headers on the ubuntu suite leg because the test links fontconfig there. |
 
