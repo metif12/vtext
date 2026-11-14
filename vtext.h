@@ -153,6 +153,13 @@ int vtext_bitmap_top(vtext_bitmap_t *bm);
 /* Row-major coverage, width*height bytes, borrowed from the bitmap. */
 const unsigned char *vtext_bitmap_data(vtext_bitmap_t *bm);
 
+/* Rebuild the font around the seed glyphs. Returns malloc'd bytes and their
+ * count, or -1 on error with errno-style text in err. .notdef is always kept.
+ * The bytes load with vtext_font_load_bytes; vtext_subset_free releases them. */
+int vtext_subset(vtext_font_t *font, const unsigned short *seed, int nseed,
+	unsigned char **out, char *err, int errcap);
+void vtext_subset_free(unsigned char *bytes);
+
 #ifdef __cplusplus
 }
 #endif

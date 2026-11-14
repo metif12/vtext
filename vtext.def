@@ -46,3 +46,5 @@ EXPORTS
 	vtext_bitmap_left
 	vtext_bitmap_top
 	vtext_bitmap_data
+	vtext_subset
+	vtext_subset_free

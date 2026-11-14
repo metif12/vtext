@@ -126,6 +126,23 @@ int main(int argc, char **argv) {
 		break;
 	}
 
+	/* Subset: keep one glyph, reload from the bytes, release everything. */
+	err[0] = 0;
+	unsigned short seed[1];
+	seed[0] = vtext_font_glyph_index(font, 'H');
+	unsigned char *sub = 0;
+	int sublen = vtext_subset(font, seed, 1, &sub, err, sizeof(err));
+	CHECK(sublen > 0 && sub != 0, "subset built");
+	err[0] = 0;
+	vtext_font_t *font2 = vtext_font_load_bytes(sub, sublen, err, sizeof(err));
+	CHECK(font2 != 0, "subset reloads");
+	if (font2) {
+		CHECK(vtext_font_glyph_index(font2, 'H') == seed[0], "subset keeps the seed id");
+		vtext_font_free(font2);
+	}
+	vtext_subset_free(sub);
+	vtext_subset_free(0);
+
 	/* Error path: a font that is not there. */
 	err[0] = 0;
 	CHECK(vtext_font_load_file("no-such-font.ttf", err, sizeof(err)) == 0,

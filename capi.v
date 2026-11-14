@@ -3,6 +3,7 @@ module vtext
 import vtext.layout
 import vtext.shape
 import vtext.font
+import vtext.subset
 
 // The C ABI of this text shaping library: opaque handles over the shaped
 // objects, plain C types everywhere, and no V value that a C caller would
@@ -849,4 +850,56 @@ pub fn vtext_bitmap_data(bm &CBitmap) &u8 {
 		return unsafe { nil }
 	}
 	return bm.data
+}
+
+// vtext_subset rebuilds the font around the seed glyphs and hands back the file
+// bytes in caller-owned memory, with the byte count as the return and -1 on
+// error. The subset keeps the ids the engine shaped, so a caller that shaped
+// first passes those gids straight back; .notdef is always kept. The bytes
+// load with vtext_font_load_bytes, and vtext_subset_free releases them.
+@[export: 'vtext_subset']
+pub fn vtext_subset(f &shape.Font, seed &u16, nseed int, out &&u8, errbuf &u8,
+	errcap int) int {
+	if f == unsafe { nil } {
+		set_error(errbuf, errcap, 'vtext: font must be non-null')
+		return -1
+	}
+	if out == unsafe { nil } {
+		set_error(errbuf, errcap, 'vtext: out must be non-null')
+		return -1
+	}
+	mut gids := []u16{cap: if nseed > 0 { nseed } else { 0 }}
+	if seed != unsafe { nil } && nseed > 0 {
+		unsafe {
+			for i in 0 .. nseed {
+				gids << seed[i]
+			}
+		}
+	}
+	sub := subset.subset_font(f, gids) or {
+		set_error(errbuf, errcap, 'vtext: cannot subset font: ${err.msg()}')
+		return -1
+	}
+	unsafe {
+		if sub.bytes.len <= 0 {
+			*out = nil
+			return 0
+		}
+		data := &u8(malloc(sub.bytes.len))
+		C.memcpy(data, sub.bytes.data, usize(sub.bytes.len))
+		*out = data
+		return sub.bytes.len
+	}
+}
+
+// vtext_subset_free releases bytes vtext_subset handed back. The buffer is
+// malloc'd on this side and freed on this side, with no V array in between.
+@[export: 'vtext_subset_free']
+pub fn vtext_subset_free(data &u8) {
+	if data == unsafe { nil } {
+		return
+	}
+	unsafe {
+		free(data)
+	}
 }
