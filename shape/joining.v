@@ -1,4 +1,4 @@
-module vtext
+module shape
 
 import vtext.font
 import vtext.ucd
@@ -23,8 +23,8 @@ import vtext.ucd
 // the form lets it hand the right shape to the OpenType pass afterwards.
 
 // The two controls that override what the letters around them would otherwise do.
-const zero_width_non_joiner = rune(0x200C)
-const zero_width_joiner = rune(0x200D)
+pub const zero_width_non_joiner = rune(0x200C)
+pub const zero_width_joiner = rune(0x200D)
 
 // ShapedGlyph is one letter after joining, and the characters it stands for.
 //
@@ -245,7 +245,7 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 // codepoint, so a mark folded into it would be lost at the font lookup and never drawn.
 // The mark still costs no advance and still sits where the letter is, so the layout pass
 // places it from is_mark.
-fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun) int {
+pub fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun) int {
 	mut i := from
 	mut selectors := []rune{}
 	for i < cps.len {
@@ -304,7 +304,7 @@ fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun) int
 }
 
 // form_for picks the shape from the two join decisions.
-fn form_for(join_prev bool, join_next bool) font.JoiningForm {
+pub fn form_for(join_prev bool, join_next bool) font.JoiningForm {
 	if join_prev && join_next {
 		return .medial
 	}
@@ -319,7 +319,7 @@ fn form_for(join_prev bool, join_next bool) font.JoiningForm {
 
 // compute_joins fills in whether each character connects to the one before it and to the
 // one after it.
-fn compute_joins(p &ucd.Properties, cps []rune, mut join_prev []bool, mut join_next []bool) {
+pub fn compute_joins(p &ucd.Properties, cps []rune, mut join_prev []bool, mut join_next []bool) {
 	// The previous non-transparent index for each position, so a mark does not hide the
 	// letter in front of it.
 	mut prev_letter := []int{len: cps.len, init: -1}
@@ -361,7 +361,7 @@ fn compute_joins(p &ucd.Properties, cps []rune, mut join_prev []bool, mut join_n
 
 // connect decides the join between two letters that face each other. The two may have
 // controls between them, and a control there overrides what the letters would do.
-fn connect(p &ucd.Properties, cps []rune, left int, right int, mut join_prev []bool, mut join_next []bool) {
+pub fn connect(p &ucd.Properties, cps []rune, left int, right int, mut join_prev []bool, mut join_next []bool) {
 	// The letters have to face each other: a right joining letter connects only to what
 	// comes before it, and a left joining letter only to what comes after.
 	mut allowed := p.joining_type_of(cps[left]).joins_to_next()
@@ -386,7 +386,7 @@ fn connect(p &ucd.Properties, cps []rune, left int, right int, mut join_prev []b
 }
 
 // next_letter returns the index of the nearest non-transparent character after i.
-fn next_letter(p &ucd.Properties, cps []rune, i int) int {
+pub fn next_letter(p &ucd.Properties, cps []rune, i int) int {
 	for k in i + 1 .. cps.len {
 		if !p.joining_type_of(cps[k]).is_transparent() {
 			return k
@@ -396,7 +396,7 @@ fn next_letter(p &ucd.Properties, cps []rune, i int) int {
 }
 
 // find_form returns the presentation form of a base in a shape, or 0 when there is none.
-fn (s &Shaper) find_form(cp rune, form u16) u32 {
+pub fn (s &Shaper) find_form(cp rune, form u16) u32 {
 	f := s.forms
 	mut lo := 0
 	mut hi := f.len
@@ -417,7 +417,7 @@ fn (s &Shaper) find_form(cp rune, form u16) u32 {
 }
 
 // find_ligature returns the ligature form of a lam and an alef, or 0 when there is none.
-fn (s &Shaper) find_ligature(first u32, second u32, form u16) u32 {
+pub fn (s &Shaper) find_ligature(first u32, second u32, form u16) u32 {
 	l := s.ligatures
 	mut lo := 0
 	mut hi := l.len
@@ -438,7 +438,7 @@ fn (s &Shaper) find_ligature(first u32, second u32, form u16) u32 {
 }
 
 // parse_form_entries decodes the "cp form glyph" table.
-fn parse_form_entries(data string) []FormEntry {
+pub fn parse_form_entries(data string) []FormEntry {
 	mut out := []FormEntry{}
 	for line in data.split_into_lines() {
 		s := line.trim_space()
@@ -459,7 +459,7 @@ fn parse_form_entries(data string) []FormEntry {
 }
 
 // parse_ligature_entries decodes the "first second form glyph" table.
-fn parse_ligature_entries(data string) []LigatureEntry {
+pub fn parse_ligature_entries(data string) []LigatureEntry {
 	mut out := []LigatureEntry{}
 	for line in data.split_into_lines() {
 		s := line.trim_space()
@@ -482,7 +482,7 @@ fn parse_ligature_entries(data string) []LigatureEntry {
 
 // split_on_spaces splits on spaces, dropping the empty fields a double space or a
 // trailing one would leave behind.
-fn split_on_spaces(s string) []string {
+pub fn split_on_spaces(s string) []string {
 	mut out := []string{}
 	for f in s.split(' ') {
 		if f != '' {

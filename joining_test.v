@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.ucd
 
 // The joining algorithm, checked against the cases UAX#53 spells out and against the
@@ -7,7 +8,7 @@ import vtext.ucd
 
 fn run(cps []string) []string {
 	p := ucd.new_properties()
-	s := new_shaper()
+	s := shape.new_shaper()
 	run := s.shape_arabic(p, runes_of(cps))
 	mut out := []string{cap: run.glyphs.len}
 	for g in run.glyphs {
@@ -20,7 +21,7 @@ fn run(cps []string) []string {
 // where the shape is the thing under test.
 fn run_forms(cps []string) []string {
 	p := ucd.new_properties()
-	s := new_shaper()
+	s := shape.new_shaper()
 	run := s.shape_arabic(p, runes_of(cps))
 	mut out := []string{cap: run.glyphs.len}
 	for g in run.glyphs {
@@ -94,7 +95,7 @@ fn test_joining_skips_transparent_marks() {
 	// drawn. The letter no longer covers the mark, and the mark is flagged so the layout
 	// pass places it without moving the pen.
 	p := ucd.new_properties()
-	s := new_shaper()
+	s := shape.new_shaper()
 	shaped := s.shape_arabic(p, runes_of(['0628', '064E', '0628']))
 	assert shaped.glyphs.len == 3, 'the mark should be a glyph of its own'
 	assert shaped.glyphs[0].start == 0 && shaped.glyphs[0].end == 1, 'the first letter stands alone'
@@ -118,7 +119,7 @@ fn test_joining_controls() {
 	// join causing, so it does take a shape and is drawn; a font maps it to nothing, and
 	// that is the font layer's business rather than the shaper's.
 	p := ucd.new_properties()
-	s := new_shaper()
+	s := shape.new_shaper()
 	between := s.shape_arabic(p, runes_of(['0628', '200C', '0628']))
 	assert between.glyphs.len == 2, 'ZWNJ should not become a glyph'
 	joined := s.shape_arabic(p, runes_of(['0628', '200D', '0628']))
@@ -187,7 +188,7 @@ fn test_joining_space_breaks_the_word() {
 // layer can still find it. U+06A4 is a dual joining letter that does have forms.
 fn test_joining_keeps_an_unformed_mark_as_itself() {
 	p := ucd.new_properties()
-	s := new_shaper()
+	s := shape.new_shaper()
 	// U+0651 ARABIC SHADDA has joining type Transparent and a combining class, so it is
 	// passed through as itself rather than shaped, and it becomes a mark glyph.
 	shaped := s.shape_arabic(p, runes_of(['0628', '0651', '0628']))
@@ -203,7 +204,7 @@ fn test_joining_keeps_an_unformed_mark_as_itself() {
 // Empty input has to be handled without a special case at every step.
 fn test_joining_empty_and_single() {
 	p := ucd.new_properties()
-	s := new_shaper()
+	s := shape.new_shaper()
 	empty := s.shape_arabic(p, []rune{})
 	assert empty.glyphs.len == 0
 	one := s.shape_arabic(p, runes_of(['0628']))
@@ -214,7 +215,7 @@ fn test_joining_empty_and_single() {
 // The form tables have to be complete enough to shape with and sorted for the binary
 // search to work, since a lookup that lands in the wrong place returns no glyph at all.
 fn test_joining_tables_are_well_formed() {
-	s := new_shaper()
+	s := shape.new_shaper()
 	assert s.forms.len > 200, 'the form table looks truncated: ${s.forms.len}'
 	// The four alef forms pair with the lam, and the lam is one of them.
 	assert s.ligatures.len == 8, 'expected the four alef forms in two shapes each'

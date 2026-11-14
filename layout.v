@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 import vtext.ucd
 
@@ -93,13 +94,13 @@ pub mut:
 // line of unknown language.
 //
 // No discretionary features are applied. Use layout_paragraph_with to ask for any.
-pub fn layout_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSet,
+pub fn layout_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet,
 	em_px f64) Line {
 	return layout_paragraph_with(ctx, cps, base_dir, fs, em_px, &LayoutOptions{})
 }
 
 // layout_paragraph_with is layout_paragraph with the caller's options applied.
-pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &FontSet,
+pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet,
 	em_px f64, options &LayoutOptions) Line {
 	// Joining keys on joining types, and a precomposed character is a different codepoint
 	// with a different one, so the text has to be decomposed before it is shaped. The
@@ -112,17 +113,17 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 	// against the wrong letter.
 	decomposed, origin := ctx.normalizer.nfd_mapped(cps)
 
-	bidi := resolve_paragraph(ctx.properties, decomposed, base_dir)
+	bidi := shape.resolve_paragraph(ctx.properties, decomposed, base_dir)
 
 	// Shape each isolating run sequence on its own, then look the shaped codepoints up. The
 	// result is in logical order still, tagged with the input character each glyph came
 	// from, because that tag is the only thing that survives reordering.
 	mut placed := []Glyph{cap: decomposed.len}
 	for seq in bidi.sequences {
-		// The bidi pass takes X9-removed characters out of its sequences, and a zero
+		// The bidi pass takes X9-shape.removed characters out of its sequences, and a zero
 		// width non-joiner is one of them — its bidi class is BN. But joining has to
 		// see it: it breaks the join where it sits, which is its whole purpose, and a
-		// نیم‌فاصله shaped without it comes out joined. So the non-joiners removed
+		// نیم‌فاصله shaped without it comes out joined. So the non-joiners shape.removed
 		// between two kept characters go back in for shaping; the shaping loop drops
 		// them from its output, so they never become glyphs and the line is unchanged
 		// apart from the shapes on either side. sub_idx maps each shaped position back
@@ -135,7 +136,7 @@ pub fn layout_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &F
 		for k, i in seq {
 			if k > 0 {
 				for r in seq[k - 1] + 1 .. i {
-					if decomposed[r] == zero_width_non_joiner {
+					if decomposed[r] == shape.zero_width_non_joiner {
 						sub << decomposed[r]
 						sub_idx << r
 					}
@@ -329,7 +330,7 @@ fn kern_pairs(mut glyphs []Glyph, em_px f64, script string, rtl bool) {
 // permutation is walked and each character is asked for its glyph, which draws out exactly
 // one glyph per character that has one and passes over the ones a glyph already drawn
 // stands for.
-fn place_glyphs(placed []Glyph, bidi BidiResult, origin []int) []Glyph {
+fn place_glyphs(placed []Glyph, bidi shape.BidiResult, origin []int) []Glyph {
 	mut out := []Glyph{cap: placed.len}
 	mut by_cluster := map[int][]int{}
 	for i, g in placed {

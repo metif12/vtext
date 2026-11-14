@@ -24,6 +24,7 @@ module main
 
 import math
 import vtext
+import vtext.shape
 import corpus
 import paint
 
@@ -51,13 +52,13 @@ fn main() {
 
 	// Resolve every paragraph first, because both the drawing and the printing need the answer and the
 	// two must not be two separate runs of the algorithm.
-	mut results := []vtext.BidiResult{cap: paragraphs.len}
+	mut results := []shape.BidiResult{cap: paragraphs.len}
 	mut lines := []vtext.Line{cap: paragraphs.len}
 	mut widest := 0.0
 	mut ascent := 0.0
 	mut descent := 0.0
 	for text in paragraphs {
-		res := vtext.resolve_paragraph(ctx.properties, text.runes(), .auto)
+		res := shape.resolve_paragraph(ctx.properties, text.runes(), .auto)
 		line := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, em_px)
 		results << res
 		lines << line
@@ -97,7 +98,7 @@ fn main() {
 // The visual order is printed as the characters in the order they will be drawn, which is the only way to
 // read a line that mixes directions without seeing it. A reader comparing that with the logical order
 // above it can see exactly which characters moved and which did not.
-fn print_result(text string, res vtext.BidiResult, line vtext.Line) {
+fn print_result(text string, res shape.BidiResult, line vtext.Line) {
 	println('"${text}"')
 	println('  paragraph level ${res.paragraph_level}, ${res.isolating_sequences} isolating sequence(s)')
 

@@ -16,6 +16,7 @@ module main
 // Usage: v run tools/gen_normalization.v
 
 import os
+import vtext.shape
 
 const ucd_dir = 'ucd'
 const out_file = 'ucd/ucd_normalization.v'
@@ -68,17 +69,17 @@ fn parse_hex(s string) u32 {
 // ends of the block; the other 11170 are left blank precisely because the normalizer
 // is expected to decompose them arithmetically.
 fn is_hangul_syllable(cp u32) bool {
-	return cp >= hangul_s_base && cp < hangul_s_base + hangul_s_count
+	return cp >= shape.hangul_s_base && cp < shape.hangul_s_base + shape.hangul_s_count
 }
 
-// Decomposition is one canonical decomposition, in the form the UAX#15 algorithms
+// shape.Decomposition is one canonical decomposition, in the form the UAX#15 algorithms
 // want: a string of codepoints, sorted by canonical combining class.
 struct Decomposition {
 	cp     u32
 	target []u32
 }
 
-// Composition is one canonical composition: a starter and a following character
+// shape.Composition is one canonical composition: a starter and a following character
 // combining into a composite.
 struct Composition {
 	starter   u32
@@ -192,8 +193,8 @@ fn main() {
 	excluded := exclusions()
 	lines := read_unicode_data()
 
-	mut decompositions := []Decomposition{}
-	mut compositions := []Composition{}
+	mut decompositions := []shape.Decomposition{}
+	mut compositions := []shape.Composition{}
 	mut hangul := 0
 
 	for line in lines {
@@ -218,7 +219,7 @@ fn main() {
 		for tok in decomp.split(' ') {
 			target << parse_hex(tok)
 		}
-		decompositions << Decomposition{ cp: cp, target: target }
+		decompositions << shape.Decomposition{ cp: cp, target: target }
 	}
 
 	// The reverse mapping. A canonical decomposition of one codepoint is a
@@ -234,7 +235,7 @@ fn main() {
 		if d.cp in excluded {
 			continue
 		}
-		compositions << Composition{
+		compositions << shape.Composition{
 			starter:   d.target[0]
 			second:    d.target[1]
 			composite: d.cp
@@ -243,7 +244,7 @@ fn main() {
 
 	// Sorted by the pair so the composition lookup is a binary search, and keyed on
 	// the starter at run time by walking the range of entries that share one.
-	compositions.sort_with_compare(fn (a &Composition, b &Composition) int {
+	compositions.sort_with_compare(fn (a &shape.Composition, b &shape.Composition) int {
 		if a.starter != b.starter {
 			return if a.starter < b.starter {
 				-1

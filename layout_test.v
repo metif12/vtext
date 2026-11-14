@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // Tests for line layout: the passes meeting, in the order a caller sees them.
 
@@ -239,7 +240,7 @@ fn test_layout_mark_on_shaped_base_uses_shaped_anchor() {
 fn test_layout_zwnj_breaks_join_through_bidi() {
 	ctx := new_context()
 	fs := persian_fonts()
-	// yeh meem ZWNJ feh: the non-joiner is X9-removed from bidi sequences, but joining
+	// yeh meem ZWNJ feh: the non-joiner is X9-shape.removed from bidi sequences, but joining
 	// has to see it. Shaped without it, the meem joins into the feh and takes the
 	// medial form, and نیم‌فاصله renders joined; with it the meem is final and the
 	// feh, with nothing after it and the join behind it broken, is isolated.

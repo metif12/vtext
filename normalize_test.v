@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.ucd
 import os
 
@@ -83,7 +84,7 @@ fn codepoints_to_string(cps []rune) string {
 
 fn test_ucd_normalization_conformance() {
 	props := ucd.new_properties()
-	n := new_normalizer(props)
+	n := shape.new_normalizer(props)
 	problem := n.check_tables()
 	assert problem == '', 'normalization tables are malformed: ${problem}'
 
@@ -163,7 +164,7 @@ fn test_ucd_normalization_conformance() {
 // regression in the tables shows up as a specific character rather than as a count.
 fn test_normalize_known_cases() {
 	props := ucd.new_properties()
-	n := new_normalizer(props)
+	n := shape.new_normalizer(props)
 
 	// A precomposed character with a grave: NFD splits it, NFC puts it back. e with
 	// combining acute, and the precomposed form of the same.
@@ -217,7 +218,7 @@ fn test_normalize_known_cases() {
 // The decomposition's mapping, which is what keeps a mark attached to the character it was written
 // after once canonical ordering has moved it somewhere else.
 fn test_nfd_mapped_reports_the_character_a_mark_came_from() {
-	n := new_normalizer(ucd.new_properties())
+	n := shape.new_normalizer(ucd.new_properties())
 
 	// The case the layout pass depends on. A shadda is class 33 and a fatha class 30, so NFD puts
 	// the fatha first even though it was written second, and an index into the decomposed text is
@@ -234,7 +235,7 @@ fn test_nfd_mapped_reports_the_character_a_mark_came_from() {
 	assert codepoints_to_string(got) == '0041 0301 0041'
 	assert source == [0, 0, 1]
 
-	// Decomposition can introduce a mark that was never in the input, as a Hangul syllable does
+	// shape.Decomposition can introduce a mark that was never in the input, as a Hangul syllable does
 	// when it breaks into jamo. Every one of the jamo belongs to the one syllable.
 	got, source = n.nfd_mapped(runes_of(['AC01', '0041']))
 	assert codepoints_to_string(got) == '1100 1161 11A8 0041'

@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 import vtext.ucd
 
@@ -33,9 +34,9 @@ pub:
 	// combining class, script, grapheme class and line break class.
 	properties &ucd.Properties
 	// normalizer holds the canonical decomposition and composition tables of UAX#15.
-	normalizer &Normalizer
+	normalizer &shape.Normalizer
 	// shaper holds the Arabic presentation forms, which the joining pass maps onto.
-	shaper &Shaper
+	shaper &shape.Shaper
 }
 
 // new_context decodes every table. The caller owns the result and keeps it for the
@@ -44,8 +45,8 @@ pub fn new_context() &Context {
 	tables := ucd.new_properties()
 	return &Context{
 		properties: tables
-		normalizer: new_normalizer(*tables)
-		shaper:     new_shaper()
+		normalizer: shape.new_normalizer(*tables)
+		shaper:     shape.new_shaper()
 	}
 }
 

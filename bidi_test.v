@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.ucd
 import os
 
@@ -15,13 +16,13 @@ const bidi_test_file = 'ucd/BidiCharacterTest.txt'
 // BidiCase is one line of the conformance data.
 struct BidiCase {
 	cps []rune
-	dir Direction
+	dir shape.Direction
 	// want_para is the expected paragraph level.
 	want_para u8
 	// want_levels holds the expected level per character, or -1 for the
-	// characters rule X9 removed, which the data marks with an 'x'.
+	// characters rule X9 shape.removed, which the data marks with an 'x'.
 	want_levels []int
-	// want_order lists the visual order, excluding the X9-removed characters.
+	// want_order lists the visual order, excluding the X9-shape.removed characters.
 	want_order []int
 	// text is the input, for failure messages.
 	text string
@@ -60,7 +61,7 @@ fn parse_bidi_case(line string) ?BidiCase {
 			want_order << int(tok.i64())
 		}
 	}
-	mut dir := Direction.auto
+	mut dir := shape.Direction.auto
 	match fields[1].trim_space() {
 		'0' {
 			dir = .ltr
@@ -98,14 +99,14 @@ fn ints_to_string(v []int) string {
 
 // check_case reports why a case failed, or an empty string when it passed.
 fn check_case(p &ucd.Properties, c BidiCase) string {
-	got := resolve_paragraph(p, c.cps, c.dir)
+	got := shape.resolve_paragraph(p, c.cps, c.dir)
 	mut reasons := []string{}
 
 	if int(got.paragraph_level) != int(c.want_para) {
 		reasons << 'paragraph level: got ${got.paragraph_level} want ${c.want_para}'
 	}
 
-	// Levels. A position marked 'x' in the data must be one X9 removed, and a
+	// Levels. A position marked 'x' in the data must be one X9 shape.removed, and a
 	// position with a level must not be.
 	mut got_levels := []int{len: c.cps.len, init: 0}
 	for i in 0 .. c.cps.len {
@@ -120,7 +121,7 @@ fn check_case(p &ucd.Properties, c BidiCase) string {
 		reasons << '        want ${ints_to_string(c.want_levels)}'
 	}
 
-	// Visual order, with the X9-removed characters dropped.
+	// Visual order, with the X9-shape.removed characters dropped.
 	mut got_order := []int{cap: c.want_order.len}
 	for i in got.visual_order {
 		if got.visible[i] {
@@ -179,7 +180,7 @@ fn test_bidi_known_paragraphs() {
 	p := ucd.new_properties()
 	// A pure Persian sentence: one level, right to left.
 	persian := 'سلام دنیا'.runes()
-	rtl := resolve_paragraph(p, persian, .auto)
+	rtl := shape.resolve_paragraph(p, persian, .auto)
 	assert rtl.paragraph_level == 1, 'Persian should resolve to an RTL paragraph'
 	for l in rtl.levels {
 		assert l == 1, 'pure Persian text should be all level 1'
@@ -191,7 +192,7 @@ fn test_bidi_known_paragraphs() {
 
 	// A Latin sentence stays left to right.
 	latin := 'hello world'.runes()
-	ltr := resolve_paragraph(p, latin, .auto)
+	ltr := shape.resolve_paragraph(p, latin, .auto)
 	assert ltr.paragraph_level == 0
 	for l in ltr.levels {
 		assert l == 0, 'pure Latin text should be all level 0'
@@ -201,7 +202,7 @@ fn test_bidi_known_paragraphs() {
 	// level-2 run, which rule L2 leaves alone, so it reads left to right inside the
 	// right-to-left paragraph.
 	mixed := 'سلام vlang 123'.runes()
-	res := resolve_paragraph(p, mixed, .auto)
+	res := shape.resolve_paragraph(p, mixed, .auto)
 	assert res.paragraph_level == 1
 	// 'سلام' is Arabic and stays on the paragraph level.
 	for i in 0 .. 4 {
@@ -231,26 +232,26 @@ fn test_bidi_known_paragraphs() {
 
 fn test_bidi_empty_and_single() {
 	p := ucd.new_properties()
-	empty := resolve_paragraph(p, []rune{}, .auto)
+	empty := shape.resolve_paragraph(p, []rune{}, .auto)
 	assert empty.levels.len == 0
 	assert empty.visual_order.len == 0
 
-	one := resolve_paragraph(p, [rune(`a`)], .auto)
+	one := shape.resolve_paragraph(p, [rune(`a`)], .auto)
 	assert one.paragraph_level == 0
 	assert one.levels[0] == 0
 	assert one.visual_order[0] == 0
 
 	// A lone Arabic letter makes the paragraph right to left.
-	arabic := resolve_paragraph(p, [rune(0x0628)], .auto)
+	arabic := shape.resolve_paragraph(p, [rune(0x0628)], .auto)
 	assert arabic.paragraph_level == 1
 }
 
 fn test_bidi_bracket_table_parses() {
-	b := bracket_table()
+	b := shape.bracket_table()
 	assert b.len > 100, 'bracket table looks truncated'
 	// A parenthesis is an opening bracket that pairs with a closing one.
 	open := b.find(u32(0x0028)) or { panic('LEFT PARENTHESIS missing') }
-	assert open.kind == bracket_open
+	assert open.kind == shape.bracket_open
 	assert open.paired == 0x0029
 	// The table has to be sorted for the binary search to work.
 	for i in 1 .. b.len {
@@ -261,9 +262,9 @@ fn test_bidi_bracket_table_parses() {
 // BD16 compares brackets through their canonical equivalents, which is what lets
 // U+2329 pair with U+3009 even though BidiBrackets.txt only records it with U+232A.
 fn test_bidi_bracket_canonical_equivalence() {
-	b := bracket_table()
+	b := shape.bracket_table()
 	angle := b.find(u32(0x2329)) or { panic('U+2329 missing') }
-	assert angle.kind == bracket_open, 'U+2329 is an opening bracket'
+	assert angle.kind == shape.bracket_open, 'U+2329 is an opening bracket'
 	assert angle.paired == 0x232a, 'BidiBrackets records U+2329 with U+232A'
 	assert angle.canonical == 0x3008, 'U+2329 canonically decomposes to U+3008'
 	// U+3009 is the canonical equivalent of U+232A, so both it and U+232A close a
@@ -285,7 +286,7 @@ fn test_bidi_bracket_canonical_pair_resolves() {
 	// U+2329 opens, U+3009 closes, and the only strong type inside is Latin. In a
 	// left-to-right paragraph N0 gives the pair that direction.
 	span := 'a\u2329b\u3009c'.runes()
-	res := resolve_paragraph(p, span, .ltr)
+	res := shape.resolve_paragraph(p, span, .ltr)
 	assert res.levels[1] == 0, 'the opener should take the surrounding L direction'
 	assert res.levels[3] == 0, 'the closer should take the surrounding L direction'
 }

@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.ucd
 
 // Verifies that one Context serves the whole pipeline, and that the tables it holds
@@ -92,7 +93,7 @@ fn test_context_resolves_a_bidi_paragraph() {
 	// The bidi rules need the property tables the context holds, so this is the
 	// integration point between the two halves of the module.
 	persian := runes_of(['0633', '0644', '0627', '0645'])
-	res := resolve_paragraph(ctx.properties, persian, .auto)
+	res := shape.resolve_paragraph(ctx.properties, persian, .auto)
 	assert res.paragraph_level == 1, 'Arabic text should resolve to an RTL paragraph'
 	for l in res.levels {
 		assert l == 1, 'pure Arabic should be all level 1'
@@ -106,7 +107,7 @@ fn test_context_bidi_mixed_script_paragraph() {
 	ctx := new_context()
 	mixed := runes_of(['0633', '0644', '0627', '0645', '0020', '0061', '0062', '0020', '0031',
 		'0032', '0033'])
-	res := resolve_paragraph(ctx.properties, mixed, .auto)
+	res := shape.resolve_paragraph(ctx.properties, mixed, .auto)
 	assert res.paragraph_level == 1, 'the first strong character is Arabic, so RTL'
 	// The Arabic and the space after it stay on the paragraph level.
 	for i in 0 .. 5 {

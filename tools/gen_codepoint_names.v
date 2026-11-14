@@ -39,6 +39,7 @@ module main
 // a file timestamp.
 
 import os
+import vtext.shape
 
 const ucd_file = 'ucd/UnicodeData.txt'
 const out_file = 'ucd/ucd_names.v'
@@ -291,7 +292,7 @@ fn prefix_u32(values []u8) []u32 {
 	return out
 }
 
-// Marker is a UnicodeData.txt range marker with its First or Last suffix removed, e.g.
+// Marker is a UnicodeData.txt range marker with its First or Last suffix shape.removed, e.g.
 // "<CJK Ideograph, First>" becomes "<CJK Ideograph,".
 //
 // The trailing comma is kept, and that is the whole point. The marker names its codepoint suffix width in

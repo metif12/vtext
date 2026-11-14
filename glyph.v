@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 
 // The font layer: turning a shaped codepoint into something drawable.
@@ -260,7 +261,7 @@ pub fn (fs &FontSet) glyph(cp rune, em_px f64) Glyph {
 // with no font — which is what the mark_stack example drew before this took a context. A flat
 // set ignores the context entirely, so this costs a flat chain nothing.
 //
-// script is the mark's own ShapedGlyph script, which the joining pass stamped with the base
+// script is the mark's own shape.ShapedGlyph script, which the joining pass stamped with the base
 // letter's: the codepoint alone answers Inherited, which no per-script set can route. A caller
 // with no stamp passes '' and the tag is read off the codepoint, which is what every mark
 // that is not Inherited answers anyway.
@@ -304,7 +305,7 @@ pub fn (fs &FontSet) covers(cp rune) bool {
 // the answer comes from the pipeline's own generated tables rather than from a range check
 // written a second time. A flat FontSet ignores it entirely, so this costs a flat chain
 // nothing.
-pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Glyph {
+pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg shape.ShapedGlyph, em_px f64) []Glyph {
 	if sg.base.len == 0 {
 		return []Glyph{}
 	}

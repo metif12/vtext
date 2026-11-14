@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.ucd
 
 // Line breaking, per UAX #14.
@@ -1233,7 +1234,7 @@ fn is_prohibited_start(c ucd.LineBreakClass) bool {
 // a quotation mark, LB21 for a break-before, a hyphen or a non-starter, and LB22 for an
 // inseparable numeral infix.
 //
-// This function also documents the two entries that were removed from it, because the removal is
+// This function also documents the two entries that were shape.removed from it, because the removal is
 // the most instructive thing in the file. `.pr` and `.po` were here, on the reading that a numeric
 // prefix or postfix is something a line may not begin with. It is, for *nine* left-hand classes —
 // AL, HL, NU and CM by LB24.03 and LB25, and OP, BB, GL, QU and WJ by rules that already answer.
@@ -1457,7 +1458,7 @@ pub mut:
 // anyway would mean breaking inside a word.
 //
 // No discretionary features are applied. Use wrap_paragraph_with to ask for any.
-pub fn wrap_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64,
+pub fn wrap_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64,
 	max_width f64) []WrappedLine {
 	return wrap_paragraph_with(ctx, cps, base_dir, fs, em_px, max_width, &LayoutOptions{})
 }
@@ -1468,7 +1469,7 @@ pub fn wrap_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSet,
 // cannot pass anything, and the paragraph was then shaped without the features the caller asked for while
 // the same text laid out with layout_paragraph_with was shaped with them. The two disagreed about the width
 // of the same text, which is the one thing a text engine must never do.
-pub fn wrap_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64,
+pub fn wrap_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64,
 	max_width f64, options &LayoutOptions) []WrappedLine {
 	if cps.len == 0 {
 		return []WrappedLine{}
@@ -1673,7 +1674,7 @@ pub:
 // no use for 400 positioned glyphs and would have to throw them away.
 //
 // No discretionary features are applied. Use measure_paragraph_with to ask for any.
-pub fn measure_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64) TextMetrics {
+pub fn measure_paragraph(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64) TextMetrics {
 	return measure_paragraph_with(ctx, cps, base_dir, fs, em_px, &LayoutOptions{})
 }
 
@@ -1683,7 +1684,7 @@ pub fn measure_paragraph(ctx &Context, cps []rune, base_dir Direction, fs &FontS
 // produce for the same text and the same options. A measurement taken without the features, or taken with
 // a different line height, is a measurement of a different line, and a caller that sizes a box from it
 // has sized the box for something it will not draw.
-pub fn measure_paragraph_with(ctx &Context, cps []rune, base_dir Direction, fs &FontSet, em_px f64,
+pub fn measure_paragraph_with(ctx &Context, cps []rune, base_dir shape.Direction, fs &FontSet, em_px f64,
 	options &LayoutOptions) TextMetrics {
 	if cps.len == 0 {
 		return TextMetrics{}

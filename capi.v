@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 
 // The C ABI of this text shaping library: opaque handles over the shaped
@@ -68,7 +69,7 @@ fn c_bytes(data &u8, len int) []u8 {
 // left-to-right, 1 is right-to-left, and anything else takes the direction
 // from the first strong character, which is what a caller usually wants for a
 // line of unknown language.
-fn c_dir(dir int) Direction {
+fn c_dir(dir int) shape.Direction {
 	if dir == 1 {
 		return .rtl
 	}

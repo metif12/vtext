@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.ucd
 
 // Exposing the pipeline's stages, one at a time, for tools/shapetrace.
@@ -232,48 +233,11 @@ pub fn (ctx &Context) normalize_nfd(cps []rune) []rune {
 
 // resolve_bidi is the paragraph-level resolution of UAX#9.
 //
-// base_dir is what P2 and P3 take when the text does not imply a direction. Direction.auto is the honest
+// base_dir is what P2 and P3 take when the text does not imply a direction. shape.Direction.auto is the honest
 // answer for a trace, because it is what a caller who did not know would have passed, and a bug that only
 // appears under one of the forced directions would otherwise be invisible here.
-pub fn resolve_bidi(ctx &Context, cps []rune, base_dir Direction) BidiResult {
-	return resolve_paragraph(ctx.properties, cps, base_dir)
-}
-
-// visual_string renders the visual order of the text as it would be drawn left to right, which is the one
-// form a person can compare against the picture.
-//
-// BidiResult holds the order as indices, because that is what a renderer needs and an index cannot be
-// misread as a character. This turns it into characters for a report, and it is lossy on purpose: a
-// codepoint that appears twice cannot be told apart in the output, so a trace about repeated characters
-// needs the index list and not this.
-// The characters go in as bytes taken from each rune rather than as a []rune converted at the end. An
-// Arabic or Devanagari character is two or three bytes and truncating each rune to one byte produces a
-// string that looks like the visual order in ASCII and is not it in any script. `[]rune.str()` is not
-// used either: on this V it renders the array as a bracketed list of the runes rather than as text, so
-// both of the obvious answers are wrong and the bytes are assembled here.
-pub fn (b &BidiResult) visual_string(cps []rune) string {
-	mut bytes := []u8{cap: b.visual_order.len * 4}
-	for i in b.visual_order {
-		if i >= 0 && i < cps.len {
-			cp := cps[i]
-			if cp < 0x80 {
-				bytes << u8(cp)
-			} else if cp < 0x800 {
-				bytes << u8(0xC0 | (cp >> 6))
-				bytes << u8(0x80 | (cp & 0x3F))
-			} else if cp < 0x10000 {
-				bytes << u8(0xE0 | (cp >> 12))
-				bytes << u8(0x80 | ((cp >> 6) & 0x3F))
-				bytes << u8(0x80 | (cp & 0x3F))
-			} else {
-				bytes << u8(0xF0 | (cp >> 18))
-				bytes << u8(0x80 | ((cp >> 12) & 0x3F))
-				bytes << u8(0x80 | ((cp >> 6) & 0x3F))
-				bytes << u8(0x80 | (cp & 0x3F))
-			}
-		}
-	}
-	return bytes.bytestr()
+pub fn resolve_bidi(ctx &Context, cps []rune, base_dir shape.Direction) shape.BidiResult {
+	return shape.resolve_paragraph(ctx.properties, cps, base_dir)
 }
 
 // shape_for_trace runs the joining pass over a run in logical order, which is the stage between bidi and
@@ -281,7 +245,7 @@ pub fn (b &BidiResult) visual_string(cps []rune) string {
 //
 // The run it returns is the same one layout_paragraph gets, not a copy of it computed differently: a
 // trace that reshapes to describe the pipeline would be describing itself.
-pub fn (ctx &Context) shape_for_trace(cps []rune) ShapedRun {
+pub fn (ctx &Context) shape_for_trace(cps []rune) shape.ShapedRun {
 	return ctx.shaper.shape_arabic(ctx.properties, cps)
 }
 

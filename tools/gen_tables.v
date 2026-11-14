@@ -15,6 +15,7 @@ module main
 
 import os
 import vtext.font
+import vtext.shape
 
 const ucd_dir = 'ucd'
 const out_dir = 'ucd'
@@ -176,7 +177,7 @@ const quote_role_order = ['qu_none', 'pi', 'pf', 'both']
 // table to consult to learn whether a 0 meant "not asked" or "not a mark".
 const sa_mark_order = ['sa_none', 'sa_mark']
 
-// BracketPair is one entry of the BidiBrackets table: a codepoint, the
+// shape.BracketPair is one entry of the BidiBrackets table: a codepoint, the
 // codepoint it pairs with, and whether it opens or closes the pair.
 struct BracketPair {
 	cp     u32
@@ -192,11 +193,11 @@ struct BracketPair {
 //
 // An unread file is fatal for the reason ucd_ranges documents: returning an empty list wrote three
 // empty tables without saying so.
-fn parse_brackets(path string) []BracketPair {
+fn parse_brackets(path string) []shape.BracketPair {
 	data := os.read_file(path) or {
 		panic('cannot read ${path}: ${err.msg()}. Run tools/fetch_ucd.v first.')
 	}
-	mut out := []BracketPair{}
+	mut out := []shape.BracketPair{}
 	for line in data.split_into_lines() {
 		// The value is followed by " # name", so the comment goes first.
 		cut := line.index('#') or { line.len }
@@ -210,7 +211,7 @@ fn parse_brackets(path string) []BracketPair {
 		}
 		kind := if fields[2].trim_space() == 'o' { u8(0) } else { u8(1) }
 		cp := parse_hex(fields[0])
-		out << BracketPair{
+		out << shape.BracketPair{
 			cp:        cp
 			paired:    parse_hex(fields[1])
 			kind:      kind
@@ -218,7 +219,7 @@ fn parse_brackets(path string) []BracketPair {
 		}
 	}
 	// Sorted by codepoint so a lookup is a binary search.
-	out.sort_with_compare(fn (a &BracketPair, b &BracketPair) int {
+	out.sort_with_compare(fn (a &shape.BracketPair, b &shape.BracketPair) int {
 		if a.cp < b.cp {
 			return -1
 		}

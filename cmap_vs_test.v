@@ -1,12 +1,13 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // cmap variation sequences: formats 13 and 14.
 //
 // A format 14 subtable does not answer "which glyph is this codepoint". It answers "which glyph is this
 // codepoint given the selectors that follow it", and the selector is consumed by the lookup rather than
 // looked up on its own. That is why this is a separate pair of functions and a separate field on
-// ShapedGlyph rather than a parameter: everything else in the library, from the fallback chain to
+// shape.ShapedGlyph rather than a parameter: everything else in the library, from the fallback chain to
 // Glyph.cluster, is built on a glyph lookup being a pure function of one rune.
 //
 // The fonts used here are the ten on this machine that carry a format 14 subtable, and the count came

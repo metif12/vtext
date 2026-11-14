@@ -1,4 +1,4 @@
-module vtext
+module shape
 
 import vtext.ucd
 
@@ -20,14 +20,14 @@ pub:
 	canonical u32
 }
 
-const bracket_open = u8(0)
-const bracket_close = u8(1)
+pub const bracket_open = u8(0)
+pub const bracket_close = u8(1)
 
 // parse_bracket_table decodes "cp paired o|c canonical" records, one per line.
 //
 // Line based rather than character based: a codepoint may contain the hex digits
 // a-f, which collide with the o and c markers when scanning a whole string.
-fn parse_bracket_table(data string) []BracketPair {
+pub fn parse_bracket_table(data string) []BracketPair {
 	mut out := []BracketPair{}
 	if data.len == 0 {
 		return out
@@ -60,13 +60,13 @@ fn parse_bracket_table(data string) []BracketPair {
 // bracket_table returns the decoded bracket table. It is rebuilt on each call: the
 // table is a few hundred entries, so caching would save nothing measurable
 // against the shaping work that surrounds a lookup.
-fn bracket_table() []BracketPair {
+pub fn bracket_table() []BracketPair {
 	return parse_bracket_table(ucd.bidi_brackets_data)
 }
 
 // find returns the bracket entry for cp, if it has one. The table is sorted by
 // codepoint, so this is a binary search.
-fn (b &[]BracketPair) find(cp u32) ?BracketPair {
+pub fn (b &[]BracketPair) find(cp u32) ?BracketPair {
 	mut lo := 0
 	mut hi := b.len
 	for lo < hi {
@@ -90,13 +90,13 @@ fn (b &[]BracketPair) find(cp u32) ?BracketPair {
 // with U+232A as well as with U+3009. The UCD notes that canonical equivalents exist
 // only between U+3008/U+3009 and U+2329/U+232A and that none will be added, so the
 // normalisation can never collapse two genuinely different brackets.
-fn (b &[]BracketPair) same_bracket(open BracketPair, close_cp u32) bool {
+pub fn (b &[]BracketPair) same_bracket(open BracketPair, close_cp u32) bool {
 	return b.canonical_form(open.paired) == b.canonical_form(close_cp)
 }
 
 // canonical_form returns the codepoint every member of its equivalence class shares:
 // its canonical decomposition when it has one, and itself otherwise.
-fn (b &[]BracketPair) canonical_form(cp u32) u32 {
+pub fn (b &[]BracketPair) canonical_form(cp u32) u32 {
 	entry := b.find(cp) or { return cp }
 	if entry.canonical == 0 {
 		return cp

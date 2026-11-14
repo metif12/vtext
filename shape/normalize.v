@@ -1,4 +1,4 @@
-module vtext
+module shape
 
 import vtext.ucd
 
@@ -21,20 +21,20 @@ import vtext.ucd
 /// normalizing_max_expansion bounds the recursive decomposition. The UCD's canonical
 /// decompositions are at most two levels deep, so the bound is slack; it is there
 /// so a malformed table degrades to less normalization instead of running forever.
-const normalizing_max_expansion = 8
+pub const normalizing_max_expansion = 8
 
 // Hangul. UAX#15 defines the composition and decomposition of the 11172 precomposed
 // syllables arithmetically, so they are not in a table: a stored entry for each would
 // be larger than every other table in the module put together.
-const hangul_s_base = u32(0xAC00)
-const hangul_l_base = u32(0x1100)
-const hangul_v_base = u32(0x1161)
-const hangul_t_base = u32(0x11A7)
-const hangul_l_count = u32(19)
-const hangul_v_count = u32(21)
-const hangul_t_count = u32(28)
-const hangul_n_count = hangul_v_count * hangul_t_count // 588
-const hangul_s_count = hangul_l_count * hangul_n_count // 11172
+pub const hangul_s_base = u32(0xAC00)
+pub const hangul_l_base = u32(0x1100)
+pub const hangul_v_base = u32(0x1161)
+pub const hangul_t_base = u32(0x11A7)
+pub const hangul_l_count = u32(19)
+pub const hangul_v_count = u32(21)
+pub const hangul_t_count = u32(28)
+pub const hangul_n_count = hangul_v_count * hangul_t_count // 588
+pub const hangul_s_count = hangul_l_count * hangul_n_count // 11172
 
 // Decomposition is one canonical decomposition.
 pub struct Decomposition {
@@ -217,7 +217,7 @@ pub fn (n &Normalizer) nfd_mapped(cps []rune) ([]rune, []int) {
 // original character has no class to compare with at all. The classes that decide the order belong
 // to the characters in the decomposed text, and the index has to travel with the character it
 // belongs to.
-fn (n &Normalizer) reorder_mapped(mut out []rune, mut source []int) {
+pub fn (n &Normalizer) reorder_mapped(mut out []rune, mut source []int) {
 	mut i := 0
 	for i < out.len {
 		if n.props.combining_class_of(out[i]) == 0 {
@@ -242,7 +242,7 @@ fn (n &Normalizer) reorder_mapped(mut out []rune, mut source []int) {
 // The comparison is the one insertion_sort_marks makes, and it has to be the same one: stable, so
 // that marks sharing a class keep the order they were written in. Sorting the two arrays in step is
 // what keeps every index beside the character it names.
-fn (n &Normalizer) insertion_sort_mapped(mut run []rune, mut source []int) {
+pub fn (n &Normalizer) insertion_sort_mapped(mut run []rune, mut source []int) {
 	for i in 1 .. run.len {
 		c := run[i]
 		from := source[i]
@@ -263,7 +263,7 @@ fn (n &Normalizer) insertion_sort_mapped(mut run []rune, mut source []int) {
 
 // marks_out_of_order reports whether any run of non-starters is not in combining class
 // order, which is the one thing the NFD quick check cannot see.
-fn (n &Normalizer) marks_out_of_order(cps []rune) bool {
+pub fn (n &Normalizer) marks_out_of_order(cps []rune) bool {
 	mut i := 0
 	for i < cps.len {
 		if n.props.combining_class_of(cps[i]) == 0 {
@@ -301,7 +301,7 @@ pub fn (n &Normalizer) nfc(cps []rune) []rune {
 }
 
 // append_decomposed appends the full canonical decomposition of cp to out.
-fn (n &Normalizer) append_decomposed(cp rune, depth int, mut out []rune) {
+pub fn (n &Normalizer) append_decomposed(cp rune, depth int, mut out []rune) {
 	c := u32(cp)
 	if c >= hangul_s_base && c < hangul_s_base + hangul_s_count {
 		out << rune(hangul_l_base + (c - hangul_s_base) / hangul_n_count)
@@ -331,7 +331,7 @@ fn (n &Normalizer) append_decomposed(cp rune, depth int, mut out []rune) {
 }
 
 // find_decomposition returns the canonical decomposition of cp, if the UCD has one.
-fn (n &Normalizer) find_decomposition(cp u32) ?Decomposition {
+pub fn (n &Normalizer) find_decomposition(cp u32) ?Decomposition {
 	d := n.decompositions
 	mut lo := 0
 	mut hi := d.len
@@ -356,7 +356,7 @@ fn (n &Normalizer) find_decomposition(cp u32) ?Decomposition {
 // very start of the string: a leading run sorts as a unit, and only a starter in front
 // of it would hold it in place. Within a run the marks sort by class, and the sort is
 // stable, so marks that share a class keep the order they arrived in.
-fn (n &Normalizer) reorder_canonical(mut cps []rune) {
+pub fn (n &Normalizer) reorder_canonical(mut cps []rune) {
 	mut i := 0
 	for i < cps.len {
 		if n.props.combining_class_of(cps[i]) == 0 {
@@ -379,7 +379,7 @@ fn (n &Normalizer) reorder_canonical(mut cps []rune) {
 // insertion_sort_marks sorts a run of non-starters by combining class. Insertion
 // rather than a general sort because the runs are short, almost always one or two
 // marks, and because it is stable without extra work.
-fn (n &Normalizer) insertion_sort_marks(mut run []rune) {
+pub fn (n &Normalizer) insertion_sort_marks(mut run []rune) {
 	for i in 1 .. run.len {
 		c := run[i]
 		cc := n.props.combining_class_of(c)
@@ -453,7 +453,7 @@ pub fn (n &Normalizer) compose_canonical(cps []rune) []rune {
 // try_compose returns the composite a starter and a following character make, or 0
 // when the pair does not compose. Hangul is handled arithmetically, before the table,
 // because the table has no entry for it.
-fn (n &Normalizer) try_compose(starter rune, second rune) rune {
+pub fn (n &Normalizer) try_compose(starter rune, second rune) rune {
 	composite := compose_hangul(starter, second)
 	if composite != 0 {
 		return rune(composite)
@@ -463,7 +463,7 @@ fn (n &Normalizer) try_compose(starter rune, second rune) rune {
 
 // compose_hangul returns the syllable a leading and trailing Jamo compose into, or 0.
 // UAX#15 section 10.2 defines both the L+V and the LV+T steps.
-fn compose_hangul(lead rune, trail rune) u32 {
+pub fn compose_hangul(lead rune, trail rune) u32 {
 	l := u32(lead)
 	t := u32(trail)
 	// L + V gives a syllable with no trailing consonant, which is also the base the
@@ -490,7 +490,7 @@ fn compose_hangul(lead rune, trail rune) u32 {
 // find_composition returns the composite a starter and a following character make, or
 // 0. The table is sorted by starter then second, so the starter is bisected and its
 // run walked.
-fn (n &Normalizer) find_composition(starter u32, second u32) u32 {
+pub fn (n &Normalizer) find_composition(starter u32, second u32) u32 {
 	c := n.compositions
 	mut lo := 0
 	mut hi := c.len
@@ -513,7 +513,7 @@ fn (n &Normalizer) find_composition(starter u32, second u32) u32 {
 // split_fields splits a whitespace separated record. Splitting on a space alone leaves
 // empty fields wherever the data has a double space or a trailing one, and an empty
 // field parses as zero, which is a real codepoint.
-fn split_fields(s string) []string {
+pub fn split_fields(s string) []string {
 	mut out := []string{}
 	for f in s.split(' ') {
 		if f != '' {
@@ -526,7 +526,7 @@ fn split_fields(s string) []string {
 // parse_decompositions decodes the "cp d1 d2 ..." table. Each line is one slice
 // allocation, which is why the table stays a const string rather than a const array
 // of structs: this compiler materialises such an array with length zero.
-fn parse_decompositions(data string) []Decomposition {
+pub fn parse_decompositions(data string) []Decomposition {
 	mut out := []Decomposition{}
 	if data.len == 0 {
 		return out
@@ -550,7 +550,7 @@ fn parse_decompositions(data string) []Decomposition {
 }
 
 // parse_compositions decodes the "starter second composite" table.
-fn parse_compositions(data string) []Composition {
+pub fn parse_compositions(data string) []Composition {
 	mut out := []Composition{}
 	if data.len == 0 {
 		return out
@@ -574,7 +574,7 @@ fn parse_compositions(data string) []Composition {
 }
 
 // in_ranges reports whether cp falls in a sorted, non-overlapping range list.
-fn in_ranges(ranges []ucd.CodeRange, cp u32) bool {
+pub fn in_ranges(ranges []ucd.CodeRange, cp u32) bool {
 	mut lo := 0
 	mut hi := ranges.len
 	for lo < hi {

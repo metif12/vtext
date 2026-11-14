@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 // Conformance against the Unicode line breaking test, and a floor under the score.
 //
 // UAX #14 is specified by example as much as by rule: `ucd/LineBreakTest.txt` is the list of cases the
@@ -51,7 +52,7 @@ import os
 //
 // On 2026-10-12 it became **17,612**, worth 922 in one change, and that change is the most instructive
 // in this file. A rule refusing a break *after* a combining mark — added on 2026-10-04 for 312 cases
-// and generalised from one case about a zero width non-joiner — was removed. LB9 forbids a break
+// and generalised from one case about a zero width non-joiner — was shape.removed. LB9 forbids a break
 // before a mark and says nothing about what follows one. Removing it alone was 713 cases; the 768 it
 // broke are recovered by reading LB28 and LB23 through the mark to its base, and LB30 — which was
 // missing entirely — reads through it in the other direction. HL joined the other four pairs of

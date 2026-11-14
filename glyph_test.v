@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 // Tests for the font layer: codepoint to glyph, and the fallback chain.
 
 import os
@@ -175,7 +176,7 @@ fn test_shaped_glyphs_prefers_the_form_when_a_font_has_it() {
 	arabic := amiri() or { return }
 	fs := new_font_set_of(arabic)
 	ctx := new_context()
-	sg := ShapedGlyph{
+	sg := shape.ShapedGlyph{
 		cps:  [rune(0xFE8F)] // ARABIC LETTER BEH ISOLATED FORM
 		base: [rune(0x0628)]
 		form: .isolated
@@ -194,7 +195,7 @@ fn test_shaped_glyphs_falls_back_to_the_base_letter() {
 	assert formless.has_glyph(rune(0x0628))
 	fs := new_font_set_of(formless)
 	ctx := new_context()
-	sg := ShapedGlyph{
+	sg := shape.ShapedGlyph{
 		cps:  [rune(0xFE8F)]
 		base: [rune(0x0628)]
 		form: .final
@@ -215,7 +216,7 @@ fn test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw() {
 	formless := nastaliq() or { return }
 	fs := new_font_set_of(formless)
 	ctx := new_context()
-	sg := ShapedGlyph{
+	sg := shape.ShapedGlyph{
 		cps:  [rune(0xFEFC)] // ARABIC LIGATURE LAM WITH ALEF FINAL FORM
 		base: [rune(0x0644), rune(0x0627)]
 		form: .final
@@ -229,7 +230,7 @@ fn test_shaped_glyphs_splits_a_ligature_the_chain_cannot_draw() {
 	assert out[0].form == .medial
 	assert out[1].form == .final
 	// A pair standing on its own joined nothing, so neither half is final.
-	lone := ShapedGlyph{
+	lone := shape.ShapedGlyph{
 		cps:  [rune(0xFEFB)] // ARABIC LIGATURE LAM WITH ALEF ISOLATED FORM
 		base: [rune(0x0644), rune(0x0627)]
 		form: .isolated
@@ -251,7 +252,7 @@ fn test_shaped_glyphs_asks_the_whole_chain_about_the_form() {
 	fs := new_font_set()
 	fs.add(formless)
 	fs.add(formless)
-	sg := ShapedGlyph{
+	sg := shape.ShapedGlyph{
 		cps:  [rune(0xFE8F)]
 		base: [rune(0x0628)]
 		form: .isolated
@@ -266,7 +267,7 @@ fn test_shaped_glyphs_keeps_a_mark_flagged_and_advanceless() {
 	arabic := amiri() or { return }
 	fs := new_font_set_of(arabic)
 	ctx := new_context()
-	sg := ShapedGlyph{
+	sg := shape.ShapedGlyph{
 		cps:     [rune(0x064E)] // ARABIC FATHA
 		base:    [rune(0x064E)]
 		form:    .isolated
@@ -281,5 +282,5 @@ fn test_shaped_glyphs_keeps_a_mark_flagged_and_advanceless() {
 fn test_shaped_glyphs_with_no_base_characters_draws_nothing() {
 	fs := new_font_set_of(amiri() or { return })
 	ctx := new_context()
-	assert fs.shaped_glyphs(ctx, ShapedGlyph{ cps: [rune(0x41)], base: []rune{} }, 32).len == 0
+	assert fs.shaped_glyphs(ctx, shape.ShapedGlyph{ cps: [rune(0x41)], base: []rune{} }, 32).len == 0
 }

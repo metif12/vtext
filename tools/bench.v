@@ -16,6 +16,7 @@ module main
 import os
 import time
 import vtext
+import vtext.shape
 
 fn load_font(paths []string) &vtext.Font {
 	for r in paths {
@@ -46,7 +47,7 @@ fn repeat_to(text string, n int) []rune {
 struct Case {
 	name  string
 	cps   []rune
-	base  vtext.Direction
+	base  shape.Direction
 	fonts &vtext.FontSet
 }
 

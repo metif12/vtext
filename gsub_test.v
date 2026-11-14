@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // Tests for the GSUB parser and the positional substitution built on it.
 //
@@ -795,7 +796,7 @@ fn test_a_character_keeps_every_glyph_made_of_it() {
 		advance: 7
 	}
 	assert placed.len == 3, 'the test needs three glyphs to say anything'
-	bidi := BidiResult{
+	bidi := shape.BidiResult{
 		levels:          [u8(0), u8(0)]
 		visible:         [true, true]
 		visual_order:    [0, 1]

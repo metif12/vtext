@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.shape
 import vtext.font
 // GPOS font.SinglePos format 2: one value for a whole coverage and a run of exceptions.
 //
@@ -209,7 +210,7 @@ fn test_single_pos_format_2_refuses_a_value_count_it_does_not_know() {
 // The record below names four indices into a **two** glyph coverage, and every one of them is a valid
 // index — 0, 1, 0, 1. That is deliberate: it makes the count the only thing wrong with the record, so
 // this test pins the count check and not the index check beside it. A record with an out-of-range
-// index would be refused by either, and a test using one would pass with the count check removed.
+// index would be refused by either, and a test using one would pass with the count check shape.removed.
 fn test_single_pos_format_2_stops_at_a_record_larger_than_the_coverage() {
 	words := [
 		i16(2),

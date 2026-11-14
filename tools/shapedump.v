@@ -38,6 +38,7 @@ module main
 import os
 import vtext
 import vtext.font
+import vtext.shape
 
 fn main() {
 	mut font_path := ''
@@ -86,11 +87,11 @@ fn main() {
 	fs := vtext.new_font_set_of(f)
 	ctx := vtext.new_context()
 	base := if dir == 'ltr' {
-		vtext.Direction.ltr
+		shape.Direction.ltr
 	} else if dir == 'rtl' {
-		vtext.Direction.rtl
+		shape.Direction.rtl
 	} else {
-		vtext.Direction.auto
+		shape.Direction.auto
 	}
 	upem := f64(f.units_per_em())
 	println('# font=${font_path} size=${size} dir=${dir} nchars=${cps.len} upem=${upem}')
@@ -109,7 +110,7 @@ fn main() {
 // `# line i:` comment carries the measured width and input range, and every
 // glyph row carries its line index as a thirteenth column. A reader that
 // only knows the twelve-column form keeps working: it checks len >= 12.
-fn dump_wrapped(ctx &vtext.Context, cps []rune, base vtext.Direction, fs &vtext.FontSet, size f64, upem f64, max_width f64) {
+fn dump_wrapped(ctx &vtext.Context, cps []rune, base shape.Direction, fs &vtext.FontSet, size f64, upem f64, max_width f64) {
 	lines := vtext.wrap_paragraph(ctx, cps, base, fs, size, max_width)
 	for li, wl in lines {
 		println('# line ${li}: width=${wl.line.width:.3f} from=${wl.from} to=${wl.to}')
