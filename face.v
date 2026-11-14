@@ -1,6 +1,7 @@
 module vtext
 
 import vtext.font
+
 // Face is a loaded font: its sfnt directory, parsed metrics tables and a
 // rasteriser handle. Everything the shaper needs to place a glyph comes from
 // here; outlines stay inside stb_truetype.
@@ -288,7 +289,7 @@ fn (f &Face) has_glyph(cp rune) bool {
 // The forward direction is a table and this is a search, because a font may map several codepoints to one
 // glyph and the table does not record which came first. The lowest is returned, so a glyph is named the
 // same way everywhere in this library.
-fn (f &Face) font.codepoint_for(gid u16) ?rune {
+fn (f &Face) codepoint_for(gid u16) ?rune {
 	cp := font.codepoint_for(f.cmaps, gid) or { return none }
 	return rune(cp)
 }
@@ -313,7 +314,7 @@ fn (f &Face) glyph_index_variation(cp rune, selectors []rune) u16 {
 
 // has_variation_sequence reports whether the font has anything to say about this base and selector
 // together, as opposed to what it says about the base on its own.
-fn (f &Face) font.has_variation_sequence(cp rune, selector rune) bool {
+fn (f &Face) has_variation_sequence(cp rune, selector rune) bool {
 	return font.has_variation_sequence(f.cmaps, u32(cp), u32(selector))
 }
 

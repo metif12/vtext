@@ -1,6 +1,7 @@
 module vtext
 
 import vtext.font
+
 // Tests for the width of a GPOS value record, which is what the reader uses to step from one record to the
 // next.
 //

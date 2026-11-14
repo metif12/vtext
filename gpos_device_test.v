@@ -1,6 +1,7 @@
 module vtext
 
 import vtext.font
+
 // Tests for the Device table reader: the size-dependent pixel adjustment a GPOS value may carry.
 //
 // No font measured carries one — zero Device tables across 2,450,058 value records on 379 faces —

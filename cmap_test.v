@@ -16,6 +16,7 @@ module vtext
 // shaping bug can take: wrong output with no error in it.
 
 import os
+import vtext.font
 
 // corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
 // second, and none when neither has it.
@@ -146,7 +147,7 @@ fn test_the_chosen_subtable_is_one_the_font_agrees_with() {
 		mut agreeing := 0
 		mut unicode_subtables := 0
 		for c in f.face.cmaps {
-			if c.platform != platform_unicode && c.platform != platform_windows {
+			if c.platform != font.platform_unicode && c.platform != font.platform_windows {
 				continue
 			}
 			unicode_subtables++
@@ -221,13 +222,13 @@ fn cmap_dir_bytes(words []int) []u8 {
 // words the offsets point at.
 fn test_raw_cmap_formats_lists_unread_subtables_too() {
 	data := cmap_dir_bytes([0, 2, 3, 1, 0, 20, 3, 10, 0, 22, 4, 10])
-	assert raw_cmap_formats(data) == [4, 10], 'both formats, including the unread one'
-	assert cmap_format_readable(4), 'format 4 is parsed'
-	assert !cmap_format_readable(10), 'format 10 is dropped'
+	assert font.raw_cmap_formats(data) == [4, 10], 'both formats, including the unread one'
+	assert font.cmap_format_readable(4), 'format 4 is parsed'
+	assert !font.cmap_format_readable(10), 'format 10 is dropped'
 	// A directory cut short ends the walk rather than reading past it, and an
 	// offset past the end skips its record rather than failing the table.
-	assert raw_cmap_formats(data[..12]) == [], 'one record of two leaves nothing readable'
-	assert raw_cmap_formats(cmap_dir_bytes([0, 1, 3, 1, 0, 200, 4])) == [], 'a bad offset skips its record'
+	assert font.raw_cmap_formats(data[..12]) == [], 'one record of two leaves nothing readable'
+	assert font.raw_cmap_formats(cmap_dir_bytes([0, 1, 3, 1, 0, 200, 4])) == [], 'a bad offset skips its record'
 }
 
 // And the committed fonts must carry nothing this reports: every raw format in
@@ -236,7 +237,7 @@ fn test_no_corpus_font_carries_an_unreadable_cmap_format() {
 	for name in corpus_cmap_fonts {
 		f := cmap_font(name) or { return }
 		for format in f.cmap_table_formats() {
-			assert cmap_format_readable(format), '${name} carries format ${format}, which the engine drops'
+			assert font.cmap_format_readable(format), '${name} carries format ${format}, which the engine drops'
 		}
 	}
 }

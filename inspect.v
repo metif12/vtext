@@ -1,6 +1,7 @@
 module vtext
 
 import vtext.font
+
 // Reading what a font contains, for the programs that want to know rather than to draw.
 //
 // Everything here is a report about a font the engine has already read. None of it changes what the engine
@@ -223,7 +224,7 @@ pub fn (f &Font) cmap_formats() []int {
 // which is what fontcheck reports. An empty list means the font has no cmap
 // table at all rather than one the engine disliked.
 pub fn (f &Font) cmap_table_formats() []int {
-	return raw_cmap_formats(f.face.sfnt.table_data(font.tag_cmap))
+	return font.raw_cmap_formats(f.face.sfnt.table_data(font.tag_cmap))
 }
 
 // feature_lookups says how many lookups a script's feature names in a table, or zero when the script
@@ -364,41 +365,4 @@ fn sort_tags(list []string) []string {
 		}
 	}
 	return out
-}
-
-// mapped_count is how many codepoints this subtable gives a glyph that is not .notdef.
-//
-// The walk skips .notdef because a subtable is allowed to name a character it has no glyph for, and
-// counting those as mappings would say a font covers a character it cannot draw. That is the same
-// distinction `glyph_grid` draws, and it is why a font's coverage number and its mapped number are two
-// different numbers.
-fn (c &font.Cmap) mapped_count() int {
-	// A format 14 subtable has no opinion about any bare codepoint, so counting by asking would report
-	// zero for a table that names several hundred bases. It is counted from its own tables instead: the
-	// span each default entry covers, plus the bases the non-default table names that no span already
-	// covers.
-	//
-	// Counting the two lists without the overlap check would be simpler and would over-report by one for
-	// every base in both, and a font whose default and non-default tables overlap is the normal case
-	// rather than a corner.
-	if c.format == 14 {
-		mut n := 0
-		for span in c.vs_ranges {
-			n += int(span.length) + 1
-		}
-		for m in c.vs_maps {
-			if !vs_covers(c.vs_ranges, m.base) {
-				n++
-			}
-		}
-		return n
-	}
-	mut n := 0
-	for cp in 0 .. 0x10000 {
-		gid := c.lookup_glyph(u32(cp)) or { continue }
-		if gid != 0 {
-			n++
-		}
-	}
-	return n
 }

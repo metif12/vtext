@@ -1,6 +1,7 @@
 module vtext
 
 import vtext.font
+
 // OpenType glyph positioning, the GPOS table, and the GDEF table that says what it is talking
 // about.
 //

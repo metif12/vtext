@@ -3,9 +3,8 @@ module font
 // Sfnt is a parsed sfnt container: the table directory of one font, which may
 // be the first member of a TrueType collection.
 pub struct Sfnt {
-pub:
+pub mut:
 	data []u8
-mut:
 	// base is the byte offset of this font inside data. It is 0 for a plain
 	// font and non-zero for the n-th member of a 'ttcf' collection.
 	base int

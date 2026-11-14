@@ -133,7 +133,7 @@ fn test_cmap_prefers_wide_subtable() {
 	face := new_face(data) or { panic(err) }
 	best := face.cmaps[0]
 	assert best.score >= face.cmaps[1].score, 'subtables are not score-ordered'
-	assert best.platform == platform_windows, 'expected a Windows subtable to win'
+	assert best.platform == font.platform_windows, 'expected a Windows subtable to win'
 }
 
 fn test_hmtx_advances_are_monotonic_sane() {

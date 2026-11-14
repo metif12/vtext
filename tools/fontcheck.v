@@ -36,6 +36,7 @@ module main
 
 import os
 import vtext
+import vtext.font
 
 // Lookup kinds this engine reads. Everything else in a table is carried by the parser and never applied,
 // which is a fact about the engine and not about the font.
@@ -118,7 +119,7 @@ fn main() {
 		}
 	}
 
-	font := vtext.load_font_file(path) or {
+	loaded := vtext.load_font_file(path) or {
 		println('cannot open ${path}: ${err}')
 		exit(1)
 	}
@@ -127,7 +128,7 @@ fn main() {
 
 	// Outlines. A font with neither is a font this engine cannot draw anything with, and it is worth saying
 	// first because everything after it is irrelevant.
-	outline := font.outlines()
+	outline := loaded.outlines()
 	if outline == '' {
 		findings << Finding{
 			kind: 'outlines'
@@ -147,7 +148,7 @@ fn main() {
 		'GSUB': gsub_reads
 		'GPOS': gpos_reads
 	} {
-		counts := font.lookup_type_counts(table)
+		counts := loaded.lookup_type_counts(table)
 		for kind, n in counts {
 			if kind in reads || (table == 'GPOS' && kind == 3) {
 				continue
@@ -173,14 +174,14 @@ fn main() {
 		'GSUB': ['ccmp', 'isol', 'fina', 'init', 'medi', 'rlig', 'liga', 'calt']
 		'GPOS': ['kern', 'mark', 'mkmk', 'abvm', 'blwm']
 	} {
-		scripts := font.scripts(table)
+		scripts := loaded.scripts(table)
 		for want in wants {
-			if want !in font.features(table) {
+			if want !in loaded.features(table) {
 				continue
 			}
 			mut total := 0
 			for s in scripts {
-				total += font.feature_lookups(table, s, want)
+				total += loaded.feature_lookups(table, s, want)
 			}
 			if total == 0 {
 				findings << Finding{
@@ -200,9 +201,9 @@ fn main() {
 	// The `why` is therefore written twice over, because either statement alone leaves a reader guessing:
 	// the lookup it reaches was not read, and the attachment would not be applied even if it had been. Saying
 	// "type 3 is not read" when the table has no type 3 in it is a claim about a font that is not this one.
-	cursive_lookups := font.lookup_type_counts('GPOS')[3]
-	undeciphered := font.lookup_type_counts('GPOS')[9]
-	declares_curs := 'curs' in font.features('GPOS')
+	cursive_lookups := loaded.lookup_type_counts('GPOS')[3]
+	undeciphered := loaded.lookup_type_counts('GPOS')[9]
+	declares_curs := 'curs' in loaded.features('GPOS')
 	if declares_curs || cursive_lookups > 0 {
 		mut what := ''
 		if cursive_lookups > 0 {
@@ -226,7 +227,7 @@ fn main() {
 
 	// Variation. is_variable is a fact about the font and the absence of variation support is a fact about
 	// the engine, and the finding exists only because a caller asking for a weight deserves to know.
-	if font.is_variable() {
+	if loaded.is_variable() {
 		findings << Finding{
 			kind: 'variation'
 			what: 'the font is variable (fvar is present)'
@@ -236,7 +237,7 @@ fn main() {
 
 	// Marks with no rules. A font that has marks and no mark feature has them drawn at the pen, stacked on
 	// top of each other, which looks like a bug in the text and is a gap in the engine's reach.
-	if !font.has_mark_attachment() {
+	if !loaded.has_mark_attachment() {
 		findings << Finding{
 			kind: 'marks'
 			what: 'no mark attachment rules'
@@ -248,7 +249,7 @@ fn main() {
 	// parse, so a character mapped only there has no glyph. Every format in the
 	// font's own bytes is listed, including the dropped ones, because the parsed
 	// list cannot show what it threw away.
-	table_formats := font.cmap_table_formats()
+	table_formats := loaded.cmap_table_formats()
 	if table_formats.len == 0 {
 		findings << Finding{
 			kind: 'cmap'
@@ -259,7 +260,7 @@ fn main() {
 		mut unread := []int{}
 		mut any_readable := false
 		for format in table_formats {
-			if vtext.cmap_format_readable(format) {
+			if font.cmap_format_readable(format) {
 				any_readable = true
 			} else if format !in unread {
 				unread << format
@@ -288,10 +289,10 @@ fn main() {
 		'arab': rune(0x0628)
 		'latn': rune(0x41)
 	} {
-		if script !in font.scripts('GSUB') && script !in font.scripts('GPOS') {
+		if script !in loaded.scripts('GSUB') && script !in loaded.scripts('GPOS') {
 			continue
 		}
-		if !font.has_glyph(sample) {
+		if !loaded.has_glyph(sample) {
 			findings << Finding{
 				kind: 'coverage'
 				what: 'declares ${script} but has no glyph for U+${u32(sample):04X}'
@@ -324,7 +325,7 @@ fn main() {
 			'GSUB': gsub_reads
 			'GPOS': gpos_reads
 		} {
-			counts := font.lookup_type_counts(table)
+			counts := loaded.lookup_type_counts(table)
 			mut kinds := []int{cap: counts.len}
 			for k, _ in counts {
 				kinds << k

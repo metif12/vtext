@@ -3,7 +3,7 @@ module font
 // Cmap is a character-to-glyph mapping subtable, normalised across the formats
 // that matter in practice (0, 4, 6 and 12).
 pub struct Cmap {
-pub:
+pub mut:
 	format   int
 	platform u16
 	encoding u16
@@ -59,7 +59,8 @@ pub:
 // Both offsets are from the start of the subtable rather than from the record, which is the
 // specification's own choice and the reason a format 14 length field is a uint32 while every other
 // format's is a uint16.
-struct VsRecord {
+pub struct VsRecord {
+pub:
 	selector  u32
 	def_off   int
 	nodef_off int
@@ -67,23 +68,25 @@ struct VsRecord {
 
 // VsRange is one span of codepoints in a format 14 default table, which says "these bases have an
 // emoji presentation" without naming a glyph. The glyph is the base's own, from the ordinary subtable.
-struct VsRange {
+pub struct VsRange {
+pub:
 	start  u32
 	length u32
 }
 
 // VsMapping is one base codepoint and the glyph a selector asks for instead of the base's own.
-struct VsMapping {
+pub struct VsMapping {
+pub:
 	base u32
 	gid  u16
 }
 
 // Platform and encoding identifiers, kept as raw ids to stay independent of
 // any particular registry revision.
-const platform_unicode = u16(0)
-const platform_macintosh = u16(1)
-const platform_iso = u16(2)
-const platform_windows = u16(3)
+pub const platform_unicode = u16(0)
+pub const platform_macintosh = u16(1)
+pub const platform_iso = u16(2)
+pub const platform_windows = u16(3)
 
 // cmap_preference ranks a (platform, encoding) pair. The scores follow the
 // order the OpenType specification recommends for choosing a Unicode subtable.
@@ -652,6 +655,43 @@ fn vs_covers(ranges []VsRange, base u32) bool {
 		}
 	}
 	return false
+}
+
+// mapped_count is how many codepoints this subtable gives a glyph that is not .notdef.
+//
+// The walk skips .notdef because a subtable is allowed to name a character it has no glyph for, and
+// counting those as mappings would say a font covers a character it cannot draw. That is the same
+// distinction `glyph_grid` draws, and it is why a font's coverage number and its mapped number are two
+// different numbers.
+pub fn (c &Cmap) mapped_count() int {
+	// A format 14 subtable has no opinion about any bare codepoint, so counting by asking would report
+	// zero for a table that names several hundred bases. It is counted from its own tables instead: the
+	// span each default entry covers, plus the bases the non-default table names that no span already
+	// covers.
+	//
+	// Counting the two lists without the overlap check would be simpler and would over-report by one for
+	// every base in both, and a font whose default and non-default tables overlap is the normal case
+	// rather than a corner.
+	if c.format == 14 {
+		mut n := 0
+		for span in c.vs_ranges {
+			n += int(span.length) + 1
+		}
+		for m in c.vs_maps {
+			if !vs_covers(c.vs_ranges, m.base) {
+				n++
+			}
+		}
+		return n
+	}
+	mut n := 0
+	for cp in 0 .. 0x10000 {
+		gid := c.lookup_glyph(u32(cp)) or { continue }
+		if gid != 0 {
+			n++
+		}
+	}
+	return n
 }
 
 // codepoint_for returns the lowest codepoint this subtable maps to a glyph, or none when it does not

@@ -1,6 +1,7 @@
 module vtext
 
 import vtext.font
+
 // OpenType glyph substitution, the GSUB table.
 //
 // This exists because a letter's four Arabic shapes are usually not in the font's cmap. A
