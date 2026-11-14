@@ -1492,6 +1492,10 @@ The closure gap closed the same day: the fixed-point closure and the rebuild mov
 red with the GSUB pass neutered (the Segoe `difficulty` seed keeps 8 from the cmap, the
 closure adds 1 composite and 11 substitution glyphs, kept 21), green with it. The one gap
 that remains is `codepoint_for` after subsetting, because the ids are not contiguous.
+Closed 2026-11-14, and the premise with it: ids are preserved and cmap is copied whole,
+so every kept glyph names the same codepoint before and after by construction, pinned by
+`test_subset_codepoint_for_agrees` — the revert control drops the cmap copy and fails
+across the table, shaping and naming asserts alike.
 
 ## Differential shaping: four references, one baseline — running 2026-10-16
 

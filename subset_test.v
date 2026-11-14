@@ -175,3 +175,25 @@ fn test_subset_shapes_and_rasterizes_like_original() {
 		assert a.coverage == b.coverage, 'gid ${gid} same ink'
 	}
 }
+
+// codepoint_for survives subsetting, because ids are preserved and cmap is copied
+// whole: every kept glyph names the same codepoint before and after. This is the pin
+// that fails if ids are ever renumbered, which is the design the subset table above
+// refused — and it fails if the cmap copy is ever dropped, which is the revert control
+// below.
+fn test_subset_codepoint_for_agrees() {
+	data := amiri_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	mut seed := []u16{}
+	seed << original.glyph_index(`A`)
+	seed << original.glyph_index(rune(0x0628))
+	sub := subset.subset_font(original, seed) or { panic(err) }
+	reread := shape.load_font_bytes(sub.bytes) or { panic('subset does not load: ${err}') }
+	agid := original.glyph_index(`A`)
+	assert (reread.codepoint_for(agid) or { `?` }) == `A`, 'A names A after subsetting'
+	for gid in subset.kept_glyph_ids(sub.keep) {
+		a := original.codepoint_for(gid) or { rune(0x110000) }
+		b := reread.codepoint_for(gid) or { rune(0x110000) }
+		assert a == b, 'gid ${gid} names the same codepoint'
+	}
+}
