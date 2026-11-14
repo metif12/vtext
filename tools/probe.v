@@ -10,6 +10,7 @@ import strings
 import vtext
 import vtext.font
 import vtext.shape
+import vtext.raster
 
 const ramps = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@']
 
@@ -20,7 +21,7 @@ fn arg(i int, fallback string) string {
 	return fallback
 }
 
-fn show(bmp &font.GlyphBitmap) {
+fn show(bmp &raster.GlyphBitmap) {
 	// Two pixel rows per text row keeps the shapes recognisable in a terminal.
 	for y in 0 .. bmp.height {
 		mut sb := strings.new_builder(bmp.width + 2)

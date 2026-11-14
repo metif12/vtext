@@ -734,7 +734,7 @@ pub fn vtext_breaks_free(b &CBreaks) {
 }
 
 // CBitmap is what a rasterize call hands back: the ink box and the coverage in
-// caller-owned memory. It mirrors font.GlyphBitmap field for field, except the
+// caller-owned memory. It mirrors raster.GlyphBitmap field for field, except the
 // coverage is a malloc'd buffer with an explicit length rather than a V array:
 // the bitmap crosses into C, and freeing V-allocated memory with the C free
 // couples the caller to whatever allocator that V array came from. The box is

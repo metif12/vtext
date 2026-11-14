@@ -1,5 +1,7 @@
 module font
 
+import vtext.raster
+
 // stb_truetype is the rasteriser. It is the same public-domain header that
 // vlib/fontstash already compiles, vendored in V's own thirdparty directory,
 // so using it adds no new dependency to the tree. It is declared STATIC here so
@@ -56,33 +58,6 @@ pub fn stbtt_init_font(info voidptr, data []u8, offset int) int {
 	return C.stbtt_InitFont(info, data[0], offset)
 }
 
-// GlyphBitmap is a rasterised glyph in 8-bit coverage, with the ink box placed
-// relative to the pen position on the baseline.
-pub struct GlyphBitmap {
-pub mut:
-	// coverage is row-major, width*height bytes: 0 is empty, 255 is solid ink.
-	coverage []u8
-	width    int
-	height   int
-	// left is how far the ink box reaches left of the pen.
-	left int
-	// top is how far the ink box reaches above the baseline, positive upwards.
-	top int
-}
-
-// is_empty reports whether the glyph has no ink at all.
-pub fn (b &GlyphBitmap) is_empty() bool {
-	return b.width <= 0 || b.height <= 0
-}
-
-// ink returns the coverage at a pixel, 0 outside the box.
-pub fn (b &GlyphBitmap) ink(x int, y int) u8 {
-	if x < 0 || y < 0 || x >= b.width || y >= b.height {
-		return 0
-	}
-	return b.coverage[y * b.width + x]
-}
-
 // px_scale returns the stb_truetype scale factor for an em size: pixels per
 // design unit. This is the factor stb expects, and it is the reciprocal of what
 // Face.scale does, which converts the other way round.
@@ -119,8 +94,8 @@ pub fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, 
 //
 // sub_x and sub_y snap the position to quarter-pixel bins, which is what stops
 // animated text from shimmering as the pen lands on fractional coordinates.
-pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitmap {
-	mut out := GlyphBitmap{}
+pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) raster.GlyphBitmap {
+	mut out := raster.GlyphBitmap{}
 	if !f.stb_ok {
 		return out
 	}
@@ -175,8 +150,8 @@ pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) Glyph
 // The numbers are the same ones rasterize_glyph would report, and provably so rather than approximately:
 // stbtt_GetGlyphBitmapBox is defined in the header as a call to the subpixel form with a shift of zero
 // (stb_truetype.h:2739), which is the shift this engine's own no-subpixel path passes.
-pub fn (f &Face) box_only(gid u16, em_px f64) GlyphBitmap {
-	mut out := GlyphBitmap{}
+pub fn (f &Face) box_only(gid u16, em_px f64) raster.GlyphBitmap {
+	mut out := raster.GlyphBitmap{}
 	if !f.stb_ok {
 		return out
 	}

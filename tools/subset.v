@@ -43,6 +43,7 @@ import vtext
 import vtext.font
 import vtext.layout
 import vtext.shape
+import vtext.raster
 
 // ---------------------------------------------------------------- arguments
 
@@ -973,7 +974,7 @@ fn verify(path string, original &shape.Font, text string, before layout.Line, si
 
 // same_bitmap compares the ink, not just the box: two glyphs can share a box and differ
 // in every pixel inside it.
-fn same_bitmap(a font.GlyphBitmap, b font.GlyphBitmap) bool {
+fn same_bitmap(a raster.GlyphBitmap, b raster.GlyphBitmap) bool {
 	if a.width != b.width || a.height != b.height || a.left != b.left || a.top != b.top {
 		return false
 	}

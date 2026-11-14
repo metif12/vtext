@@ -40,6 +40,7 @@ import vtext
 import vtext.font
 import vtext.shape
 import vtext.layout
+import vtext.raster
 
 fn main() {
 	mut font_path := ''
@@ -123,7 +124,7 @@ fn dump_wrapped(ctx &shape.Context, cps []rune, base shape.Direction, fs &shape.
 // per byte, so the differential suite can compare the fill pixel by pixel
 // through a text protocol. An empty bitmap encodes as an empty column rather
 // than as zeros, which keeps a no-ink glyph distinguishable from a black one.
-fn cov_hex(bm font.GlyphBitmap) string {
+fn cov_hex(bm raster.GlyphBitmap) string {
 	if bm.coverage.len == 0 {
 		return ''
 	}
@@ -152,7 +153,7 @@ fn dump_glyphs(glyphs []shape.Glyph, size f64, upem f64, line_idx int) {
 		bm := if gf := g.font {
 			gf.rasterize(g.gid, size, 0, 0)
 		} else {
-			font.GlyphBitmap{}
+			raster.GlyphBitmap{}
 		}
 		mut ink := 0
 		for v in bm.coverage {
