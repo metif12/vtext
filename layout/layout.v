@@ -104,6 +104,8 @@ pub mut:
 	// not: glyphs are placed by advance box, not centered on the vertical
 	// origin the way HarfBuzz offsets them, and marks keep their horizontal
 	// anchors — centering and vertical mark positioning are the next slices.
+	// wrap_paragraph_with cuts the column into columns of a given height the
+	// way it cuts a line into lines of a given width.
 	vertical bool
 }
 

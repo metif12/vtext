@@ -270,3 +270,70 @@ fn test_c_options_carries_vertical() {
 	assert !c_options(&off).vertical, 'zero vertical stays horizontal'
 	assert !c_options(&COptions(unsafe { nil })).vertical, 'null options stay horizontal'
 }
+
+// wrap_paragraph_with in vertical mode cuts columns instead of lines: the width
+// budget binds the column height, each column rebases y to its own top, and
+// the ranges cover the text in order. Gids and steps are the HarfBuzz-pinned
+// ones from the placement test.
+fn test_vertical_wrap_cuts_columns() {
+	data := msgothic_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	vopts := layout.LayoutOptions{ vertical: true }
+	cols := layout.wrap_paragraph_with(ctx, '一二三四'.runes(), .auto, fs, 32.0, 64.0, &vopts)
+	assert cols.len == 2, 'two columns of two steps'
+	assert cols[0].from == 0 && cols[0].to == 2
+	assert cols[1].from == 2 && cols[1].to == 4
+	assert cols[0].line.glyphs[0].gid == 2893
+	assert cols[0].line.glyphs[1].gid == 2983
+	assert cols[1].line.glyphs[0].gid == 2901
+	assert cols[1].line.glyphs[1].gid == 4420
+	for col in cols {
+		assert col.line.glyphs.len == 2
+		assert col.line.glyphs[0].x == 0 && col.line.glyphs[1].x == 0
+		assert col.line.glyphs[0].y == 0, 'column rebased to its own top'
+		assert col.line.glyphs[1].y == 32.0
+		assert col.line.width == 32.0, 'width stays the whole column step'
+		assert col.line.height == 64.0, 'two steps'
+		assert col.line.line_height == 32.0, 'stacking step unchanged by cutting'
+	}
+}
+
+// A newline ends the column the way it ends the line: the break takes no
+// column of its own and the newline draws nothing in either.
+fn test_vertical_wrap_mandatory_break() {
+	data := msgothic_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	vopts := layout.LayoutOptions{ vertical: true }
+	cols := layout.wrap_paragraph_with(ctx, '一二\n三四'.runes(), .auto, fs, 32.0, 1000.0, &vopts)
+	assert cols.len == 2, 'newline cuts the column'
+	assert cols[0].from == 0 && cols[0].to == 2
+	assert cols[1].from == 3 && cols[1].to == 5
+	for col in cols {
+		assert col.line.glyphs.len == 2
+		assert col.line.glyphs[0].y == 0, 'column rebased to its own top'
+		assert col.line.height == 64.0
+	}
+}
+
+// An unbreakable run taller than the budget goes on a column of its own and
+// overflows, the vertical half of the rule that keeps a horizontal word whole:
+// a caller cannot map a click on half a broken word back to the text.
+fn test_vertical_wrap_overflow() {
+	data := msgothic_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	vopts := layout.LayoutOptions{ vertical: true }
+	cols := layout.wrap_paragraph_with(ctx, 'Hello'.runes(), .auto, fs, 32.0, 40.0, &vopts)
+	assert cols.len == 1, 'one word, one column'
+	assert cols[0].from == 0 && cols[0].to == 5
+	assert cols[0].line.height == 160.0, 'five full steps overflow the budget'
+	assert cols[0].line.glyphs[4].y == 128.0
+}

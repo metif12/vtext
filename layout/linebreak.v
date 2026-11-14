@@ -1469,6 +1469,10 @@ pub fn wrap_paragraph(ctx &shape.Context, cps []rune, base_dir shape.Direction, 
 // cannot pass anything, and the paragraph was then shaped without the features the caller asked for while
 // the same text laid out with layout_paragraph_with was shaped with them. The two disagreed about the width
 // of the same text, which is the one thing a text engine must never do.
+//
+// In vertical mode the same loop cuts columns instead of lines: max_width binds the column height, each
+// returned line is one column with y rebased to its own top, and the columns come out in text order,
+// which is the order a caller stacks them right to left.
 pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64,
 	max_width f64, options &LayoutOptions) []WrappedLine {
 	if cps.len == 0 {
@@ -1502,7 +1506,7 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 				stop = from
 			}
 			out << WrappedLine{
-				line: slice_for_range(full, from, stop)
+				line: slice_for_break(full, from, stop, options.vertical)
 				from: from
 				to:   stop
 			}
@@ -1517,7 +1521,7 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 			if have_last && last > from {
 				// This break is past the margin, so the line ends at the last one that fitted.
 				out << WrappedLine{
-					line: slice_for_range(full, from, last)
+					line: slice_for_break(full, from, last, options.vertical)
 					from: from
 					to:   last
 				}
@@ -1531,7 +1535,7 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 					// overflows, because a caller cannot map a click on one half of a broken word
 					// back to the text.
 					out << WrappedLine{
-						line: slice_for_range(full, from, o.start)
+						line: slice_for_break(full, from, o.start, options.vertical)
 						from: from
 						to:   o.start
 					}
@@ -1544,7 +1548,7 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 			// Nothing has fitted yet, which means the first word is wider than the line. It is put
 			// on a line of its own rather than being split.
 			out << WrappedLine{
-				line: slice_for_range(full, from, o.start)
+				line: slice_for_break(full, from, o.start, options.vertical)
 				from: from
 				to:   o.start
 			}
@@ -1559,7 +1563,7 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 	// Whatever is left after the last break, and the whole text when it never broke.
 	if from < cps.len || out.len == 0 {
 		out << WrappedLine{
-			line: slice_for_range(full, from, cps.len)
+			line: slice_for_break(full, from, cps.len, options.vertical)
 			from: from
 			to:   cps.len
 		}
@@ -1628,6 +1632,58 @@ pub fn slice_for_range(full &Line, from int, to int) Line {
 	}
 	line.width = width
 	return line
+}
+
+// slice_for_column takes the glyphs of a vertical line that belong to a range of input characters.
+//
+// It is slice_for_range with the axes swapped: y is made relative to the column's own top edge,
+// because a column is drawn from its own top and not from the top of the paragraph it was cut
+// out of. The width stays the whole paragraph's — every column stacks by the same step — and the
+// height is how far the pen travels in the slice, the column's own length. A mark shares the
+// position of the base it sits on, so it moves with it and needs nothing of its own.
+pub fn slice_for_column(full &Line, from int, to int) Line {
+	mut line := Line{
+		width:       full.width
+		line_height: full.line_height
+	}
+	mut kept := []shape.Glyph{}
+	for g in full.glyphs {
+		if g.cluster >= from && g.cluster < to {
+			kept << g
+		}
+	}
+	if kept.len == 0 {
+		return line
+	}
+	// The top edge of the first glyph is the top edge of the column. The glyphs arrive in the
+	// visual order the line already had — top to bottom — so the first kept glyph is the topmost
+	// and subtracting its y shifts the column to start at zero.
+	origin := kept[0].y
+	mut height := f64(0)
+	for i in 0 .. kept.len {
+		mut g := kept[i]
+		g.y -= origin
+		// The column's length is how far the pen travels, which is the bottom edge of the last
+		// glyph rather than the sum of the advances: a mark has no advance of its own and sits
+		// over the letter it belongs to, so it never lengthens a column.
+		reach := g.y + g.advance
+		if reach > height {
+			height = reach
+		}
+		line.glyphs << g
+	}
+	line.height = height
+	return line
+}
+
+// slice_for_break cuts one line out of a shaped paragraph: a horizontal slice in horizontal
+// mode, a column in vertical mode. The wrap loop's cut sites all come here so the mode
+// decision lives in one place instead of at each of them.
+fn slice_for_break(full &Line, from int, to int, vertical bool) Line {
+	if vertical {
+		return slice_for_column(full, from, to)
+	}
+	return slice_for_range(full, from, to)
 }
 
 // TextMetrics is what a caller needs about a piece of text before it draws any of it.
