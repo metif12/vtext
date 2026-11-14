@@ -320,7 +320,8 @@ its coverage together.
 ## Keeping the C surface in step
 
 `capi.v` is the source of truth: every `@[export]` there appears in
-`vtext.h` and `vtext.def` under the same name. The header's structs mirror the
+`vtext.h` and `vtext.def` under the same name, and `v run tools/capicheck.v`
+proves it in both directions before the library builds. The header's structs mirror the
 V structs field for field (`CGlyph` ↔ `vtext_glyph_t`, `CMetrics` ↔
 `vtext_metrics_t`, `CBreaks` ↔ `vtext_breaks_t`, `COptions` ↔
 `vtext_options_t`); a field added on one side must be added on the other.

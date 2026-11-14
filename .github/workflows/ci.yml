@@ -229,6 +229,13 @@ jobs:
           call makev.bat
           echo %RUNNER_TEMP%\vsrc>>"%GITHUB_PATH%"
 
+      # The header mirror first: capi.v is the source of truth and vtext.h plus
+      # vtext.def must name exactly its exports. A missing symbol fails the C
+      # link below, but a stale declaration does not fail anything, so the
+      # check reads all three files as text in both directions.
+      - name: v run tools/capicheck.v
+        run: v run tools/capicheck.v
+
       # -gc none is load-bearing rather than an optimisation: with the Boehm
       # collector the library would free objects the C caller still holds, and
       # the caller has no handle the collector can see.
