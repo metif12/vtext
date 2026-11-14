@@ -1103,6 +1103,45 @@ pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string) ?Offset
 	}
 }
 
+// vkerning_for are the lookups of the vkrn feature, for the script a caller names: the vertical
+// half of kerning_for. A font is free to kern horizontally and vertically under different rules,
+// and Yu Gothic does — its kern and vkrn are different lookups — so one list cannot answer both.
+pub fn (g &Gpos) vkerning_for(script string) []u16 {
+	return g.lookups_for(script, 'vkrn')
+}
+
+// vkern_offset returns how far to move left_gid down when right_gid follows it in a vertical line,
+// in design units: the y advance the pair's rule names, which closes the downward step the way an
+// x advance closes the horizontal one. Plain pairs only, the contextual half of vkrn is not read:
+// no font on this machine writes one, and a reader verified only against tables built to match it
+// is the failure this repository rejects.
+//
+// The answer is the first glyph's, in the text's own direction, the same convention kern_offset
+// keeps. A value of zero is a real answer like it is there, and none means no rule at all.
+pub fn (g &Gpos) vkern_offset(left_gid u16, right_gid u16, script string) ?Offset2 {
+	mut y := 0
+	mut found := false
+	for li in g.vkerning_for(script) {
+		if li >= g.lookups.len {
+			continue
+		}
+		for rule in g.lookups[li].pairs {
+			if a := rule.offset_for_vertical(left_gid, right_gid) {
+				y += a.y
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return none
+	}
+	return Offset2{
+		x: 0
+		y: y
+	}
+}
+
 // has_chain_classes reports whether a lookup holds any class-based chaining rule. An
 // empty rule list positions nothing, and without this a lookup whose subtables all
 // failed to parse would still claim the chaining type.
@@ -1720,6 +1759,19 @@ pub fn (rule &MarkToBase) offset_for(mark_gid u16, base_gid u16) ?Anchor {
 // advance. A record that only moves a glyph without changing the gap is a placement rule, and
 // reporting it as a kern would take a letter out from under its neighbour.
 pub fn (rule &PairPos) offset_for(left_gid u16, right_gid u16) ?Anchor {
+	return rule.offset_for_advance(left_gid, right_gid, false)
+}
+
+// offset_for_vertical finds the vertical adjustment for one pair of glyphs within a single rule.
+//
+// It walks the same tables as offset_for, and the answer is reported when it changes the vertical
+// advance rather than the horizontal one: a vkrn record carries only a y advance, which the
+// horizontal gate reads as no kern at all.
+pub fn (rule &PairPos) offset_for_vertical(left_gid u16, right_gid u16) ?Anchor {
+	return rule.offset_for_advance(left_gid, right_gid, true)
+}
+
+fn (rule &PairPos) offset_for_advance(left_gid u16, right_gid u16, vertical bool) ?Anchor {
 	// The second glyph is the one that advances, so it is the one a zero value format 2 leaves
 	// without a record of its own.
 	mut first_side := PairValue{}
@@ -1768,7 +1820,11 @@ pub fn (rule &PairPos) offset_for(left_gid u16, right_gid u16) ?Anchor {
 		}
 		first_side = set.records[second_index][0]
 	}
-	if !first_side.has_x_advance() {
+	if vertical {
+		if !first_side.has_y_advance() {
+			return none
+		}
+	} else if !first_side.has_x_advance() {
 		return none
 	}
 	return Anchor{
@@ -1960,6 +2016,12 @@ pub mut:
 // move a letter without closing the gap.
 pub fn (v &PairValue) has_x_advance() bool {
 	return v.format & 0x0004 != 0
+}
+
+// present_y_advance reports whether this record adjusts the vertical advance at all, which is
+// what vertical kerning is. A vkrn record carries only this, so the horizontal gate drops it.
+pub fn (v &PairValue) has_y_advance() bool {
+	return v.format & 0x0008 != 0
 }
 
 // PairSet is every adjustment one first glyph has.

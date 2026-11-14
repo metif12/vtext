@@ -337,3 +337,30 @@ fn test_vertical_wrap_overflow() {
 	assert cols[0].line.height == 160.0, 'five full steps overflow the budget'
 	assert cols[0].line.glyphs[4].y == 128.0
 }
+
+// vkrn closes the downward step the way kern closes the horizontal one: the
+// record's y advance adds to the first glyph's advance. リィ in Yu Gothic R
+// is U+30EA followed by small ィ (U+30A3), which vert maps to glyph07931;
+// the pair kerns by -123 units against a 2048 step, so the first advance is
+// 1925 units and HarfBuzz with vert and vkrn on reports the same 1925-unit
+// step for the file.
+fn test_vertical_vkrn_tightens() {
+	data := corpus_font_bytes('YuGothR.ttc') or {
+		skip_missing('YuGothR.ttc')
+		return
+	}
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	vopts := layout.LayoutOptions{ vertical: true }
+	vline := layout.layout_paragraph_with(ctx, 'リィ'.runes(), .auto, fs, 32.0, &vopts)
+	assert vline.glyphs.len == 2
+	assert vline.glyphs[0].gid == 1000, 'ri has no vertical variant'
+	assert vline.glyphs[1].gid == 7931, 'small i draws its vertical form'
+	assert vline.glyphs[0].advance == 30.078125, '2048 minus 123 at 32 px'
+	assert vline.glyphs[1].advance == 32.0, 'unkerned step'
+	assert vline.glyphs[0].y == 0
+	assert vline.glyphs[1].y == 30.078125, 'second glyph starts where the kerned step ends'
+	assert vline.height == 62.078125, 'tightened column'
+}

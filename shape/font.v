@@ -337,6 +337,14 @@ pub fn (f &Font) kern_offset(left_gid u16, right_gid u16, script string) ?font.O
 	return gpos.kern_offset(left_gid, right_gid, script)
 }
 
+// vkern_offset returns how far to move left_gid down when right_gid follows it in a vertical
+// line, in design units. It is the vkrn half of kern_offset: plain pairs, no answer when the font
+// names no rule, and the y of the answer is the y advance the rule carries.
+pub fn (f &Font) vkern_offset(left_gid u16, right_gid u16, script string) ?font.Offset2 {
+	gpos := f.face.gpos or { return none }
+	return gpos.vkern_offset(left_gid, right_gid, script)
+}
+
 // kerns reports whether the font has any pair adjustment for a script.
 pub fn (f &Font) kerns(script string) bool {
 	gpos := f.face.gpos or { return false }

@@ -217,7 +217,17 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		// same path for the same reason, and it needs the run's direction: the kern folds
 		// into the advance of the visually first glyph of the pair.
 		rtl := seq.len > 0 && bidi.levels[seq[0]] & 1 == 1
-		for glyph in substitute_in_fonts(run, em_px, script, options.features, options.vertical, rtl) {
+		mut run_glyphs := substitute_in_fonts(run, em_px, script, options.features, options.vertical, rtl)
+		// The vertical swap runs per run rather than over the whole line, because the
+		// vertical kern that follows it needs the run's script and must not cross a
+		// run boundary: a pair from two scripts has no single table to ask. The swap
+		// is what the kern folds into, so it comes first, and the global pass below
+		// must not run again and discard the fold.
+		if options.vertical {
+			apply_vertical_advances(mut run_glyphs, em_px)
+			vkern_pairs(mut run_glyphs, em_px, script, rtl)
+		}
+		for glyph in run_glyphs {
 			placed << glyph
 		}
 	}
@@ -226,14 +236,8 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 	// afterwards. place_glyphs walks the run accumulating advances into x, and measure_line takes
 	// the line's width from those same positions, so a pass that changed advances alone is picked up
 	// by both with no second walk and no chance of the width and the positions disagreeing.
-	// The pen runs downward in vertical mode, so the advances it accumulates
-	// have to be vertical ones: each glyph steps by its vmtx advance, falling
-	// back to the horizontal advance it was shaped with when the font carries
-	// no vertical metrics. Spacing then adds onto those same advances before
-	// anything is positioned, exactly as in horizontal mode.
-	if options.vertical {
-		apply_vertical_advances(mut placed, em_px)
-	}
+	// Spacing adds onto the advances the swap and the vertical kern settled, exactly as in
+	// horizontal mode, where it adds onto the advances the horizontal kern settled.
 	apply_spacing(mut placed, ctx.properties, cps, options.letter_spacing, options.word_spacing)
 
 	mut line := Line{
@@ -324,8 +328,9 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, featu
 	}
 	// Horizontal pair offsets have no meaning for a downward pen: the advance
 	// they fold into is overwritten by the vertical swap, and the y they fold
-	// is the horizontal baseline's. Vertical kerning is not implemented, so a
-	// vertical run skips this pass rather than applying half of it.
+	// is the horizontal baseline's. Vertical pairs apply after the swap, per
+	// run at the call site, so this pass skips kerning entirely in vertical
+	// mode rather than folding a number the swap is about to discard.
 	if !vertical {
 		kern_pairs(mut out, em_px, script, rtl)
 	}
@@ -393,6 +398,47 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool) 
 		} else {
 			glyphs[i].advance += f64(off.x) * scale
 			glyphs[i].y -= f64(off.y) * scale
+		}
+	}
+}
+
+// vkern_pairs folds the font's vertical pair adjustments into advances, after the vertical swap
+// has run so the advances it folds into are the downward steps. Substitution comes first for the
+// same reason as in kern_pairs: the pairs are the glyphs the font's rules are written against,
+// which in a vertical line means the vert variants, and asking before vert would pair the wrong
+// glyphs — リィ kerns by -123 as drawn, not by the -82 its horizontal glyphs would kern by.
+//
+// It mirrors kern_pairs with the axes agreed: a vkrn record carries a y advance, which is a step
+// along the downward pen in the same units the vertical advances are read in, so it adds to the
+// advance directly rather than being flipped the way a y offset is. Only plain adjacency is
+// considered — same font on both sides, no marks in the pair — and the kern folds into the advance
+// of the visually first glyph of the pair, the first logical glyph going down the column and the
+// second in the rare right-to-left vertical run.
+pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool) {
+	if glyphs.len < 2 {
+		return
+	}
+	mut gids := []u16{cap: glyphs.len}
+	for g in glyphs {
+		gids << g.gid
+	}
+	for i in 0 .. glyphs.len - 1 {
+		a := glyphs[i]
+		b := glyphs[i + 1]
+		if a.is_mark || b.is_mark {
+			continue
+		}
+		fa := a.font or { continue }
+		fb := b.font or { continue }
+		if fa != fb {
+			continue
+		}
+		off := fa.vkern_offset(a.gid, b.gid, script) or { continue }
+		scale := em_px / f64(fa.face.units_per_em)
+		if rtl {
+			glyphs[i + 1].advance += f64(off.y) * scale
+		} else {
+			glyphs[i].advance += f64(off.y) * scale
 		}
 	}
 }

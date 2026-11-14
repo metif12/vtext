@@ -937,6 +937,17 @@ unbreakable Hello overflowing one column, with revert controls neutering the
 dispatcher and the rebase separately. Columns come out in text order for the
 caller to stack right to left; Pango itself is absent from
 WSL, so uharfbuzz is the independent reader.
+Slice 2d landed 2026-11-15: `vkrn` tightens the column — `PairValue.has_y_advance`
+gates a shared offset core onto the y advance, `Gpos.vkern_offset` answers plain
+pairs per script, and `vkern_pairs` folds the answer into the first glyph's advance
+after the per-run vertical swap, which is where it has to run because the swap
+overwrites whatever kerning folded earlier. Only plain pairs are read; no font on
+this machine writes a contextual vkrn. Pinned by `vertical_test.v` on Yu Gothic R:
+small i draws its vert form and the pair step tightens by the fontTools-measured
+123 units, the same 1925-unit step HarfBuzz reports with vert and vkrn on, with
+revert controls neutering the query and flipping the sign separately. The slice
+also corrected its own test midstream: the pair is U+30EA plus small U+30A3,
+not U+30A4, so the vert form and the -123 rule are the right expectations.
 
 ## Phase 2: reach
 
