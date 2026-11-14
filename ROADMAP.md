@@ -948,6 +948,15 @@ small i draws its vert form and the pair step tightens by the fontTools-measured
 revert controls neutering the query and flipping the sign separately. The slice
 also corrected its own test midstream: the pair is U+30EA plus small U+30A3,
 not U+30A4, so the vert form and the -123 rule are the right expectations.
+Slice 2e landed 2026-11-15: a vertical line centers its glyphs — each advance
+box lands mid-column against the column width instead of sharing a left edge,
+so the half-width A in 、一A draws at 8 px in a 32 px column. HarfBuzz TTB pins
+it: half the horizontal advance less of an x offset than the full-width
+neighbours. Marks keep the left edge until anchors place them, which is the
+later mark slice's to move. Pinned by `vertical_test.v` on MS Gothic with
+revert controls neutering the centering and centering on the vertical advance
+instead, plus the smoke test's Amiri fallback column, which now checks the
+centering against its own width rather than a shared zero.
 
 ## Phase 2: reach
 

@@ -213,12 +213,13 @@ fn test_vert_substitutes_in_vertical_mode() {
 	assert plain.glyphs[1].gid == hline.glyphs[1].gid
 }
 
-// A vertical line is one column: advance boxes at x 0, y accumulating downward
-// by vertical advances, width the column width, height its length. Measured at
-// 32 px against HarfBuzz TTB on the same file, which reports the same gids,
-// 256-unit steps and a 768-unit column for this text; the half-width A is what
-// proves the advance swap, stepping the full 256 vertically after advancing
-// 128 horizontally.
+// A vertical line is one column: advance boxes centered in it, y accumulating
+// downward by vertical advances, width the column width, height its length.
+// Measured at 32 px against HarfBuzz TTB on the same file, which reports the
+// same gids, 256-unit steps and a 768-unit column for this text; the half-width
+// A is what proves both the advance swap, stepping the full 256 vertically
+// after advancing 128 horizontally, and the centering, drawing at half its own
+// 128-unit advance less of an x offset than its full-width neighbours.
 fn test_vertical_line_places_downward() {
 	data := msgothic_bytes() or { return }
 	original := shape.load_font_bytes(data) or { panic(err) }
@@ -232,8 +233,10 @@ fn test_vertical_line_places_downward() {
 	assert vline.glyphs[0].gid == 21155, 'vertical comma'
 	assert vline.glyphs[1].gid == 2893, 'CJK letter'
 	assert vline.glyphs[2].gid == 36, 'latin has no vertical form'
+	assert vline.glyphs[0].x == 0, 'full-width fills the column'
+	assert vline.glyphs[1].x == 0, 'full-width fills the column'
+	assert vline.glyphs[2].x == 8.0, 'half-width centers in the 32 px column'
 	for g in vline.glyphs {
-		assert g.x == 0, 'one column'
 		assert g.advance == 32.0, 'full vertical step'
 	}
 	assert vline.glyphs[0].y == 0

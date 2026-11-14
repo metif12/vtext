@@ -69,7 +69,8 @@ int main(int argc, char **argv) {
 	/* Vertical through the C struct: the flag must arrive as laid out, which
 	 * is what proves the V and C option structs agree. Amiri carries no
 	 * vertical metrics, so this also exercises the fallback: advances stay
-	 * horizontal while the pen runs down one column. */
+	 * horizontal while the pen runs down one column, and each glyph centers
+	 * in the column width instead of sharing a left edge. */
 	vtext_options_t vopts;
 	memset(&vopts, 0, sizeof(vopts));
 	vopts.vertical = 1;
@@ -84,10 +85,11 @@ int main(int argc, char **argv) {
 			vtext_line_column_height(vline));
 		CHECK(vn == 5, "vertical glyph count");
 		double vy = 0.0;
+		double vwidth = vtext_line_width(vline);
 		for (int i = 0; i < vn; i++) {
 			vtext_glyph_t g;
 			CHECK(vtext_line_glyph(vline, i, &g), "vertical glyph readable");
-			CHECK(g.x == 0.0, "vertical glyph in one column");
+			CHECK(g.x == (vwidth - g.advance) / 2.0, "vertical glyph centered in column");
 			CHECK(g.y == vy, "vertical pen accumulates");
 			vy += g.advance;
 		}

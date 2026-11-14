@@ -242,7 +242,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 
 	mut line := Line{
 		glyphs:          if options.vertical {
-			place_glyphs_vertical(placed, bidi, origin)
+			place_glyphs_vertical(placed, bidi, origin, em_px)
 		} else {
 			place_glyphs(placed, bidi, origin)
 		}
@@ -498,11 +498,27 @@ pub fn place_glyphs(placed []shape.Glyph, bidi shape.BidiResult, origin []int) [
 // place_glyphs_vertical positions the glyphs down one column in visual order.
 //
 // It mirrors place_glyphs with the axes swapped: y accumulates the vertical
-// advances from 0 and every glyph's advance box goes at x 0. The walk, the
+// advances from 0 and every glyph's advance box is centered in the column
+// rather than sharing a left edge, because a half-width letter in a full-width
+// column draws mid-column — HarfBuzz reports half the horizontal advance less
+// of an x offset for it than for its full-width neighbours. The walk, the
 // cluster mapping and the drawn-twice guard are the same, because a vertical
 // line reorders the same way a horizontal one does — direction still runs
 // along the line, and the line now runs down.
-pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin []int) []shape.Glyph {
+pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin []int, em_px f64) []shape.Glyph {
+	// The column is as wide as its widest advance box, the same width the
+	// measure pass reports, and centering is against it: a full-width glyph
+	// lands at 0 and a narrower one lands mid-column. It is read before
+	// placing because placing is what consumes it.
+	mut width := f64(0)
+	for g in placed {
+		if g.is_mark {
+			continue
+		}
+		if f := g.font {
+			width = larger(width, f.glyph_advance(g.gid, em_px))
+		}
+	}
 	mut out := []shape.Glyph{cap: placed.len}
 	mut by_cluster := map[int][]int{}
 	for i, g in placed {
@@ -523,7 +539,15 @@ pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin
 		indices := by_cluster[orig] or { continue }
 		for i in indices {
 			mut g := placed[i]
+			// Marks keep the column's left edge until anchors place them: they
+			// have no advance box to center, and centering one would move the
+			// mark the anchor math then measures from.
 			g.x = 0
+			if !g.is_mark {
+				if f := g.font {
+					g.x = (width - f.glyph_advance(g.gid, em_px)) / 2.0
+				}
+			}
 			g.y = y
 			out << g
 			y += g.advance
