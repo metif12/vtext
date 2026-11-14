@@ -15,16 +15,28 @@ import vtext.ucd
 // It runs the whole pipeline for one paragraph and returns the glyphs left to right, which
 // is the order a caller can draw in without knowing anything about direction.
 
-// Line is a laid out paragraph: positioned glyphs, left to right.
+// Line is a laid out paragraph: positioned glyphs, left to right in horizontal
+// mode, top to bottom down one column in vertical mode.
+//
+// A vertical line is one column, not a page: breaking text across columns and
+// stacking them right to left is the caller's work, and this is what it stacks
+// with — width is the column's width, height its length, and line_height the
+// stacking step, so columns go leftward by line_height each.
 pub struct Line {
 pub mut:
-	// glyphs are the drawable glyphs in visual order, left to right. A combining mark
-	// shares the x of the letter it sits on, so a mark and its base are both present and
+	// glyphs are the drawable glyphs in visual order: left to right in
+	// horizontal mode, top to bottom in vertical mode. A combining mark
+	// shares the position of the letter it sits on, so a mark and its base are both present and
 	// both at the same place.
 	glyphs []shape.Glyph
 	// width is the total advance of the line in pixels, marks included, which for a mark is
-	// nothing.
+	// nothing. In vertical mode it is the column's width instead: the largest
+	// horizontal advance among the glyphs, which is the full em for full-width
+	// CJK and what the next column steps left by.
 	width f64
+	// height is the column's length in pixels: the pen's final y, the sum of the
+	// vertical advances. Zero in horizontal mode, where width plays this role.
+	height f64
 	// ascent and descent are the vertical extent of the line in pixels, taken from the
 	// tallest font that contributed a glyph, with any mark that reaches above or below it.
 	ascent  f64
@@ -85,10 +97,13 @@ pub mut:
 	// running text that treating it as a word separator would be a surprise.
 	word_spacing f64
 	// vertical selects vertical writing: the engine collects the font's vert
-	// variants for the run. Today that is the shaping half only — the glyphs
-	// change and the line is still laid out horizontally. Placing them
-	// downward and stacking the lines is the placement slice, which this flag
-	// will also drive.
+	// variants for the run and places the line downward as one column. Each
+	// glyph's advance box goes at x 0 with y accumulating by vertical
+	// advances, so Line.width is the column width, Line.height its length, and
+	// Line.line_height the step the next column stacks left by. What this is
+	// not: glyphs are placed by advance box, not centered on the vertical
+	// origin the way HarfBuzz offsets them, and marks keep their horizontal
+	// anchors — centering and vertical mark positioning are the next slices.
 	vertical bool
 }
 
@@ -209,14 +224,30 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 	// afterwards. place_glyphs walks the run accumulating advances into x, and measure_line takes
 	// the line's width from those same positions, so a pass that changed advances alone is picked up
 	// by both with no second walk and no chance of the width and the positions disagreeing.
+	// The pen runs downward in vertical mode, so the advances it accumulates
+	// have to be vertical ones: each glyph steps by its vmtx advance, falling
+	// back to the horizontal advance it was shaped with when the font carries
+	// no vertical metrics. Spacing then adds onto those same advances before
+	// anything is positioned, exactly as in horizontal mode.
+	if options.vertical {
+		apply_vertical_advances(mut placed, em_px)
+	}
 	apply_spacing(mut placed, ctx.properties, cps, options.letter_spacing, options.word_spacing)
 
 	mut line := Line{
-		glyphs:          place_glyphs(placed, bidi, origin)
+		glyphs:          if options.vertical {
+			place_glyphs_vertical(placed, bidi, origin)
+		} else {
+			place_glyphs(placed, bidi, origin)
+		}
 		paragraph_level: bidi.paragraph_level
 	}
 	position_marks(mut line, em_px, ctx)
-	measure_line(mut line, em_px, options)
+	if options.vertical {
+		measure_vertical_line(mut line, em_px, options)
+	} else {
+		measure_line(mut line, em_px, options)
+	}
 	return line
 }
 
@@ -289,8 +320,36 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, featu
 		}
 		at = end
 	}
-	kern_pairs(mut out, em_px, script, rtl)
+	// Horizontal pair offsets have no meaning for a downward pen: the advance
+	// they fold into is overwritten by the vertical swap, and the y they fold
+	// is the horizontal baseline's. Vertical kerning is not implemented, so a
+	// vertical run skips this pass rather than applying half of it.
+	if !vertical {
+		kern_pairs(mut out, em_px, script, rtl)
+	}
 	return out
+}
+
+// apply_vertical_advances swaps each glyph's advance for its vertical one, so
+// the downward pass accumulates vmtx steps. It runs after substitution because
+// substitution and horizontal kerning both settle horizontal advances, which a
+// vertical pen has no use for, and before spacing because spacing adds onto
+// whatever advance the pen accumulates.
+//
+// A glyph from a font with no vertical metrics keeps the horizontal advance it
+// was shaped with: a zero step would pile every fallback glyph at one y, and a
+// missing vmtx is the common case for a Latin fallback face, not an error.
+pub fn apply_vertical_advances(mut glyphs []shape.Glyph, em_px f64) {
+	for mut g in glyphs {
+		if g.is_mark {
+			continue
+		}
+		if f := g.font {
+			if f.has_vertical_metrics() {
+				g.advance = f.vertical_advance(g.gid, em_px)
+			}
+		}
+	}
 }
 
 // kern_pairs folds the font's pair positioning into advances, after every substitution
@@ -386,6 +445,66 @@ pub fn place_glyphs(placed []shape.Glyph, bidi shape.BidiResult, origin []int) [
 		}
 	}
 	return out
+}
+
+// place_glyphs_vertical positions the glyphs down one column in visual order.
+//
+// It mirrors place_glyphs with the axes swapped: y accumulates the vertical
+// advances from 0 and every glyph's advance box goes at x 0. The walk, the
+// cluster mapping and the drawn-twice guard are the same, because a vertical
+// line reorders the same way a horizontal one does — direction still runs
+// along the line, and the line now runs down.
+pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin []int) []shape.Glyph {
+	mut out := []shape.Glyph{cap: placed.len}
+	mut by_cluster := map[int][]int{}
+	for i, g in placed {
+		by_cluster[g.cluster] << i
+	}
+
+	mut y := f64(0)
+	mut drawn := map[int]bool{}
+	for v in bidi.visual_order {
+		if !bidi.visible[v] {
+			continue
+		}
+		orig := if v < origin.len { origin[v] } else { v }
+		if drawn[orig] {
+			continue
+		}
+		drawn[orig] = true
+		indices := by_cluster[orig] or { continue }
+		for i in indices {
+			mut g := placed[i]
+			g.x = 0
+			g.y = y
+			out << g
+			y += g.advance
+		}
+	}
+	return out
+}
+
+// measure_vertical_line fills in a vertical line's column geometry: width is
+// the stacking step, height the column's length.
+//
+// The width is the largest horizontal advance among the contributing glyphs,
+// the way the horizontal line height is the largest natural one among its
+// contributors: a column that fell back mid-line is spaced for the widest face
+// in it rather than the first. The height is the furthest the pen reached,
+// the same definition the horizontal width uses. Ascent and descent stay zero:
+// the column's vertical extent is its height, and the horizontal ink metrics
+// measure the wrong axis.
+pub fn measure_vertical_line(mut line Line, em_px f64, options &LayoutOptions) {
+	for g in line.glyphs {
+		if g.is_mark {
+			continue
+		}
+		if f := g.font {
+			line.width = larger(line.width, f.glyph_advance(g.gid, em_px))
+		}
+		line.height = larger(line.height, g.y + g.advance)
+	}
+	line.line_height = if options.line_height > 0.0 { options.line_height } else { line.width }
 }
 
 // measure_line fills in the line's width and vertical extent.
@@ -490,6 +609,10 @@ pub fn larger(a f64, b f64) f64 {
 // backwards in visual order would attach the mark to the letter after it rather than the one it
 // follows. A mark with no letter before it in its run, which happens at the start of a word
 // carrying a stray vowel, is left at the pen position.
+//
+// The anchors are the font's horizontal ones. In a vertical line they place the
+// way horizontal text does, which is a later slice to correct; a vertical line
+// with no marks is unaffected, which is what the vertical tests pin.
 // A `mut` value receiver for the reason given on measure_line: `mut line &Line` as a
 // parameter is a pair V 0.5.2 will not accept at a `position_marks(mut line, ...)` call.
 pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context) {

@@ -212,3 +212,44 @@ fn test_vert_substitutes_in_vertical_mode() {
 	assert plain.glyphs[0].gid == hline.glyphs[0].gid
 	assert plain.glyphs[1].gid == hline.glyphs[1].gid
 }
+
+// A vertical line is one column: advance boxes at x 0, y accumulating downward
+// by vertical advances, width the column width, height its length. Measured at
+// 32 px against HarfBuzz TTB on the same file, which reports the same gids,
+// 256-unit steps and a 768-unit column for this text; the half-width A is what
+// proves the advance swap, stepping the full 256 vertically after advancing
+// 128 horizontally.
+fn test_vertical_line_places_downward() {
+	data := msgothic_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	text := '、一A'
+	vopts := layout.LayoutOptions{ vertical: true }
+	vline := layout.layout_paragraph_with(ctx, text.runes(), .auto, fs, 32.0, &vopts)
+	assert vline.glyphs.len == 3
+	assert vline.glyphs[0].gid == 21155, 'vertical comma'
+	assert vline.glyphs[1].gid == 2893, 'CJK letter'
+	assert vline.glyphs[2].gid == 36, 'latin has no vertical form'
+	for g in vline.glyphs {
+		assert g.x == 0, 'one column'
+		assert g.advance == 32.0, 'full vertical step'
+	}
+	assert vline.glyphs[0].y == 0
+	assert vline.glyphs[1].y == 32.0
+	assert vline.glyphs[2].y == 64.0
+	assert vline.width == 32.0, 'column fits the full em'
+	assert vline.height == 96.0, 'three full steps'
+	assert vline.line_height == 32.0, 'stacking step is the column width'
+	assert vline.ascent == 0, 'no horizontal ink metrics on a vertical line'
+	assert vline.descent == 0
+	// The same text laid out horizontally still advances rightward by the
+	// horizontal metrics: the mode changes the pen, not the shaping.
+	hline := layout.layout_paragraph(ctx, text.runes(), .auto, fs, 32.0)
+	assert hline.glyphs[0].x == 0
+	assert hline.glyphs[1].x == 32.0
+	assert hline.glyphs[2].x == 64.0, 'half-width A advances 128 units'
+	assert hline.glyphs[2].advance == 16.0
+	assert hline.height == 0, 'height is the vertical mode field'
+}
