@@ -105,7 +105,7 @@ fn test_parse_sfnt_rejects_garbage() {
 
 fn test_face_metrics() {
 	data := amiri_bytes() or { return }
-	face := new_face(data) or { panic(err) }
+	face := font.new_face(data) or { panic(err) }
 	assert face.units_per_em > 0, 'unitsPerEm must be positive'
 	assert face.num_glyphs > 100, 'numGlyphs should be a real count'
 	assert face.stb_ok, 'stb_truetype failed to initialise'
@@ -116,7 +116,7 @@ fn test_face_metrics() {
 
 fn test_cmap_lookup() {
 	data := amiri_bytes() or { return }
-	face := new_face(data) or { panic(err) }
+	face := font.new_face(data) or { panic(err) }
 	assert face.cmaps.len > 0, 'no cmap subtables parsed'
 	assert face.glyph_index(`A`) != 0, 'latin A unmapped'
 	assert face.glyph_index(`a`) != 0, 'latin a unmapped'
@@ -130,7 +130,7 @@ fn test_cmap_lookup() {
 
 fn test_cmap_prefers_wide_subtable() {
 	data := amiri_bytes() or { return }
-	face := new_face(data) or { panic(err) }
+	face := font.new_face(data) or { panic(err) }
 	best := face.cmaps[0]
 	assert best.score >= face.cmaps[1].score, 'subtables are not score-ordered'
 	assert best.platform == font.platform_windows, 'expected a Windows subtable to win'
@@ -138,7 +138,7 @@ fn test_cmap_prefers_wide_subtable() {
 
 fn test_hmtx_advances_are_monotonic_sane() {
 	data := amiri_bytes() or { return }
-	face := new_face(data) or { panic(err) }
+	face := font.new_face(data) or { panic(err) }
 	space := face.glyph_index(` `)
 	assert space != 0, 'space unmapped'
 	i := face.glyph_index(`i`)
@@ -154,7 +154,7 @@ fn test_hmtx_advances_are_monotonic_sane() {
 
 fn test_rasterize_glyph() {
 	data := amiri_bytes() or { return }
-	face := new_face(data) or { panic(err) }
+	face := font.new_face(data) or { panic(err) }
 	bmp := face.rasterize_glyph(face.glyph_index(`A`), 32.0, 0, 0)
 	assert !bmp.is_empty(), 'A produced no bitmap'
 	assert bmp.coverage.len == bmp.width * bmp.height
@@ -177,7 +177,7 @@ fn test_persian_codepoints_map_in_an_arabic_font() {
 		skip_missing('NotoNastaliqUrdu-Regular.ttf')
 		return
 	}
-	face := new_face(data) or { panic(err) }
+	face := font.new_face(data) or { panic(err) }
 	for cp in [`ب`, `س`, `ل`, `ا`, `م`, `ه`, `ی`, `ک`] {
 		assert face.glyph_index(cp) != 0, 'U+${cp:04X} unmapped in the corpus Arabic font'
 	}
@@ -191,7 +191,7 @@ fn test_bidi_codepoints_map() {
 		skip_missing('Amiri-Regular.ttf')
 		return
 	}
-	face := new_face(data) or { panic(err) }
+	face := font.new_face(data) or { panic(err) }
 	for cp in [0x200C, 0x200D] {
 		assert face.glyph_index(rune(cp)) != 0, 'U+${cp:04X} unmapped'
 	}

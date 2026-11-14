@@ -1,8 +1,9 @@
 module vtext
 
+import vtext.font
 // The box query and the rasterizer must agree about where a glyph's ink is.
 //
-// Face.box_only exists because measure_line used to rasterize every glyph of every paragraph to read two
+// font.Face.box_only exists because measure_line used to rasterize every glyph of every paragraph to read two
 // numbers out of the result and throw the pixels away. That is a large cost to pay for an extent, and
 // removing it is only safe if the two paths really do report the same box.
 //
@@ -15,7 +16,7 @@ module vtext
 // reaches outside the usual box in either direction is covered rather than missed.
 //
 // What this file does not test is that measure_line calls box_only. Proving which of two functions a
-// caller reached needs a counter on Face, and a mutable field added for a test is a worse cost than the
+// caller reached needs a counter on font.Face, and a mutable field added for a test is a worse cost than the
 // performance it would guard: it would make every loaded font's face mutable, which is the one thing
 // about Font that is currently load-bearing. The call site is one line, and the numbers it produces are
 // pinned by the sweep below whichever path it takes.

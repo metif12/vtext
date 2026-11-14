@@ -14,6 +14,7 @@ module main
 // so a mismatch shows up in the diff.
 
 import os
+import vtext.font
 
 const ucd_dir = 'ucd'
 const out_dir = 'ucd'
@@ -783,7 +784,7 @@ fn main() {
 		sm_ranges)
 	emit_writes('ucd_sa_mark.v', mut tsm)
 
-	// Script, which decides which shaping features and joining rules apply. The
+	// font.Script, which decides which shaping features and joining rules apply. The
 	// values are ISO 15924 codes, mapped from the long names Scripts.txt uses.
 	codes := script_codes()
 	mut sc := new_registry()

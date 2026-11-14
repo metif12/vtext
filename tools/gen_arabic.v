@@ -17,6 +17,7 @@ module main
 // Usage: v run tools/gen_arabic.v
 
 import os
+import vtext.font
 
 const ucd_dir = 'ucd'
 const out_file = 'ucd/ucd_arabic.v'
@@ -24,7 +25,7 @@ const out_file = 'ucd/ucd_arabic.v'
 // unicode_version is written into the generated file.
 const unicode_version = '18.0.0'
 
-// form_order fixes the ordinals, which have to match JoiningForm in joining.v.
+// form_order fixes the ordinals, which have to match font.JoiningForm in joining.v.
 const form_order = ['isolated', 'final', 'initial', 'medial']
 
 // Text accumulates generated source.
@@ -184,7 +185,7 @@ fn main() {
 	t.w('// Source: Unicode Character Database ${unicode_version}, UnicodeData.txt\n\n')
 
 	t.w('// arabic_form_names lists the joining forms in ordinal order. The ordinals have\n')
-	t.w('// to match JoiningForm in joining.v.\n')
+	t.w('// to match font.JoiningForm in joining.v.\n')
 	t.w('// Format: one form per line.\n')
 	t.w("pub const arabic_form_names_data = '")
 	for f in form_order {

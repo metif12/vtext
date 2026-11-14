@@ -1,7 +1,7 @@
 module vtext
 
 import vtext.font
-// GPOS SinglePos format 2: one value for a whole coverage and a run of exceptions.
+// GPOS font.SinglePos format 2: one value for a whole coverage and a run of exceptions.
 //
 // Format 1 has one value per covered glyph and format 2 has one value for all of them plus a list of
 // glyphs that want something else, named by *coverage index* rather than by glyph id. That last part is
@@ -130,8 +130,8 @@ fn single_pos_format2_bytes() []u8 {
 // The shared value applies to every covered glyph that no exception names.
 fn test_single_pos_format_2_gives_every_glyph_the_same_value() {
 	r := font.new_reader(single_pos_format2_bytes())
-	rule := parse_single_position(r, ResolvedSubtable{
-		kind: gpos_lookup_single_position
+	rule := font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
 		at:   0
 	}) or { panic('a format 2 single positioning did not parse') }
 
@@ -146,8 +146,8 @@ fn test_single_pos_format_2_gives_every_glyph_the_same_value() {
 // An exception overrides the shared value, and it is keyed by coverage index rather than by glyph id.
 fn test_single_pos_format_2_an_exception_overrides_the_shared_value() {
 	r := font.new_reader(single_pos_format2_bytes())
-	rule := parse_single_position(r, ResolvedSubtable{
-		kind: gpos_lookup_single_position
+	rule := font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
 		at:   0
 	}) or { panic('a format 2 single positioning did not parse') }
 
@@ -166,8 +166,8 @@ fn test_single_pos_format_2_an_exception_overrides_the_shared_value() {
 // coverage, not to the lookup.
 fn test_single_pos_format_2_leaves_an_uncovered_glyph_alone() {
 	r := font.new_reader(single_pos_format2_bytes())
-	rule := parse_single_position(r, ResolvedSubtable{
-		kind: gpos_lookup_single_position
+	rule := font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
 		at:   0
 	}) or { panic('a format 2 single positioning did not parse') }
 	assert rule.offset_for(9) == none, 'glyph 9 is not covered'
@@ -195,8 +195,8 @@ fn test_single_pos_format_2_refuses_a_value_count_it_does_not_know() {
 		0, // the coverage, format 2
 	])
 	r := font.new_reader(bad)
-	assert parse_single_position(r, ResolvedSubtable{
-		kind: gpos_lookup_single_position
+	assert font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
 		at:   0
 	}) == none, 'a valueCount of 2 should be refused rather than guessed at'
 }
@@ -231,8 +231,8 @@ fn test_single_pos_format_2_stops_at_a_record_larger_than_the_coverage() {
 		i16(0), // coverage format 2: glyphs 7 and 8
 	]
 	r := font.new_reader(bytes_of(words))
-	rule := parse_single_position(r, ResolvedSubtable{
-		kind: gpos_lookup_single_position
+	rule := font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
 		at:   0
 	}) or { panic('the table up to the bad record should still parse') }
 
@@ -259,8 +259,8 @@ fn test_single_pos_format_1_still_reads_as_format_1() {
 		i16(1),
 		i16(7), // coverage format 1, glyph 7
 	]))
-	rule := parse_single_position(r, ResolvedSubtable{
-		kind: gpos_lookup_single_position
+	rule := font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
 		at:   0
 	}) or { panic('a format 1 single positioning did not parse') }
 	off := rule.offset_for(7) or { panic('no value for glyph 7') }
@@ -271,7 +271,7 @@ fn test_single_pos_format_1_still_reads_as_format_1() {
 	assert rule.values.len == 1, 'it has one value per covered glyph, got ${rule.values.len}'
 }
 
-// A real font, to confirm the extension length plumbed through ResolvedSubtable did not change how any
+// A real font, to confirm the extension length plumbed through font.ResolvedSubtable did not change how any
 // of the fonts on this machine read. Every positioning rule here is format 1, and every one of them is
 // reached through an extension, so this is the regression guard on the length being carried at all.
 fn test_real_fonts_still_read_their_single_positionings() {

@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Tests for reading a font's cursive anchors: where a letter's stroke enters and leaves.
 //
 // A cursive rule is one record per covered glyph naming two points, and the two are separately optional
@@ -140,6 +141,6 @@ fn test_cursive_anchors_are_points_in_font_units() {
 
 // in_font_range reports whether a point is inside a plausible em. Amiri's is 1000 units, so four times
 // that is generous enough for a raised mark and far too small for a field of a neighbouring record.
-fn in_font_range(p Offset2) bool {
+fn in_font_range(p font.Offset2) bool {
 	return p.x > -4000 && p.x < 4000 && p.y > -4000 && p.y < 4000
 }

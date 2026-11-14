@@ -150,7 +150,7 @@ fn test_gdef_marks_carry_an_attachment_class() {
 	}
 	// A font with no mark class table puts every mark in class zero, which is a real answer
 	// rather than a failure.
-	empty := &Gdef{}
+	empty := &font.Gdef{}
 	assert empty.mark_class(arial.glyph_index(fatha)) == 0
 	assert !empty.has_mark_classes
 }
@@ -327,7 +327,7 @@ fn test_dubai_composes_and_places_a_mark_on_its_letter() {
 	// base letter, which is the shape a joining engine produces when it is handed a font that says
 	// nothing, and it is legible, which is what made the bug so quiet.
 	mut shapes := map[u16]bool{}
-	for form in [JoiningForm.isolated, .final, .initial, .medial] {
+	for form in [font.JoiningForm.isolated, .final, .initial, .medial] {
 		shapes[dubai.shaped_glyph_index(beh_gid, form, 'arab')] = true
 	}
 	assert shapes.len == 4, 'the four shapes should be four glyphs, got ${shapes.len}'
@@ -381,13 +381,13 @@ fn test_mark_offset_in_reads_the_scripts_own_rules() {
 	data := mark_table_bytes([1, 12, 18, 1, 24, 36, 1, 1, 700, 1, 1, 100, 1, 0, 6, 1, 10, 200,
 		1, 4, 1, 30, 400])
 	r := font.new_reader(data)
-	rule := parse_mark_to_base(r, 0) or { panic('a well-formed mark rule should parse') }
-	g := &Gpos{
-		lookups: [GposLookup{
-			kind:       gpos_lookup_mark_to_base
+	rule := font.parse_mark_to_base(r, 0) or { panic('a well-formed mark rule should parse') }
+	g := &font.Gpos{
+		lookups: [font.GposLookup{
+			kind:       font.gpos_lookup_mark_to_base
 			mark_bases: [rule]
 		}]
-		scripts: [Script{ tag: 'latn', features: [ScriptFeature{ tag: 'mark', lookups: [u16(0)] }] }]
+		scripts: [font.Script{ tag: 'latn', features: [font.ScriptFeature{ tag: 'mark', lookups: [u16(0)] }] }]
 	}
 	if off := g.mark_offset_in(700, 100, false, 'latn') {
 		assert off.x == 20 && off.y == 200, 'base minus mark anchor, got (${off.x}, ${off.y})'
@@ -400,8 +400,8 @@ fn test_mark_offset_in_reads_the_scripts_own_rules() {
 	// parses to nothing rather than half a rule.
 	bad := mark_table_bytes([3, 12, 18, 1, 24, 36, 1, 1, 700, 1, 1, 100, 1, 0, 6, 1, 10, 200, 1,
 		4, 1, 30, 400])
-	assert parse_mark_to_base(font.new_reader(bad), 0) == none, 'format 3 is not a mark rule'
-	assert parse_mark_to_base(font.new_reader(data[..10]), 0) == none, 'a cut header parses to nothing'
+	assert font.parse_mark_to_base(font.new_reader(bad), 0) == none, 'format 3 is not a mark rule'
+	assert font.parse_mark_to_base(font.new_reader(data[..10]), 0) == none, 'a cut header parses to nothing'
 }
 
 // mark_table_bytes turns a list of sixteen bit words into the bytes a font stores.
@@ -432,10 +432,10 @@ fn test_layout_leaves_an_unplaced_mark_at_the_pen() {
 
 // The parser has to survive a table that is not one, because font data is untrusted.
 fn test_gpos_and_gdef_reject_data_that_is_not_a_table() {
-	assert new_gpos([]u8{}) == none
-	assert new_gpos([]u8{len: 40}) == none, 'zeroed data is not a GPOS table'
-	assert new_gdef([]u8{}) == none
-	assert new_gdef([]u8{len: 40}) == none, 'zeroed data is not a GDEF table'
+	assert font.new_gpos([]u8{}) == none
+	assert font.new_gpos([]u8{len: 40}) == none, 'zeroed data is not a GPOS table'
+	assert font.new_gdef([]u8{}) == none
+	assert font.new_gdef([]u8{len: 40}) == none, 'zeroed data is not a GDEF table'
 	// A right-sized header naming an offset that is not in the buffer falls into the degraded
 	// path rather than reading whatever is there.
 	mut header := []u8{len: 12}
@@ -443,8 +443,8 @@ fn test_gpos_and_gdef_reject_data_that_is_not_a_table() {
 	header[1] = 1
 	header[4] = 0xFF
 	header[5] = 0xFF
-	assert new_gdef(header) == none
+	assert font.new_gdef(header) == none
 	header[8] = 0xFF
 	header[9] = 0xFF
-	assert new_gpos(header) == none
+	assert font.new_gpos(header) == none
 }

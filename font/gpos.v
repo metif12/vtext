@@ -1,6 +1,4 @@
-module vtext
-
-import vtext.font
+module font
 
 // OpenType glyph positioning, the GPOS table, and the GDEF table that says what it is talking
 // about.
@@ -40,37 +38,38 @@ pub:
 }
 
 // GPOS lookup types, from the OpenType specification.
-const gpos_lookup_single_position = 1
-const gpos_lookup_pair = 2
+pub const gpos_lookup_single_position = 1
+pub const gpos_lookup_pair = 2
 // Cursive attachment. It is named here for the same reason every other kind is and is not applied: the
 // reader below parses the entry and exit anchors, and the two-pass attachment that would use them is not
 // written. Naming it means a report can say "this font has cursive positioning and this engine does not
 // use it" rather than leaving that to be inferred from a feature tag.
-const gpos_lookup_cursive = 3
-const gpos_lookup_mark_to_base = 4
-const gpos_lookup_mark_to_ligature = 5
-const gpos_lookup_mark_to_mark = 6
-const gpos_lookup_chain_context = 8
-const gpos_lookup_extension = 9
+pub const gpos_lookup_cursive = 3
+pub const gpos_lookup_mark_to_base = 4
+pub const gpos_lookup_mark_to_ligature = 5
+pub const gpos_lookup_mark_to_mark = 6
+pub const gpos_lookup_chain_context = 8
+pub const gpos_lookup_extension = 9
 
 // The GDEF glyph classes. Attachment cares about the first three: a mark attaches to a base or
 // to a ligature, and those are the only things it attaches to. The fourth is a component, which
 // attachment never sees but the substitution flags do, because a lookup told to ignore base
 // glyphs has to step over components too.
-const glyph_class_base = 1
-const glyph_class_ligature = 2
-const glyph_class_mark = 3
-const glyph_class_component = 4
+pub const glyph_class_base = 1
+pub const glyph_class_ligature = 2
+pub const glyph_class_mark = 3
+pub const glyph_class_component = 4
 
 // ClassDef is a sorted set of glyph ranges carrying a class value, which is how both the glyph
 // class table and the mark attachment class table are built.
-struct ClassDef {
-mut:
+pub struct ClassDef {
+pub mut:
 	entries []ClassRangeEntry
 }
 
 // ClassRangeEntry is one span of glyphs sharing a class.
-struct ClassRangeEntry {
+pub struct ClassRangeEntry {
+pub mut:
 	first u16
 	last  u16
 	value u16
@@ -79,7 +78,7 @@ struct ClassRangeEntry {
 // Gdef is the parsed glyph definition table: what kind of glyph each glyph is, and which mark
 // attachment class each mark belongs to.
 pub struct Gdef {
-mut:
+pub mut:
 	// glyph_classes says what each glyph is. Marks are the ones attachment cares about.
 	glyph_classes ClassDef
 	// mark_classes says which anchor on a base each mark belongs under. A font may leave this
@@ -95,7 +94,7 @@ mut:
 
 // new_gdef parses the GDEF table, or returns none when the font has none.
 pub fn new_gdef(raw []u8) ?&Gdef {
-	r := font.new_reader(raw)
+	r := new_reader(raw)
 	if r.len() < 12 || r.u16_at(0) != 1 {
 		return none
 	}
@@ -128,7 +127,7 @@ pub fn new_gdef(raw []u8) ?&Gdef {
 // The offsets in it are 32 bits and relative to the start of the MarkGlyphSetsDef rather than to
 // their own entry. That is the one thing about this table a 16-bit offset could not have done: a
 // font is allowed more coverage tables in here than fit in 64KB of 16-bit offsets.
-fn parse_mark_glyph_sets(r &font.Reader, at int) [][]CoverageRange {
+pub fn parse_mark_glyph_sets(r &Reader, at int) [][]CoverageRange {
 	mut out := [][]CoverageRange{}
 	if r.u16_at(at) != 1 {
 		return out
@@ -199,7 +198,7 @@ pub fn (g &Gdef) in_mark_set(index int, gid u16) bool {
 }
 
 // class_of returns the class of a glyph, or 0 when the table does not cover it.
-fn (c &ClassDef) class_of(gid u16) u16 {
+pub fn (c &ClassDef) class_of(gid u16) u16 {
 	entries := c.entries
 	// The ranges are sorted and do not overlap, which the format guarantees.
 	mut lo := 0
@@ -219,7 +218,7 @@ fn (c &ClassDef) class_of(gid u16) u16 {
 }
 
 // parse_class_def reads a ClassDef table in either of its two formats.
-fn parse_class_def(r &font.Reader, at int) ClassDef {
+pub fn parse_class_def(r &Reader, at int) ClassDef {
 	mut c := ClassDef{}
 	format := r.u16_at(at)
 	if format == 1 {
@@ -254,7 +253,8 @@ fn parse_class_def(r &font.Reader, at int) ClassDef {
 // An anchor that is not there is different from an anchor at the origin, which is why this
 // carries a flag: the first is "this font says nothing", and drawing a mark at the origin
 // because the font was silent would be a lie about the font.
-struct Anchor {
+pub struct Anchor {
+pub mut:
 	x      i32
 	y      i32
 	exists bool
@@ -262,7 +262,8 @@ struct Anchor {
 
 // MarkToBase is one mark-to-base lookup: for a mark and a base, the offset that puts the mark
 // onto one of the base's anchors.
-struct MarkToBase {
+pub struct MarkToBase {
+pub mut:
 	// mark_ranges is the coverage of the marks this lookup covers.
 	mark_ranges []CoverageRange
 	// base_ranges is the coverage of the bases it can attach to.
@@ -280,15 +281,15 @@ struct MarkToBase {
 
 // LigatureAnchorPair is one component's two anchors for one mark class: the point on the ligature
 // and the point on the mark that have to meet.
-struct LigatureAnchorPair {
-mut:
+pub struct LigatureAnchorPair {
+pub mut:
 	ligature Anchor
 	mark     Anchor
 }
 
 // LigatureComponent is one component of one ligature, with a pair of anchors per mark class.
-struct LigatureComponent {
-mut:
+pub struct LigatureComponent {
+pub mut:
 	pairs []LigatureAnchorPair
 }
 
@@ -300,7 +301,8 @@ mut:
 // and the engine has to know which component the mark belongs to. A mark written after the pair
 // belongs to the last component, which is the only case a caller can express today: a mark in the
 // middle of a lam-alef is a third thing, and one this does not model.
-struct MarkToLigature {
+pub struct MarkToLigature {
+pub mut:
 	// mark_ranges is the coverage of the marks this lookup covers.
 	mark_ranges []CoverageRange
 	// ligature_ranges is the coverage of the ligatures it can attach to.
@@ -324,8 +326,8 @@ struct MarkToLigature {
 // substitution side of the specification has a field here that looks like it belongs in a positioning
 // record too, and reading it takes a word that belongs to this record instead. The whole thing then
 // shifts by one, and the lookup index becomes whatever the sequence index should have been.
-struct ContextRecord {
-mut:
+pub struct ContextRecord {
+pub mut:
 	// position is an index into the context's input sequence, and it is deliberately not an offset
 	// into the glyph run: a rule matching three input glyphs can position the second of them and
 	// leave the other two alone.
@@ -342,8 +344,8 @@ mut:
 // Format 2 matches the same three sequences through glyph classes, which is what Amiri's
 // kern chains are written in, and format 1 matches them through glyph ids, so all three
 // are read.
-struct ChainPosition {
-mut:
+pub struct ChainPosition {
+pub mut:
 	// backtrack are the coverages to match before the first input glyph, nearest first.
 	backtrack [][]CoverageRange
 	// input are the coverages to match at and after the position, the first being the one a record
@@ -358,8 +360,8 @@ mut:
 // ChainClassRule is one class-based chaining rule (format 2): the same three sequences as a
 // coverage rule, named as glyph classes rather than coverage tables. The input list holds
 // the classes after the first glyph, whose own class selected the rule set.
-struct ChainClassRule {
-mut:
+pub struct ChainClassRule {
+pub mut:
 	// backtrack are the classes to match before the first input glyph, nearest first.
 	backtrack []u16
 	// input are the classes to match at and after the position, past the first glyph.
@@ -373,8 +375,8 @@ mut:
 // ChainClass2 is one class-based chaining subtable: three class definitions and, per input
 // class value, the rules for a first glyph of that class. A NULL set offset parses to an
 // empty rule list, kept positionally so later sets stay aligned with their class value.
-struct ChainClass2 {
-mut:
+pub struct ChainClass2 {
+pub mut:
 	// coverage names the glyphs the first input glyph may be; unlike the GSUB
 	// cousin this format gates the match on it as well as on the class.
 	coverage  []CoverageRange
@@ -388,8 +390,8 @@ mut:
 // sequences as a coverage or class rule, named as glyph ids rather than
 // coverages or classes. The input list holds the glyphs after the first, whose
 // own match is the coverage that selected the rule's set.
-struct ChainGlyphRule {
-mut:
+pub struct ChainGlyphRule {
+pub mut:
 	// backtrack are the glyphs before the first input glyph, nearest first.
 	backtrack []u16
 	// input are the glyphs after the first input glyph, in order.
@@ -404,8 +406,8 @@ mut:
 // input glyph and one rule list per covered glyph, in coverage order. A NULL
 // set offset is an empty rule list, kept positionally so later sets stay
 // aligned with their coverage index.
-struct ChainGlyph1 {
-mut:
+pub struct ChainGlyph1 {
+pub mut:
 	// coverage names the glyphs the first input glyph may be.
 	coverage []CoverageRange
 	// sets holds the rules for a first glyph by its coverage index.
@@ -427,7 +429,7 @@ mut:
 // lookup number, and reading it as a format gives 62 as a mask instead.
 // class_def_at reads the class definition at a subtable-relative offset, or an empty one
 // when the offset is zero or points outside the table.
-fn class_def_at(r &font.Reader, at int, off int) ClassDef {
+pub fn class_def_at(r &Reader, at int, off int) ClassDef {
 	if off == 0 || !r.has(at + off, 2) {
 		return ClassDef{}
 	}
@@ -441,7 +443,7 @@ fn class_def_at(r &font.Reader, at int, off int) ClassDef {
 // glyph reader beside them. Class definitions are required; a zero
 // offset parses to an empty table, whose every glyph is class zero — which is exactly
 // what an absent definition means, since zero is the class of everything unnamed.
-fn parse_chain_class(r &font.Reader, at int) ?ChainClass2 {
+pub fn parse_chain_class(r &Reader, at int) ?ChainClass2 {
 	if r.u16_at(at) != 2 {
 		return none
 	}
@@ -490,7 +492,7 @@ fn parse_chain_class(r &font.Reader, at int) ?ChainClass2 {
 // list holds every class after it. A rule that fails to parse is skipped rather than
 // placed half-read: the next rule starts at its own offset, so one bad rule cannot shift
 // the rest.
-fn parse_chain_class_rule(r &font.Reader, at int) ?ChainClassRule {
+pub fn parse_chain_class_rule(r &Reader, at int) ?ChainClassRule {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -554,7 +556,7 @@ fn parse_chain_class_rule(r &font.Reader, at int) ?ChainClassRule {
 // format 1 is: the covered first glyph selects its set, and a NULL set offset
 // is an empty rule list kept positionally. Each rule names its three sequences
 // as glyph ids, including every input glyph but the covered first.
-fn parse_chain_glyph(r &font.Reader, at int) ?ChainGlyph1 {
+pub fn parse_chain_glyph(r &Reader, at int) ?ChainGlyph1 {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -600,7 +602,7 @@ fn parse_chain_glyph(r &font.Reader, at int) ?ChainGlyph1 {
 // every glyph after it. A rule that fails to parse is skipped rather than
 // placed half-read: the next rule starts at its own offset, so one bad rule
 // cannot shift the rest.
-fn parse_chain_glyph_rule(r &font.Reader, at int) ?ChainGlyphRule {
+pub fn parse_chain_glyph_rule(r &Reader, at int) ?ChainGlyphRule {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -658,7 +660,7 @@ fn parse_chain_glyph_rule(r &font.Reader, at int) ?ChainGlyphRule {
 	return rule
 }
 
-fn parse_chain_position(r &font.Reader, at int) ?ChainPosition {
+pub fn parse_chain_position(r &Reader, at int) ?ChainPosition {
 	if r.u16_at(at) != 3 {
 		return none
 	}
@@ -702,7 +704,7 @@ fn parse_chain_position(r &font.Reader, at int) ?ChainPosition {
 
 // Gpos is a parsed GPOS table, reduced to mark attachment.
 pub struct Gpos {
-mut:
+pub mut:
 	lookups []GposLookup
 	scripts []Script
 	// declared is the whole FeatureList, including the features no language system enables.
@@ -719,8 +721,8 @@ mut:
 }
 
 // GposLookup is one positioning lookup, holding the rules of the kinds this milestone applies.
-struct GposLookup {
-mut:
+pub struct GposLookup {
+pub mut:
 	kind u16
 	// mark_bases are mark-to-base rules, where the second glyph is a letter.
 	mark_bases []MarkToBase
@@ -754,26 +756,9 @@ mut:
 	cursives []Cursive
 }
 
-// mark_glyphs_passthrough reports whether the mark glyphs a font uses in its positioning rules
-// are the ones its cmap maps the marks to.
-//
-// It exists because the two are not always the same and the difference matters. A font that
-// composes its marks through a ccmp substitution has its positioning rules written against the
-// composed glyph, not against the one the cmap hands out, so a mark that has not been through
-// that substitution will not be found in any coverage.
-//
-// The composition is run, so this is no longer a report of something the engine has not done. It
-// is a report of a font whose composition rules are written against glyphs the pipeline never
-// produces, which is Dubai's case and is not a thing the substitution pass can fix: the rules are
-// reachable and parsed, and there is simply no path from the text to the glyphs they name.
-pub fn (f &Font) mark_glyphs_passthrough() bool {
-	gpos := f.face.gpos or { return true }
-	return gpos.covers_mark(f.glyph_index(rune(0x064E)))
-}
-
 // new_gpos parses the GPOS table, or returns none when the font has none or it does not parse.
 pub fn new_gpos(raw []u8) ?&Gpos {
-	r := font.new_reader(raw)
+	r := new_reader(raw)
 	if r.len() < 10 || r.u16_at(0) != 1 {
 		return none
 	}
@@ -941,7 +926,7 @@ pub fn (g &Gpos) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, s
 // mark_offset_on answers one mark pair from an explicit lookup list, which is what the
 // two public forms share: the arab list collected at parse time, and the per-script
 // list collected per run.
-fn (g &Gpos) mark_offset_on(mark_gid u16, base_gid u16, base_is_mark bool, lookups []u16) ?Offset2 {
+pub fn (g &Gpos) mark_offset_on(mark_gid u16, base_gid u16, base_is_mark bool, lookups []u16) ?Offset2 {
 	for li in lookups {
 		if li >= g.lookups.len {
 			continue
@@ -1012,7 +997,7 @@ pub fn (g &Gpos) cursive_anchors(gid u16, script string) ?CursiveAnchors {
 // which way up the mark should sit, and a mark anchor on its own says where the mark's own origin
 // belongs but nothing about the ligature, so a pair with only one half present is not enough to
 // place the mark and none is returned.
-fn (rule &MarkToLigature) offset_for(mark_gid u16, ligature_gid u16) ?Offset2 {
+pub fn (rule &MarkToLigature) offset_for(mark_gid u16, ligature_gid u16) ?Offset2 {
 	mark_index := coverage_index(rule.mark_ranges, mark_gid) or { return none }
 	ligature_index := coverage_index(rule.ligature_ranges, ligature_gid) or { return none }
 	if mark_index >= rule.mark_anchors.len || mark_index >= rule.mark_classes.len {
@@ -1121,7 +1106,7 @@ pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string) ?Offset
 // has_chain_classes reports whether a lookup holds any class-based chaining rule. An
 // empty rule list positions nothing, and without this a lookup whose subtables all
 // failed to parse would still claim the chaining type.
-fn has_chain_classes(l &GposLookup) bool {
+pub fn has_chain_classes(l &GposLookup) bool {
 	for cc in l.chain_classes {
 		for set in cc.sets {
 			if set.len > 0 {
@@ -1135,7 +1120,7 @@ fn has_chain_classes(l &GposLookup) bool {
 // has_chain_glyphs reports whether a lookup holds any glyph-based chaining rule. An
 // empty rule list positions nothing, and without this a lookup whose subtables all
 // failed to parse would still claim the chaining type.
-fn has_chain_glyphs(l &GposLookup) bool {
+pub fn has_chain_glyphs(l &GposLookup) bool {
 	for cg in l.chain_glyphs {
 		for set in cg.sets {
 			if set.len > 0 {
@@ -1222,7 +1207,7 @@ pub fn (g &Gpos) has_contextual_positioning(script string) bool {
 // apply_pos_records answers one matched pattern by running its records: every record that
 // names a positioning contributes, because matching lookups all apply, and the caller adds
 // each pattern's answer into the pair's total for the same reason.
-fn (g &Gpos) apply_pos_records(records []ContextRecord, m ChainMatchPositions, gids []u16,
+pub fn (g &Gpos) apply_pos_records(records []ContextRecord, m ChainMatchPositions, gids []u16,
 	left int, right int, left_gid u16, right_gid u16) ?Offset2 {
 	mut x := 0
 	mut y := 0
@@ -1403,14 +1388,14 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string) 
 // pattern naming both glyphs is about the pair, and a pattern naming one and reaching the other as its
 // context is about one of them with a condition. Requiring both would throw away every rule with a
 // backtrack, and requiring neither would let any rule in the run apply to any pair.
-fn spans_pair(c &ChainPosition, m ChainMatchPositions, left int, right int) bool {
+pub fn spans_pair(c &ChainPosition, m ChainMatchPositions, left int, right int) bool {
 	return spans_span(c.backtrack.len, c.lookahead.len, m, left, right)
 }
 
 // spans_span reports whether a matched pattern is about the pair the caller named, from the
 // lengths of its backtrack and lookahead rather than from a coverage rule. Coverage and
 // class patterns share it, because a span is a span whichever table named it.
-fn spans_span(backtrack_len int, lookahead_len int, m ChainMatchPositions, left int, right int) bool {
+pub fn spans_span(backtrack_len int, lookahead_len int, m ChainMatchPositions, left int, right int) bool {
 	if m.start < 0 || m.positions.len == 0 {
 		return false
 	}
@@ -1501,7 +1486,7 @@ pub fn (g &Gpos) apply_contextual(gids []u16, script string) []ChainApplication 
 // and none of that changes with the writing direction. The returned start is negative when the pattern
 // does not match, and the positions are the indices in the run of every input glyph, in pattern order,
 // so a record's position indexes straight into them.
-fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPositions {
+pub fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPositions {
 	if c.input.len == 0 || at + c.input.len > gids.len {
 		return ChainMatchPositions{ start: -1 }
 	}
@@ -1543,7 +1528,7 @@ fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPosition
 //
 // It returns the match together with the rule that matched, because the span check and the
 // records both belong to the rule rather than to the subtable.
-fn (g &Gpos) match_chain_class_at(cc &ChainClass2, gids []u16, at int) ?(ChainMatchPositions, ChainClassRule) {
+pub fn (g &Gpos) match_chain_class_at(cc &ChainClass2, gids []u16, at int) ?(ChainMatchPositions, ChainClassRule) {
 	_ = g
 	if at < 0 || at >= gids.len {
 		return none
@@ -1565,7 +1550,7 @@ fn (g &Gpos) match_chain_class_at(cc &ChainClass2, gids []u16, at int) ?(ChainMa
 
 // match_class_rule tests one class rule's three sequences at a position. Positions are run
 // indices like the coverage matcher's, so a record's position indexes straight into them.
-fn match_class_rule(cc &ChainClass2, rule &ChainClassRule, gids []u16, at int) ?ChainMatchPositions {
+pub fn match_class_rule(cc &ChainClass2, rule &ChainClassRule, gids []u16, at int) ?ChainMatchPositions {
 	for k, class in rule.backtrack {
 		back := at - 1 - k
 		if back < 0 {
@@ -1608,7 +1593,7 @@ fn match_class_rule(cc &ChainClass2, rule &ChainClassRule, gids []u16, at int) ?
 //
 // It returns the match together with the rule that matched, because the span check and the
 // records both belong to the rule rather than to the subtable.
-fn (g &Gpos) match_chain_glyph_at(cg &ChainGlyph1, gids []u16, at int) ?(ChainMatchPositions, ChainGlyphRule) {
+pub fn (g &Gpos) match_chain_glyph_at(cg &ChainGlyph1, gids []u16, at int) ?(ChainMatchPositions, ChainGlyphRule) {
 	_ = g
 	if at < 0 || at >= gids.len {
 		return none
@@ -1627,7 +1612,7 @@ fn (g &Gpos) match_chain_glyph_at(cg &ChainGlyph1, gids []u16, at int) ?(ChainMa
 
 // match_glyph_rule tests one glyph rule's three sequences at a position. Positions are run
 // indices like the coverage matcher's, so a record's position indexes straight into them.
-fn match_glyph_rule(rule &ChainGlyphRule, gids []u16, at int) ?ChainMatchPositions {
+pub fn match_glyph_rule(rule &ChainGlyphRule, gids []u16, at int) ?ChainMatchPositions {
 	for k, gid in rule.backtrack {
 		back := at - 1 - k
 		if back < 0 {
@@ -1664,8 +1649,8 @@ fn match_glyph_rule(rule &ChainGlyphRule, gids []u16, at int) ?ChainMatchPositio
 }
 
 // ChainMatchPositions is a context pattern that has matched and where in the run it matched.
-struct ChainMatchPositions {
-mut:
+pub struct ChainMatchPositions {
+pub mut:
 	// start is the index of the first input glyph, or negative when nothing matched.
 	start int
 	// positions are the indices of every input glyph, in pattern order.
@@ -1688,7 +1673,7 @@ pub fn (g &Gpos) has_mark_to_mark() bool {
 // The mark class the font recorded in its own mark array wins over the one the caller asked
 // with. Both come from the same GDEF, so they agree, and reading it from the lookup keeps the
 // rule self contained: a caller that has not read GDEF still gets the right anchor.
-fn (rule &MarkToBase) offset_for(mark_gid u16, base_gid u16) ?Anchor {
+pub fn (rule &MarkToBase) offset_for(mark_gid u16, base_gid u16) ?Anchor {
 	mark_index := coverage_index(rule.mark_ranges, mark_gid) or { return none }
 	base_index := coverage_index(rule.base_ranges, base_gid) or { return none }
 	if mark_index >= rule.mark_anchors.len || mark_index >= rule.mark_classes.len {
@@ -1734,7 +1719,7 @@ fn (rule &MarkToBase) offset_for(mark_gid u16, base_gid u16) ?Anchor {
 // The adjustment returned is the first glyph's, and it is only reported when it is a change of
 // advance. A record that only moves a glyph without changing the gap is a placement rule, and
 // reporting it as a kern would take a letter out from under its neighbour.
-fn (rule &PairPos) offset_for(left_gid u16, right_gid u16) ?Anchor {
+pub fn (rule &PairPos) offset_for(left_gid u16, right_gid u16) ?Anchor {
 	// The second glyph is the one that advances, so it is the one a zero value format 2 leaves
 	// without a record of its own.
 	mut first_side := PairValue{}
@@ -1794,7 +1779,7 @@ fn (rule &PairPos) offset_for(left_gid u16, right_gid u16) ?Anchor {
 }
 
 // parse_gpos_lookups reads the LookupList and the mark-to-base rules.
-fn parse_gpos_lookups(r &font.Reader, off int) []GposLookup {
+pub fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 	mut out := []GposLookup{}
 	if !r.has(off, 2) {
 		return out
@@ -1896,7 +1881,8 @@ fn parse_gpos_lookups(r &font.Reader, off int) []GposLookup {
 // ResolvedSubtable is a subtable together with the lookup type that actually governs it. It is
 // shared with the substitution parser, because the idea is the same: a lookup header may point
 // at an extension that names the real type and where it lives.
-struct ResolvedSubtable {
+pub struct ResolvedSubtable {
+pub mut:
 	kind u16
 	at   int
 	// length is the subtable's own length in bytes, or zero when nothing states one.
@@ -1915,7 +1901,7 @@ struct ResolvedSubtable {
 //
 // Fonts wrap their positioning rules in extensions for the same reason they wrap substitution
 // rules, so ignoring the wrapper would leave every mark at the pen position.
-fn resolve_gpos_subtable(r &font.Reader, kind u16, at int) ResolvedSubtable {
+pub fn resolve_gpos_subtable(r &Reader, kind u16, at int) ResolvedSubtable {
 	if kind != gpos_lookup_extension {
 		return ResolvedSubtable{
 			kind: kind
@@ -1958,8 +1944,8 @@ fn resolve_gpos_subtable(r &font.Reader, kind u16, at int) ResolvedSubtable {
 // Which fields a record has is decided by the subtable's value format, not by the record itself, so
 // this keeps a mask per side. A record with x of zero and no x at all is not a kern of nothing, it
 // is a rule that says nothing about the horizontal, and the two cannot be told apart without it.
-struct PairValue {
-mut:
+pub struct PairValue {
+pub mut:
 	x_placement i16
 	y_placement i16
 	x_advance   i16
@@ -1983,8 +1969,8 @@ pub fn (v &PairValue) has_x_advance() bool {
 // looking the glyph up in a coverage. Reading a coverage at the offset where the second glyphs start
 // reads the first glyph id as a coverage format, which is not 1 or 2, so the whole set comes back
 // empty and the format reports as having no rules at all.
-struct PairSet {
-mut:
+pub struct PairSet {
+pub mut:
 	// seconds are the second glyphs, in the order the records are written.
 	seconds []u16
 	// records is indexed the same way as seconds, and holds the two sides of the adjustment in order.
@@ -1998,8 +1984,8 @@ mut:
 // share a header and diverge immediately after it: format 1 has a pairSetCount where format 2 has
 // two class definitions, so reading one as the other produces a plausible count and rows of numbers
 // that are not adjustments of anything.
-struct PairPos {
-mut:
+pub struct PairPos {
+pub mut:
 	// first_ranges is the coverage of the first glyph of a pair, which is the glyph that moves.
 	first_ranges []CoverageRange
 	// value_format1 and value_format2 are the field masks of the first and second sides. They are
@@ -2032,8 +2018,8 @@ mut:
 // Either anchor may be absent. A letter at the start of a word has nothing before it and some fonts
 // give it no entry point, and a letter at the end has nothing after it and no exit point, so an absent
 // one is a normal thing rather than a broken table.
-struct EntryExit {
-mut:
+pub struct EntryExit {
+pub mut:
 	entry Anchor
 	exit  Anchor
 }
@@ -2042,8 +2028,8 @@ mut:
 //
 // The anchors are found by coverage index rather than by an offset, so a glyph is looked up the same
 // way a mark is looked up by its class.
-struct Cursive {
-mut:
+pub struct Cursive {
+pub mut:
 	// format is which of the two formats the subtable declared.
 	format u16
 	// ranges is the coverage of the glyphs that carry anchors.
@@ -2053,7 +2039,7 @@ mut:
 }
 
 // offset_for finds the anchors of one glyph within a single rule.
-fn (rule &Cursive) offset_for(gid u16) ?EntryExit {
+pub fn (rule &Cursive) offset_for(gid u16) ?EntryExit {
 	idx := coverage_index(rule.ranges, gid) or { return none }
 	if idx >= rule.marks.len {
 		return none
@@ -2074,7 +2060,7 @@ fn (rule &Cursive) offset_for(gid u16) ?EntryExit {
 // value format, which is a small bitmask and cannot point past a value array that is already there. That
 // is what Andalus's lookup 21 fails: its valueFormat of 3 is a valid anchor format, so the format alone
 // does not separate the two tables and an offset read as a point lands in the middle of the value array.
-fn parse_cursive(r &font.Reader, at int) ?Cursive {
+pub fn parse_cursive(r &Reader, at int) ?Cursive {
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
 		return none
@@ -2146,7 +2132,7 @@ fn parse_cursive(r &font.Reader, at int) ?Cursive {
 // A zero offset is always allowed, since it means the anchor is absent rather than misplaced. Every
 // offset that is there has to point past the records and land on something that declares itself an
 // anchor, which is a format between 1 and 3.
-fn cursive_record_plausible(r &font.Reader, base int, records_end int, p int) bool {
+pub fn cursive_record_plausible(r &Reader, base int, records_end int, p int) bool {
 	for slot in 0 .. 2 {
 		offset := int(r.u16_at(p + 2 * slot))
 		if offset == 0 {
@@ -2173,8 +2159,8 @@ fn cursive_record_plausible(r &font.Reader, base int, records_end int, p int) bo
 // context, and a rule of this shape is a placement rather than a kern: the glyph moves and the gap
 // after it does not, which is the difference between the two that matters when a context record is
 // applied.
-struct SinglePos {
-mut:
+pub struct SinglePos {
+pub mut:
 	// ranges is the coverage of the glyphs this rule moves.
 	ranges []CoverageRange
 	// format is the value format, which says which of the four numbers each record holds. It is kept
@@ -2195,13 +2181,14 @@ mut:
 
 // PosOverride is one format 2 exception: a set of coverage indices and the value they take instead of
 // the rule's single value.
-struct PosOverride {
+pub struct PosOverride {
+pub mut:
 	index int
 	value PairValue
 }
 
 // offset_for finds the adjustment for one glyph within a single rule.
-fn (rule &SinglePos) offset_for(gid u16) ?Offset2 {
+pub fn (rule &SinglePos) offset_for(gid u16) ?Offset2 {
 	idx := coverage_index(rule.ranges, gid) or { return none }
 	// Format 2 asks the exceptions first and the shared value second, and a rule cannot have both, so
 	// which pair of these is live is decided by whether base is set rather than by a format number. That
@@ -2225,7 +2212,7 @@ fn (rule &SinglePos) offset_for(gid u16) ?Offset2 {
 //
 // A rule that says nothing about either placement is no rule, and answering it with a zero would look
 // like a font that had decided the glyph was already in the right place.
-fn placement_of(v PairValue) ?Offset2 {
+pub fn placement_of(v PairValue) ?Offset2 {
 	if v.format & 0x0003 == 0 {
 		return none
 	}
@@ -2254,7 +2241,7 @@ fn placement_of(v PairValue) ?Offset2 {
 // *coverage indices*, so it cannot name more glyphs than the coverage covers. A count larger than that
 // is not a badly-aligned record, it is the end of this table and the beginning of whatever follows, and
 // stopping there is what keeps a format 2 subtable from reading the next lookup's bytes as exceptions.
-fn parse_single_position(r &font.Reader, resolved ResolvedSubtable) ?SinglePos {
+pub fn parse_single_position(r &Reader, resolved ResolvedSubtable) ?SinglePos {
 	at := resolved.at
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
@@ -2369,7 +2356,7 @@ fn parse_single_position(r &font.Reader, resolved ResolvedSubtable) ?SinglePos {
 // offset as a count of sets, which is a small number that looks fine, and then walks offsets out of
 // a class definition that is not an array of them. The result is thousands of pair records with
 // numbers in them that are not kerning.
-fn parse_pair_pos(r &font.Reader, at int) ?PairPos {
+pub fn parse_pair_pos(r &Reader, at int) ?PairPos {
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
 		return none
@@ -2493,7 +2480,7 @@ fn parse_pair_pos(r &font.Reader, at int) ?PairPos {
 // them is empty. A font that gives the second glyph a value format of zero leaves its record with no
 // fields, and the record still occupies the space the format says it does, so the reader has to step
 // over it to reach the next pair.
-fn parse_pair_set(r &font.Reader, at int, vf1 u16, vf2 u16) ?PairSet {
+pub fn parse_pair_set(r &Reader, at int, vf1 u16, vf2 u16) ?PairSet {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -2536,7 +2523,7 @@ fn parse_pair_set(r &font.Reader, at int, vf1 u16, vf2 u16) ?PairSet {
 // wrong numbers: a font that only writes xAdvance yields a record whose xPlacement is the kerning
 // value, which is the same number in the wrong place and produces a letter that has moved rather
 // than a gap that has closed.
-fn read_pair_value(r &font.Reader, at int, format u16) PairValue {
+pub fn read_pair_value(r &Reader, at int, format u16) PairValue {
 	mut v := PairValue{
 		format: format
 	}
@@ -2571,7 +2558,7 @@ fn read_pair_value(r &font.Reader, at int, format u16) PairValue {
 // SitkaVF two — measured across all 379 faces on this machine — so the bits are exercised by real fonts even
 // though no Device table is: the count below is zero across 2,450,058 value records. See
 // `gpos_valuesize_test.v`, which is written as bytes for that reason.
-fn pair_value_size(format u16) int {
+pub fn pair_value_size(format u16) int {
 	mut n := 0
 	for bit in [0x0001, 0x0002, 0x0004, 0x0008, 0x0010, 0x0020, 0x0040, 0x0080, 0x0100, 0x0200,
 		0x0400, 0x0800] {
@@ -2589,8 +2576,8 @@ fn pair_value_size(format u16) int {
 // No font measured carries one — zero across 2,450,058 value records on this machine — so nothing
 // in the engine applies it. This reader is the tested primitive for when one appears, in the same
 // standing as the SinglePos format 2 reader: correct against the specification and pinned by bytes.
-struct Device {
-mut:
+pub struct Device {
+pub mut:
 	// start and end are the smallest and largest ppem the table corrects.
 	start u16
 	end   u16
@@ -2608,7 +2595,7 @@ mut:
 // A 0x8000 format is a VariationIndex, which names a delta-set index in the item variation store
 // rather than carrying deltas, and resolves to zero at the default instance — the only instance
 // this engine shapes. It is not a Device table and reads as none here.
-fn read_device(r &font.Reader, at int, limit int) ?Device {
+pub fn read_device(r &Reader, at int, limit int) ?Device {
 	if !r.has(at, 6) {
 		return none
 	}
@@ -2659,7 +2646,7 @@ fn read_device(r &font.Reader, at int, limit int) ?Device {
 // delta_at returns the pixel adjustment for ppem, or zero outside the table's range or past what
 // its bytes cover. A ppem the table does not name is not corrected, which is the same answer as a
 // table that never existed.
-fn (d &Device) delta_at(ppem int) int {
+pub fn (d &Device) delta_at(ppem int) int {
 	if ppem < int(d.start) || ppem > int(d.end) {
 		return 0
 	}
@@ -2672,7 +2659,7 @@ fn (d &Device) delta_at(ppem int) int {
 
 // parse_mark_to_base reads one MarkToBasePos subtable. Only format 1 exists in the
 // specification, so there is no second reading to try.
-fn parse_mark_to_base(r &font.Reader, at int) ?MarkToBase {
+pub fn parse_mark_to_base(r &Reader, at int) ?MarkToBase {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -2750,7 +2737,7 @@ fn parse_mark_to_base(r &font.Reader, at int) ?MarkToBase {
 // followed, every one of which was read from the wrong place. The numbers looked like counts, so
 // nothing complained. Another version read one shared count for the whole array, which is not in
 // the specification either. The count is per record and the record is reached through an offset.
-fn parse_mark_to_ligature(r &font.Reader, at int) ?MarkToLigature {
+pub fn parse_mark_to_ligature(r &Reader, at int) ?MarkToLigature {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -2844,14 +2831,14 @@ fn parse_mark_to_ligature(r &font.Reader, at int) ?MarkToLigature {
 // the first record's own offset. Those are usually small numbers, so a missing anchor silently
 // becomes a real anchor at a plausible-looking place instead of being reported missing. That is
 // how a mark ends up somewhere the font never asked for.
-fn parse_anchor_at(r &font.Reader, base int, offset int) Anchor {
+pub fn parse_anchor_at(r &Reader, base int, offset int) Anchor {
 	if offset == 0 {
 		return Anchor{}
 	}
 	return parse_anchor(r, base + offset)
 }
 
-fn parse_anchor(r &font.Reader, at int) Anchor {
+pub fn parse_anchor(r &Reader, at int) Anchor {
 	format := r.u16_at(at)
 	if format < 1 || format > 3 {
 		return Anchor{}

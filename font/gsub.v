@@ -1,6 +1,13 @@
-module vtext
+module font
 
-import vtext.font
+// JoiningForm is one of the four shapes a letter can take. The ordinals have to match the
+// generated arabic_form_names table.
+pub enum JoiningForm {
+	isolated = 0
+	final    = 1
+	initial  = 2
+	medial   = 3
+}
 
 // OpenType glyph substitution, the GSUB table.
 //
@@ -31,13 +38,13 @@ import vtext.font
 // them here and stay named as deliberately absent rather than shipped untested.
 
 // Lookup types, from the OpenType specification.
-const gsub_lookup_single = 1
-const gsub_lookup_multiple = 2
-const gsub_lookup_alternate = 3
-const gsub_lookup_ligature = 4
-const gsub_lookup_context = 5
-const gsub_lookup_chain_context = 6
-const gsub_lookup_extension = 7
+pub const gsub_lookup_single = 1
+pub const gsub_lookup_multiple = 2
+pub const gsub_lookup_alternate = 3
+pub const gsub_lookup_ligature = 4
+pub const gsub_lookup_context = 5
+pub const gsub_lookup_chain_context = 6
+pub const gsub_lookup_extension = 7
 
 // The bits of a lookup's flag field, which say which glyphs the lookup's rules take part in.
 //
@@ -45,11 +52,11 @@ const gsub_lookup_extension = 7
 // marks" or "this is for right to left text" or "only marks of this attachment class". Without
 // them a rule about three letters would be broken by a mark sitting between two of them, which
 // is the common case in Arabic rather than an edge of it.
-const gsub_flag_right_to_left = 0x0001
-const gsub_flag_ignore_base_glyphs = 0x0002
-const gsub_flag_ignore_ligatures = 0x0004
-const gsub_flag_ignore_marks = 0x0008
-const gsub_flag_use_mark_filtering_set = 0x0010
+pub const gsub_flag_right_to_left = 0x0001
+pub const gsub_flag_ignore_base_glyphs = 0x0002
+pub const gsub_flag_ignore_ligatures = 0x0004
+pub const gsub_flag_ignore_marks = 0x0008
+pub const gsub_flag_use_mark_filtering_set = 0x0010
 
 // The top byte of the flag field is not a bit but a value: a mark attachment class that marks
 // have to belong to for this lookup to see them. It shares the field with the bits below, which
@@ -60,12 +67,13 @@ const gsub_flag_use_mark_filtering_set = 0x0010
 // and using a mark filtering set. Both are implemented, and both are noted as unexercised rather
 // than left out, because a font outside the set on this machine may well need them and a missing
 // flag is a wrong glyph while a present one is at worst the font's own behaviour.
-const gsub_flag_mark_attachment_type = 0xff00
+pub const gsub_flag_mark_attachment_type = 0xff00
 
 // CoverageRange is one span of the glyphs a coverage table covers. Coverage is stored as
 // ranges rather than one entry per glyph because a font that covers a whole contiguous block
 // would otherwise need an entry for every glyph in it.
-struct CoverageRange {
+pub struct CoverageRange {
+pub mut:
 	first u16
 	last  u16
 	// start_index is the coverage index of first. The index of a glyph inside the range is
@@ -75,7 +83,8 @@ struct CoverageRange {
 }
 
 // SingleSubst is one single-substitution rule: the glyphs it covers and what each becomes.
-struct SingleSubst {
+pub struct SingleSubst {
+pub mut:
 	ranges []CoverageRange
 	// delta is added to a covered glyph index, which is how the format 1 table stores a
 	// substitution. subs is the explicit replacement list of format 2, indexed by coverage
@@ -85,7 +94,8 @@ struct SingleSubst {
 }
 
 // LigatureRule is one way a run of glyphs can be fused into a single glyph.
-struct LigatureRule {
+pub struct LigatureRule {
+pub mut:
 	// glyph is what the run becomes.
 	glyph u16
 	// components are the glyphs that follow the first one and are swallowed with it. The first
@@ -96,8 +106,8 @@ struct LigatureRule {
 
 // LigatureSet holds every rule that starts with one particular glyph, longest first as the
 // specification requires it to be written.
-struct LigatureSet {
-mut:
+pub struct LigatureSet {
+pub mut:
 	// first is the glyph these rules begin with.
 	first u16
 	rules []LigatureRule
@@ -110,8 +120,8 @@ mut:
 // ligature leaves a gap to be covered by one glyph, whereas this fills one character with several
 // glyphs, and a layout pass that assumes one glyph per character has to be told about the
 // difference.
-struct MultipleSubst {
-mut:
+pub struct MultipleSubst {
+pub mut:
 	// ranges is the coverage, which indexes the sequence list below.
 	ranges []CoverageRange
 	// sequences is one replacement list per covered glyph, in coverage order.
@@ -129,8 +139,8 @@ mut:
 // It matters more than it sounds. Arabic Typesetting puts its final forms under this type rather
 // than under a single substitution, so a shaper that does not read it draws every final form in
 // Arabic Typesetting as its isolated letter, and there is no error to notice that by.
-struct AlternateSubst {
-mut:
+pub struct AlternateSubst {
+pub mut:
 	// ranges is the coverage, which indexes the sets below.
 	ranges []CoverageRange
 	// sets is one list of alternates per covered glyph, in coverage order.
@@ -139,8 +149,8 @@ mut:
 
 // ChainRecord is one substitution a chaining context performs once its pattern has matched: which
 // of the input positions it applies to, and which lookup does the work.
-struct ChainRecord {
-mut:
+pub struct ChainRecord {
+pub mut:
 	// position is an index into the context's input sequence. It is deliberately not an offset
 	// into the glyph run, so a rule matching three input glyphs can substitute the second of
 	// them and leave the other two alone.
@@ -159,8 +169,8 @@ mut:
 // are not read. The one format-1 rule in the corpus is Noto Nastaliq's lam-alef:
 // coverage lam-medi/lam-init, input alef-fina, lookup 0 at both positions, which is
 // what turns the pair into the .LA forms HarfBuzz draws.
-struct ContextRule {
-mut:
+pub struct ContextRule {
+pub mut:
 	// input are the glyphs after the first, matched in order.
 	input []u16
 	// records are the lookups to run at the matched positions, position zero being
@@ -172,8 +182,8 @@ mut:
 // same three-part idea as a plain rule, with classes in place of glyphs. The input
 // list holds the classes after the first glyph, whose own class selected the rule
 // set it came from.
-struct ContextClassRule {
-mut:
+pub struct ContextClassRule {
+pub mut:
 	// input are the classes after the first input glyph, in order.
 	input []u16
 	// records are the lookups to run at the matched positions, position zero being
@@ -185,8 +195,8 @@ mut:
 // coverage for the first input glyph, one class definition, and one rule list per
 // input class value. A NULL set offset is an empty rule list, kept positionally so
 // later sets stay aligned with their class value.
-struct ContextClass2 {
-mut:
+pub struct ContextClass2 {
+pub mut:
 	// coverage names the glyphs the first input glyph may be.
 	coverage []CoverageRange
 	// input is the class definition the first glyph and every following one are
@@ -204,8 +214,8 @@ mut:
 // tables directly, so matching it is a run of binary searches with no second lookup step.
 // Formats 1 and 2 match the same three sequences through glyph ids and glyph classes;
 // they are read too, each in its own tables beside this one.
-struct ChainContext3 {
-mut:
+pub struct ChainContext3 {
+pub mut:
 	// backtrack are the coverages to match before the first input glyph, nearest first.
 	backtrack [][]CoverageRange
 	// input are the coverages to match at and after the position, the first being the one a
@@ -220,8 +230,8 @@ mut:
 // three sequences as a coverage or class rule, named as glyph ids. The input list holds
 // the glyphs after the covered first, whose own match is the coverage that selected
 // the rule's set.
-struct GlyphChainRule {
-mut:
+pub struct GlyphChainRule {
+pub mut:
 	// backtrack are the glyphs before the first input glyph, nearest first.
 	backtrack []u16
 	// input are the glyphs after the first input glyph, in order.
@@ -236,8 +246,8 @@ mut:
 // for the first input glyph and one rule list per covered glyph, in coverage order.
 // A NULL set offset is an empty rule list, kept positionally so later sets stay
 // aligned with their coverage index.
-struct ChainGlyphSub1 {
-mut:
+pub struct ChainGlyphSub1 {
+pub mut:
 	// coverage names the glyphs the first input glyph may be.
 	coverage []CoverageRange
 	// sets holds the rules for a first glyph by its coverage index.
@@ -247,8 +257,8 @@ mut:
 // ClassChainRule is one class-based chaining rule (format 2 of lookup type 6): the
 // same three sequences, named as glyph classes. The input list holds the classes
 // after the first glyph, whose own class selected the rule set it came from.
-struct ClassChainRule {
-mut:
+pub struct ClassChainRule {
+pub mut:
 	// backtrack are the classes before the first input glyph, nearest first.
 	backtrack []u16
 	// input are the classes after the first input glyph, in order.
@@ -263,8 +273,8 @@ mut:
 // definitions and, per input class value, the rules for a first glyph of that class.
 // A NULL set offset parses to an empty rule list, kept positionally so later sets
 // stay aligned with their class value.
-struct ChainClassSub2 {
-mut:
+pub struct ChainClassSub2 {
+pub mut:
 	// coverage names the glyphs the first input glyph may be; like the class-based
 	// positioning reader, this format gates the match on it as well as on the class.
 	coverage  []CoverageRange
@@ -275,8 +285,8 @@ mut:
 }
 
 // ChainMatch is a chaining context that has found its pattern, and where in the run it is.
-struct ChainMatch {
-mut:
+pub struct ChainMatch {
+pub mut:
 	// start is the index in the glyph list of the first input glyph.
 	start int
 	// positions are the indices in the glyph list of every input glyph, in pattern order, so a
@@ -288,8 +298,8 @@ mut:
 }
 
 // Lookup is one GSUB lookup, holding the rules of the kinds this milestone applies.
-struct Lookup {
-mut:
+pub struct Lookup {
+pub mut:
 	kind u16
 	// flag says which glyphs the rules take part in, as a set of gsub_flag bits.
 	flag u16
@@ -326,7 +336,8 @@ mut:
 }
 
 // ScriptFeature pairs a feature tag with the lookups it names, for one script.
-struct ScriptFeature {
+pub struct ScriptFeature {
+pub mut:
 	tag     string
 	lookups []u16
 }
@@ -334,13 +345,15 @@ struct ScriptFeature {
 // Script is one script in the table, with its features in the order the language system lists
 // them. Order is kept because a font can give the same feature more than one lookup and the
 // order decides which wins.
-struct Script {
+pub struct Script {
+pub mut:
 	tag      string
 	features []ScriptFeature
 }
 
 // Gsub is a parsed GSUB table, reduced to what the positional features need.
 pub struct Gsub {
+pub mut:
 	lookups []Lookup
 	scripts []Script
 	// declared is the whole FeatureList, including the features no language system enables.
@@ -415,7 +428,7 @@ pub fn (g &Gsub) script_tags() []string {
 // and a local shadowing a type name makes V resolve methods on the type instead of the
 // value, which compiles into a table read that returns nothing.
 pub fn new_gsub(raw []u8, gdef ?&Gdef) ?&Gsub {
-	r := font.new_reader(raw)
+	r := new_reader(raw)
 	if r.len() < 10 || r.u16_at(0) != 1 {
 		return none
 	}
@@ -472,7 +485,8 @@ pub mut:
 
 // LigatureMatch is the outcome of a fusion: the glyph that replaces the run, and how many glyphs
 // it swallowed.
-struct LigatureMatch {
+pub struct LigatureMatch {
+pub mut:
 	glyph    u16
 	consumed int
 }
@@ -484,7 +498,7 @@ struct LigatureMatch {
 // rule for the same opening letter has to be given the three-glyph one, or "lam lam alef" would
 // come out as a ligature plus a loose letter. The sets are already sorted that way when they
 // are parsed, and this walks them in order, so the first rule that matches is the longest.
-fn (l &Lookup) match_ligature(gids []Ligatable, at int) ?LigatureMatch {
+pub fn (l &Lookup) match_ligature(gids []Ligatable, at int) ?LigatureMatch {
 	first := gids[at].gid
 	for set in l.ligatures {
 		if set.first != first {
@@ -520,8 +534,8 @@ fn (l &Lookup) match_ligature(gids []Ligatable, at int) ?LigatureMatch {
 // consumed counts glyphs of the run rather than of the pattern, because a rule that ignores marks
 // can match two letters that had a mark between them, and that mark is not part of the edit. The
 // mark stays on the line.
-struct Edit {
-mut:
+pub struct Edit {
+pub mut:
 	start    int
 	consumed int
 	glyphs   []Ligatable
@@ -532,23 +546,23 @@ mut:
 // It is a list of edits rather than one replacement because a context rule may substitute several
 // of its input glyphs, and because which of them it touched is not knowable until each record has
 // been tried: a record naming a lookup that does not cover the glyph there is simply skipped.
-struct Substitution {
-mut:
+pub struct Substitution {
+pub mut:
 	edits []Edit
 }
 
 // span is the range of the run the edits cover, and is what the caller steps over so the same
 // rule is not immediately reapplied to what it just changed. It is none when there is nothing to
 // step over, which happens when every record in a matched context found nothing to do.
-fn (s &Substitution) span() ?EditSpan {
+pub fn (s &Substitution) span() ?EditSpan {
 	if s.edits.len == 0 {
 		return none
 	}
 	mut first := s.edits[0].start
 	mut last := s.edits[0].start + s.edits[0].consumed
 	for e in s.edits {
-		first = font.imin(first, e.start)
-		last = font.imax(last, e.start + e.consumed)
+		first = imin(first, e.start)
+		last = imax(last, e.start + e.consumed)
 		// The output has to be in the span as well as the input, because the walk resumes from here and a
 		// resume that lands on a glyph this substitution just produced re-substitutes it. A MultipleSubst
 		// that replaces one glyph with three ends up covering three run positions, not one, and resuming at
@@ -558,7 +572,7 @@ fn (s &Substitution) span() ?EditSpan {
 		// Taking the larger of the two extents is right for every shape: a fusion consumes more than it
 		// produces and the input extent is the one that matters, a substitution produces more than it
 		// consumes and the output extent is, and a 1:1 is the same number either way.
-		last = font.imax(last, e.start + e.glyphs.len)
+		last = imax(last, e.start + e.glyphs.len)
 	}
 	return EditSpan{
 		first: first
@@ -567,8 +581,8 @@ fn (s &Substitution) span() ?EditSpan {
 }
 
 // EditSpan is a half open range of run indices, first up to but not including last.
-struct EditSpan {
-mut:
+pub struct EditSpan {
+pub mut:
 	first int
 	last  int
 }
@@ -612,7 +626,7 @@ pub fn (g &Gsub) substitute_forms(lookups []u16, items []Ligatable, want ?Joinin
 // lookup_substitutes reports whether a lookup holds anything this engine can apply. A lookup of
 // any other type is left alone rather than treated as empty, because a font mixing in a rule this
 // engine cannot read should have its other rules still work.
-fn lookup_substitutes(l &Lookup) bool {
+pub fn lookup_substitutes(l &Lookup) bool {
 	return l.kind == gsub_lookup_single || l.kind == gsub_lookup_multiple
 		|| l.kind == gsub_lookup_alternate || l.kind == gsub_lookup_ligature
 		|| l.kind == gsub_lookup_chain_context || l.kind == gsub_lookup_context
@@ -630,7 +644,7 @@ fn lookup_substitutes(l &Lookup) bool {
 // glyph and the walk continues past all of them, so the run index under the walk strictly
 // increases and the loop ends at the end of the run. A font whose rules do not reach a fixed
 // point is a font this handles in one pass, which is the same contract every shaper works to.
-fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm) []Ligatable {
+pub fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm) []Ligatable {
 	lookup := g.lookups[li]
 	rtl := lookup.flag & gsub_flag_right_to_left != 0
 	mut step := 1
@@ -693,7 +707,7 @@ fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm) []
 // so the check is the flag's own answer on both glyphs rather than a kind
 // comparison written a second time. Form and mark-ness ride along on the items
 // the rules produce, so the mask sees the same run either way.
-fn edits_preserve_matching(g &Gsub, items []Ligatable, sub Substitution, flag u16, mark_set u16) bool {
+pub fn edits_preserve_matching(g &Gsub, items []Ligatable, sub Substitution, flag u16, mark_set u16) bool {
 	for e in sub.edits {
 		if e.start < 0 || e.glyphs.len != e.consumed || e.start + e.consumed > items.len {
 			return false
@@ -715,7 +729,7 @@ fn edits_preserve_matching(g &Gsub, items []Ligatable, sub Substitution, flag u1
 // rule, which is why "letter, mark, letter" can match a pattern of two letters. That is what
 // lets an Arabic font write a composition rule over letters at all, since a mark almost always
 // sits between the letters whose combination it changes.
-fn (g &Gsub) effective(items []Ligatable, flag u16, mark_set u16, want ?JoiningForm) []int {
+pub fn (g &Gsub) effective(items []Ligatable, flag u16, mark_set u16, want ?JoiningForm) []int {
 	mut out := []int{cap: items.len}
 	for i, item in items {
 		// A masked run only lets through the glyphs in one joining shape, which is what makes the four
@@ -745,7 +759,7 @@ fn (g &Gsub) effective(items []Ligatable, flag u16, mark_set u16, want ?JoiningF
 // walk resumes once a substitution has changed the run up to that point. A run index and an
 // effective position are not the same number once glyphs are being skipped, so this has to be
 // looked up rather than computed by adding.
-fn eff_at_or_after(eff []int, from int) int {
+pub fn eff_at_or_after(eff []int, from int) int {
 	for i, at in eff {
 		if at >= from {
 			return i
@@ -760,7 +774,7 @@ fn eff_at_or_after(eff []int, from int) int {
 // deliberate rather than a fallback: a rule that says "ignore the marks" against a font that does
 // not say which glyphs are marks has no way to tell a mark from a letter, and stepping over
 // nothing is the reading that cannot substitute the wrong glyph.
-fn (g &Gsub) skipped(flag u16, mark_set u16, gid u16) bool {
+pub fn (g &Gsub) skipped(flag u16, mark_set u16, gid u16) bool {
 	gdef := g.gdef or { return false }
 	is_mark := gdef.is_mark(gid)
 	if flag & gsub_flag_use_mark_filtering_set != 0 {
@@ -796,7 +810,7 @@ fn (g &Gsub) skipped(flag u16, mark_set u16, gid u16) bool {
 // asks where in a run a rule applies, which is the run's problem. This asks what a given lookup
 // makes of the glyphs at a position it has been handed, which is the rule's problem, and it is
 // what a chaining context needs in order to run a lookup of its own choosing.
-fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth int) ?Substitution {
+pub fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth int) ?Substitution {
 	if li >= g.lookups.len || at < 0 || at >= eff.len {
 		return none
 	}
@@ -874,7 +888,7 @@ fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth int) ?
 // ligature rule still applies when a mark sits between the letters it names. When a mark does sit
 // between them the rule is then refused, because fusing across it would swallow the mark. The
 // letters stay apart, which is legible, rather than the mark vanishing, which is not.
-fn (g &Gsub) apply_ligature(lookup Lookup, items []Ligatable, eff []int, at int) ?Substitution {
+pub fn (g &Gsub) apply_ligature(lookup Lookup, items []Ligatable, eff []int, at int) ?Substitution {
 	pos := eff[at]
 	// Only the first glyph of the longest ligature rule and the components that follow it can ever be
 	// read, so only that many are copied.
@@ -924,7 +938,7 @@ fn (g &Gsub) apply_ligature(lookup Lookup, items []Ligatable, eff []int, at int)
 // it stands: every edit made so far was at a higher index, and changing the length of a
 // list after an index does not move that index. Both chaining and plain contexts share
 // it, because a matched pattern is a matched pattern whichever table named it.
-fn (g &Gsub) apply_records(records []ChainRecord, m ChainMatch, items []Ligatable,
+pub fn (g &Gsub) apply_records(records []ChainRecord, m ChainMatch, items []Ligatable,
 	eff []int, depth int) ?Substitution {
 	mut work := items
 	mut edits := []Edit{}
@@ -950,7 +964,7 @@ fn (g &Gsub) apply_records(records []ChainRecord, m ChainMatch, items []Ligatabl
 }
 
 // apply_chain runs a chaining context's records against the run once its pattern has matched.
-fn (g &Gsub) apply_chain(lookup Lookup, items []Ligatable, eff []int, at int,
+pub fn (g &Gsub) apply_chain(lookup Lookup, items []Ligatable, eff []int, at int,
 	depth int) ?Substitution {
 	for chain in lookup.chains {
 		if m := g.match_chain_at(chain, eff, items, at) {
@@ -978,7 +992,7 @@ fn (g &Gsub) apply_chain(lookup Lookup, items []Ligatable, eff []int, at int,
 
 // apply_context runs a plain context's rules against the run: the first rule whose input
 // follows the covered glyph wins, and its records run through the same path as a chain's.
-fn (g &Gsub) apply_context(lookup Lookup, items []Ligatable, eff []int, at int,
+pub fn (g &Gsub) apply_context(lookup Lookup, items []Ligatable, eff []int, at int,
 	depth int) ?Substitution {
 	if at < 0 || at >= eff.len {
 		return none
@@ -1011,7 +1025,7 @@ fn (g &Gsub) apply_context(lookup Lookup, items []Ligatable, eff []int, at int,
 // match_context_at tests one plain-context rule at one effective position: the covered
 // glyph is already known to match, so the rule's input list is checked against the glyphs
 // that follow it, in order, with nothing skipped that the effective sequence kept.
-fn (g &Gsub) match_context_at(rule &ContextRule, eff []int, items []Ligatable,
+pub fn (g &Gsub) match_context_at(rule &ContextRule, eff []int, items []Ligatable,
 	at int) ?ChainMatch {
 	if at + rule.input.len + 1 > eff.len {
 		return none
@@ -1036,7 +1050,7 @@ fn (g &Gsub) match_context_at(rule &ContextRule, eff []int, items []Ligatable,
 // The backtrack and lookahead lists are both written nearest glyph first, in logical order, and
 // that does not change with the right to left flag: the flag is about the order substitutions are
 // applied in, not about the order a font writes its pattern in.
-fn (g &Gsub) match_chain_at(c &ChainContext3, eff []int, items []Ligatable,
+pub fn (g &Gsub) match_chain_at(c &ChainContext3, eff []int, items []Ligatable,
 	at int) ?ChainMatch {
 	if c.input.len == 0 || at + c.input.len > eff.len {
 		return none
@@ -1090,7 +1104,7 @@ fn (g &Gsub) match_chain_at(c &ChainContext3, eff []int, items []Ligatable,
 //
 // It returns the match together with the rule that matched, because the records belong to
 // the rule rather than to the subtable.
-fn (g &Gsub) match_context_class_at(cc &ContextClass2, eff []int, items []Ligatable,
+pub fn (g &Gsub) match_context_class_at(cc &ContextClass2, eff []int, items []Ligatable,
 	at int) ?(ChainMatch, ContextClassRule) {
 	_ = g
 	if at < 0 || at >= eff.len {
@@ -1138,7 +1152,7 @@ fn (g &Gsub) match_context_class_at(cc &ContextClass2, eff []int, items []Ligata
 //
 // It returns the match together with the rule that matched, because the span check and
 // the records both belong to the rule rather than to the subtable.
-fn (g &Gsub) match_chain_glyph_at(cg &ChainGlyphSub1, eff []int, items []Ligatable,
+pub fn (g &Gsub) match_chain_glyph_at(cg &ChainGlyphSub1, eff []int, items []Ligatable,
 	at int) ?(ChainMatch, GlyphChainRule) {
 	_ = g
 	if at < 0 || at >= eff.len {
@@ -1160,7 +1174,7 @@ fn (g &Gsub) match_chain_glyph_at(cg &ChainGlyphSub1, eff []int, items []Ligatab
 // backtrack nearest glyph first, then the input glyphs after the covered first, then the
 // lookahead. Positions are run indices like the coverage matcher's, so a record's position
 // indexes straight into them.
-fn match_glyph_chain_rule(rule &GlyphChainRule, eff []int, items []Ligatable, at int) ?ChainMatch {
+pub fn match_glyph_chain_rule(rule &GlyphChainRule, eff []int, items []Ligatable, at int) ?ChainMatch {
 	for k, gid in rule.backtrack {
 		back := at - 1 - k
 		if back < 0 {
@@ -1206,7 +1220,7 @@ fn match_glyph_chain_rule(rule &GlyphChainRule, eff []int, items []Ligatable, at
 //
 // It returns the match together with the rule that matched, because the span check and
 // the records both belong to the rule rather than to the subtable.
-fn (g &Gsub) match_chain_class_at(cc &ChainClassSub2, eff []int, items []Ligatable,
+pub fn (g &Gsub) match_chain_class_at(cc &ChainClassSub2, eff []int, items []Ligatable,
 	at int) ?(ChainMatch, ClassChainRule) {
 	_ = g
 	if at < 0 || at >= eff.len {
@@ -1231,7 +1245,7 @@ fn (g &Gsub) match_chain_class_at(cc &ChainClassSub2, eff []int, items []Ligatab
 // backtrack classes nearest first, then the input classes after the covered first, then
 // the lookahead classes. Positions are run indices like the coverage matcher's, so a
 // record's position indexes straight into them.
-fn match_class_chain_rule(cc &ChainClassSub2, rule &ClassChainRule, eff []int,
+pub fn match_class_chain_rule(cc &ChainClassSub2, rule &ClassChainRule, eff []int,
 	items []Ligatable, at int) ?ChainMatch {
 	for k, class in rule.backtrack {
 		back := at - 1 - k
@@ -1277,7 +1291,7 @@ fn match_class_chain_rule(cc &ChainClassSub2, rule &ClassChainRule, eff []int,
 //
 // It is a function rather than a one element literal because this compiler's formatter rewrites
 // []int{pos} into a struct literal, which does not parse.
-fn one_at(pos int) []int {
+pub fn one_at(pos int) []int {
 	mut out := []int{cap: 1}
 	out << pos
 	return out
@@ -1293,7 +1307,7 @@ fn one_at(pos int) []int {
 // what says those are marks. Without the flag they draw at the pen unplaced, which is how
 // Nastaliq rendered its dots. A font with no GDEF answers from the input alone, which is what
 // this did before.
-fn (g &Gsub) ligatables(seq []u16, from Ligatable) []Ligatable {
+pub fn (g &Gsub) ligatables(seq []u16, from Ligatable) []Ligatable {
 	mut out := []Ligatable{cap: seq.len}
 	for gid in seq {
 		mut is_mark := from.is_mark
@@ -1314,7 +1328,7 @@ fn (g &Gsub) ligatables(seq []u16, from Ligatable) []Ligatable {
 }
 
 // splice applies a substitution's edits to a run.
-fn splice(items []Ligatable, sub Substitution) []Ligatable {
+pub fn splice(items []Ligatable, sub Substitution) []Ligatable {
 	mut out := []Ligatable{cap: items.len}
 	mut i := 0
 	for i < items.len {
@@ -1332,7 +1346,7 @@ fn splice(items []Ligatable, sub Substitution) []Ligatable {
 }
 
 // edit_at finds the edit that starts at a run index.
-fn edit_at(edits []Edit, at int) ?Edit {
+pub fn edit_at(edits []Edit, at int) ?Edit {
 	for e in edits {
 		if e.start == at {
 			return e
@@ -1359,7 +1373,7 @@ pub fn (g &Gsub) script(tag string) ?Script {
 
 // ascii_lower lowercases the ASCII letters in a tag, leaving anything else alone. The tags
 // involved are always ASCII, so this does not need to be Unicode-aware.
-fn ascii_lower(s string) string {
+pub fn ascii_lower(s string) string {
 	mut out := []u8{len: s.len}
 	for i in 0 .. s.len {
 		b := s[i]
@@ -1444,7 +1458,7 @@ pub fn (g &Gsub) apply(lookups []u16, gid u16) u16 {
 }
 
 // single_lookup finds the first rule that covers gid and returns the glyph it becomes.
-fn single_lookup(subs []SingleSubst, gid u16) ?u16 {
+pub fn single_lookup(subs []SingleSubst, gid u16) ?u16 {
 	for s in subs {
 		i := coverage_index(s.ranges, gid) or { continue }
 		if s.subs.len > 0 {
@@ -1466,7 +1480,7 @@ fn single_lookup(subs []SingleSubst, gid u16) ?u16 {
 // A covered glyph with no usable alternates is passed over, for the same reason as everywhere else
 // here: a rule that cannot be read is a rule that does not fire, and the next rule in the lookup
 // still gets its turn.
-fn alternate_lookup(subs []AlternateSubst, gid u16) ?u16 {
+pub fn alternate_lookup(subs []AlternateSubst, gid u16) ?u16 {
 	for s in subs {
 		i := coverage_index(s.ranges, gid) or { continue }
 		if i < s.sets.len && s.sets[i].len > 0 {
@@ -1481,7 +1495,7 @@ fn alternate_lookup(subs []AlternateSubst, gid u16) ?u16 {
 // A covered glyph whose sequence failed to parse is passed over rather than treated as covering
 // nothing, which is the same choice the parser made when it left that entry empty: a rule that
 // cannot be read is a rule that does not fire, and the next rule in the lookup still gets its turn.
-fn multiple_lookup(subs []MultipleSubst, gid u16) ?[]u16 {
+pub fn multiple_lookup(subs []MultipleSubst, gid u16) ?[]u16 {
 	for s in subs {
 		i := coverage_index(s.ranges, gid) or { continue }
 		if i < s.sequences.len && s.sequences[i].len > 0 {
@@ -1493,7 +1507,7 @@ fn multiple_lookup(subs []MultipleSubst, gid u16) ?[]u16 {
 
 // coverage_index returns the position of a glyph in the coverage table, or none when the
 // table does not cover it.
-fn coverage_index(ranges []CoverageRange, gid u16) ?int {
+pub fn coverage_index(ranges []CoverageRange, gid u16) ?int {
 	// The ranges are sorted by first glyph and do not overlap, which the format guarantees,
 	// so a binary search is enough.
 	mut lo := 0
@@ -1513,7 +1527,7 @@ fn coverage_index(ranges []CoverageRange, gid u16) ?int {
 }
 
 // parse_lookups reads the LookupList and every rule this milestone understands.
-fn parse_lookups(r &font.Reader, off int) []Lookup {
+pub fn parse_lookups(r &Reader, off int) []Lookup {
 	mut out := []Lookup{}
 	if !r.has(off, 2) {
 		return out
@@ -1606,7 +1620,7 @@ fn parse_lookups(r &font.Reader, off int) []Lookup {
 // has_context_rules reports whether a lookup holds any plain-context rule at all. An
 // empty rule list substitutes nothing, and without this a lookup whose subtables all
 // failed to parse would still claim the context type and skip the other kinds.
-fn has_context_rules(l &Lookup) bool {
+pub fn has_context_rules(l &Lookup) bool {
 	for set in l.context_sets {
 		if set.len > 0 {
 			return true
@@ -1626,7 +1640,7 @@ fn has_context_rules(l &Lookup) bool {
 
 // has_chain_rules reports whether a lookup holds any chaining rule at all, in any of
 // the three forms. Like the plain side, an unparsable subtable claims nothing.
-fn has_chain_rules(l &Lookup) bool {
+pub fn has_chain_rules(l &Lookup) bool {
 	if l.chains.len > 0 {
 		return true
 	}
@@ -1651,7 +1665,7 @@ fn has_chain_rules(l &Lookup) bool {
 //
 // It is a separate function because it runs once per lookup rather than once per position, which is the
 // whole reason it is not written inline where it would be needed.
-fn longest_ligature_of(l &Lookup) int {
+pub fn longest_ligature_of(l &Lookup) int {
 	mut longest := 0
 	for set in l.ligatures {
 		for rule in set.rules {
@@ -1670,7 +1684,7 @@ fn longest_ligature_of(l &Lookup) int {
 // header. That is what makes an unread lookup distinguishable from an empty one: an empty one has
 // nothing to apply and is skipped, and an unread one is left alone so the rest of the font's rules
 // still work.
-fn lookup_kind_of(l &Lookup, header_kind u16) u16 {
+pub fn lookup_kind_of(l &Lookup, header_kind u16) u16 {
 	if has_chain_rules(l) {
 		return gsub_lookup_chain_context
 	}
@@ -1697,7 +1711,7 @@ fn lookup_kind_of(l &Lookup, header_kind u16) u16 {
 // The sequence list is indexed by coverage index, so a sequence that fails to parse is left empty
 // rather than dropped. Dropping it would shift every later sequence against the wrong covered
 // glyph, which is a wrong glyph drawn rather than a missing rule noticed.
-fn parse_multiple_subst(r &font.Reader, at int) ?MultipleSubst {
+pub fn parse_multiple_subst(r &Reader, at int) ?MultipleSubst {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -1737,7 +1751,7 @@ fn parse_multiple_subst(r &font.Reader, at int) ?MultipleSubst {
 // The set list is indexed by coverage index, so a set that fails to parse is left empty rather
 // than dropped: dropping it would shift every later set against the wrong covered glyph, which is
 // a wrong glyph drawn rather than a missing rule noticed.
-fn parse_alternate_subst(r &font.Reader, at int) ?AlternateSubst {
+pub fn parse_alternate_subst(r &Reader, at int) ?AlternateSubst {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -1777,7 +1791,7 @@ fn parse_alternate_subst(r &font.Reader, at int) ?AlternateSubst {
 // Only format 1 is read: formats 2 and 3 match through glyph classes, and no font
 // here reaches for them. A NULL rule set offset is an empty rule list, kept
 // positionally so later sets stay aligned with their coverage index.
-fn parse_context1(r &font.Reader, at int) ?Lookup {
+pub fn parse_context1(r &Reader, at int) ?Lookup {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -1816,7 +1830,7 @@ fn parse_context1(r &font.Reader, at int) ?Lookup {
 
 // parse_context_rule reads one SubRule: the glyphs after the covered first one and the
 // lookups to run at each matched position.
-fn parse_context_rule(r &font.Reader, at int) ?ContextRule {
+pub fn parse_context_rule(r &Reader, at int) ?ContextRule {
 	if !r.has(at, 4) {
 		return none
 	}
@@ -1852,7 +1866,7 @@ fn parse_context_rule(r &font.Reader, at int) ?ContextRule {
 //
 // Formats 1 and 2 are the two that need a class definition and a nested rule set, and no font
 // this engine reads writes either, so the format is checked rather than guessed at.
-fn parse_chain3(r &font.Reader, at int) ?ChainContext3 {
+pub fn parse_chain3(r &Reader, at int) ?ChainContext3 {
 	if r.u16_at(at) != 3 {
 		return none
 	}
@@ -1898,7 +1912,7 @@ fn parse_chain3(r &font.Reader, at int) ?ChainContext3 {
 // parse_chain_records reads one SubstLookupRecord array: a count followed by that many
 // (sequence index, lookup index) pairs. All four contextual formats end their rules
 // with one, so the bound check lives here rather than in each reader.
-fn parse_chain_records(r &font.Reader, p int) ?ChainRecords {
+pub fn parse_chain_records(r &Reader, p int) ?ChainRecords {
 	if !r.has(p, 2) {
 		return none
 	}
@@ -1922,8 +1936,8 @@ fn parse_chain_records(r &font.Reader, p int) ?ChainRecords {
 
 // ChainRecords is a SubstLookupRecord array together with where the field after it
 // begins, which is what lets one reader hand the next its start.
-struct ChainRecords {
-mut:
+pub struct ChainRecords {
+pub mut:
 	records []ChainRecord
 	next    int
 }
@@ -1933,7 +1947,7 @@ mut:
 // The sets are aligned with the input class: the covered first glyph's class selects
 // its set, and a NULL set offset is an empty rule list kept positionally. Each rule
 // names the classes after the covered first, then its records.
-fn parse_context2(r &font.Reader, at int) ?ContextClass2 {
+pub fn parse_context2(r &Reader, at int) ?ContextClass2 {
 	if r.u16_at(at) != 2 {
 		return none
 	}
@@ -1979,7 +1993,7 @@ fn parse_context2(r &font.Reader, at int) ?ContextClass2 {
 // The input count includes the covered first, so the stored list holds every class after
 // it. A rule that fails to parse is skipped rather than placed half-read: the next rule
 // starts at its own offset, so one bad rule cannot shift the rest.
-fn parse_context_class_rule(r &font.Reader, at int) ?ContextClassRule {
+pub fn parse_context_class_rule(r &Reader, at int) ?ContextClassRule {
 	if !r.has(at, 4) {
 		return none
 	}
@@ -2021,7 +2035,7 @@ fn parse_context_class_rule(r &font.Reader, at int) ?ContextClassRule {
 // from after the offsets walks into the next subtable — measured on Amiri lookup 27,
 // whose count of 3 sits at the fourth word while the offset array's own third word
 // happens to hold a 60, which then reads sixty records out of whatever follows.
-fn parse_context3(r &font.Reader, at int) ?ChainContext3 {
+pub fn parse_context3(r &Reader, at int) ?ChainContext3 {
 	if r.u16_at(at) != 3 {
 		return none
 	}
@@ -2065,7 +2079,7 @@ fn parse_context3(r &font.Reader, at int) ?ChainContext3 {
 // first glyph selects its set, and a NULL set offset is an empty rule list kept
 // positionally. Each rule names its three sequences as glyph ids, including every
 // input glyph but the covered first.
-fn parse_chain1(r &font.Reader, at int) ?ChainGlyphSub1 {
+pub fn parse_chain1(r &Reader, at int) ?ChainGlyphSub1 {
 	if r.u16_at(at) != 1 {
 		return none
 	}
@@ -2110,7 +2124,7 @@ fn parse_chain1(r &font.Reader, at int) ?ChainGlyphSub1 {
 // The input count includes the covered first glyph, so the stored list holds every glyph
 // after it. A rule that fails to parse is skipped rather than placed half-read: the next
 // rule starts at its own offset, so one bad rule cannot shift the rest.
-fn parse_glyph_chain_rule(r &font.Reader, at int) ?GlyphChainRule {
+pub fn parse_glyph_chain_rule(r &Reader, at int) ?GlyphChainRule {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -2162,7 +2176,7 @@ fn parse_glyph_chain_rule(r &font.Reader, at int) ?GlyphChainRule {
 // Three class definitions and, per input class value, the rules for a first glyph of
 // that class. A NULL set offset parses to an empty rule list, kept positionally so
 // later sets stay aligned with their class value.
-fn parse_chain2(r &font.Reader, at int) ?ChainClassSub2 {
+pub fn parse_chain2(r &Reader, at int) ?ChainClassSub2 {
 	if r.u16_at(at) != 2 {
 		return none
 	}
@@ -2211,7 +2225,7 @@ fn parse_chain2(r &font.Reader, at int) ?ChainClassSub2 {
 // list holds every class after it. A rule that fails to parse is skipped rather than
 // placed half-read: the next rule starts at its own offset, so one bad rule cannot shift
 // the rest.
-fn parse_class_chain_rule(r &font.Reader, at int) ?ClassChainRule {
+pub fn parse_class_chain_rule(r &Reader, at int) ?ClassChainRule {
 	if !r.has(at, 2) {
 		return none
 	}
@@ -2264,8 +2278,8 @@ fn parse_class_chain_rule(r &font.Reader, at int) ?ClassChainRule {
 // The position is returned rather than advanced through a mutable argument because the three
 // lists are read in sequence from one running offset, and threading an int by reference is not
 // something V will do.
-struct CoverageList {
-mut:
+pub struct CoverageList {
+pub mut:
 	ranges [][]CoverageRange
 	next   int
 }
@@ -2276,7 +2290,7 @@ mut:
 // does not parse is kept as an empty entry rather than dropped, because these lists are positional:
 // the third input coverage belongs to the third input glyph whatever happens to the first two, and
 // dropping a bad one would match every glyph after it against the wrong rule.
-fn read_coverages(r &font.Reader, at int, p int) CoverageList {
+pub fn read_coverages(r &Reader, at int, p int) CoverageList {
 	if !r.has(p, 2) {
 		return CoverageList{ next: p }
 	}
@@ -2303,7 +2317,7 @@ fn read_coverages(r &font.Reader, at int, p int) CoverageList {
 // The offsets nest three deep and each level is relative to its own table rather than to the
 // subtable, which is the sort of thing that reads as plausible nonsense when a level is missed:
 // a ligature set that starts at the wrong place has a glyph count taken from a coordinate pair.
-fn parse_ligature_subst(r &font.Reader, at int) []LigatureSet {
+pub fn parse_ligature_subst(r &Reader, at int) []LigatureSet {
 	mut out := []LigatureSet{}
 	if r.u16_at(at) != 1 {
 		return out
@@ -2340,7 +2354,7 @@ fn parse_ligature_subst(r &font.Reader, at int) []LigatureSet {
 
 // parse_ligature reads one ligature rule: the glyph it becomes and the components after the
 // first.
-fn parse_ligature(r &font.Reader, at int) ?LigatureRule {
+pub fn parse_ligature(r &Reader, at int) ?LigatureRule {
 	if !r.has(at, 4) {
 		return none
 	}
@@ -2367,7 +2381,7 @@ fn parse_ligature(r &font.Reader, at int) ?LigatureRule {
 // Coverage format 2 stores a range's start index rather than every glyph in it, so this walks
 // the ranges counting their lengths. That is the only way to get from a coverage index back to
 // a glyph, and a font using format 2 for its ligature coverage needs it.
-fn coverage_glyph_at(ranges []CoverageRange, index int) u16 {
+pub fn coverage_glyph_at(ranges []CoverageRange, index int) u16 {
 	mut remaining := index
 	for range in ranges {
 		length := int(range.last) - int(range.first) + 1
@@ -2385,7 +2399,7 @@ fn coverage_glyph_at(ranges []CoverageRange, index int) u16 {
 // their positional rules inside extension lookups, so ignoring the wrapper would leave every
 // letter in its base shape while the font looked perfectly reasonable to a parser that only
 // understood the older lookup types.
-fn resolve_subtable(r &font.Reader, kind u16, at int) ResolvedSubtable {
+pub fn resolve_subtable(r &Reader, kind u16, at int) ResolvedSubtable {
 	if kind != gsub_lookup_extension {
 		return ResolvedSubtable{
 			kind: kind
@@ -2422,7 +2436,7 @@ fn resolve_subtable(r &font.Reader, kind u16, at int) ResolvedSubtable {
 // subtable begins. Both are accepted, documented order first, because a font that gets this
 // wrong still renders in whatever consumes it and a text engine has no business being the
 // one that draws the wrong glyph.
-fn parse_single_subst(r &font.Reader, at int) ?SingleSubst {
+pub fn parse_single_subst(r &Reader, at int) ?SingleSubst {
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
 		return none
@@ -2464,7 +2478,7 @@ fn parse_single_subst(r &font.Reader, at int) ?SingleSubst {
 
 // covered_count is how many glyphs a coverage table covers, which is the total length of its
 // ranges.
-fn covered_count(ranges []CoverageRange) int {
+pub fn covered_count(ranges []CoverageRange) int {
 	mut total := 0
 	for r in ranges {
 		total += int(r.last) - int(r.first) + 1
@@ -2476,7 +2490,7 @@ fn covered_count(ranges []CoverageRange) int {
 //
 // Format 1 lists glyphs one at a time, which becomes a range per glyph. Format 2 gives the
 // ranges directly, which is the compact form and the one a large font uses.
-fn parse_coverage(r &font.Reader, at int) []CoverageRange {
+pub fn parse_coverage(r &Reader, at int) []CoverageRange {
 	mut out := []CoverageRange{}
 	format := r.u16_at(at)
 	if format == 1 {
@@ -2507,12 +2521,13 @@ fn parse_coverage(r &font.Reader, at int) []CoverageRange {
 }
 
 // Feature is one entry of the FeatureList: a tag and the lookups it names.
-struct Feature {
+pub struct Feature {
+pub mut:
 	tag     string
 	lookups []u16
 }
 
-fn parse_features(r &font.Reader, off int) []Feature {
+pub fn parse_features(r &Reader, off int) []Feature {
 	mut out := []Feature{}
 	if !r.has(off, 2) {
 		return out
@@ -2540,7 +2555,7 @@ fn parse_features(r &font.Reader, off int) []Feature {
 
 // parse_scripts reads the ScriptList and resolves each script's language system into the
 // features it enables.
-fn parse_scripts(r &font.Reader, off int, features []Feature) []Script {
+pub fn parse_scripts(r &Reader, off int, features []Feature) []Script {
 	mut out := []Script{}
 	if !r.has(off, 2) {
 		return out
@@ -2580,7 +2595,7 @@ fn parse_scripts(r &font.Reader, off int, features []Feature) []Script {
 // describing the behaviour for text with no language tag, which is most of it. A font that
 // lists several is asked about the default rather than about the first, because the first is
 // whichever the compiler put there.
-fn langsys_features(r &font.Reader, script_at int) []u16 {
+pub fn langsys_features(r &Reader, script_at int) []u16 {
 	mut at := 0
 	default := int(r.u16_at(script_at))
 	if default != 0 && r.has(script_at + default, 4) {

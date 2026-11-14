@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 import vtext.ucd
 
 // Line layout: shaped codepoints in, positioned glyphs out.
@@ -613,7 +614,7 @@ fn position_marks(mut line Line, em_px f64, ctx &Context) {
 // reads. base_gid is only ever set on the Arabic presentation-form path, so 'arab' is
 // that path's own script rather than a guess; a font with no such rule answers the
 // base glyph and the last step behaves as before.
-fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph, script string) ?Offset2 {
+fn shaped_mark_offset(f &Font, mark_gid u16, base Glyph, script string) ?font.Offset2 {
 	if off := f.mark_offset_in(mark_gid, base.gid, false, script) {
 		return off
 	}

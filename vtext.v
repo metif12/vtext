@@ -53,7 +53,7 @@ pub fn new_context() &Context {
 // and rasterisation.
 pub struct Font {
 mut:
-	face &Face
+	face &font.Face
 	path string
 }
 
@@ -61,7 +61,7 @@ mut:
 pub fn load_font_file(path string) !&Font {
 	data := os.read_bytes(path) or { return error('cannot read font "${path}": ${err}') }
 	mut f := Font{
-		face: new_face(data) or { return error('cannot parse font "${path}": ${err}') }
+		face: font.new_face(data) or { return error('cannot parse font "${path}": ${err}') }
 		path: path
 	}
 	return &f
@@ -70,7 +70,7 @@ pub fn load_font_file(path string) !&Font {
 // load_font_bytes parses a font already held in memory.
 pub fn load_font_bytes(data []u8) !&Font {
 	mut f := Font{
-		face: new_face(data) or { return error('cannot parse font: ${err}') }
+		face: font.new_face(data) or { return error('cannot parse font: ${err}') }
 	}
 	return &f
 }
@@ -183,9 +183,9 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 	extra []string) []Glyph {
 	g := f.face.gsub or { return glyphs }
-	mut out := []Ligatable{cap: glyphs.len}
+	mut out := []font.Ligatable{cap: glyphs.len}
 	for i, glyph in glyphs {
-		out << Ligatable{
+		out << font.Ligatable{
 			gid:     glyph.gid
 			cluster: glyph.cluster
 			source:  i
@@ -209,8 +209,9 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 	//
 	// A glyph that a font already gave as a Unicode presentation form is not re-shaped by this. Its form is
 	// set but its glyph is a shaped one, and these coverages hold base letters, so there is nothing to match.
-	for form in [JoiningForm.isolated, JoiningForm.initial, JoiningForm.medial, JoiningForm.final] {
-		out = g.substitute_forms(g.lookups_for(script, feature_tag_for(form)), out, form)
+	for form in [font.JoiningForm.isolated, font.JoiningForm.initial, font.JoiningForm.medial,
+		font.JoiningForm.final] {
+		out = g.substitute_forms(g.lookups_for(script, font.feature_tag_for(form)), out, form)
 	}
 	for feature in ['rlig'] {
 		out = g.substitute(g.lookups_for(script, feature), out)
@@ -262,6 +263,23 @@ pub fn (f &Font) has_mark_attachment() bool {
 	return g.has_mark_attachment()
 }
 
+// mark_glyphs_passthrough reports whether the mark glyphs a font uses in its positioning rules
+// are the ones its cmap maps the marks to.
+//
+// It exists because the two are not always the same and the difference matters. A font that
+// composes its marks through a ccmp substitution has its positioning rules written against the
+// composed glyph, not against the one the cmap hands out, so a mark that has not been through
+// that substitution will not be found in any coverage.
+//
+// The composition is run, so this is no longer a report of something the engine has not done. It
+// is a report of a font whose composition rules are written against glyphs the pipeline never
+// produces, which is Dubai's case and is not a thing the substitution pass can fix: the rules are
+// reachable and parsed, and there is simply no path from the text to the glyphs they name.
+pub fn (f &Font) mark_glyphs_passthrough() bool {
+	gpos := f.face.gpos or { return true }
+	return gpos.covers_mark(f.glyph_index(rune(0x064E)))
+}
+
 // is_mark_glyph reports whether the font classifies this glyph as a combining mark. The
 // classification comes from the font rather than from Unicode, because the font is what decides
 // how its own glyphs are used.
@@ -281,7 +299,7 @@ pub fn (f &Font) is_mark_glyph(gid u16) bool {
 // found is false when the font has no rule for this pair, or has none for this mark's class on
 // this glyph. That is not an error: it is a font that does not say, and the caller is expected to
 // leave the mark where the pen is rather than invent a position.
-pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Offset2 {
+pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
 	return gpos.mark_offset(mark_gid, base_gid, base_is_mark)
 }
@@ -289,7 +307,7 @@ pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Off
 // mark_offset_in is mark_offset for the script the run is in. Mark rules live
 // under per-script features, and asking under the wrong script finds a rule
 // written for another script's glyphs or -- more often -- nothing at all.
-pub fn (f &Font) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string) ?Offset2 {
+pub fn (f &Font) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
 	return gpos.mark_offset_in(mark_gid, base_gid, base_is_mark, script)
 }
@@ -302,7 +320,7 @@ pub fn (f &Font) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, s
 // is about to place, and each of those may be absent. A letter at the start of a word has an entry and no
 // exit; a letter at the end is the other way round. A font that gives a glyph neither has no opinion
 // about it, and none is returned.
-pub fn (f &Font) cursive_anchors(gid u16, script string) ?CursiveAnchors {
+pub fn (f &Font) cursive_anchors(gid u16, script string) ?font.CursiveAnchors {
 	gpos := f.face.gpos or { return none }
 	return gpos.cursive_anchors(gid, script)
 }
@@ -321,7 +339,7 @@ pub fn (f &Font) cursive_anchors(gid u16, script string) ?CursiveAnchors {
 // A pair the font says nothing about returns none, and so does a pair it says is already correct as
 // far as this position is concerned, because a zero adjustment and no adjustment cannot be told
 // apart by the number alone and neither one moves the pen.
-pub fn (f &Font) kern_offset(left_gid u16, right_gid u16, script string) ?Offset2 {
+pub fn (f &Font) kern_offset(left_gid u16, right_gid u16, script string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
 	return gpos.kern_offset(left_gid, right_gid, script)
 }
@@ -346,7 +364,7 @@ pub fn (f &Font) kerns(script string) bool {
 //
 // gids is the run in logical order, which is the order the font's patterns are written in. left and
 // right are indices into it, and for a right-to-left run left is the rightmost of the two.
-pub fn (f &Font) context_placement(gids []u16, left int, right int, script string) ?Offset2 {
+pub fn (f &Font) context_placement(gids []u16, left int, right int, script string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
 	return gpos.context_offset(gids, left, right, script)
 }
@@ -389,7 +407,7 @@ pub fn (f &Font) stacks_marks() bool {
 //
 // script is the script of the letter, so a font offering the same feature tag for several
 // scripts resolves the right rule.
-pub fn (f &Font) shaped_glyph_index(gid u16, form JoiningForm, script string) u16 {
+pub fn (f &Font) shaped_glyph_index(gid u16, form font.JoiningForm, script string) u16 {
 	g := f.face.gsub or { return gid }
 	return g.shaped_glyph(gid, form, script)
 }
@@ -427,7 +445,7 @@ pub fn (f &Font) underline_position(em_px f64) f64 {
 //
 // The bitmap's left is how far the ink reaches left of the pen and its top how far it reaches above the
 // baseline, so the pixel the bitmap's own (0, 0) belongs at is (pen - left, baseline - top).
-pub fn (f &Font) rasterize(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitmap {
+pub fn (f &Font) rasterize(gid u16, em_px f64, sub_x i32, sub_y i32) font.GlyphBitmap {
 	return f.face.rasterize_glyph(gid, em_px, sub_x, sub_y)
 }
 

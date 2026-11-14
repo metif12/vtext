@@ -3,7 +3,7 @@ module vtext
 import vtext.font
 import os
 
-// Cursive attachment under GPOS lookup type 3: a rule says where each covered glyph's stroke enters and
+// font.Cursive attachment under GPOS lookup type 3: a rule says where each covered glyph's stroke enters and
 // leaves, and consecutive glyphs are joined by placing one entry anchor on the previous exit anchor.
 //
 // The hand-built tables below exist because the ambiguity is only visible in bytes. Reading a cursive
@@ -24,7 +24,7 @@ fn bytes_of(words []i16) []u8 {
 	return b
 }
 
-// single_pos_bytes builds a SinglePos format 1 subtable covering one glyph, in the shape Andalus's
+// single_pos_bytes builds a font.SinglePos format 1 subtable covering one glyph, in the shape Andalus's
 // lookup 21 has: a valueFormat of 3 at the word a cursive reader takes for its first anchor offset, and
 // something else small at the word it takes for its second, so one of the two lands on a valid anchor
 // format and the other points backwards. That is enough to be mistaken for a cursive rule.
@@ -124,10 +124,10 @@ fn cursive_range_bytes() []u8 {
 // valueFormat of 3 is a valid anchor format and the offset it makes lands inside the subtable.
 fn test_gpos_cursive_reader_refuses_a_single_position() {
 	r := font.new_reader(single_pos_bytes())
-	assert parse_cursive(r, 0) == none, 'a value format is not an anchor offset'
+	assert font.parse_cursive(r, 0) == none, 'a value format is not an anchor offset'
 	// The same bytes still have to read as the positioning rule they are.
-	rule := parse_single_position(r, ResolvedSubtable{
-		kind: gpos_lookup_single_position
+	rule := font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
 		at:   0
 	}) or { panic('a single positioning is not a cursive rule') }
 	assert rule.ranges.len == 1, 'and it covers the one glyph'
@@ -139,7 +139,7 @@ fn test_gpos_cursive_reader_refuses_a_single_position() {
 // declare themselves anchors.
 fn test_gpos_cursive_reader_reads_format_one() {
 	r := font.new_reader(cursive_format1_bytes())
-	rule := parse_cursive(r, 0) or { panic('a cursive rule with an anchor was refused') }
+	rule := font.parse_cursive(r, 0) or { panic('a cursive rule with an anchor was refused') }
 	assert rule.format == 1, 'and it says which format it is'
 	got := rule.offset_for(3) or { panic('no anchors for the covered glyph') }
 	assert got.entry.exists, 'the entry anchor is there'
@@ -151,7 +151,7 @@ fn test_gpos_cursive_reader_reads_format_one() {
 // coverage so that trailing covered glyphs take no part in the joining.
 fn test_gpos_cursive_reader_reads_format_two() {
 	r := font.new_reader(cursive_format2_bytes())
-	rule := parse_cursive(r, 0) or { panic('a cursive rule with an exit anchor was refused') }
+	rule := font.parse_cursive(r, 0) or { panic('a cursive rule with an exit anchor was refused') }
 	assert rule.format == 2, 'and it says which format it is'
 	got := rule.offset_for(3) or { panic('no anchors for the covered glyph') }
 	assert got.exit.exists, 'the exit anchor is there'
@@ -163,7 +163,7 @@ fn test_gpos_cursive_reader_reads_format_two() {
 // number of ranges as the number of records leaves most of the coverage unanchored.
 fn test_gpos_cursive_reader_counts_the_coverage_in_glyphs() {
 	r := font.new_reader(cursive_range_bytes())
-	rule := parse_cursive(r, 0) or { panic('a rule covering a range was refused') }
+	rule := font.parse_cursive(r, 0) or { panic('a rule covering a range was refused') }
 	assert rule.marks.len == 2, 'a range of two glyphs has two records'
 	first := rule.offset_for(10) or { panic('the first glyph of the range has no anchors') }
 	assert first.entry.exists && first.entry.y == 40, 'the first glyph has the entry anchor'

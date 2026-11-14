@@ -1,5 +1,7 @@
 module vtext
 
+import vtext.font
+
 // The font layer: turning a shaped codepoint into something drawable.
 //
 // Joining produces codepoints, not glyph indices, and that is deliberate: a codepoint is
@@ -41,7 +43,7 @@ pub mut:
 	// form is the shape the joining pass chose for this letter. It is carried all the way
 	// here because a font that keeps its Arabic shapes in a GSUB table is drawn from the
 	// base letter, and picking the right variant of that base letter is what form decides.
-	form JoiningForm
+	form font.JoiningForm
 	// base_gid is the base letter's glyph when this glyph is a presentation form, and zero
 	// otherwise. A mark attaches by anchor to a base letter, but anchors are written against
 	// base glyphs — not against the presentation forms a cmap lookup returns. So a mark on a
@@ -327,7 +329,7 @@ pub fn (fs &FontSet) shaped_glyphs(ctx &Context, sg ShapedGlyph, em_px f64) []Gl
 
 	mut out := []Glyph{cap: sg.base.len}
 	for i, cp in sg.base {
-		mut form := if i == 0 || sg.form == .isolated { sg.form } else { JoiningForm.final }
+		mut form := if i == 0 || sg.form == .isolated { sg.form } else { font.JoiningForm.final }
 		// A lam split out of a lam-alef fusion the font cannot draw is medial when the
 		// pair was joined: it joins the alef ahead of it as well as the letter behind.
 		// The pair's final form on the lam would skip the medial-masked lookups below.

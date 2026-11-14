@@ -38,7 +38,7 @@ import os
 import vtext
 import vtext.font
 
-// Lookup kinds this engine reads. Everything else in a table is carried by the parser and never applied,
+// font.Lookup kinds this engine reads. Everything else in a table is carried by the parser and never applied,
 // which is a fact about the engine and not about the font.
 //
 // The list is the source of truth and is written out rather than derived from the parsers, because a
@@ -78,7 +78,7 @@ fn lookup_kind_name(table string, kind int) string {
 			return match kind {
 				1 { 'Single positioning' }
 				2 { 'Pair positioning' }
-				3 { 'Cursive positioning' }
+				3 { 'font.Cursive positioning' }
 				4 { 'Mark to base positioning' }
 				5 { 'Mark to ligature positioning' }
 				6 { 'Mark to mark positioning' }
@@ -137,7 +137,7 @@ fn main() {
 		}
 	}
 
-	// Lookup kinds. A kind this engine does not read is a rule that will never fire, and the count says how
+	// font.Lookup kinds. A kind this engine does not read is a rule that will never fire, and the count says how
 	// much of the font it is.
 	//
 	// A remaining 9 is its own finding and a more specific one: it means an extension lookup whose contents
@@ -193,7 +193,7 @@ fn main() {
 		}
 	}
 
-	// Cursive. Dubai is the case worth naming and it needs the `curs` feature rather than a lookup kind to be
+	// font.Cursive. Dubai is the case worth naming and it needs the `curs` feature rather than a lookup kind to be
 	// found: the lookup carrying its cursive rules is wrapped in an extension this engine does not unwrap, so
 	// it reports as type 9 and the cursive rule inside it is invisible to a count. The feature is what the
 	// font says it has, and it is still declared.
@@ -207,7 +207,7 @@ fn main() {
 	if declares_curs || cursive_lookups > 0 {
 		mut what := ''
 		if cursive_lookups > 0 {
-			what += 'GPOS has ${cursive_lookups} Cursive positioning lookup(s)'
+			what += 'GPOS has ${cursive_lookups} font.Cursive positioning lookup(s)'
 		}
 		if declares_curs {
 			if what != '' {
@@ -245,7 +245,7 @@ fn main() {
 		}
 	}
 
-	// Cmap formats. parse_cmap drops a subtable whose format the engine does not
+	// font.Cmap formats. parse_cmap drops a subtable whose format the engine does not
 	// parse, so a character mapped only there has no glyph. Every format in the
 	// font's own bytes is listed, including the dropped ones, because the parsed
 	// list cannot show what it threw away.

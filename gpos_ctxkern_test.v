@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // A rule under the kern feature positions a glyph based on what is around it.
 //
 // Two things make these rules unlike a pair table, and both were found by reading a font's own bytes
@@ -147,8 +148,8 @@ fn test_gpos_kern_contexts_answer_the_rules_a_font_wrote() {
 fn test_gpos_kern_context_placement_is_the_value_the_font_wrote() {
 	f := ctx_font('andlso.ttf') or { return }
 	gpos := f.face.gpos or { panic('andalus has no gpos') }
-	// Lookup 21 covers glyph 3 with an xPlacement of -120, which is what the font's bytes say.
-	mut found := ?Offset2(none)
+	// font.Lookup 21 covers glyph 3 with an xPlacement of -120, which is what the font's bytes say.
+	mut found := ?font.Offset2(none)
 	if 21 < gpos.lookups.len {
 		for rule in gpos.lookups[21].singles {
 			if a := rule.offset_for(3) {
@@ -248,19 +249,19 @@ fn test_gpos_kern_class_rules_parse_and_match() {
 		if int(li) >= gpos.lookups.len {
 			continue
 		}
-		if has_chain_classes(gpos.lookups[li]) {
+		if font.has_chain_classes(gpos.lookups[li]) {
 			parsed++
 		}
 	}
 	assert parsed > 0, 'Amiri kern holds class-based chaining rules'
-	cc := ChainClass2{
-		coverage: [CoverageRange{ first: 15, last: 15 }]
-		input:    ClassDef{
-			entries: [ClassRangeEntry{ first: 10, last: 20, value: 1 }]
+	cc := font.ChainClass2{
+		coverage: [font.CoverageRange{ first: 15, last: 15 }]
+		input:    font.ClassDef{
+			entries: [font.ClassRangeEntry{ first: 10, last: 20, value: 1 }]
 		}
-		sets:     [[], [ChainClassRule{
+		sets:     [[], [font.ChainClassRule{
 			input:   [u16(1)]
-			records: [ContextRecord{ position: 1, lookup: 0 }]
+			records: [font.ContextRecord{ position: 1, lookup: 0 }]
 		}]]
 	}
 	m, rule := gpos.match_chain_class_at(cc, [u16(9), u16(15), u16(12)], 1) or {

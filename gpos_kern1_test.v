@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 import os
 
 // corpus_font_path is where a named font is: the committed corpus first, this platform's font directory
@@ -78,7 +79,7 @@ fn exact_kern(f &Font, left string, right string) i32 {
 // value for the first glyph, and the value for the second.
 //
 // The specification's prose describes this as an array of the second glyphs followed by an array of the
-// records, which is not what the bytes are. Segoe UI writes its first PairSet as the count 65 and then
+// records, which is not what the bytes are. Segoe UI writes its first font.PairSet as the count 65 and then
 // C, -40, G, -40, J, 94, O, -40, T, -147, U, -40, V, -140: each glyph immediately followed by its
 // value. Reading it the way the prose says puts every glyph first and every value after, which
 // misaligns every record and yields a kern of +60 for A followed by V where the font says -140.

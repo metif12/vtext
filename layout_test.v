@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Tests for line layout: the passes meeting, in the order a caller sees them.
 
 import os
@@ -388,7 +389,7 @@ fn test_layout_draws_the_base_letter_when_the_form_is_missing() {
 // cover both routes at once: a letter the font shapes, and one it does not.
 struct ExpectedLetter {
 	base   rune
-	form   JoiningForm
+	form   font.JoiningForm
 	shaped bool
 }
 
@@ -437,12 +438,12 @@ fn test_layout_shapes_persian_through_gsub() {
 	// worth testing: it has to contain a letter of each kind, or the word only exercises the
 	// route that is already known to work.
 	expected := [
-		ExpectedLetter{rune(0x0628), JoiningForm.initial, false}, // beh, has a cmap form
-		ExpectedLetter{rune(0x0633), JoiningForm.medial, false}, // sin, has a cmap form
-		ExpectedLetter{rune(0x0644), JoiningForm.medial, false}, // lam, has a cmap form
-		ExpectedLetter{rune(0x06A9), JoiningForm.medial, false}, // kaf, has a cmap form
-		ExpectedLetter{rune(0x06CC), JoiningForm.medial, true}, // yeh, no cmap form, so the table
-		ExpectedLetter{rune(0x0645), JoiningForm.final, false}, // meem, has a cmap form
+		ExpectedLetter{rune(0x0628), font.JoiningForm.initial, false}, // beh, has a cmap form
+		ExpectedLetter{rune(0x0633), font.JoiningForm.medial, false}, // sin, has a cmap form
+		ExpectedLetter{rune(0x0644), font.JoiningForm.medial, false}, // lam, has a cmap form
+		ExpectedLetter{rune(0x06A9), font.JoiningForm.medial, false}, // kaf, has a cmap form
+		ExpectedLetter{rune(0x06CC), font.JoiningForm.medial, true}, // yeh, no cmap form, so the table
+		ExpectedLetter{rune(0x0645), font.JoiningForm.final, false}, // meem, has a cmap form
 	]
 	// The word has to contain at least one letter of each kind, or this test is not covering
 	// both routes and would pass even if one of them were broken.

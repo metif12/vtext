@@ -1,6 +1,4 @@
-module vtext
-
-import vtext.font
+module font
 
 // Face is a loaded font: its sfnt directory, parsed metrics tables and a
 // rasteriser handle. Everything the shaper needs to place a glyph comes from
@@ -8,10 +6,10 @@ import vtext.font
 //
 // Fields are mutable because they are filled in once during construction; the
 // accessors below are the intended read path.
-struct Face {
-mut:
-	sfnt  &font.Sfnt
-	cmaps []font.Cmap
+pub struct Face {
+pub mut:
+	sfnt  &Sfnt
+	cmaps []Cmap
 	// gsub is the font's glyph substitution table, when it has a usable one. It is how a
 	// letter's Arabic shape is found, for a font that keeps its shapes in GSUB rather than
 	// in the cmap.
@@ -64,21 +62,35 @@ mut:
 }
 
 // GlyphMetrics is the per-glyph part of 'hmtx'.
-struct GlyphMetrics {
+pub struct GlyphMetrics {
+pub mut:
 	advance u16
 	lsb     i16
 }
 
 // VMetrics is a face's vertical metrics, in design units.
-struct VMetrics {
+pub struct VMetrics {
+pub mut:
 	ascent   f64
 	descent  f64
 	line_gap f64
 }
 
+// VariableAxis is one axis of a variable font: its tag, its range, and its default.
+pub struct VariableAxis {
+pub mut:
+	// tag is the four character axis tag: 'wght' for weight, 'wdth' for width, 'ital', 'slnt', 'opsz'.
+	tag string
+	// minimum, deflt and maximum are the axis's range in design units. A font's named instances are points
+	// inside this range, and its variation store is indexed by how far along the range a point is.
+	minimum f64
+	deflt   f64
+	maximum f64
+}
+
 // new_face parses data as a font face.
-fn new_face(data []u8) !&Face {
-	mut sfnt := font.parse_sfnt(data) or { return err }
+pub fn new_face(data []u8) !&Face {
+	mut sfnt := parse_sfnt(data) or { return err }
 	mut face := &Face{
 		sfnt: &sfnt
 	}
@@ -87,16 +99,16 @@ fn new_face(data []u8) !&Face {
 	face.read_hmtx()
 	face.read_os2()
 	face.read_post()
-	face.cmaps = font.parse_cmap(sfnt.table_data(font.tag_cmap))
+	face.cmaps = parse_cmap(sfnt.table_data(tag_cmap))
 	// Substitution and positioning are both optional, and a font without them still loads, so
 	// a missing or unparsable table is left as none rather than failing the face.
 	//
 	// GDEF comes first because the substitution lookups are written in terms of it: a lookup's
 	// flags say which glyphs a rule applies to by asking the glyph class table which is which,
 	// so a font's substitution is not interpretable until its glyph definitions have been read.
-	face.gdef = new_gdef(sfnt.table_data(font.tag_gdef))
-	face.gsub = new_gsub(sfnt.table_data(font.tag_gsub), face.gdef)
-	face.gpos = new_gpos(sfnt.table_data(font.tag_gpos))
+	face.gdef = new_gdef(sfnt.table_data(tag_gdef))
+	face.gsub = new_gsub(sfnt.table_data(tag_gsub), face.gdef)
+	face.gpos = new_gpos(sfnt.table_data(tag_gpos))
 	face.units_per_em_f = if face.units_per_em > 0 {
 		f64(face.units_per_em)
 	} else {
@@ -106,12 +118,12 @@ fn new_face(data []u8) !&Face {
 	return face
 }
 
-fn (mut f Face) read_head() {
-	rec := f.sfnt.record(font.tag_head) or { return }
+pub fn (mut f Face) read_head() {
+	rec := f.sfnt.record(tag_head) or { return }
 	if !f.sfnt.has_magic_at(rec.offset + 12, 0x5F0F3CF5) {
 		return // bad magic; keep defaults
 	}
-	r := font.new_reader(f.sfnt.data)
+	r := new_reader(f.sfnt.data)
 	f.units_per_em = int(r.u16_at(rec.offset + 18))
 	f.x_min = f64(r.i16_at(rec.offset + 36))
 	f.y_min = f64(r.i16_at(rec.offset + 38))
@@ -119,15 +131,15 @@ fn (mut f Face) read_head() {
 	f.y_max = f64(r.i16_at(rec.offset + 42))
 }
 
-fn (mut f Face) read_hhea_maxp() {
-	if rec := f.sfnt.record(font.tag_hhea) {
-		r := font.new_reader(f.sfnt.data)
+pub fn (mut f Face) read_hhea_maxp() {
+	if rec := f.sfnt.record(tag_hhea) {
+		r := new_reader(f.sfnt.data)
 		f.ascender = f64(r.i16_at(rec.offset + 4))
 		f.descender = f64(r.i16_at(rec.offset + 6))
 		f.line_gap = f64(r.i16_at(rec.offset + 8))
 	}
-	if rec := f.sfnt.record(font.tag_maxp) {
-		r := font.new_reader(f.sfnt.data)
+	if rec := f.sfnt.record(tag_maxp) {
+		r := new_reader(f.sfnt.data)
 		f.num_glyphs = int(r.u16_at(rec.offset + 4))
 	}
 	// Guarantee a usable line height even if hhea is missing.
@@ -138,10 +150,10 @@ fn (mut f Face) read_hhea_maxp() {
 	}
 }
 
-fn (mut f Face) read_hmtx() {
-	hhea := f.sfnt.record(font.tag_hhea) or { return }
-	hmtx := f.sfnt.record(font.tag_hmtx) or { return }
-	r := font.new_reader(f.sfnt.data)
+pub fn (mut f Face) read_hmtx() {
+	hhea := f.sfnt.record(tag_hhea) or { return }
+	hmtx := f.sfnt.record(tag_hmtx) or { return }
+	r := new_reader(f.sfnt.data)
 	mut num_h := int(r.u16_at(hhea.offset + 34))
 	if num_h <= 0 {
 		num_h = if f.num_glyphs > 0 { f.num_glyphs } else { 1 }
@@ -177,9 +189,9 @@ fn (mut f Face) read_hmtx() {
 	}
 }
 
-fn (mut f Face) read_os2() {
-	rec := f.sfnt.record(font.tag_os2) or { return }
-	r := font.new_reader(f.sfnt.data)
+pub fn (mut f Face) read_os2() {
+	rec := f.sfnt.record(tag_os2) or { return }
+	r := new_reader(f.sfnt.data)
 	version := int(r.u16_at(rec.offset))
 	f.weight = int(r.u16_at(rec.offset + 4))
 	f.width = int(r.u16_at(rec.offset + 6))
@@ -196,9 +208,9 @@ fn (mut f Face) read_os2() {
 	}
 }
 
-fn (mut f Face) read_post() {
-	rec := f.sfnt.record(font.tag_post) or { return }
-	r := font.new_reader(f.sfnt.data)
+pub fn (mut f Face) read_post() {
+	rec := f.sfnt.record(tag_post) or { return }
+	r := new_reader(f.sfnt.data)
 	f.italic_angle = f64(r.i32_at(rec.offset + 4)) / 65536.0
 	f.underline_position = f64(r.i16_at(rec.offset + 8))
 	f.underline_thickness = f64(r.i16_at(rec.offset + 10))
@@ -226,9 +238,9 @@ fn (mut f Face) read_post() {
 // The axis size is checked rather than assumed. A table claiming records that are not twenty bytes long is
 // one whose axes are not the shape this reader knows, and reading them anyway would produce plausible
 // numbers that are not the font's.
-fn (f &Face) read_variable_axes() []VariableAxis {
-	rec := f.sfnt.record(font.tag_fvar) or { return []VariableAxis{} }
-	r := font.new_reader(f.sfnt.data)
+pub fn (f &Face) read_variable_axes() []VariableAxis {
+	rec := f.sfnt.record(tag_fvar) or { return []VariableAxis{} }
+	r := new_reader(f.sfnt.data)
 	if !r.has(rec.offset + 16, 2) {
 		return []VariableAxis{}
 	}
@@ -258,12 +270,12 @@ fn (f &Face) read_variable_axes() []VariableAxis {
 }
 
 // stb_ptr returns the address of the rasteriser handle.
-fn (f &Face) stb_ptr() voidptr {
+pub fn (f &Face) stb_ptr() voidptr {
 	return voidptr(&f.stb_buf[0])
 }
 
 // init_stb creates the rasteriser handle over the same bytes.
-fn (mut f Face) init_stb(data []u8) {
+pub fn (mut f Face) init_stb(data []u8) {
 	offset := stbtt_get_font_offset_for_index(data, 0)
 	if offset < 0 {
 		return
@@ -275,12 +287,12 @@ fn (mut f Face) init_stb(data []u8) {
 }
 
 // glyph_index maps a codepoint to a glyph index via 'cmap'.
-fn (f &Face) glyph_index(cp rune) u16 {
-	return font.glyph_index_for(f.cmaps, u32(cp))
+pub fn (f &Face) glyph_index(cp rune) u16 {
+	return glyph_index_for(f.cmaps, u32(cp))
 }
 
 // has_glyph reports whether the font maps cp to something other than .notdef.
-fn (f &Face) has_glyph(cp rune) bool {
+pub fn (f &Face) has_glyph(cp rune) bool {
 	return f.glyph_index(cp) != 0
 }
 
@@ -289,8 +301,8 @@ fn (f &Face) has_glyph(cp rune) bool {
 // The forward direction is a table and this is a search, because a font may map several codepoints to one
 // glyph and the table does not record which came first. The lowest is returned, so a glyph is named the
 // same way everywhere in this library.
-fn (f &Face) codepoint_for(gid u16) ?rune {
-	cp := font.codepoint_for(f.cmaps, gid) or { return none }
+pub fn (f &Face) codepoint_for(gid u16) ?rune {
+	cp := codepoint_for(f.cmaps, gid) or { return none }
 	return rune(cp)
 }
 
@@ -303,10 +315,10 @@ fn (f &Face) codepoint_for(gid u16) ?rune {
 // With no selectors this is exactly glyph_index, which is the property that makes the rest of the
 // pipeline able to ignore variation sequences entirely: a caller that never passes one gets the old
 // answer.
-fn (f &Face) glyph_index_variation(cp rune, selectors []rune) u16 {
+pub fn (f &Face) glyph_index_variation(cp rune, selectors []rune) u16 {
 	for sel in selectors {
 		if f.has_variation_sequence(cp, sel) {
-			return font.glyph_index_variation_for(f.cmaps, u32(cp), u32(sel))
+			return glyph_index_variation_for(f.cmaps, u32(cp), u32(sel))
 		}
 	}
 	return f.glyph_index(cp)
@@ -314,12 +326,12 @@ fn (f &Face) glyph_index_variation(cp rune, selectors []rune) u16 {
 
 // has_variation_sequence reports whether the font has anything to say about this base and selector
 // together, as opposed to what it says about the base on its own.
-fn (f &Face) has_variation_sequence(cp rune, selector rune) bool {
-	return font.has_variation_sequence(f.cmaps, u32(cp), u32(selector))
+pub fn (f &Face) has_variation_sequence(cp rune, selector rune) bool {
+	return has_variation_sequence(f.cmaps, u32(cp), u32(selector))
 }
 
 // glyph_advance_units returns the horizontal advance in design units.
-fn (f &Face) glyph_advance_units(gid u16) u16 {
+pub fn (f &Face) glyph_advance_units(gid u16) u16 {
 	if int(gid) < f.advances.len {
 		return f.advances[gid]
 	}
@@ -327,7 +339,7 @@ fn (f &Face) glyph_advance_units(gid u16) u16 {
 }
 
 // glyph_lsb returns the left side bearing in design units.
-fn (f &Face) glyph_lsb(gid u16) i16 {
+pub fn (f &Face) glyph_lsb(gid u16) i16 {
 	if int(gid) < f.lsbs.len {
 		return f.lsbs[gid]
 	}
@@ -335,18 +347,18 @@ fn (f &Face) glyph_lsb(gid u16) i16 {
 }
 
 // scale converts design units to pixels at the given em size.
-fn (f &Face) scale(units f64, em_px f64) f64 {
+pub fn (f &Face) scale(units f64, em_px f64) f64 {
 	return units / f.units_per_em_f * em_px
 }
 
 // glyph_advance returns the horizontal advance in pixels.
-fn (f &Face) glyph_advance(gid u16, em_px f64) f64 {
+pub fn (f &Face) glyph_advance(gid u16, em_px f64) f64 {
 	return f.scale(f64(f.glyph_advance_units(gid)), em_px)
 }
 
 // vmetrics returns vertical metrics in design units. Typographic metrics win
 // when the font provides them; hhea is the fallback.
-fn (f &Face) vmetrics() VMetrics {
+pub fn (f &Face) vmetrics() VMetrics {
 	if f.has_typo {
 		return VMetrics{
 			ascent:   f.typo_ascender
@@ -362,17 +374,17 @@ fn (f &Face) vmetrics() VMetrics {
 }
 
 // line_height returns the distance between successive baselines in pixels.
-fn (f &Face) line_height(em_px f64) f64 {
+pub fn (f &Face) line_height(em_px f64) f64 {
 	m := f.vmetrics()
 	return f.scale(m.ascent - m.descent + m.line_gap, em_px)
 }
 
 // ascent returns the ascent above the baseline, in pixels.
-fn (f &Face) ascent(em_px f64) f64 {
+pub fn (f &Face) ascent(em_px f64) f64 {
 	return f.scale(f.vmetrics().ascent, em_px)
 }
 
 // descent returns the positive distance below the baseline, in pixels.
-fn (f &Face) descent(em_px f64) f64 {
+pub fn (f &Face) descent(em_px f64) f64 {
 	return f.scale(-f.vmetrics().descent, em_px)
 }

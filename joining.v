@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 import vtext.ucd
 
 // Arabic joining, the shaping pass that gives each letter the shape it takes in its
@@ -20,15 +21,6 @@ import vtext.ucd
 // base letters and put the four shapes in a GSUB table, so the form codepoint is .notdef
 // there. Keeping the base characters lets the font layer draw the letter anyway, and keeping
 // the form lets it hand the right shape to the OpenType pass afterwards.
-
-// JoiningForm is one of the four shapes a letter can take. The ordinals have to match the
-// generated arabic_form_names table.
-pub enum JoiningForm {
-	isolated = 0
-	final    = 1
-	initial  = 2
-	medial   = 3
-}
 
 // The two controls that override what the letters around them would otherwise do.
 const zero_width_non_joiner = rune(0x200C)
@@ -53,7 +45,7 @@ pub:
 	// form is the shape the joining algorithm chose. It is meaningful even when neither
 	// cps nor base can be drawn as itself, because a caller driving a font's positional
 	// feature table needs to know the shape rather than the codepoint.
-	form JoiningForm
+	form font.JoiningForm
 	// script is the script tag of the letter, which is what selects the script a font
 	// resolves its positional features under. A font may offer 'fina' for more than one
 	// script, and the rules differ.
@@ -158,7 +150,7 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 		// join of its own and the pair is never medial. That is why the form is asked
 		// for from the lam's join alone rather than from a pair of them.
 		if cp == 0x0644 && i + 1 < cps.len && p.joining_type_of(cps[i + 1]) == .r {
-			form := if join_prev[i] { JoiningForm.final } else { JoiningForm.isolated }
+			form := if join_prev[i] { font.JoiningForm.final } else { font.JoiningForm.isolated }
 			glyph := s.find_ligature(0x0644, u32(cps[i + 1]), u16(form))
 			if glyph != 0 {
 				// The pair covers the lam and the alef. Any mark after the alef belongs to
@@ -312,7 +304,7 @@ fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun) int
 }
 
 // form_for picks the shape from the two join decisions.
-fn form_for(join_prev bool, join_next bool) JoiningForm {
+fn form_for(join_prev bool, join_next bool) font.JoiningForm {
 	if join_prev && join_next {
 		return .medial
 	}

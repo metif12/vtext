@@ -28,18 +28,6 @@ pub:
 	length int
 }
 
-// VariableAxis is one axis of a variable font: its tag, its range, and its default.
-pub struct VariableAxis {
-pub:
-	// tag is the four character axis tag: 'wght' for weight, 'wdth' for width, 'ital', 'slnt', 'opsz'.
-	tag string
-	// minimum, deflt and maximum are the axis's range in design units. A font's named instances are points
-	// inside this range, and its variation store is indexed by how far along the range a point is.
-	minimum f64
-	deflt   f64
-	maximum f64
-}
-
 // glyph_class_names are GDEF's five glyph classes, indexed by the class number.
 //
 // GDEF says what a glyph is with a number from 1 to 4, and every table that reads it uses those numbers,
@@ -331,7 +319,7 @@ pub fn (f &Font) is_variable() bool {
 // cheapest way to know.
 //
 // An empty list here and an empty list from a font with no `fvar` are told apart by `is_variable`.
-pub fn (f &Font) variable_axes() []VariableAxis {
+pub fn (f &Font) variable_axes() []font.VariableAxis {
 	return f.face.read_variable_axes()
 }
 

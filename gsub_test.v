@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Tests for the GSUB parser and the positional substitution built on it.
 //
 // The parser is fed real fonts rather than a hand-built table, because a table built to match
@@ -231,10 +232,10 @@ fn test_ligature_rules_are_read_from_the_font() {
 		// that the engine read rules out of being reported as a kind it did not read them as,
 		// because the caller would then go looking for rules that are not there.
 		if lookup.ligatures.len > 0 {
-			assert lookup.kind == gsub_lookup_ligature, 'a lookup with ligature rules is a ligature lookup'
+			assert lookup.kind == font.gsub_lookup_ligature, 'a lookup with ligature rules is a ligature lookup'
 		}
 		if lookup.singles.len > 0 {
-			assert lookup.kind == gsub_lookup_single, 'a lookup with single rules is a single lookup'
+			assert lookup.kind == font.gsub_lookup_single, 'a lookup with single rules is a single lookup'
 		}
 		for set in lookup.ligatures {
 			for rule in set.rules {
@@ -336,13 +337,14 @@ fn test_gsub_substitutes_the_three_shapes_of_a_letter() {
 	g := majalla.face.gsub or { panic('no gsub on the face') }
 	mut report := 'base=${base}'
 	mut got := map[int]u16{}
-	for form in [JoiningForm.isolated, JoiningForm.final, JoiningForm.initial, JoiningForm.medial] {
+	for form in [font.JoiningForm.isolated, font.JoiningForm.final, font.JoiningForm.initial,
+		font.JoiningForm.medial] {
 		out := g.shaped_glyph(base, form, 'arab')
-		report += ' ${feature_tag_for(form)}=${out}'
+		report += ' ${font.feature_tag_for(form)}=${out}'
 		got[int(form)] = out
 	}
 	assert got[0] == base, 'the isolated form is the base letter: ${report}'
-	for form in [JoiningForm.final, JoiningForm.initial, JoiningForm.medial] {
+	for form in [font.JoiningForm.final, font.JoiningForm.initial, font.JoiningForm.medial] {
 		assert got[int(form)] != 0, 'a shape came out as .notdef: ${report}'
 		assert got[int(form)] != base, 'a shape came out as the base letter: ${report}'
 	}
@@ -359,7 +361,8 @@ fn test_gsub_leaves_an_uncovered_glyph_alone() {
 	// Latin word must not have its letters swapped for Arabic ones.
 	latin := majalla.glyph_index(`A`)
 	assert latin != 0
-	for form in [JoiningForm.isolated, JoiningForm.final, JoiningForm.initial, JoiningForm.medial] {
+	for form in [font.JoiningForm.isolated, font.JoiningForm.final, font.JoiningForm.initial,
+		font.JoiningForm.medial] {
 		assert g.shaped_glyph(latin, form, 'arab') == latin, 'a Latin letter is not in any Arabic rule, got ${g.shaped_glyph(latin, form, 'arab')}'
 	}
 	// A script the font says nothing about is left alone too, rather than falling back to
@@ -370,8 +373,8 @@ fn test_gsub_leaves_an_uncovered_glyph_alone() {
 
 // The parser has to survive a table that is not one, because font data is untrusted.
 fn test_gsub_rejects_data_that_is_not_a_table() {
-	assert new_gsub([]u8{}, none) == none
-	assert new_gsub([]u8{len: 40}, none) == none, 'zeroed data is not a GSUB table'
+	assert font.new_gsub([]u8{}, none) == none
+	assert font.new_gsub([]u8{len: 40}, none) == none, 'zeroed data is not a GSUB table'
 	// A right-sized header naming offsets that are not in the buffer has to fall into the
 	// degraded path rather than reading whatever is there.
 	mut header := []u8{len: 10}
@@ -379,7 +382,7 @@ fn test_gsub_rejects_data_that_is_not_a_table() {
 	header[1] = 1
 	header[4] = 0xFF
 	header[5] = 0xFF
-	assert new_gsub(header, none) == none
+	assert font.new_gsub(header, none) == none
 	// A font with no GSUB at all is not a failure either.
 	no_table := gsub_font('ARIALN.TTF') or { return }
 	assert !no_table.has_gsub()
@@ -387,7 +390,7 @@ fn test_gsub_rejects_data_that_is_not_a_table() {
 
 // A regression guard on the parse itself, over several real fonts.
 //
-// The layout of a SingleSubst header is the kind of thing that goes wrong quietly: a parser
+// The layout of a font.SingleSubst header is the kind of thing that goes wrong quietly: a parser
 // that reads the wrong field still returns plausible numbers and simply never substitutes
 // anything. So this checks that a spread of Arabic fonts each yield a usable set of rules and
 // each actually shape letters, which is what a correct parse produces and what a broken one
@@ -431,8 +434,8 @@ fn test_gsub_finds_shapes_across_the_arabic_fonts() {
 			letters++
 			mut any := false
 			mut all_same := true
-			for form in [JoiningForm.isolated, JoiningForm.final, JoiningForm.initial,
-				JoiningForm.medial] {
+			for form in [font.JoiningForm.isolated, font.JoiningForm.final, font.JoiningForm.initial,
+				font.JoiningForm.medial] {
 				if g.shaped_glyph(gid, form, 'arab') != gid {
 					any = true
 				} else {
@@ -503,11 +506,11 @@ fn test_chain_context_rules_are_read_from_the_font() {
 	for li in ccmp {
 		lookup := g.lookups[li]
 		if lookup.chains.len > 0 {
-			assert lookup.kind == gsub_lookup_chain_context, 'a lookup with chains is a chain lookup'
+			assert lookup.kind == font.gsub_lookup_chain_context, 'a lookup with chains is a chain lookup'
 			chains += lookup.chains.len
 		}
 		if lookup.ligatures.len > 0 {
-			assert lookup.kind == gsub_lookup_ligature, 'a lookup with ligatures is a ligature lookup'
+			assert lookup.kind == font.gsub_lookup_ligature, 'a lookup with ligatures is a ligature lookup'
 			ligature_lookups++
 		}
 	}
@@ -531,7 +534,7 @@ fn test_chain_context_rules_are_read_from_the_font() {
 		for chain in lookup.chains {
 			for record in chain.records {
 				assert int(record.lookup) < g.lookups.len, 'a record names a lookup that does not exist'
-				assert lookup_substitutes(g.lookups[record.lookup]), 'a record names a lookup this engine cannot apply'
+				assert font.lookup_substitutes(g.lookups[record.lookup]), 'a record names a lookup this engine cannot apply'
 			}
 		}
 	}
@@ -584,10 +587,10 @@ fn test_lookup_flags_are_read_from_the_font() {
 		f := gsub_font(name) or { continue }
 		g := f.face.gsub or { panic('${name} has no gsub') }
 		for lookup in g.lookups {
-			if lookup.flag & gsub_flag_right_to_left != 0 {
+			if lookup.flag & font.gsub_flag_right_to_left != 0 {
 				right_to_left = true
 			}
-			if lookup.flag & gsub_flag_ignore_marks != 0 {
+			if lookup.flag & font.gsub_flag_ignore_marks != 0 {
 				ignore_marks = true
 			}
 			// The class is the top byte shifted down, not the byte itself.
@@ -597,8 +600,8 @@ fn test_lookup_flags_are_read_from_the_font() {
 			}
 			// A flag field is the bits and the class together, so a lookup that set a class must
 			// not have had a bit read out of the top of it.
-			assert lookup.flag & 0x00f0 == 0 || lookup.flag & gsub_flag_ignore_marks != 0
-				|| lookup.flag & gsub_flag_ignore_ligatures != 0 || class > 0, 'the flag field does not add up'
+			assert lookup.flag & 0x00f0 == 0 || lookup.flag & font.gsub_flag_ignore_marks != 0
+				|| lookup.flag & font.gsub_flag_ignore_ligatures != 0 || class > 0, 'the flag field does not add up'
 		}
 	}
 	assert right_to_left, 'no font set the right to left flag'
@@ -619,7 +622,7 @@ fn test_multiple_substitution_rules_are_read_from_the_font() {
 		if lookup.multiples.len == 0 {
 			continue
 		}
-		assert lookup.kind == gsub_lookup_multiple, 'a lookup with multiple rules is a multiple lookup'
+		assert lookup.kind == font.gsub_lookup_multiple, 'a lookup with multiple rules is a multiple lookup'
 		for rule in lookup.multiples {
 			assert rule.ranges.len > 0, 'a multiple rule covers nothing'
 			assert rule.sequences.len > 0, 'a multiple rule has no sequences'
@@ -628,16 +631,16 @@ fn test_multiple_substitution_rules_are_read_from_the_font() {
 			// index runs past the sequence list finds no rule rather than another glyph's
 			// replacement. The subtable is allowed to carry more sequences than its coverage
 			// covers, which is why this walks the coverage rather than comparing two lengths.
-			for i in 0 .. covered_count(rule.ranges) {
-				gid := coverage_glyph_at(rule.ranges, i)
+			for i in 0 .. font.covered_count(rule.ranges) {
+				gid := font.coverage_glyph_at(rule.ranges, i)
 				if i < rule.sequences.len {
-					seq := multiple_lookup([rule], gid) or {
+					seq := font.multiple_lookup([rule], gid) or {
 						assert rule.sequences[i].len == 0, 'a covered glyph with a sequence found nothing'
 						continue
 					}
 					assert seq.len == rule.sequences[i].len, 'a covered glyph found another sequence'
 				} else {
-					assert multiple_lookup([rule], gid) == none, 'a covered glyph past the sequences found a rule'
+					assert font.multiple_lookup([rule], gid) == none, 'a covered glyph past the sequences found a rule'
 				}
 			}
 			found++
@@ -659,7 +662,7 @@ fn test_multiple_substitution_is_applied() {
 		for rule in g.lookups[li].multiples {
 			for i, seq in rule.sequences {
 				if seq.len > 1 && i < rule.ranges.len {
-					gid = coverage_glyph_at(rule.ranges, i)
+					gid = font.coverage_glyph_at(rule.ranges, i)
 					target = seq[1]
 				}
 			}
@@ -669,7 +672,7 @@ fn test_multiple_substitution_is_applied() {
 		return // this build of the font has no expanding rule to test
 	}
 	lookups := g.lookups_for('arab', 'ccmp')
-	out := g.substitute(lookups, [Ligatable{
+	out := g.substitute(lookups, [font.Ligatable{
 		gid:     gid
 		cluster: 0
 		source:  0
@@ -706,18 +709,18 @@ fn test_a_lookup_that_ignores_marks_cannot_see_them() {
 			break
 		}
 	}
-	items := [Ligatable{
+	items := [font.Ligatable{
 		gid:     letter
 		cluster: 0
 		source:  0
-	}, Ligatable{
+	}, font.Ligatable{
 		gid:     mark
 		cluster: 1
 		source:  1
 	}]
 	// With the mark ignored the run is one glyph long as far as the lookup is concerned, so the
 	// mark is not between the two letters as far as any rule is concerned.
-	skipping := g.effective(items, gsub_flag_ignore_marks, 0)
+	skipping := g.effective(items, font.gsub_flag_ignore_marks, 0)
 	assert skipping.len == 1, 'the mark should be invisible to a lookup that ignores marks'
 	// And with no such flag it is a glyph like any other.
 	keeping := g.effective(items, 0, 0)
@@ -831,10 +834,10 @@ const chain_result = u16(20)
 // than by writing a literal. Both are workarounds: this compiler rejects a spread of a variadic
 // slice, and it silently evaluates a multi-line struct array literal to an empty slice, which
 // would let a test pass for the wrong reason.
-fn cov_of(gids []u16) []CoverageRange {
-	mut out := []CoverageRange{}
+fn cov_of(gids []u16) []font.CoverageRange {
+	mut out := []font.CoverageRange{}
 	for i, gid in gids {
-		out << CoverageRange{
+		out << font.CoverageRange{
 			first:       gid
 			last:        gid
 			start_index: i
@@ -844,8 +847,8 @@ fn cov_of(gids []u16) []CoverageRange {
 }
 
 // covs_of wraps coverages in the list of lists a context pattern is made of.
-fn covs_of(sets [][]CoverageRange) [][]CoverageRange {
-	mut out := [][]CoverageRange{}
+fn covs_of(sets [][]font.CoverageRange) [][]font.CoverageRange {
+	mut out := [][]font.CoverageRange{}
 	for s in sets {
 		out << s
 	}
@@ -853,19 +856,19 @@ fn covs_of(sets [][]CoverageRange) [][]CoverageRange {
 }
 
 // empty_covs is the empty pattern a context field that names nothing is written as.
-fn empty_covs() [][]CoverageRange {
-	return [][]CoverageRange{}
+fn empty_covs() [][]font.CoverageRange {
+	return [][]font.CoverageRange{}
 }
 
 // gdef_with builds a glyph definition table calling one glyph a mark of one attachment class.
-fn gdef_with(gid u16, class u16, mark_class u16) &Gdef {
-	mut d := &Gdef{}
-	d.glyph_classes.entries << ClassRangeEntry{
+fn gdef_with(gid u16, class u16, mark_class u16) &font.Gdef {
+	mut d := &font.Gdef{}
+	d.glyph_classes.entries << font.ClassRangeEntry{
 		first: gid
 		last:  gid
-		value: glyph_class_mark
+		value: font.glyph_class_mark
 	}
-	d.mark_classes.entries << ClassRangeEntry{
+	d.mark_classes.entries << font.ClassRangeEntry{
 		first: gid
 		last:  gid
 		value: mark_class
@@ -878,9 +881,9 @@ fn gdef_with(gid u16, class u16, mark_class u16) &Gdef {
 // filtering set names the glyphs given. Both halves matter: without the glyph class nothing is a
 // mark and the filtering set is never consulted, which would make the test pass for the wrong
 // reason.
-fn gdef_with_set(mark u16, gids []u16) &Gdef {
-	mut d := gdef_with(mark, glyph_class_mark, 1)
-	mut sets := [][]CoverageRange{}
+fn gdef_with_set(mark u16, gids []u16) &font.Gdef {
+	mut d := gdef_with(mark, font.glyph_class_mark, 1)
+	mut sets := [][]font.CoverageRange{}
 	sets << cov_of(gids)
 	d.mark_sets = sets
 	return d
@@ -888,70 +891,70 @@ fn gdef_with_set(mark u16, gids []u16) &Gdef {
 
 // chain_pair is the pattern every flag test starts from: two letters, the first of which is
 // substituted when they stand next to each other.
-fn chain_pair() [][]CoverageRange {
-	mut out := [][]CoverageRange{}
+fn chain_pair() [][]font.CoverageRange {
+	mut out := [][]font.CoverageRange{}
 	out << cov_of([chain_first])
 	out << cov_of([chain_second])
 	return out
 }
 
-// chain_gsub builds a GSUB holding two lookups. Lookup 0 is a single substitution taking the first
-// letter to chain_result. Lookup 1 is a chaining context with the given pattern whose one record
+// chain_gsub builds a GSUB holding two lookups. font.Lookup 0 is a single substitution taking the first
+// letter to chain_result. font.Lookup 1 is a chaining context with the given pattern whose one record
 // substitutes the first input glyph through lookup 0. The flag and the mark set go on the context
 // lookup, so one builder serves every flag test.
-fn chain_gsub(flag u16, mark_set u16, back [][]CoverageRange, input [][]CoverageRange,
-	ahead [][]CoverageRange) &Gsub {
-	mut singles := []SingleSubst{}
-	singles << SingleSubst{
+fn chain_gsub(flag u16, mark_set u16, back [][]font.CoverageRange, input [][]font.CoverageRange,
+	ahead [][]font.CoverageRange) &font.Gsub {
+	mut singles := []font.SingleSubst{}
+	singles << font.SingleSubst{
 		ranges: cov_of([chain_first])
 		subs:   [u16(chain_result)]
 	}
-	mut records := []ChainRecord{}
-	records << ChainRecord{
+	mut records := []font.ChainRecord{}
+	records << font.ChainRecord{
 		position: 0
 		lookup:   0
 	}
-	mut chains := []ChainContext3{}
-	chains << ChainContext3{
+	mut chains := []font.ChainContext3{}
+	chains << font.ChainContext3{
 		backtrack: back
 		input:     input
 		lookahead: ahead
 		records:   records
 	}
-	mut lookups := []Lookup{}
-	lookups << Lookup{
-		kind:    gsub_lookup_single
+	mut lookups := []font.Lookup{}
+	lookups << font.Lookup{
+		kind:    font.gsub_lookup_single
 		singles: singles
 	}
-	lookups << Lookup{
-		kind:     gsub_lookup_chain_context
+	lookups << font.Lookup{
+		kind:     font.gsub_lookup_chain_context
 		flag:     flag
 		mark_set: mark_set
 		chains:   chains
 	}
-	return &Gsub{
+	return &font.Gsub{
 		lookups: lookups
-		scripts: []Script{}
+		scripts: []font.Script{}
 	}
 }
 
 // bare is the common case of the fixture: a two letter pattern with nothing either side of it.
 //
 // The glyph definition table is passed in rather than assigned afterwards because the field on
-// Gsub is immutable, and a table is part of what a lookup's flags are read against.
-fn bare(flag u16, gdef ?&Gdef) &Gsub {
+// font.Gsub is immutable, and a table is part of what a lookup's flags are read against.
+fn bare(flag u16, gdef ?&font.Gdef) &font.Gsub {
 	built := chain_gsub(flag, 0, empty_covs(), chain_pair(), empty_covs())
-	return &Gsub{
+	return &font.Gsub{
 		lookups: built.lookups
 		scripts: built.scripts
 		gdef:    gdef
 	}
 }
 
-fn run_of(gids []u16) []Ligatable {
-	mut out := []Ligatable{}
+fn run_of(gids []u16) []font.Ligatable {
+	mut out := []font.Ligatable{}
 	for i, gid in gids {
-		out << Ligatable{
+		out << font.Ligatable{
 			gid:     gid
 			cluster: i
 			source:  i
@@ -960,7 +963,7 @@ fn run_of(gids []u16) []Ligatable {
 	return out
 }
 
-fn gids_of(items []Ligatable) []u16 {
+fn gids_of(items []font.Ligatable) []u16 {
 	mut out := []u16{}
 	for it in items {
 		out << it.gid
@@ -1015,13 +1018,13 @@ fn test_a_chaining_context_checks_the_glyphs_either_side_of_its_input() {
 // The flags are the whole reason a rule about letters can be written over text with marks in it.
 // A mark the rule ignores is invisible to the whole rule, not merely absent from the pattern.
 fn test_ignoring_marks_lets_a_pattern_reach_across_one() {
-	mut ignoring := bare(gsub_flag_ignore_marks, gdef_with(chain_mark, glyph_class_mark, 0))
+	mut ignoring := bare(font.gsub_flag_ignore_marks, gdef_with(chain_mark, font.glyph_class_mark, 0))
 	across := ignoring.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(across) == [u16(chain_result), u16(chain_mark), u16(chain_second)], 'an ignored mark must not stop the pattern, got ${gids_of(across)}'
 	// The mark is still on the line. Ignoring it is not deleting it.
 	assert across.len == 3, 'the mark survives the substitution that stepped over it'
 
-	mut keeping := bare(0, gdef_with(chain_mark, glyph_class_mark, 0))
+	mut keeping := bare(0, gdef_with(chain_mark, font.glyph_class_mark, 0))
 	blocked := keeping.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(blocked) == [u16(chain_first), u16(chain_mark), u16(chain_second)], 'a mark the rule does not ignore must stop the pattern'
 }
@@ -1037,43 +1040,43 @@ fn test_ignoring_marks_lets_a_pattern_reach_across_one() {
 // class 2 lets it through. A test written the other way round would pass against an implementation
 // that had the flag exactly inverted, which is why the direction is spelled out here.
 fn test_a_mark_attachment_class_narrows_which_marks_are_ignored() {
-	mut inside := bare(u16(1) << 8, gdef_with(chain_mark, glyph_class_mark, 1))
+	mut inside := bare(u16(1) << 8, gdef_with(chain_mark, font.glyph_class_mark, 1))
 	blocked := inside.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(blocked) == [u16(chain_first), u16(chain_mark), u16(chain_second)], 'a mark of the named class is visible and so blocks the pattern, got ${gids_of(blocked)}'
 
-	mut outside := bare(u16(1) << 8, gdef_with(chain_mark, glyph_class_mark, 2))
+	mut outside := bare(u16(1) << 8, gdef_with(chain_mark, font.glyph_class_mark, 2))
 	through := outside.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(through) == [u16(chain_result), u16(chain_mark), u16(chain_second)], 'a mark of another class is ignored and so lets the pattern through'
 
 	// A flag with nothing in its top byte is not a mark attachment rule at all, so it ignores
 	// nothing and the mark is in the way as usual. The class is what activates the flag, so
 	// naming class zero is not the same as asking for class zero.
-	mut unnamed := bare(0, gdef_with(chain_mark, glyph_class_mark, 1))
+	mut unnamed := bare(0, gdef_with(chain_mark, font.glyph_class_mark, 1))
 	all := unnamed.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(all) == [u16(chain_first), u16(chain_mark), u16(chain_second)], 'a flag with no class in it ignores nothing, got ${gids_of(all)}'
 
 	// The mask is how a reader tests the field, which is worth asserting on its own: getting it
 	// wrong makes every mark look like it belongs to class 255, and so ignores none of them.
-	assert u16(1) << 8 & gsub_flag_mark_attachment_type != 0, 'a class of 1 is inside the mask'
-	assert u16(0) << 8 & gsub_flag_mark_attachment_type == 0, 'no class is outside it'
-	assert gsub_flag_mark_attachment_type | u16(1) << 8 & gsub_flag_mark_attachment_type ==
-		gsub_flag_mark_attachment_type, 'the mask is not something to OR a class into'
+	assert u16(1) << 8 & font.gsub_flag_mark_attachment_type != 0, 'a class of 1 is inside the mask'
+	assert u16(0) << 8 & font.gsub_flag_mark_attachment_type == 0, 'no class is outside it'
+	assert font.gsub_flag_mark_attachment_type | u16(1) << 8 & font.gsub_flag_mark_attachment_type ==
+		font.gsub_flag_mark_attachment_type, 'the mask is not something to OR a class into'
 }
 
 // A mark filtering set works the same way round: the set names the marks the rule still sees.
 fn test_a_mark_filtering_set_names_the_marks_the_rule_still_sees() {
-	mut inside := bare(gsub_flag_use_mark_filtering_set, gdef_with_set(chain_mark, [chain_mark]))
+	mut inside := bare(font.gsub_flag_use_mark_filtering_set, gdef_with_set(chain_mark, [chain_mark]))
 	blocked := inside.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(blocked) == [u16(chain_first), u16(chain_mark), u16(chain_second)], 'a mark in the set is visible and so blocks the pattern, got ${gids_of(blocked)}'
 
-	mut outside := bare(gsub_flag_use_mark_filtering_set, gdef_with_set(chain_mark, [chain_third]))
+	mut outside := bare(font.gsub_flag_use_mark_filtering_set, gdef_with_set(chain_mark, [chain_third]))
 	through := outside.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(through) == [u16(chain_result), u16(chain_mark), u16(chain_second)], 'a mark outside the set is ignored and lets the pattern through'
 
 	// A set index that names nothing is not a set containing everything. Treating it as one would
 	// make a lookup that named a set apply to every mark on the line, which is the failure the
 	// mechanism exists to prevent, so a table with no sets ignores every mark.
-	mut missing := bare(gsub_flag_use_mark_filtering_set, gdef_with(chain_mark, glyph_class_mark, 1))
+	mut missing := bare(font.gsub_flag_use_mark_filtering_set, gdef_with(chain_mark, font.glyph_class_mark, 1))
 	out := missing.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(out) == [u16(chain_result), u16(chain_mark), u16(chain_second)], 'a set index naming nothing ignores every mark'
 }
@@ -1081,7 +1084,7 @@ fn test_a_mark_filtering_set_names_the_marks_the_rule_still_sees() {
 // A font that classifies nothing cannot tell a mark from a letter, so a rule that says ignore the
 // marks has nothing to skip. Stepping over nothing is the reading that cannot substitute wrongly.
 fn test_a_font_that_classifies_nothing_skips_nothing() {
-	g := bare(gsub_flag_ignore_marks, none)
+	g := bare(font.gsub_flag_ignore_marks, none)
 	assert g.gdef == none, 'the fixture builds no glyph definition table by default'
 	across := g.substitute([u16(1)], run_of([chain_first, chain_mark, chain_second]))
 	assert gids_of(across) == [u16(chain_first), u16(chain_mark), u16(chain_second)], 'without a glyph table the mark is not known to be a mark'
@@ -1093,31 +1096,31 @@ fn test_a_font_that_classifies_nothing_skips_nothing() {
 fn test_a_context_can_run_a_multiple_substitution() {
 	mut seqs := [][]u16{}
 	seqs << [u16(chain_result), u16(chain_mark)]
-	mut multiples := []MultipleSubst{}
-	multiples << MultipleSubst{
+	mut multiples := []font.MultipleSubst{}
+	multiples << font.MultipleSubst{
 		ranges:    cov_of([chain_first])
 		sequences: seqs
 	}
-	mut records := []ChainRecord{}
-	records << ChainRecord{
+	mut records := []font.ChainRecord{}
+	records << font.ChainRecord{
 		position: 0
 		lookup:   1
 	}
-	mut chains := []ChainContext3{}
-	chains << ChainContext3{
+	mut chains := []font.ChainContext3{}
+	chains << font.ChainContext3{
 		input:   chain_pair()
 		records: records
 	}
-	mut lookups := []Lookup{}
-	lookups << Lookup{
-		kind:   gsub_lookup_chain_context
+	mut lookups := []font.Lookup{}
+	lookups << font.Lookup{
+		kind:   font.gsub_lookup_chain_context
 		chains: chains
 	}
-	lookups << Lookup{
-		kind:      gsub_lookup_multiple
+	lookups << font.Lookup{
+		kind:      font.gsub_lookup_multiple
 		multiples: multiples
 	}
-	g := &Gsub{
+	g := &font.Gsub{
 		lookups: lookups
 	}
 	out := g.substitute([u16(0)], run_of([chain_first, chain_second]))
@@ -1136,24 +1139,24 @@ fn test_a_context_can_run_a_multiple_substitution() {
 // with nothing applied at any depth. What is being asserted is that the engine gives up and hands
 // back the run it was given.
 fn test_a_context_that_substitutes_itself_terminates() {
-	mut records := []ChainRecord{}
+	mut records := []font.ChainRecord{}
 	// The one record points the context lookup at itself, and the pattern is a single glyph so
 	// that the rule matches wherever it is applied.
-	records << ChainRecord{
+	records << font.ChainRecord{
 		position: 0
 		lookup:   0
 	}
-	mut chains := []ChainContext3{}
-	chains << ChainContext3{
+	mut chains := []font.ChainContext3{}
+	chains << font.ChainContext3{
 		input:   covs_of([cov_of([chain_first])])
 		records: records
 	}
-	mut lookups := []Lookup{}
-	lookups << Lookup{
-		kind:   gsub_lookup_chain_context
+	mut lookups := []font.Lookup{}
+	lookups << font.Lookup{
+		kind:   font.gsub_lookup_chain_context
 		chains: chains
 	}
-	g := &Gsub{
+	g := &font.Gsub{
 		lookups: lookups
 	}
 	out := g.substitute([u16(0)], run_of([chain_first, chain_second]))
@@ -1164,28 +1167,28 @@ fn test_a_context_that_substitutes_itself_terminates() {
 // claims another applies the claimed kind. This is asserted because the recursion fixture above
 // depends on it: a chaining context carrying single rules must not quietly start using them.
 fn test_a_lookup_applies_the_type_it_claims_not_the_rules_it_holds() {
-	mut singles := []SingleSubst{}
-	singles << SingleSubst{
+	mut singles := []font.SingleSubst{}
+	singles << font.SingleSubst{
 		ranges: cov_of([chain_first])
 		subs:   [u16(chain_result)]
 	}
-	mut records := []ChainRecord{}
-	records << ChainRecord{
+	mut records := []font.ChainRecord{}
+	records << font.ChainRecord{
 		position: 0
 		lookup:   0
 	}
-	mut chains := []ChainContext3{}
-	chains << ChainContext3{
+	mut chains := []font.ChainContext3{}
+	chains << font.ChainContext3{
 		input:   covs_of([cov_of([chain_first])])
 		records: records
 	}
-	mut lookups := []Lookup{}
-	lookups << Lookup{
-		kind:    gsub_lookup_chain_context
+	mut lookups := []font.Lookup{}
+	lookups << font.Lookup{
+		kind:    font.gsub_lookup_chain_context
 		chains:  chains
 		singles: singles
 	}
-	g := &Gsub{
+	g := &font.Gsub{
 		lookups: lookups
 	}
 	out := g.substitute([u16(0)], run_of([chain_first]))
@@ -1197,7 +1200,7 @@ fn test_a_lookup_applies_the_type_it_claims_not_the_rules_it_holds() {
 // still nearest first in logical order.
 fn test_right_to_left_does_not_change_how_a_pattern_is_written() {
 	mut with_back := covs_of([cov_of([chain_before])])
-	mut rtl := chain_gsub(gsub_flag_right_to_left, 0, with_back, chain_pair(), empty_covs())
+	mut rtl := chain_gsub(font.gsub_flag_right_to_left, 0, with_back, chain_pair(), empty_covs())
 	forward := rtl.substitute([u16(1)], run_of([chain_before, chain_first, chain_second]))
 	ltr := chain_gsub(0, 0, with_back, chain_pair(), empty_covs())
 	plain := ltr.substitute([u16(1)], run_of([chain_before, chain_first, chain_second]))
@@ -1224,7 +1227,7 @@ fn test_a_font_whose_shapes_are_alternates_gets_them() {
 	for li in g.lookups_for('arab', 'fina') {
 		kinds << g.lookups[li].kind
 	}
-	assert kinds == [u16(gsub_lookup_alternate)], 'Arabic Typesetting keeps its final forms in alternates, got ${kinds}'
+	assert kinds == [u16(font.gsub_lookup_alternate)], 'Arabic Typesetting keeps its final forms in alternates, got ${kinds}'
 	beh := at.glyph_index(rune(0x0628))
 	final := g.shaped_glyph(beh, .final, 'arab')
 	assert final != beh, 'the final form should be a different glyph, got ${beh}'
@@ -1235,7 +1238,7 @@ fn test_a_font_whose_shapes_are_alternates_gets_them() {
 	mut first := u16(0)
 	for li in g.lookups_for('arab', 'fina') {
 		for rule in g.lookups[li].alternates {
-			if alt := alternate_lookup([rule], beh) {
+			if alt := font.alternate_lookup([rule], beh) {
 				first = alt
 			}
 		}
@@ -1251,7 +1254,7 @@ fn test_alternate_shapes_reach_a_second_font_too() {
 	for li in g.lookups_for('arab', 'init') {
 		kinds << g.lookups[li].kind
 	}
-	assert kinds == [u16(gsub_lookup_alternate)], 'Simple Khoosmi keeps its initial forms in alternates, got ${kinds}'
+	assert kinds == [u16(font.gsub_lookup_alternate)], 'Simple Khoosmi keeps its initial forms in alternates, got ${kinds}'
 	// Which letters a font gives an initial form is the font business, so this counts rather than
 	// naming one. Before the alternate kind was read this was zero for every letter in the font.
 	mut shaped := 0
@@ -1276,15 +1279,15 @@ fn test_alternate_rules_are_read_from_the_font() {
 			if lookup.alternates.len == 0 {
 				continue
 			}
-			assert lookup.kind == gsub_lookup_alternate, '${name}: a lookup holding alternates is an alternate lookup'
+			assert lookup.kind == font.gsub_lookup_alternate, '${name}: a lookup holding alternates is an alternate lookup'
 			for rule in lookup.alternates {
 				assert rule.ranges.len > 0, '${name}: an alternate rule covers nothing'
 				assert rule.sets.len > 0, '${name}: an alternate rule has no sets'
 				// A covered glyph with a set must find the first of it, and one without a set must
 				// find nothing rather than a neighbour's set.
-				for i in 0 .. covered_count(rule.ranges) {
-					gid := coverage_glyph_at(rule.ranges, i)
-					alt := alternate_lookup([rule], gid)
+				for i in 0 .. font.covered_count(rule.ranges) {
+					gid := font.coverage_glyph_at(rule.ranges, i)
+					alt := font.alternate_lookup([rule], gid)
 					if i < rule.sets.len && rule.sets[i].len > 0 {
 						if alt == none {
 							assert rule.sets[i].len == 0, '${name}: a covered glyph with a set found nothing'
@@ -1309,17 +1312,17 @@ fn test_an_alternate_lookup_takes_the_first_of_its_alternates() {
 	offered << u16(51)
 	offered << u16(52)
 	sets << offered
-	mut alternates := []AlternateSubst{}
-	alternates << AlternateSubst{
+	mut alternates := []font.AlternateSubst{}
+	alternates << font.AlternateSubst{
 		ranges: cov_of([chain_first])
 		sets:   sets
 	}
-	mut lookups := []Lookup{}
-	lookups << Lookup{
-		kind:       gsub_lookup_alternate
+	mut lookups := []font.Lookup{}
+	lookups << font.Lookup{
+		kind:       font.gsub_lookup_alternate
 		alternates: alternates
 	}
-	g := &Gsub{
+	g := &font.Gsub{
 		lookups: lookups
 	}
 	out := g.substitute([u16(0)], run_of([chain_first, chain_second]))
@@ -1330,17 +1333,17 @@ fn test_an_alternate_lookup_takes_the_first_of_its_alternates() {
 	identity << u16(chain_first)
 	mut same := [][]u16{}
 	same << identity
-	mut self_sets := []AlternateSubst{}
-	self_sets << AlternateSubst{
+	mut self_sets := []font.AlternateSubst{}
+	self_sets << font.AlternateSubst{
 		ranges: cov_of([chain_first])
 		sets:   same
 	}
-	mut self_lookups := []Lookup{}
-	self_lookups << Lookup{
-		kind:       gsub_lookup_alternate
+	mut self_lookups := []font.Lookup{}
+	self_lookups << font.Lookup{
+		kind:       font.gsub_lookup_alternate
 		alternates: self_sets
 	}
-	quiet := &Gsub{
+	quiet := &font.Gsub{
 		lookups: self_lookups
 	}
 	same_out := quiet.substitute([u16(0)], run_of([chain_first, chain_second]))
@@ -1371,7 +1374,7 @@ const calt_fah = rune(0x06CC)
 // trust from a difference in glyphs, because a ligature and a single substitution look identical
 // from the outside. Applying the lookups one at a time is what turns "something happened" into a
 // statement about which kind of rule did it.
-fn changed_by(g &Gsub, items []Ligatable, feature string) ?Lookup {
+fn changed_by(g &font.Gsub, items []font.Ligatable, feature string) ?font.Lookup {
 	mut before := gids_of(items)
 	for li in g.lookups_for('arab', feature) {
 		one := g.substitute([li], items)
@@ -1385,11 +1388,11 @@ fn changed_by(g &Gsub, items []Ligatable, feature string) ?Lookup {
 // run_in_logical_order rebuilds the substitution input from a laid out line, which comes back in
 // visual order. A lookup asked to match a run that has been reversed finds nothing, for the same
 // reason a rule written against the logical order does not match a reversed one.
-fn run_in_logical_order(line Line) []Ligatable {
-	mut items := []Ligatable{}
+fn run_in_logical_order(line Line) []font.Ligatable {
+	mut items := []font.Ligatable{}
 	for i in 0 .. line.glyphs.len {
 		g := glyph_at_cluster(line.glyphs, i) or { continue }
-		items << Ligatable{
+		items << font.Ligatable{
 			gid:     g.gid
 			cluster: i
 			source:  i
@@ -1407,7 +1410,7 @@ fn test_a_chaining_context_substitutes_on_real_text() {
 	// never got to the interesting part.
 	mut chains := 0
 	for li in g.lookups_for('arab', 'calt') {
-		if g.lookups[li].kind == gsub_lookup_chain_context {
+		if g.lookups[li].kind == font.gsub_lookup_chain_context {
 			chains++
 		}
 	}
@@ -1432,7 +1435,7 @@ fn test_a_chaining_context_substitutes_on_real_text() {
 	lookup := changed_by(g, run_in_logical_order(plain), 'calt') or {
 		panic('no calt lookup changed the run')
 	}
-	assert lookup.kind == gsub_lookup_chain_context, 'the rewrite should come from a chaining context, not kind ${lookup.kind}'
+	assert lookup.kind == font.gsub_lookup_chain_context, 'the rewrite should come from a chaining context, not kind ${lookup.kind}'
 }
 
 fn test_a_chaining_context_expands_one_character_into_several_on_real_text() {
@@ -1474,7 +1477,7 @@ fn test_a_chaining_context_expands_one_character_into_several_on_real_text() {
 	mut total := 0
 	for li in g.lookups_for('arab', 'calt') {
 		total++
-		if g.lookups[li].kind == gsub_lookup_chain_context {
+		if g.lookups[li].kind == font.gsub_lookup_chain_context {
 			chains++
 		}
 	}

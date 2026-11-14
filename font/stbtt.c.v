@@ -1,4 +1,4 @@
-module vtext
+module font
 
 // stb_truetype is the rasteriser. It is the same public-domain header that
 // vlib/fontstash already compiles, vendored in V's own thirdparty directory,
@@ -27,7 +27,7 @@ module vtext
 // could drift between stb_truetype versions. Instead the Face reserves a raw
 // buffer and hands its address to C. The real struct is ~168 bytes on LP64; the
 // reservation is deliberately generous so a header upgrade cannot overflow it.
-const stbtt_fontinfo_bytes = 512
+pub const stbtt_fontinfo_bytes = 512
 
 fn C.stbtt_InitFont(voidptr, &u8, int) int
 
@@ -41,7 +41,7 @@ fn C.stbtt_MakeGlyphBitmapSubpixel(voidptr, &u8, int, int, int, f32, f32, f32, f
 
 // stbtt_get_font_offset_for_index resolves the sfnt offset of a face, handling
 // font collections. It returns a negative value on failure.
-fn stbtt_get_font_offset_for_index(data []u8, index int) int {
+pub fn stbtt_get_font_offset_for_index(data []u8, index int) int {
 	if data.len == 0 {
 		return -1
 	}
@@ -49,7 +49,7 @@ fn stbtt_get_font_offset_for_index(data []u8, index int) int {
 }
 
 // stbtt_init_font prepares a rasteriser handle. It returns non-zero on success.
-fn stbtt_init_font(info voidptr, data []u8, offset int) int {
+pub fn stbtt_init_font(info voidptr, data []u8, offset int) int {
 	if data.len == 0 {
 		return 0
 	}
@@ -86,7 +86,7 @@ pub fn (b &GlyphBitmap) ink(x int, y int) u8 {
 // px_scale returns the stb_truetype scale factor for an em size: pixels per
 // design unit. This is the factor stb expects, and it is the reciprocal of what
 // Face.scale does, which converts the other way round.
-fn (f &Face) px_scale(em_px f64) f32 {
+pub fn (f &Face) px_scale(em_px f64) f32 {
 	if f.units_per_em_f <= 0 {
 		return 0
 	}
@@ -100,7 +100,7 @@ fn (f &Face) px_scale(em_px f64) f32 {
 // caller to the allocator the V array came from. The C call below is the same
 // one rasterize_glyph makes, with the same arguments, so the two agree pixel
 // for pixel; stbtt_test.v pins rasterize_glyph and through it this path.
-fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, w int, h int) {
+pub fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, w int, h int) {
 	if !f.stb_ok {
 		return
 	}
@@ -119,7 +119,7 @@ fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, w in
 //
 // sub_x and sub_y snap the position to quarter-pixel bins, which is what stops
 // animated text from shimmering as the pen lands on fractional coordinates.
-fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitmap {
+pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitmap {
 	mut out := GlyphBitmap{}
 	if !f.stb_ok {
 		return out
@@ -175,7 +175,7 @@ fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) GlyphBitm
 // The numbers are the same ones rasterize_glyph would report, and provably so rather than approximately:
 // stbtt_GetGlyphBitmapBox is defined in the header as a call to the subpixel form with a shift of zero
 // (stb_truetype.h:2739), which is the shift this engine's own no-subpixel path passes.
-fn (f &Face) box_only(gid u16, em_px f64) GlyphBitmap {
+pub fn (f &Face) box_only(gid u16, em_px f64) GlyphBitmap {
 	mut out := GlyphBitmap{}
 	if !f.stb_ok {
 		return out

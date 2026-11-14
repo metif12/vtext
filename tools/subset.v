@@ -40,6 +40,7 @@ module main
 
 import os
 import vtext
+import vtext.font
 
 // ---------------------------------------------------------------- arguments
 
@@ -197,7 +198,7 @@ fn main() {
 		exit(1)
 	}
 
-	font := vtext.load_font_file(path) or {
+	loaded := vtext.load_font_file(path) or {
 		eprintln('cannot load ${path}: ${err.msg()}')
 		exit(1)
 	}
@@ -209,13 +210,13 @@ fn main() {
 	// This subsetter rebuilds loca and glyf. A CFF font's charstrings are a different
 	// language and the library exposes no reader for them, so this refuses rather than
 	// writing a font with its outlines stripped out.
-	kind := font.outlines()
+	kind := loaded.outlines()
 	if kind != 'glyf' {
 		eprintln('${path} has ${kind} outlines, and this subsetter rebuilds glyf and loca only')
 		eprintln('a CFF charstring cannot be rebuilt from what the library exposes')
 		exit(1)
 	}
-	spans := spans_of(font)
+	spans := spans_of(loaded)
 	if 'glyf' !in spans || 'loca' !in spans {
 		eprintln('${path} has no glyf and loca pair to rewrite')
 		exit(1)
@@ -227,13 +228,13 @@ fn main() {
 
 	ctx := vtext.new_context()
 	fs := vtext.new_font_set()
-	fs.add(font)
+	fs.add(loaded)
 
 	// The run, shaped by the engine, is the only source of the glyph set.
 	run := vtext.layout_paragraph(ctx, text.runes(), .auto, fs, size)
-	missing := uncovered(ctx, font, text)
+	missing := uncovered(ctx, loaded, text)
 
-	mut keep := []bool{len: font.num_glyphs()}
+	mut keep := []bool{len: loaded.num_glyphs()}
 	mut run_glyphs := []u16{}
 	for g in run.glyphs {
 		keep[int(g.gid)] = true
@@ -287,7 +288,7 @@ fn main() {
 		}
 	}
 
-	subset := build_font(font, data, keep) or {
+	subset := build_font(loaded, data, keep) or {
 		eprintln('cannot build the subset: ${err.msg()}')
 		exit(1)
 	}
@@ -296,16 +297,16 @@ fn main() {
 		exit(1)
 	}
 
-	report(font, text, run, missing, spans, data, subset, keep, run_glyphs, closure,
+	report(loaded, text, run, missing, spans, data, subset, keep, run_glyphs, closure,
 		size)
 	kept := kept_glyph_ids(keep)
-	if !verify(out, font, text, run, size, kept) {
+	if !verify(out, loaded, text, run, size, kept) {
 		eprintln('')
 		eprintln('refusing to call this a subset: it does not shape the same as ${path}')
 		exit(1)
 	}
 	println('')
-	println('verified: ${out} shapes and rasterizes the same text as ${font_name(font)}')
+	println('verified: ${out} shapes and rasterizes the same text as ${font_name(loaded)}')
 }
 
 // ---------------------------------------------------------------- the glyph set
@@ -970,7 +971,7 @@ fn verify(path string, original &vtext.Font, text string, before vtext.Line, siz
 
 // same_bitmap compares the ink, not just the box: two glyphs can share a box and differ
 // in every pixel inside it.
-fn same_bitmap(a vtext.GlyphBitmap, b vtext.GlyphBitmap) bool {
+fn same_bitmap(a font.GlyphBitmap, b font.GlyphBitmap) bool {
 	if a.width != b.width || a.height != b.height || a.left != b.left || a.top != b.top {
 		return false
 	}

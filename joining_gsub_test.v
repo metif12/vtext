@@ -1,5 +1,6 @@
 module vtext
 
+import vtext.font
 // Tests for Arabic joining applied through the font's own GSUB features.
 //
 // The four joining features are `isol`, `init`, `medi` and `fina`, and until 2026-10-04 this engine
@@ -21,7 +22,7 @@ fn laid_out(f &Font, text string) Line {
 	return layout_paragraph(new_context(), text.runes(), .rtl, fs, 1000.0)
 }
 
-// The joining rules are MultipleSubst, and most of them replace one glyph with several. Nastaliq is the
+// The joining rules are font.MultipleSubst, and most of them replace one glyph with several. Nastaliq is the
 // clearest case: 46 of its 68 `init` rules produce two or three glyphs. A per-glyph call returning a single
 // glyph id cannot do that at all, so the count of glyphs is the direct evidence that the run-level path ran.
 fn test_joining_turns_one_letter_into_the_several_glyphs_the_font_asks_for() {
@@ -112,24 +113,24 @@ fn test_the_shape_mask_excludes_letters_in_other_shapes_but_not_marks() {
 	mark := f.glyph_index(`َ`)
 	assert letter != 0 && mark != 0, 'the font covers both'
 
-	mut run := []Ligatable{}
-	run << Ligatable{
+	mut run := []font.Ligatable{}
+	run << font.Ligatable{
 		gid:     letter
 		cluster: 0
 		source:  0
-		form:    JoiningForm.medial
+		form:    font.JoiningForm.medial
 	}
-	run << Ligatable{
+	run << font.Ligatable{
 		gid:     mark
 		cluster: 1
 		source:  1
-		form:    JoiningForm.isolated
+		form:    font.JoiningForm.isolated
 		is_mark: true
 	}
 	// The final shape is asked for. The medial letter is the wrong shape and is held back; the mark is not a
 	// letter, has no shape of its own, and is let through, because a font's joining features compose its
 	// marks as well as its letters.
-	eff := g.effective(run, 0, 0, JoiningForm.final)
+	eff := g.effective(run, 0, 0, font.JoiningForm.final)
 	assert eff.len == 1, 'exactly one of the two takes part, got ${eff.len}'
 	assert eff[0] == 1, 'and it is the mark, not the letter'
 

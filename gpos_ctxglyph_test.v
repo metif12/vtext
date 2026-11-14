@@ -89,7 +89,7 @@ fn chain_glyph_bytes() []u8 {
 
 fn test_gpos_chain_glyph_parses_from_bytes() {
 	r := font.new_reader(chain_glyph_bytes())
-	c := parse_chain_glyph(r, 0) or { panic('a well-formed format 1 subtable should parse') }
+	c := font.parse_chain_glyph(r, 0) or { panic('a well-formed format 1 subtable should parse') }
 	assert c.coverage.len == 1, 'one coverage range'
 	assert c.coverage[0].first == 10 && c.coverage[0].last == 10, 'covering glyph 10'
 	assert c.sets.len == 1, 'one set for one covered glyph'
@@ -104,19 +104,19 @@ fn test_gpos_chain_glyph_parses_from_bytes() {
 	// A subtable that is not format 1 is not this reader's, and a truncated one
 	// ends the walk rather than reading past it.
 	bad := bytes_of([3, 8, 1, 14, 1, 1, 10, 1, 4, 1, 5, 2, 20, 1, 30, 1, 1, 7])
-	assert parse_chain_glyph(font.new_reader(bad), 0) == none, 'format 3 is the coverage reader'
-	assert parse_chain_glyph(font.new_reader(chain_glyph_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
+	assert font.parse_chain_glyph(font.new_reader(bad), 0) == none, 'format 3 is the coverage reader'
+	assert font.parse_chain_glyph(font.new_reader(chain_glyph_bytes()[..6]), 0) == none, 'a cut header parses to nothing'
 }
 
 fn test_gpos_chain_glyph_rule_matches_by_glyph() {
-	g := &Gpos{}
-	cg := ChainGlyph1{
-		coverage: [CoverageRange{ first: 10, last: 10 }]
-		sets:     [[ChainGlyphRule{
+	g := &font.Gpos{}
+	cg := font.ChainGlyph1{
+		coverage: [font.CoverageRange{ first: 10, last: 10 }]
+		sets:     [[font.ChainGlyphRule{
 			backtrack: [u16(5)]
 			input:     [u16(20)]
 			lookahead: [u16(30)]
-			records:   [ContextRecord{ position: 1, lookup: 7 }]
+			records:   [font.ContextRecord{ position: 1, lookup: 7 }]
 		}]]
 	}
 	m, rule := g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(20), u16(30)], 1) or {
@@ -137,29 +137,29 @@ fn test_gpos_chain_glyph_rule_matches_by_glyph() {
 // names the match and lookup 1 moves the second input glyph left by 50, both under
 // a kern feature so the pair path reaches them.
 fn test_gpos_chain_glyph_applies_through_a_lookup() {
-	g := &Gpos{
-		lookups: [GposLookup{
-			kind:         gpos_lookup_chain_context
-			chain_glyphs: [ChainGlyph1{
-				coverage: [CoverageRange{ first: 10, last: 10 }]
-				sets:     [[ChainGlyphRule{
+	g := &font.Gpos{
+		lookups: [font.GposLookup{
+			kind:         font.gpos_lookup_chain_context
+			chain_glyphs: [font.ChainGlyph1{
+				coverage: [font.CoverageRange{ first: 10, last: 10 }]
+				sets:     [[font.ChainGlyphRule{
 					backtrack: [u16(5)]
 					input:     [u16(20)]
 					lookahead: [u16(30)]
-					records:   [ContextRecord{ position: 1, lookup: 1 }]
+					records:   [font.ContextRecord{ position: 1, lookup: 1 }]
 				}]]
 			}]
-		}, GposLookup{
-			kind:    gpos_lookup_single_position
-			singles: [SinglePos{
-				ranges: [CoverageRange{ first: 20, last: 20 }]
+		}, font.GposLookup{
+			kind:    font.gpos_lookup_single_position
+			singles: [font.SinglePos{
+				ranges: [font.CoverageRange{ first: 20, last: 20 }]
 				format: 1
-				values: [PairValue{ format: 1, x_placement: -50 }]
+				values: [font.PairValue{ format: 1, x_placement: -50 }]
 			}]
 		}]
-		scripts: [Script{
+		scripts: [font.Script{
 			tag:      'latn'
-			features: [ScriptFeature{ tag: 'kern', lookups: [u16(0)] }]
+			features: [font.ScriptFeature{ tag: 'kern', lookups: [u16(0)] }]
 		}]
 	}
 	gids := [u16(5), u16(10), u16(20), u16(30)]
@@ -223,7 +223,7 @@ fn test_gpos_chain_glyph_fires_on_nothing_in_the_corpus() {
 		f := ctx_font(name) or { return }
 		gpos := f.face.gpos or { continue }
 		for lk in gpos.lookups {
-			assert !has_chain_glyphs(lk), '${name} grew a format-1 chaining rule'
+			assert !font.has_chain_glyphs(lk), '${name} grew a format-1 chaining rule'
 		}
 	}
 }

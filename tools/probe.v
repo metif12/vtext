@@ -8,6 +8,7 @@ module main
 import os
 import strings
 import vtext
+import vtext.font
 
 const ramps = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@']
 
@@ -18,7 +19,7 @@ fn arg(i int, fallback string) string {
 	return fallback
 }
 
-fn show(bmp &vtext.GlyphBitmap) {
+fn show(bmp &font.GlyphBitmap) {
 	// Two pixel rows per text row keeps the shapes recognisable in a terminal.
 	for y in 0 .. bmp.height {
 		mut sb := strings.new_builder(bmp.width + 2)
@@ -41,21 +42,21 @@ fn main() {
 	text := arg(2, 'Av')
 	em := 32.0
 
-	mut font := vtext.load_font_file(font_path) or { panic(err) }
+	mut loaded := vtext.load_font_file(font_path) or { panic(err) }
 	println('font=${font_path}')
-	println('upem=${font.units_per_em()} glyphs=${font.num_glyphs()} cff=${font.is_cff_outlined()}')
-	println('ascent=${font.ascent(em):.1} descent=${font.descent(em):.1} line=${font.line_height(em):.1}')
+	println('upem=${loaded.units_per_em()} glyphs=${loaded.num_glyphs()} cff=${loaded.is_cff_outlined()}')
+	println('ascent=${loaded.ascent(em):.1} descent=${loaded.descent(em):.1} line=${loaded.line_height(em):.1}')
 	println('')
 
 	mut pen := 0.0
 	for cp in text.runes() {
-		gid := font.glyph_index(cp)
-		adv := font.glyph_advance(gid, em)
+		gid := loaded.glyph_index(cp)
+		adv := loaded.glyph_advance(gid, em)
 		if gid == 0 {
 			println('U+${cp:04X} -> .notdef (no coverage)')
 			continue
 		}
-		bmp := font.rasterize(gid, em, 0, 0)
+		bmp := loaded.rasterize(gid, em, 0, 0)
 		println('U+${cp:04X} glyph=${gid} adv=${adv:.1}px  ink=${bmp.width}x${bmp.height} left=${bmp.left} top=${bmp.top}')
 		show(&bmp)
 		pen += adv
