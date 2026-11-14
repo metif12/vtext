@@ -73,7 +73,7 @@ accident. Dependencies run one way — `layout` → `shape` → `font` → `ucd`
 | `vtext.inspect` | settled in `shape/` | The `shape/inspect.v` API on `shape.Font`; a separate part would cycle. | fontTools introspection |
 | `vtext.subset` | `subset/` | `subset_font` closure and rebuild with `tools/subset.v` as the CLI; glyf today, CFF/CFF2 after the charstring reader. Landed slice 1, same verification. | fontTools subsetter |
 | `vtext.capi` | `capi.v` | The C face of all of the above; `vtext.h` stays the single header. | — |
-| providers | planned, per-OS | `FontSource` implementations for fontconfig / Core Text / DirectWrite. Optional, never linked by default. | fontconfig & co. |
+| providers | `providers/`, Linux first | fontconfig family→path with the matched family reported; Core Text / DirectWrite unwritten. Optional, never linked by default. | fontconfig & co. |
 
 The split is one part at a time, each verified the way `ucd` was: full suite
 green, fmt gate green, every consumer that CI builds (`shapedump`, the C

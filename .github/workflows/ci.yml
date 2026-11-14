@@ -105,6 +105,12 @@ jobs:
       - name: v run tools/fmt_check.v
         run: v run tools/fmt_check.v
 
+      # The providers test links fontconfig on Linux: the headers ship
+      # separately from the library the difftest job installs.
+      - name: fontconfig headers (Ubuntu)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libfontconfig1-dev
+
       # The real suite: every _test.v file in the module, one at a time, with the counts printed.
       #
       # VTEXT_CC names the C compiler for the platform: macOS ships a clang behind the name gcc, so the
