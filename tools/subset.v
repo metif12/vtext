@@ -35,8 +35,9 @@ module main
 // only one the library reads, and the file loses the collection header.
 //
 // It refuses a CFF font outright, and the reason is stated in the refusal rather than
-// left for the reader to infer: this rebuilds glyf and loca, and a charstring is a
-// different language that the library exposes no reader for.
+// left for the reader to infer: this rebuilds glyf and loca, and font/cff.v reads
+// charstrings without rebuilding them, so a font with CFF outlines still has
+// nothing this can rewrite.
 
 import os
 import vtext

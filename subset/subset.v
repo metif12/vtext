@@ -30,9 +30,10 @@ module subset
 // The output is a plain font. A collection is subset to its first member, which is the
 // only one the library reads, and the file loses the collection header.
 //
-// It rebuilds glyf and loca, and a charstring is a different language the library
-// exposes no reader for: a CFF font has no outlines this can rebuild, so the tool
-// refuses one before calling in and build_font errors on a table set with no glyf.
+// It rebuilds glyf and loca. font/cff.v reads CFF charstrings for inspection
+// and verification, but a read is not a rebuild: a subset CFF table is still
+// unwritten, so a CFF font has no outlines this can rebuild and build_font
+// errors on a table set with no glyf.
 
 import vtext.shape
 
