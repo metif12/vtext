@@ -158,7 +158,8 @@ floor on every run, so the number cannot be quietly lowered.
 ## Test fonts
 
 The suite reads the fonts in `testdata/fonts/`, so it does not depend on what is installed.
-All are under the SIL Open Font License; the licence text sits beside each font.
+All are under the SIL Open Font License except Latin Modern Math, which ships under the GUST
+Font License (an LPPL instance); the licence text sits beside each font.
 
 | Font | Why it is here |
 | --- | --- |
@@ -173,6 +174,8 @@ All are under the SIL Open Font License; the licence text sits beside each font.
 | `NotoSansHebrew-Variable.ttf` | Hebrew with niqqud: bidi plus mark attachment outside the Arabic script. |
 | `NotoSansSC-Variable.ttf` | Simplified Chinese: CJK coverage and shaping smoke (no CJK line-breaking yet). |
 | `JetBrainsMonoNerdFont-Regular.ttf` | The same code face patched with PUA icons: terminal/geek glyphs beside text. |
+| `STIXTwoMath-Regular.ttf` | A math face: MATH constants, variants and assemblies beside HarfBuzz. |
+| `LatinModernMath-Regular.otf` | A second math face (CFF outlines, GUST licence): same pins, different tables. |
 
 ## Differential testing
 

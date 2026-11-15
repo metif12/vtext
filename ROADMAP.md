@@ -2293,9 +2293,15 @@ fill, verified against FreeType's LCD output.
 pixel-compared on corpus glyphs. Text effects are the caller's; the
 geometry is the library's.
 
-**8.7 MATH shaping.** The MATH table behind an opt-in math pass (constants,
-italics correction, variants and parts), pinned against HarfBuzz on Latin
-Modern Math and STIX, which arrive over the network like Fira Code did.
+**8.7 MATH shaping — landed 2026-11-15 as the reader half.** The MATH table behind
+an opt-in math pass (`shape/math.v`: variant selection, px scaling, disabled-pass
+answers base/zero), pinned against HarfBuzz on committed STIX Two Math (OFL) and
+Latin Modern Math (GUST licence, documented in-tree; its OFL backup carries no
+MATH table and was rejected). `font/math.v` reads constants, italics correction,
+top accents, extended shapes, variants and assemblies; two spec traps caught by
+measuring first are pinned in the tests (52 MATH records, not 54; construction
+records inline, no parts offset). Follow-ups: Face/subset wiring, and HB's
+extent-derived top-accent fallback for uncovered glyphs.
 
 **8.8 Matching and instances — landed 2026-11-15.** `providers/fontconfig.v`
 sorts beside the existing match: `system_fonts_sorted` answers the ranked
