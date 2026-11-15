@@ -2416,10 +2416,15 @@ half. Each slice carries its own break-fix controls, and Arabic stays
 green through all of it — the corpus cases and the differential baseline
 are the ratchet, and a phase that regresses them is not a phase.
 
-**9.4 The long tail.** Syriac (joining test on a committed face),
-Thaana, NKo, one smoke line each for the simple alphabets, and the emoji
-survey (what ships: cmap monochrome; what refuses: color formats, with
-the reason). Small slices, each a font plus a test.
+**9.4 The long tail — corpus half landed 2026-11-15.** Syriac (the joining
+acceptance: init/medi/rlig pins match HarfBuzz exactly), Thaana and NKo, one
+smoke line each, in wave 4 (`longtail_test.v`, all HB-measured, break-fix on
+the Syriac SHIN pin). Two engine gaps documented in-test, not fixed: ccc=0
+transparent marks draw nothing (Thaana fili, same gap as the SE-Asian wave),
+and `ot_script_tag` misses space-padded OpenType tags (`nko ` vs `Nkoo` —
+the forms prove right under an override, only the tag fold is wrong).
+Remaining: one smoke line each for the other simple alphabets, and the emoji
+survey (cmap monochrome ships; color formats refuse, with the reason).
 
 Rule for the whole phase, the wave-2 rule: every new script arrives as a
 committed OFL font plus HarfBuzz-measured pins. A shaping-affecting
