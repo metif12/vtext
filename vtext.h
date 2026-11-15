@@ -35,9 +35,10 @@ typedef struct vtext_wrap vtext_wrap_t;
 typedef struct vtext_bitmap vtext_bitmap_t;
 
 /* Layout options, mirroring LayoutOptions. features is a comma-separated
- * list of discretionary OpenType features (e.g. "liga") and may be NULL.
- * line_height of 0 takes the font's own. vertical is 0 for a horizontal
- * line and nonzero for one column of vertical text. */
+ * list of discretionary OpenType features and may be NULL. calt, liga and
+ * clig are on by default; "-tag" turns one off and "+tag" names one
+ * explicitly. line_height of 0 takes the font's own. vertical is 0 for a
+ * horizontal line and nonzero for one column of vertical text. */
 typedef struct {
 	const char *features;
 	double line_height;

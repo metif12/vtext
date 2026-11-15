@@ -1410,6 +1410,9 @@ pub fn is_markish(c ucd.LineBreakClass) bool {
 	return c == .cm
 }
 
+// clamp_index folds an index into [0, n): negatives count back from the end the way a
+// caller indexing from it would, and anything past either end stops at the edge rather
+// than addressing outside the table.
 pub fn clamp_index(i int, n int) int {
 	if i < 0 {
 		return 0

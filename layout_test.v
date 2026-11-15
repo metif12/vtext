@@ -1029,7 +1029,10 @@ fn test_wrapping_and_measuring_agree_about_features() {
 	assert approx(runs[0].line.width, laid.width, 0.001), 'wrapped ${runs[0].line.width} against laid out ${laid.width}'
 
 	// And the feature is doing something, or agreeing about it would be untested.
-	plain := layout.measure_paragraph(ctx, cps, .rtl, fs, 32)
+	// The control has liga off, spelled with the off-switch: the default fuses now.
+	plain := layout.measure_paragraph_with(ctx, cps, .rtl, fs, 32, &layout.LayoutOptions{
+		features: ['-liga']
+	})
 	assert laid.width < plain.max_content_width, 'liga should narrow this line: ${laid.width} against ${plain.max_content_width}'
 }
 

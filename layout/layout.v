@@ -62,10 +62,10 @@ pub mut:
 
 // LayoutOptions are the choices about a line that belong to the caller rather than to the engine.
 //
-// The default is the one the engine is prepared to defend: no discretionary features, so the line
-// is the text. Anything that changes the width of what is drawn is a presentation decision, and a
-// text engine that made it on the caller's behalf would be a text engine that could not be relied
-// on to measure text.
+// The default is the one every other shaper defends: calt, liga and clig on, everything
+// else off, so the line is the text as drawn everywhere. A text engine that fused nothing
+// while every editor fused `=>` could not be relied on to measure code, and one that fused
+// discretionary pairs on the caller's behalf could not be relied on to measure anything.
 //
 // What is not here is a direction. That is the base_dir argument of layout_paragraph and its
 // siblings, and adding it here as well would leave two sources for one decision with no stated
@@ -73,8 +73,9 @@ pub mut:
 pub struct LayoutOptions {
 pub mut:
 	// features are the discretionary OpenType features to apply after the required ones, which
-	// the engine always applies. liga is the one a Persian line usually wants, since several
-	// letter pairs have ligature forms the text itself does not spell.
+	// the engine always applies. calt, liga and clig are already on — the code ligatures and
+	// the Persian pairs — so a `-tag` entry turns one of those back off (`-calt` draws `=>`
+	// as two plain glyphs) and `+tag` is the same as naming the tag.
 	features []string
 	// line_height is the baseline-to-baseline distance in pixels. Zero takes the font's own, which
 	// is the largest natural line height among the fonts that contributed a glyph.

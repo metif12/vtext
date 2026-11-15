@@ -23,6 +23,7 @@ pub:
 
 pub const sfnt_version_truetype = u32(0x00010000)
 
+// tag_* are the sfnt table tags the reader knows, spelled as the directory spells them.
 pub const tag_glyf = 'glyf'
 pub const tag_loca = 'loca'
 pub const tag_cmap = 'cmap'

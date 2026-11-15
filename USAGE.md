@@ -65,12 +65,16 @@ the same options or they disagree about the width of the same text:
 
 ```v
 mut opts := layout.LayoutOptions{}
-opts.features = ['liga']
+opts.features = ['-calt', '+dlig'] // -tag turns a default-on feature off, +tag names one explicitly
 opts.line_height = 28.0
 opts.letter_spacing = 0.5
 opts.word_spacing = 2.0
 line := layout.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 ```
+
+calt, liga and clig are on by default — the code ligatures and the Persian
+pairs — so the list above only names what differs from the default. The C
+side takes the same names as one comma-separated string (`"-calt,+dlig"`).
 
 `README.md` documents the pipeline, the font fallback rules, kerning, marks
 and every inspection API in full. This file does not repeat it.
@@ -278,26 +282,34 @@ is the font that glyph was found in, borrowed from the set; it is what
 `vtext_rasterize` needs, because a glyph without its font is not drawable.
 `vtext_line_width/ascent/descent/line_height` read the line; ascent and
 descent are the ink's extent, larger than the font's own metrics whenever a
-mark reaches above or below them. `vtext_line_free` releases the line and its
+mark reaches above or below them. `vtext_line_column_height` is the same
+number for a vertical line laid out with `vertical` in the options (the
+column's length); on a horizontal line it equals the line height.
+`vtext_line_free` releases the line and its
 glyphs, not the fonts.
 
 Options:
 
 ```c
-vtext_options_t opts = { "liga", 28.0, 0.5, 2.0 };
-/* features, line_height (0 takes the font's own), letter_spacing, word_spacing */
+vtext_options_t opts = { "-calt", 28.0, 0.5, 2.0, 1 };
+/* features, line_height (0 takes the font's own), letter_spacing, word_spacing, vertical */
 ```
 
-Features are one comma-separated string because a C caller has no string
-array; an empty entry is skipped, so a trailing comma is harmless. A combining
-mark is not spaced: it shares its base's advance, and spacing it too would
-charge one character twice.
+calt, liga and clig are on by default; `-tag` turns one off, `+tag` names
+one explicitly. Features are one comma-separated string because a C caller
+has no string array; an empty entry is skipped, so a trailing comma is
+harmless. A combining mark is not spaced: it shares its base's advance, and
+spacing it too would charge one character twice. `vertical` stacks the line
+downward as one column (see `README.md`); zero lays out horizontally.
 
 Wrap: `vtext_wrap` / `vtext_wrap_with` return an owned wrap; lines are
 borrowed (`vtext_wrap_line`, valid until `vtext_wrap_free`) with their
-half-open input range from `vtext_wrap_line_from/to`. A word wider than the
+half-open input range from `vtext_wrap_line_from/to` and their count from
+`vtext_wrap_line_count`. A word wider than the
 width goes on a line of its own rather than being split, and a text with no
-break in it returns one line however narrow the width.
+break in it returns one line however narrow the width. In vertical mode the
+same call cuts columns instead of lines; each column's length is the
+`vtext_line_column_height` above.
 
 Measure: `vtext_measure` / `vtext_measure_with` fill the caller's
 `vtext_metrics_t` (both widths from one shaping) and return 1, or 0 with the
@@ -316,6 +328,13 @@ belongs at (pen − left, baseline − top), top positive upwards — and
 `vtext_bitmap_data` is the row-major 8-bit coverage, borrowed, width×height
 bytes, null for an empty glyph. `vtext_bitmap_free` releases the bitmap and
 its coverage together.
+
+Subset: `vtext_subset` rebuilds a font around seed glyph ids (get them from
+`vtext_font_glyph_index` over the text, the way `tools/subset.v` does) and
+returns malloc'd bytes with their count, or -1 with the reason in `err`;
+`.notdef` is always kept and the bytes reload with
+`vtext_font_load_bytes`. `vtext_subset_free` releases them. CFF fonts are
+refused with the reason in `err` until Phase 7.9 lands them.
 
 ## Keeping the C surface in step
 

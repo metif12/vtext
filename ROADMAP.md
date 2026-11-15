@@ -2016,8 +2016,24 @@ controls plus the latin-kern baseline entries converging to zero.
 default; the caller can now override script, language, direction, and
 features per tag (including `vert`/`vkrn` on and off) through one options
 struct on the proven `LayoutOptions` pattern, threaded through layout and
-the C API. Pinned by shaping the same text under two scripts beside
+the C API (`+tag`/`-tag` spellings ride the existing comma-separated
+string). Pinned by shaping the same text under two scripts beside
 HarfBuzz with the same overrides.
+
+Landed 2026-11-15, first half: programming ligatures are on by default.
+`calt`, `liga` and `clig` run after `rlig` on every line — HarfBuzz leaves
+them on, and a line that draws `=>` unfolded while every editor folds it
+is not the text. The toggle is the other half of the feature: `-calt`
+draws two plain glyphs, `+tag` names one explicitly. Pinned by
+`calt_liga_test.v` on committed fonts (Fira Code `=>` to the
+HarfBuzz-measured 1730/1736 at full width, Amiri `fi` to the fused 6630),
+with revert controls neutering the defaults and the off-switch separately.
+Tahoma's `dlig` pair stays off and its existing test green. The latin-liga
+corpus line is unchanged by the new default — Noto Naskh Arabic carries no
+Latin liga rules, and both sides shape it unfused with identical advances —
+while two code cases (`code-arrow`, `code-neq`) join the corpus to pin the
+face where the default matters. Script and language override remain the
+second half.
 
 **7.3 Common-base marks.** The 2g gap, closed: a Zyyy/Zinh base resolves to
 the neighbouring strong script instead of falling back to `arab`, measured
@@ -2070,6 +2086,83 @@ three runners: every OS-specific leg (fontconfig, Core Text, DirectWrite,
 Windows-only faces) is covered on its own OS and answers none elsewhere.
 A skip that prints why stays a skip; a gap that prints nothing is a
 failure.
+
+## Phase 8: the rival parity sweep
+
+Phase 7 makes every slice replace an incumbent per part. This phase lists
+every other library in the stack, names the features each one carries that
+no slice above covers, and schedules them — or records why not, with the
+same trigger discipline CFF had (a slice lands when a font needs it, not
+before, and a refusal states its trigger).
+
+The inventory, measured against this tree rather than recalled:
+
+| Library | Carries | Covered | Not covered → slice |
+| --- | --- | --- | --- |
+| HarfBuzz core | GSUB/GPOS, features, variations | yes (7.1–7.2 finish it) | MATH table → 8.7 |
+| hb-subset | subsetting | glyf yes, CFF 7.9 | — |
+| FreeType load | sfnt/TTC | yes | WOFF → 8.1 (WOFF2 triggered) |
+| FreeType raster | unhinted/hinted/auto/LCD | unhinted yes, hint 7.7 | LCD → 8.5 |
+| FreeType API | embolden/oblique, stroker | no | 8.5, 8.6 |
+| FreeType color | COLR/CBDT/sbix/SVG | 7.7 | — |
+| FreeType var | instancing | 7.10 | — |
+| Pango layout | wrap modes, align, ellipsize, tabs | align 7.4 | 8.4 |
+| Pango log attrs | cursor/word/sentence runs | no | 8.2 |
+| Pango markup | attribute markup | out (app-level, like CSS) | — |
+| fontconfig | match/sort/coverage | match yes | 8.8 |
+| ICU text parts | bidi/normalize/breaks/case | bidi, NFD, graphemes yes | word/sentence 8.2, case 8.3 |
+| ICU rest | collation, numbers, dates | out (not the text layer) | — |
+| FriBidi | bidi + N0 brackets | yes, incl. generated bracket table | — |
+| Raqm | bidi+shaping glue | yes, own pipeline | — |
+| DirectWrite/CoreText | per-OS shape+layout+raster | providers 7.8, engine runs on their fonts | — |
+| AAT morx, Graphite | Apple/SIL shaping | no corpus font | triggered, not scheduled |
+| WOFF2/brotli | web fonts | no | triggered spike (no decoder in tree) |
+
+**8.1 WOFF containers.** WOFF1 reads through zlib into the existing sfnt
+reader — one container, same tables, pinned byte-for-byte against fontTools
+on a converted corpus font. WOFF2 stays a triggered spike: no brotli
+decoder lives in this tree and none is vendored for one slice.
+
+**8.2 Words, sentences, and the caret.** UAX #29 word and sentence tables
+as generated data (the `ucd_sa_mark` pattern), each with the committee's
+own conformance file run as a floor the way `LineBreakTest` runs today,
+plus a log-attr pass over a laid-out line: cursor offsets per character,
+word boundaries, and combining-aware deletion spans — the PangoLogAttr
+surface editors need, measured against Pango where the stack exists.
+Graphemes are already in; this is the rest of #29.
+
+**8.3 Case mapping.** Upper, lower and title through generated tables plus
+`SpecialCasing.txt`, pinned by the committee's own expectations and the
+Turkish/Azeri dotted-I rules that make a hand table wrong. Editors
+transform text; a text layer that cannot is half of one.
+
+**8.4 Wrap modes, ellipsize, tabs.** Word/char/word-char wrapping,
+end/middle/start ellipsization with a caller-owned ellipsis glyph, and tab
+stops as a layout option — the Pango layout surface that is not boxes.
+
+**8.5 Synthetic styles and LCD.** Embolden and oblique at the glyph level
+(FreeType's `FT_GlyphSlot_Embolden`/`Oblique` parity, pixel-compared), and
+subpixel LCD rendering as a raster option beside the current coverage
+fill, verified against FreeType's LCD output.
+
+**8.6 Stroking.** Outline stroking with joins, caps and miter limits —
+`FT_Stroker` parity — flattened through the existing curve path and
+pixel-compared on corpus glyphs. Text effects are the caller's; the
+geometry is the library's.
+
+**8.7 MATH shaping.** The MATH table behind an opt-in math pass (constants,
+italics correction, variants and parts), pinned against HarfBuzz on Latin
+Modern Math and STIX, which arrive over the network like Fira Code did.
+
+**8.8 Matching and instances.** fontconfig sort-by-match with charset and
+language coverage queries beside `FcFontMatch`, and the fvar named
+instances listed on the inspect API (axes are already there; names are
+what a UI shows).
+
+Triggered, not scheduled, each with its reason: AAT `morx` and Graphite
+(no corpus font carries either — the day one does, it gets a slice like
+CFF did); WOFF2 (needs a brotli decoder first); the full TrueType bytecode
+interpreter (7.7 already gates it on a corpus font that needs it).
 
 ## Explicitly not planned
 

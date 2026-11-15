@@ -158,11 +158,15 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // pair. Those two are on for every line because a line missing its mark composition is not the
 // text, and neither of them is a presentation choice.
 //
-// Discretionary features are not applied here. liga is the one that matters for Persian, where
-// several letter pairs have codepoint reachable ligature forms, and turning it on changes the width
-// of the text, so it belongs to whoever asked for the line rather than to the engine. A caller
-// that wants one names it in extra, and it is applied after the required features, which is the
-// order the specification gives discretionary features.
+// Three more are on for every line for the same reason HarfBuzz leaves them on: calt, liga and
+// clig. A code editor's `=>` is a calt alternate (Fira Code draws it as two full-width glyphs,
+// not one fused one), and Persian letter pairs have liga forms in the font — turning either off
+// by default draws text no other shaper draws. Discretionary features (dlig and the stylistic
+// sets) stay off until named: a caller that wants one names it in extra, and it is applied
+// after the vertical forms, which is the order the specification gives discretionary features.
+// A `-tag` entry turns a default-on feature back off (`-calt` draws `=>` as two plain glyphs),
+// and `+tag` is the same as naming the tag; the required features above are not toggleable,
+// because a line missing them is not the text.
 pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 	extra []string, vertical bool) []Glyph {
 	g := f.face.gsub or { return glyphs }
@@ -199,6 +203,55 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 	for feature in ['rlig'] {
 		out = g.substitute(g.lookups_for(script, feature), out)
 	}
+	// calt, liga and clig are on unless the caller turned them off with `-tag`: the
+	// contextual alternates first, because they are written against the same base glyphs
+	// the joining features were, and the fusing ones after. The `+tag` spelling is the
+	// same as naming the tag and exists so a generated list can be explicit. The last
+	// spelling of one tag wins: `-calt` then `calt` turns it back on for the line.
+	mut enabled := {
+		'calt': true
+		'liga': true
+		'clig': true
+	}
+	mut asked := []string{}
+	for feature in extra {
+		if feature.starts_with('-') && feature.len > 1 {
+			off := feature[1..]
+			if off == 'calt' || off == 'liga' || off == 'clig' {
+				enabled[off] = false
+			}
+			// Anything else is already off by default, and the required features
+			// above are not toggleable, so a `-tag` for those names nothing.
+		} else {
+			mut tag := feature
+			if tag.starts_with('+') && tag.len > 1 {
+				tag = tag[1..]
+			}
+			if tag == 'calt' || tag == 'liga' || tag == 'clig' {
+				enabled[tag] = true
+			} else {
+				mut seen := false
+				for prev in asked {
+					if prev == tag {
+						seen = true
+						break
+					}
+				}
+				if !seen {
+					asked << tag
+				}
+			}
+		}
+	}
+	mut on := []string{}
+	for tag in ['calt', 'liga', 'clig'] {
+		if enabled[tag] {
+			on << tag
+		}
+	}
+	for feature in on {
+		out = g.substitute(g.lookups_for(script, feature), out)
+	}
 	// Vertical forms come next when the line is vertical, for the same reason
 	// rlig is unconditional: a vertical line whose punctuation draws its
 	// horizontal form is not vertical text. They are collected under the run's
@@ -209,7 +262,7 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 			out = g.substitute(g.lookups_for(script, feature), out)
 		}
 	}
-	for feature in extra {
+	for feature in asked {
 		out = g.substitute(g.lookups_for(script, feature), out)
 	}
 	// Every advance is read again, not just the fused ones, so the advance always belongs to the

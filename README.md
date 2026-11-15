@@ -319,9 +319,10 @@ counting them by hand.
 
 ### Features
 
-Every line gets `ccmp`, the four Arabic joining features, then `rlig`, in that order, because a line missing
-its mark composition or its letter shapes is not the text that was asked for. Anything else is a
-presentation choice and stays with the caller.
+Every line gets `ccmp`, the four Arabic joining features, `rlig`, `calt`,
+`liga` and `clig`, in that order, because a line missing its mark
+composition, its letter shapes or its ligatures is not the text that was
+asked for. Anything else is a presentation choice and stays with the caller.
 
 The joining features are `isol`, `init`, `medi` and `fina`, and each is applied to the letters in its own
 shape — the ones that join forward, the ones that join both ways, and so on. That masking is not an
@@ -342,9 +343,11 @@ that does not, and it draws letters whose joining rules replace a single glyph w
 run over the run.
 
 ```v
-// liga is what Persian letter pairs need, and it changes the width of the text, so it is opt-in.
+// calt, liga and clig are already on: the code arrow and the fi ligature
+// below draw the way every other shaper draws them. A `-tag` entry turns
+// one back off.
 mut opts := layout.LayoutOptions{}
-opts.features = ['liga']
+opts.features = ['-calt'] // => stays two plain glyphs
 
 line := layout.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 ```

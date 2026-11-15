@@ -1420,7 +1420,11 @@ fn test_a_chaining_context_substitutes_on_real_text() {
 	fs := fs_of(majalla)
 	ctx := shape.new_context()
 	text := [calt_beh, calt_noon, calt_noon]
-	plain := layout.layout_paragraph(ctx, text, .rtl, fs, 32)
+	// The control has calt off the way a caller asking for plain text would,
+	// now spelled with the off-switch rather than with the default.
+	plain := layout.layout_paragraph_with(ctx, text, .rtl, fs, 32, &layout.LayoutOptions{
+		features: ['-calt']
+	})
 	opt := &layout.LayoutOptions{
 		features: ['calt']
 	}
@@ -1449,9 +1453,19 @@ fn test_a_chaining_context_expands_one_character_into_several_on_real_text() {
 	fs := fs_of(at)
 	ctx := shape.new_context()
 	text := [calt_sin, calt_fah, calt_fah]
-	plain := layout.layout_paragraph(ctx, text, .rtl, fs, 32)
+	// The control is the required features alone, spelled with both
+	// off-switches since the defaults fuse now; the subject is the old
+	// composed pipeline exactly (this font carries no arab clig, so
+	// -liga plus calt is calt alone).
+	// HarfBuzz agrees with the new default: with liga on it shapes this
+	// text as 3 glyphs, and the 5-glyph expansion is the liga-off answer.
+	// The expansion below is still the multiple-substitution milestone's
+	// proof — it is just taken with liga off, the way it was measured.
+	plain := layout.layout_paragraph_with(ctx, text, .rtl, fs, 32, &layout.LayoutOptions{
+		features: ['-liga', '-calt']
+	})
 	opt := &layout.LayoutOptions{
-		features: ['calt']
+		features: ['-liga', 'calt']
 	}
 	composed := layout.layout_paragraph_with(ctx, text, .rtl, fs, 32, opt)
 	assert plain.glyphs.len == 3, 'three characters should start as three glyphs, got ${plain.glyphs.len}'
@@ -1494,7 +1508,11 @@ fn test_a_plain_ligature_still_fuses_a_pair_on_real_text() {
 	at := gsub_font('ARABTYPE.TTF') or { return }
 	fs := fs_of(at)
 	ctx := shape.new_context()
-	plain := layout.layout_paragraph(ctx, [calt_meem, calt_meem], .rtl, fs, 32)
+	// The control has liga off, spelled with the off-switch: the default
+	// fuses since calt/liga shipped on.
+	plain := layout.layout_paragraph_with(ctx, [calt_meem, calt_meem], .rtl, fs, 32, &layout.LayoutOptions{
+		features: ['-liga']
+	})
 	opt := &layout.LayoutOptions{
 		features: ['liga']
 	}
@@ -1538,8 +1556,11 @@ fn test_a_ligature_still_fuses_at_the_end_of_a_long_run() {
 	filler << calt_meem
 
 	// The same run without the feature, as the control: it has to come out one glyph longer, or the
-	// difference below would be the filler's doing rather than the ligature's.
-	plain := layout.layout_paragraph(ctx, filler, .rtl, fs, 32)
+	// difference below would be the filler's doing rather than the ligature's. Spelled with the
+	// off-switch, since the default fuses now.
+	plain := layout.layout_paragraph_with(ctx, filler, .rtl, fs, 32, &layout.LayoutOptions{
+		features: ['-liga']
+	})
 	assert plain.glyphs.len == 400, 'the run should be one glyph per character to begin with, got ${plain.glyphs.len}'
 
 	buried := layout.layout_paragraph_with(ctx, filler, .rtl, fs, 32, opt)
