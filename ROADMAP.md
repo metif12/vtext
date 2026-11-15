@@ -2157,9 +2157,15 @@ face carries it) and subsetting still refuses CFF (a read is not a rebuild),
 each with the reason in the message — the deferral condition is satisfied
 for reading, and the rebuild stays future work until a slice needs it.
 
-**7.10 Variable instancing.** fvar/gvar application at chosen coordinates —
-FreeType's `FT_Set_Var_Design_Coordinates` parity, pinned beside it. This
-moves instancing from not-goals to goals; reading the store was always in.
+**7.10 Variable instancing — landed 2026-11-15.** fvar/gvar application at
+caller-chosen coordinates (`font/var.v`: normalize, avar warp, tuple tents,
+packed runs, IUP, `FT_MulFix` op-for-op incl. the exact-.5 IUP fix found by
+measuring), behind `set_var_coords`/`instanced_glyph_points` on Face and
+Font (purely additive). Pinned by `varinstance_test.v` beside FreeType and
+fontTools: full point lists at min/default/mid/max on FiraCode and
+NotoSansSC, plus a dev-time sweep of every simple glyph × four coords at
+142,848/142,848 exact across four variable faces. Follow-ups: composite
+instancing, HVAR/MVAR/cvar reading, raster wiring of instanced outlines.
 
 **7.11 The reference cache and the rival number.** An opt-in cache helper
 keyed on font id, gid, size and subpixel offset — the boundary holds, the

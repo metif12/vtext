@@ -126,7 +126,7 @@ Each item names the slice that owns it in `ROADMAP.md`.
 - Indic and Khmer shaping (7.6, with the Phase 9.3 machine behind it).
 - Hinting, color, LCD, synthetic styles, stroking (7.7, 8.5–8.6); MATH constants
   and variants read beside HarfBuzz (8.7 landed), Face wiring stays follow-up.
-- Variable instancing at chosen coordinates (7.10); the store is read, not applied.
+- Variable instancing at chosen coordinates landed (7.10), FreeType parity.
 - Core Text and DirectWrite providers (7.8).
 - CFF subsetting (7.9 reader landed; a read is not a rebuild).
 - Cursive attachment: read from real fonts, not applied — the one corpus rule
