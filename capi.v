@@ -104,6 +104,13 @@ fn c_options(opts &COptions) layout.LayoutOptions {
 		out.letter_spacing = opts.letter_spacing
 		out.word_spacing = opts.word_spacing
 		out.vertical = opts.vertical != 0
+		match opts.align {
+			1 { out.align = .center }
+			2 { out.align = .right }
+			3 { out.align = .justify }
+			else { out.align = .left }
+		}
+		out.align_width = opts.align_width
 		if opts.script != nil && opts.script[0] != 0 {
 			out.script = tos_clone(opts.script)
 		}
@@ -176,7 +183,8 @@ fn free_line_box(p &layout.Line) {
 // field is four bytes on both sides of the boundary: a C int and a V i32.
 // script and language are the OpenType tags the run resolves its features
 // under, each null or empty for the default, spelt the way the font spells
-// them ('arab', 'URD').
+// them ('arab', 'URD'). align is 0 left, 1 center, 2 right, 3 justify, matching
+// the LayoutOptions order; anything else is left.
 pub struct COptions {
 pub mut:
 	features       &u8
@@ -186,6 +194,8 @@ pub mut:
 	vertical       i32
 	script         &u8
 	language       &u8
+	align          i32
+	align_width    f64
 }
 
 // CBreaks is what a break query hands back: two parallel arrays of len ints,

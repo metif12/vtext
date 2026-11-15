@@ -1571,7 +1571,29 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 			to:   cps.len
 		}
 	}
+	if options.align != .left && !options.vertical {
+		align_wrapped(ctx, mut out, cps, base_dir, fs, em_px, options, max_width)
+	}
 	return out
+}
+
+// align_wrapped resolves every wrapped line against the wrap width: shifting
+// for center and right, stretching for justify.
+//
+// A line followed by a gap in the input ranges ends a paragraph there — the
+// mandatory break's newline sits in the gap — so it counts as last and
+// justification leaves it flush, the way the single-line path leaves its own.
+// The last line of the whole text is last the same way. Vertical columns skip
+// this entirely: alignment is horizontal and a column's length is the pen
+// travel, so the wrap height names no target.
+fn align_wrapped(ctx &shape.Context, mut out []WrappedLine, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64, options &LayoutOptions, max_width f64) {
+	for i in 0 .. out.len {
+		is_last := i == out.len - 1 || out[i + 1].from != out[i].to
+		mut wl := out[i]
+		apply_align(ctx, mut wl.line, cps, wl.from, wl.to, base_dir, fs, em_px, options,
+			max_width, is_last)
+		out[i] = wl
+	}
 }
 
 // width_of_range measures the glyphs of a shaped line that belong to a range of input characters.

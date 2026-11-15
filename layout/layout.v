@@ -60,6 +60,20 @@ pub mut:
 	line_height f64
 }
 
+// Align is where a line sits in the width it was given, in visual coordinates:
+// left puts the line's left edge at the margin whatever the direction, right
+// puts its right edge there, center splits the spare, and justify stretches
+// the line to fill the width. Pango's LEFT/CENTER/RIGHT/FILL spell the same
+// four in the same visual way, so a caller moving between the two keeps its
+// numbers. The default left is what every line laid out before this control
+// existed: the pen starts at zero and nothing shifts.
+pub enum Align {
+	left    = 0
+	center  = 1
+	right   = 2
+	justify = 3
+}
+
 // LayoutOptions are the choices about a line that belong to the caller rather than to the engine.
 //
 // The default is the one every other shaper defends: calt, liga and clig on, everything
@@ -120,6 +134,18 @@ pub mut:
 	// wrap_paragraph_with cuts the column into columns of a given height the
 	// way it cuts a line into lines of a given width.
 	vertical bool
+	// align is where the line sits in the target width: the caller's
+	// align_width for a single line, the wrap width for every line
+	// wrap_paragraph_with cuts. left is the default and what every line laid
+	// out before this control existed. center and right shift the line;
+	// justify stretches it. In wrap the last line of a paragraph stays flush,
+	// the way Pango leaves it; a single line answers its explicit width, so a
+	// caller wanting one justified line sets align_width on it.
+	align Align
+	// align_width is the target width align resolves against for a single
+	// line. Zero takes the line's own width, which makes every mode a no-op.
+	// Wrapped lines resolve against the wrap width instead and ignore this.
+	align_width f64
 }
 
 // layout_paragraph runs normalization, the bidirectional algorithm and Arabic joining over
@@ -271,6 +297,15 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		measure_vertical_line(mut line, em_px, options)
 	} else {
 		measure_line(mut line, em_px, options)
+		// Alignment is horizontal: a vertical line stacks columns by width
+		// and its length is the pen travel, so a target width names nothing
+		// and the mode is ignored there. A single line answers its explicit
+		// width (is_last false): the wrap path is where the last-line rule
+		// lives, because only it lays out paragraphs.
+		if options.align != .left && options.align_width > line.width {
+			apply_align(ctx, mut line, cps, 0, cps.len, base_dir, fs, em_px, options,
+				options.align_width, false)
+		}
 	}
 	return line
 }
@@ -309,6 +344,263 @@ pub fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
 		return false
 	}
 	return props.line_break_of(cps[i]) == .sp
+}
+
+// kashida_tatweel is the filler U+0640 ARABIC TATWEEL, the stretch Arabic
+// justification is made of. No corpus font carries a `just` feature, and all
+// three Arabic faces carry this glyph instead, which is what "kashida where
+// the font carries it" means here: the glyph is the mechanism.
+const kashida_tatweel = rune(0x0640)
+
+// shift_line moves every glyph of the line by dx, marks included: a mark's
+// position is absolute from its anchor, so leaving it behind would unseat it
+// from the base that moved.
+fn shift_line(mut line Line, dx f64) {
+	if dx == 0 {
+		return
+	}
+	for mut g in line.glyphs {
+		g.x += dx
+	}
+}
+
+// stretch_spaces widens every space of the line by the same share of the
+// slack, shifting what follows each one along, and reports whether it moved
+// anything. Marks ride with their bases: a mark shares no advance with
+// anyone and the widening only ever grows between a space and whatever comes
+// next, so a base and its mark always move as one. The caller sets the width
+// afterwards; this moves the ink.
+fn stretch_spaces(mut line Line, props &ucd.Properties, cps []rune, slack f64) bool {
+	mut n := 0
+	for g in line.glyphs {
+		if !g.is_mark && is_space_at(props, cps, g.cluster) {
+			n++
+		}
+	}
+	if n == 0 || slack <= 0 {
+		return false
+	}
+	per := slack / f64(n)
+	mut carry := f64(0)
+	for mut g in line.glyphs {
+		g.x += carry
+		if !g.is_mark && is_space_at(props, cps, g.cluster) {
+			g.advance += per
+			carry += per
+		}
+	}
+	return true
+}
+
+// word_kashida_points lists the insertion indices (into the whole cps via the
+// base offset) where one word takes a tatweel, ordered from the word end
+// toward its start so the pre-final gap comes first: the stretch sits where
+// readers expect it, ahead of the word's last letter.
+//
+// A point is the gap before a letter that joins to the previous one, reached
+// over any marks riding on the letter before it: inserting between a letter
+// and its own mark would reattach the mark to the tatweel. The gap inside a
+// lam-alef pair is skipped — a tatweel there breaks the ligature both engines
+// fuse — and the earlier gap in the word is taken instead. Gaps no joining
+// pair holds simply never list, so a word with no joining gap gets nothing.
+fn word_kashida_points(props &ucd.Properties, word []rune, base int) []int {
+	mut letters := []int{}
+	for i, cp in word {
+		if props.combining_class_of(cp) != 0 {
+			continue
+		}
+		letters << i
+	}
+	mut out := []int{}
+	for k := letters.len - 1; k > 0; k-- {
+		l := word[letters[k - 1]]
+		r := word[letters[k]]
+		if !props.joining_type_of(l).joins_to_next()
+			|| !props.joining_type_of(r).joins_to_previous() {
+			continue
+		}
+		if props.joining_group_name(l) == 'Lam' && props.joining_group_name(r) == 'Alef' {
+			continue
+		}
+		out << base + letters[k]
+	}
+	return out
+}
+
+// kashida_points lists every insertion index of the text in word-end-first
+// order: each word's points before the next word's, so dealing round-robin
+// over the list widens one word each before any word takes a double.
+fn kashida_points(props &ucd.Properties, cps []rune) []int {
+	mut pts := []int{}
+	mut start := 0
+	for i in 0 .. cps.len + 1 {
+		if i == cps.len || is_space_at(props, cps, i) {
+			pts << word_kashida_points(props, cps[start..i], start)
+			start = i + 1
+		}
+	}
+	return pts
+}
+
+// kashida_count answers how many tatweels the slack buys, or zero when the
+// line is not a kashida line: not uniformly Arabic (letters, spaces and
+// marks — a mixed line re-laid from its slice could order differently from
+// the paragraph it was cut out of), no tatweel in any font of the set, the
+// slack buys less than one advance, or no word holds a joining gap.
+//
+// At most one per gap: stacked tatweels fuse into dedicated ligatures (Amiri
+// carries double and triple forms beside HarfBuzz), which is a second shaping
+// story the justification pass does not tell. The remainder past one per gap
+// goes to the spaces, the way a mixed line sends all of it there.
+fn kashida_count(ctx &shape.Context, cps []rune, fs &shape.FontSet, em_px f64, slack f64) int {
+	if cps.len == 0 || slack <= 0 {
+		return 0
+	}
+	for i, cp in cps {
+		if ctx.properties.script_tag_of(cp) == 'Arab' {
+			continue
+		}
+		if is_space_at(ctx.properties, cps, i) {
+			continue
+		}
+		if ctx.properties.combining_class_of(cp) != 0 {
+			continue
+		}
+		return 0
+	}
+	f := fs.pick_in(ctx, kashida_tatweel) or { fs.pick(kashida_tatweel) or { return 0 } }
+	gid := f.glyph_index(kashida_tatweel)
+	if gid == 0 {
+		return 0
+	}
+	adv := f.glyph_advance(gid, em_px)
+	if adv <= 0 {
+		return 0
+	}
+	npts := kashida_points(ctx.properties, cps).len
+	if npts == 0 {
+		return 0
+	}
+	mut n := int(slack / adv)
+	if n > npts {
+		n = npts
+	}
+	return n
+}
+
+// kashida_relayout inserts n tatweels at the line's kashida points and lays
+// the grown text out again, because a tatweel changes its neighbours' join
+// states and editing glyphs post-hoc would draw the old forms. Points are
+// dealt round-robin from the line end, so two tatweels widen two words before
+// one word takes a double. The re-layout neutralizes align: the caller aligns
+// the grown line, and a self-application would recurse.
+//
+// Clusters are re-based onto the caller's text: the grown text carries the
+// inserted tatweels, so a glyph standing for grown index g names the original
+// character gcps[g] instead. A tatweel names the letter it precedes — the gap
+// it fills belongs to that side for carets — which is also what keeps every
+// cluster inside the caller's text.
+fn kashida_relayout(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64, options &LayoutOptions, n int) ?Line {
+	pts := kashida_points(ctx.properties, cps)
+	if pts.len == 0 {
+		return none
+	}
+	mut per := map[int]int{}
+	for t in 0 .. n {
+		p := pts[t % pts.len]
+		if p in per {
+			per[p]++
+		} else {
+			per[p] = 1
+		}
+	}
+	mut grown := []rune{cap: cps.len + n}
+	mut gcps := []int{cap: cps.len + n}
+	for i, cp in cps {
+		for _ in 0 .. (per[i] or { 0 }) {
+			grown << kashida_tatweel
+			gcps << i
+		}
+		grown << cp
+		gcps << i
+	}
+	mut plain := *options
+	plain.align = .left
+	plain.align_width = 0
+	mut line := layout_paragraph_with(ctx, grown, base_dir, fs, em_px, &plain)
+	for mut g in line.glyphs {
+		if g.cluster >= 0 && g.cluster < gcps.len {
+			g.cluster = gcps[g.cluster]
+		}
+	}
+	return line
+}
+
+// apply_align resolves a laid-out line against a target width: shifting for
+// center and right, stretching for justify.
+//
+// The target is the wrap width for a wrapped line and the caller's
+// align_width for a single one; [from, to) is the line's range in cps, the
+// whole text for a single line. Clusters arriving here are absolute — a slice
+// keeps the paragraph's — so the kashida re-layout works on the slice and
+// re-bases by from, while the space stretch reads the whole text. is_last
+// marks the paragraph's last line, which justification leaves flush:
+// stretching a closing half-line spreads its words across the whole width,
+// which is what justification refuses to do, Pango included.
+//
+// Kashida needs the text re-shaped, so it re-lays the line's own range out
+// rather than editing glyphs, and only for a uniform Arabic line (letters,
+// spaces and marks, nothing else): a mixed line re-laid from its slice can
+// order differently from the paragraph it was cut out of. Everything else
+// stretches its spaces, and a line with no stretchable point keeps its width:
+// a short word is not an error.
+pub fn apply_align(ctx &shape.Context, mut line Line, cps []rune, from int, to int, base_dir shape.Direction, fs &shape.FontSet, em_px f64, options &LayoutOptions, target f64, is_last bool) {
+	mode := options.align
+	if mode == .left {
+		return
+	}
+	if mode == .justify && is_last {
+		return
+	}
+	if line.width >= target {
+		return
+	}
+	sub := cps[from..to]
+	slack := target - line.width
+	if mode == .center {
+		shift_line(mut line, slack / 2.0)
+		return
+	}
+	if mode == .right {
+		shift_line(mut line, slack)
+		return
+	}
+	kn := kashida_count(ctx, sub, fs, em_px, slack)
+	if kn > 0 {
+		if grown := kashida_relayout(ctx, sub, base_dir, fs, em_px, options, kn) {
+			// Field by field: a whole-value assignment to a `mut` value
+			// receiver does not reach the caller on this compiler, while
+			// field stores do (measure_line's receiver comment notwithstanding).
+			line.glyphs = grown.glyphs
+			line.width = grown.width
+			line.height = grown.height
+			line.ascent = grown.ascent
+			line.descent = grown.descent
+			line.paragraph_level = grown.paragraph_level
+			line.line_height = grown.line_height
+			for mut g in line.glyphs {
+				g.cluster += from
+			}
+			rest := target - line.width
+			if rest > 0 && stretch_spaces(mut line, ctx.properties, cps, rest) {
+				line.width = target
+			}
+			return
+		}
+	}
+	if stretch_spaces(mut line, ctx.properties, cps, slack) {
+		line.width = target
+	}
 }
 
 // substitute_in_fonts hands each stretch of the run that came from one font to that font.

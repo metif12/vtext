@@ -41,7 +41,9 @@ typedef struct vtext_bitmap vtext_bitmap_t;
  * horizontal line and nonzero for one column of vertical text. script and
  * language are the OpenType tags the run resolves its features under, each
  * NULL or empty for the default, spelt the way the font spells them
- * ('arab', 'URD'). */
+ * ('arab', 'URD'). align is 0 left, 1 center, 2 right, 3 justify; anything
+ * else is left. align_width is the target width align resolves against for
+ * a single line (wrapped lines use the wrap width); 0 is the line's own. */
 typedef struct {
 	const char *features;
 	double line_height;
@@ -50,6 +52,8 @@ typedef struct {
 	int vertical;
 	const char *script;
 	const char *language;
+	int align;
+	double align_width;
 } vtext_options_t;
 
 /* One drawable glyph: the gid to rasterize, the pen movement, the position
