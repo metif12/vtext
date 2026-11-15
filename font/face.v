@@ -73,6 +73,11 @@ pub mut:
 	vorg_y         map[u16]int
 	stb_ok         bool
 	units_per_em_f f64
+	// var_coords holds the caller-chosen design coordinates, one per fvar
+	// axis, the way an FT_Face holds what FT_Set_Var_Design_Coordinates
+	// stored. Empty means the default instance. It is the only new state on
+	// the face, and nothing already here reads it.
+	var_coords []f64
 }
 
 // GlyphMetrics is the per-glyph part of 'hmtx'.
@@ -505,4 +510,63 @@ pub fn (f &Face) ascent(em_px f64) f64 {
 // descent returns the positive distance below the baseline, in pixels.
 pub fn (f &Face) descent(em_px f64) f64 {
 	return f.scale(-f.vmetrics().descent, em_px)
+}
+
+// set_var_coords stores caller-chosen design coordinates, one per fvar axis,
+// in design units. It is the FT_Set_Var_Design_Coordinates half of the pair:
+// the coordinates sit on the face, and instanced_glyph_points reads them.
+// A count that does not match the axis count is an error, the same call
+// FreeType rejects. An empty list on a static font stores empty, which reads
+// back as nothing to instance.
+pub fn (mut f Face) set_var_coords(coords []f64) ! {
+	axes := f.read_variable_axes()
+	if axes.len == 0 && coords.len == 0 {
+		f.var_coords = []f64{}
+		return
+	}
+	if coords.len != axes.len {
+		return error('var: coordinate count does not match the fvar axis count')
+	}
+	f.var_coords = coords.clone()
+}
+
+// var_coords answers the effective design coordinates: what the caller
+// stored, or the fvar defaults when nothing was stored. A static font
+// answers empty, which is how the caller tells there is nothing to instance.
+pub fn (f &Face) var_coords() []f64 {
+	if f.var_coords.len > 0 {
+		return f.var_coords.clone()
+	}
+	axes := f.read_variable_axes()
+	mut out := []f64{len: axes.len}
+	for i, a in axes {
+		out[i] = a.deflt
+	}
+	return out
+}
+
+// loca_is_long says whether loca stores full offsets rather than halves,
+// which is head indexToLocFormat of 1: CJK faces with more than a few
+// thousand glyphs need it, and the instancing path reads loca the same way
+// the offsets were written.
+fn (f &Face) loca_is_long() bool {
+	rec := f.sfnt.record(tag_head) or { return false }
+	return new_reader(f.sfnt.data).i16_at(rec.offset + 50) == 1
+}
+
+// instanced_glyph_points instances one glyph at the stored design
+// coordinates: the default instance when the caller stored nothing, the
+// chosen one once set_var_coords ran. A font with no fvar table, or with
+// fvar but no gvar, is an error rather than a silent default: instancing a
+// font that cannot vary would pretend a choice was applied.
+pub fn (f &Face) instanced_glyph_points(gid u16) !InstancedOutline {
+	axes := f.read_variable_axes()
+	if axes.len == 0 {
+		return error('var: font has no fvar table, so no coordinates to instance')
+	}
+	gvar := f.sfnt.table_data(tag_gvar)
+	if gvar.len == 0 {
+		return error('var: font has no gvar table, so no outlines to instance')
+	}
+	return var_instance_glyph(f.sfnt.table_data(tag_glyf), f.sfnt.table_data(tag_loca), gvar, f.sfnt.table_data(tag_avar), axes, int(gid), f.var_coords(), f.loca_is_long())
 }

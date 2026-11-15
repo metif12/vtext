@@ -634,3 +634,26 @@ pub fn (f &Font) rasterize(gid u16, em_px f64, sub_x i32, sub_y i32) raster.Glyp
 pub fn (f &Font) num_cmap_subtables() int {
 	return f.face.cmaps.len
 }
+
+// set_var_coords stores caller-chosen design coordinates on the face
+// underneath, one per fvar axis in design units. It is the entry point that
+// plays the FT_Set_Var_Design_Coordinates role: coordinates are kept, and
+// instanced_glyph_points draws from them.
+pub fn (mut f Font) set_var_coords(coords []f64) ! {
+	f.face.set_var_coords(coords) or { return err }
+}
+
+// var_coords answers the effective design coordinates: what the caller
+// stored, or the fvar defaults when nothing was stored.
+pub fn (f &Font) var_coords() []f64 {
+	return f.face.var_coords()
+}
+
+// instanced_glyph_points instances one glyph outline at the stored design
+// coordinates through the fvar/gvar application in font.var: the default
+// instance when the caller stored nothing, the chosen one once
+// set_var_coords ran.
+pub fn (f &Font) instanced_glyph_points(gid u16) !font.InstancedOutline {
+	o := f.face.instanced_glyph_points(gid) or { return err }
+	return o
+}
