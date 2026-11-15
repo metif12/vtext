@@ -2072,10 +2072,20 @@ fallback leaves the dotted-circle marks at the pen. Horizontal and vertical
 share the rule — mark_script is mode-independent, and the y flip stays
 where it was.
 
-**7.4 Alignment, justification, kashida.** Opt-in on `LayoutOptions`:
-flush, center, and justified lines with kashida Kashida where the font
-carries it, spaces elsewhere. Pango's wrap widths stay the independent
-reader wherever the stack exists.
+**7.4 Alignment, justification, kashida — landed 2026-11-16.** Opt-in on
+`LayoutOptions`: `align` left/center/right/justify with `align_width` for a
+single line and the wrap width for every line `wrap_paragraph_with` cuts.
+Center and right shift the line; justify stretches spaces by widening
+advances, or inserts U+0640 tatweels for a uniform Arabic line where the
+slack buys whole advances (no corpus font carries a `just` feature; all
+three Arabic faces carry the glyph). Kashida re-lays the line's own text:
+a tatweel changes its neighbours' join states, one tatweel per gap (stacked
+tatweels fuse into dedicated ligatures), the lam-alef gap skipped so the
+ligature survives, remainder to spaces; mixed lines stretch spaces only,
+the last wrapped line stays flush, vertical ignores align. The C struct
+mirrors both fields. Pinned by `align_test.v` with HarfBuzz-measured grown
+widths (82.432 مدرسة, 60.672 سلام at 32 px); the differential baseline is
+untouched (justified widths are engine-arithmetic, not cross-reader pins).
 
 **7.5 Hyphenation as a `BreakPolicy`.** Liang's algorithm with a dictionary
 loader; the shipped dictionary is embedded US-English patterns as a
