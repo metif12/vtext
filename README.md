@@ -427,6 +427,25 @@ back to the text or to a caret position. A ligature reports the first character 
 and its base are both in the list and share an `x`, because a mark is drawn on top of its base rather
 than after it.
 
+### Caching glyphs
+
+`Font.rasterize` is pure in (font, gid, size, subpixel offset), so a caller drawing a page
+rasterizes each glyph once and reuses the bitmap. `shape.Cache` is that memo with the only
+honest key already in it — the caller owns the value, the engine never sees it:
+
+```v
+mut cache := shape.new_cache()
+for g in line.glyphs {
+	font := fs.pick(`ب`) or { continue }
+	bitmap := cache.get_or_rasterize(0, font, g.gid, 32.0, 0, 0)
+}
+```
+
+The `0` is the caller's own id for the font — an index into its own font list does — because
+nothing on `Font` is stable across calls. One id must name one font; the cache is unbounded
+and `cache.clear()` evicts, with `cache.hits`/`cache.misses` saying when to. Bitmaps share
+the cached coverage, so treat them as read-only.
+
 ### Wrapping
 
 A paragraph laid out to fit a width, with the input range each line came from. The whole paragraph

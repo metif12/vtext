@@ -2081,6 +2081,27 @@ caller still owns the cache, but nobody hand-rolls the only honest key
 twice. And the A/B harness both sides run on: README numbers become
 vtext-vs-rival on the same box, re-measured per release.
 
+Landed 2026-11-15, first half: the reference cache. `shape/cache.v` holds
+`CacheKey` — font id, gid, size bits, subpixel x/y — with `==` and a
+canonical `str` encoding, plus `Cache`, the caller-owned store behind
+`get_or_rasterize` with `clear`, `len` and hit/miss counts. V maps take no
+struct keys, so the store is keyed on the encoded string, and every field
+is in that encoding: two tests fail if size or subpixel ever drops out of
+it, and the key matrix covers font and gid the same way. The font id is the
+caller's own assignment — an index into its own font list does — because
+nothing on `Font` is stable across calls: the face is a pointer (object
+identity, dangling after free), the path is empty for memory fonts and
+ambiguous for collections, and hashing the font bytes on every lookup was
+never measured. One id must therefore name one (file, face); loading one
+file twice under one id shares entries, which is correct because the ink is
+a pure function of the bytes. No eviction: the map is unbounded and the
+caller clears it, which is what the counters say when to do. Measured on
+this box, Amiri `A` at 32 px, best of five batches of 20,000 (`-gc none`,
+tcc): a miss is 19.1 us and a hit 1.2 us — the hit is the map lookup and
+the key encoding, not the ink. Pinned by `cache_test.v`, self-contained on
+the committed Amiri with break-fix controls over all four key dimensions.
+The rival A/B harness stays the second half.
+
 **Platform ratchet.** The suite passes with no host-skips on any of the
 three runners: every OS-specific leg (fontconfig, Core Text, DirectWrite,
 Windows-only faces) is covered on its own OS and answers none elsewhere.
