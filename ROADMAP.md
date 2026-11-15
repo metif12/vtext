@@ -2146,10 +2146,44 @@ word boundaries, and combining-aware deletion spans — the PangoLogAttr
 surface editors need, measured against Pango where the stack exists.
 Graphemes are already in; this is the rest of #29.
 
-**8.3 Case mapping.** Upper, lower and title through generated tables plus
+**8.3 Case mapping — landed 2026-11-15.** Upper, lower and title through generated tables plus
 `SpecialCasing.txt`, pinned by the committee's own expectations and the
-Turkish/Azeri dotted-I rules that make a hand table wrong. Editors
-transform text; a text layer that cannot is half of one.
+Turkish/Azeri dotted-I rules that make a hand table wrong.
+
+`tools/gen_tables.v` gains a `case_mappings` generator mirroring `quote_roles`
+and `sa_marks`: the simple mappings in `UnicodeData.txt` overlaid with the
+unconditional `SpecialCasing.txt` rows (an identity row removes the simple
+entry, so an absent codepoint maps to itself), plus every conditional row
+verbatim. It emits `ucd/ucd_case.v` in the same banner form as its siblings:
+upper 1601 rows, lower 1508, title 1578, conditional 16. The generator's
+`emit_header` now writes `module ucd` rather than `module vtext`, left over
+from before the split; without it every regeneration rewrites all ten tables.
+`ucd/SpecialCasing.txt` (18.0.0) is committed with the `.gitignore` exception
+and the licence-travels-with-it comment, the way `LineBreakTest.txt` was.
+
+`shape/case.v` holds `to_upper`, `to_lower` and `to_title` over `[]rune` with
+a `locale string`: `tr`/`az` (BCP47 primary, `-`/`_` equivalent,
+case-insensitive) select the conditional rows, everything else the
+unconditional ones. Title is the first cased letter of each word through the
+title table and the rest through lower; a word is a maximal run of cased
+letters, a combining mark rides on the letter before it and neither ends nor
+starts one, anything else breaks. Turkish: U+0069 uppercases to U+0130 in
+tr/az, U+0130 lowercases to U+0069 alone there against U+0069 U+0307
+unconditionally, U+0049 to U+0131 unless a U+0307 follows, and a U+0307 after
+an I deletes. Final_Sigma is the neighbouring cased letters with marks
+skipped. Lithuanian `More_Above`/`After_Soft_Dotted` rows are carried in the
+conditional table and pinned there but not applied, so they read the
+unconditional mapping.
+
+`case_test.v` is self-contained and round-trips every `SpecialCasing.txt`
+entry: 104 unconditional rows through the three functions, 16 conditional rows
+through the generated table plus tr/az, `After_I`, `Not_Before_Dot` and
+`Final_Sigma` through the functions with the context that triggers them.
+Turkish dotted-I, a 1-to-N row (U+00DF to SS, U+0130 to i plus dot, U+FB00 to
+FF/Ff), title-casing and sigma final/middle/lone are asserted directly. The
+break-fix control asserts the exact row counts (1601/1508/1578/16): dropping
+the U+0061 upper row fails with 1600. Measured: SpecialCasing conformance 120
+cases, 0 failed; `v test case_test.v` passes.
 
 **8.4 Wrap modes, ellipsize, tabs.** Word/char/word-char wrapping,
 end/middle/start ellipsization with a caller-owned ellipsis glyph, and tab
