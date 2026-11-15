@@ -1,20 +1,20 @@
 // corpus resolves which font file an example should open.
 //
-// The examples used to name `C:/Windows/Fonts/segoeui.ttf` in a const, which meant all nine ran on
-// one operating system. The test suite has resolved the same way since 2026-10-12 — corpus first, the
-// platform directory last and only on Windows — and the examples now do too, so the two halves of this
+// The examples name only committed corpus faces (Amiri, NotoNaskhArabic, NotoNastaliqUrdu,
+// FiraCode), so the corpus directory answers on every platform and output is comparable across
+// hosts. The test suite resolves the same way, and the examples do too, so the two halves of this
 // repository agree about where a font comes from.
 //
 // The order is the whole of the decision:
 //
 //	$VTEXT_EXAMPLE_FONTS   a directory the caller names, for trying a font the corpus lacks
 //	examples/../../testdata/fonts   the committed corpus, which is here on every platform
-//	C:/Windows/Fonts      the platform's own, Windows only, so the output here does not change
+//	C:/Windows/Fonts      the platform's own, Windows only, kept as a last fallback for
+//	                       caller-named families the corpus lacks; the in-tree examples no
+//	                       longer depend on it
 //
-// On this machine the last of those wins for the nine fonts the examples name, because the corpus has
-// no Segoe, Tahoma, Consolas or Traditional Arabic. On Linux or macOS the second does, and the
-// examples run. The pictures differ between the two — a different face shapes the same text — and that
-// is the correct answer, not a regression: the corpus is not a copy of Windows.
+// For the in-tree examples the middle entry wins everywhere by construction, so the same files open
+// on Windows, Linux and macOS and the pictures are comparable.
 //
 // A font found nowhere returns none, and the example says so and stops. An example that cannot open
 // its font is a broken example, and one that silently drew nothing would be worse.

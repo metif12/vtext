@@ -6,15 +6,15 @@
 // font it came from, and the underline is drawn from the glyph list rather than from the text: the engine
 // has already decided, and this only reports it.
 //
-// The two fonts are chosen to force the choice rather than to avoid it. Consolas is a monospaced font for
-// code and covers Latin, Greek and Cyrillic but no Arabic at all. Traditional Arabic covers Arabic and
-// nothing much else. Neither font covers Hebrew, so the last row is the case where the chain runs out and
-// there is nothing to draw, which is a report rather than a crash.
+// The two fonts are chosen to force the choice rather than to avoid it. FiraCode is a monospaced font
+// for code and covers Latin, Greek and Cyrillic but no Arabic at all. Amiri covers Arabic (including
+// Persian and Urdu additions) and basic Latin. Neither font covers Hebrew, so the last row is the case
+// where the chain runs out and there is nothing to draw, which is a report rather than a crash.
 //
 // What to read off the picture:
 //
-//   - The Latin letters come from Consolas and are monospaced, and the Arabic comes from Traditional
-//     Arabic. One line, two fonts, and the change is where the script changes rather than at a word
+//   - The Latin, Cyrillic and Greek letters come from FiraCode and are monospaced, and the Arabic comes
+//     from Amiri. One line, two fonts, and the change is where the script changes rather than at a word
 //     boundary, because the decision is per character and not per run.
 //   - A glyph from the second font has its own advance and its own baseline treatment, so the two fonts
 //     in one line do not share a rhythm. That is what fallback costs and it is why an application that
@@ -36,7 +36,7 @@ import vtext.shape
 // Three lines: one that stays in the first font, one that crosses into the second, and one that runs off
 // the end of the chain. The Hebrew is there on purpose: no font here covers it.
 const lines = [
-	'Consolas renders this line in one font.',
+	'FiraCode renders Latin, Привет and Γειά in one font.',
 	'Then متن عربی takes the second font.',
 	'And this: אבג goes nowhere at all.',
 ]
@@ -53,16 +53,18 @@ const missing_level = u8(70)
 
 fn main() {
 	ctx := shape.new_context()
-	first := shape.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	second := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	first := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
+	second := shape.load_font_file(corpus.font('Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
 	// Order is preference: a character both fonts cover comes from the first, and one only the second
 	// covers comes from the second.
 	fs := shape.new_font_set_of(first, second)
 
 	// What each font covers is printed, because the picture only means something next to it. A reader who
-	// does not know that Consolas has no Arabic cannot tell a working fallback from a coincidence.
+	// does not know that FiraCode has no Arabic cannot tell a working fallback from a coincidence.
 	println('first font:  ')
 	println('  covers Latin A   ${first.has_glyph('A'.runes()[0])}')
+	println('  covers Cyrillic pe ${first.has_glyph(0x041F)}')
+	println('  covers Greek gamma ${first.has_glyph(0x0393)}')
 	println('  covers Arabic mim ${first.has_glyph(0x0645)}')
 	println('second font: ')
 	println('  covers Latin A   ${second.has_glyph('A'.runes()[0])}')

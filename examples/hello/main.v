@@ -16,25 +16,22 @@ import paint
 import corpus
 import vtext.shape
 
-// The fonts this example asks for by role, rather than by name. Which file fills a role is the
-// `corpus` module's decision: the committed corpus first, the platform's own directory last and only
-// on Windows. On this machine both resolve to the faces the example was written against and the
-// output is unchanged; on Linux or macOS they resolve to Amiri, and the same three lines draw in a
-// naskh face instead of a Segoe one.
-//
-// Both cover Persian as well as Arabic, including the three letters Persian adds (peh, cheh, gaf) and
-// its own yeh and keheh, so one font set handles both scripts and nothing here falls back.
-//
-// The families are listed in preference order and the first one that exists wins, which is why a
-// `segoeui.ttf` then `Amiri-Regular.ttf` list is not a guess: on a host with Segoe it is Segoe, and on
-// one without it the corpus answers rather than the example failing to open a font.
+// The two corpus fonts, by role. FiraCode-Variable covers Latin, Cyrillic and Greek and no
+// Arabic at all; Amiri-Regular covers Arabic including the Persian additions (peh, cheh, gaf,
+// jeh, yeh, keheh) and the Urdu letters (bari-ye, heh-doachashmee), plus basic Latin. Both
+// ship in testdata/fonts, so this example opens the same files on every platform.
 
-// Three lines, so one command shows three things at once.
+// Four lines, so one command shows four things at once.
 //
 // Persian rather than Arabic because it has more to get right in one line. It has letters Arabic does
 // not, a yeh and a keheh of its own, a half space that stops two letters joining, and digits that are
 // not the ones a Latin keyboard produces. The middle line is a single Persian word; the third is mostly
 // Persian with one English word inside it, which is where bidirectional reordering has to do something.
+//
+// The second line puts Latin, Cyrillic, Greek and Arabic side by side to show the script routing:
+// every script in it comes from a different part of the font set. The fourth line adds the Persian
+// gaf/cheh/peh/jeh cluster and the Urdu bari-ye and heh-doachashmee, which are the codepoints a
+// Latin-plus-Arabic font pair is most likely to be missing.
 //
 // The half space in the first line is written as U+200C rather than typed as one, and that is worth
 // being deliberate about. It has no width and nothing to see, so a ZWNJ in a string literal looks
@@ -42,8 +39,9 @@ import vtext.shape
 // unreviewable: delete the character and the line still reads correctly, but it means something else.
 const lines = [
 	'شکل‌دهی متن: نیم‌فاصله، چهار شکل، و خط پایه.',
-	'سلام دنیا',
+	'Hello Привет Γειά سلام',
 	'این یک جملهٔ فارسی است که در آن کلمهٔ hello هم آمده است.',
+	'سلام دنیا گچپژ اردو ےھ',
 ]
 
 // The margin and the gap between lines, in pixels. The canvas size is not written down: it is measured
@@ -55,21 +53,21 @@ const em_px = 28.0
 
 fn main() {
 	ctx := shape.new_context()
-	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or {
+	latin := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or {
 		panic('cannot open a Latin font: ${err}')
 	}
-	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or {
+	arabic := shape.load_font_file(corpus.font('Amiri-Regular.ttf')) or {
 		panic('cannot open an Arabic font: ${err}')
 	}
 	// One set with both fonts in it, so a character the Latin font has no glyph for is found in the
 	// Arabic one rather than drawn as a box. Order is preference: the first font that covers a
 	// character wins.
 	//
-	// Except that a flat order is not enough here, because both fonts cover both scripts. Segoe UI has
-	// Arabic in it, so a chain of (latin, arabic) draws every Persian letter in Segoe UI and never
-	// reaches Traditional Arabic at all, and reversing it draws the English word in a naskh face. The
-	// set is given per script instead: Arabic goes to the Arabic font and everything else to the Latin
-	// one, which is what handing over two fonts and one mixed line was supposed to mean.
+	// Except that a flat order is not enough here, because both fonts cover Latin. A chain of
+	// (latin, arabic) would still work for Arabic, but a chain of (arabic, latin) draws the English,
+	// Cyrillic and Greek words in a naskh face. The set is given per script instead: Arabic goes to
+	// the Arabic font and everything else to FiraCode, which is what handing over two fonts and one
+	// mixed line was supposed to mean.
 	fs := shape.new_script_font_set(arabic, latin)
 
 	// The canvas is sized from the text: the widest line sets the width, and the tallest ascent plus

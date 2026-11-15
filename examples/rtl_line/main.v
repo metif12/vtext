@@ -20,8 +20,9 @@ import paint
 import vtext.layout
 import vtext.shape
 
-// Two fonts, because the Latin line at the top of the picture is drawn with the same call as the Arabic
-// below it and neither font covers the other's script.
+// Three fonts in two sets. The Latin line and the Arabic line share one per-script set because neither
+// of its fonts covers the other's script; the Urdu line gets its own set with Nastaliq as the primary,
+// because a nastaliq face shapes Urdu ligatures nothing else in the corpus draws.
 
 // The Arabic line. The lam-alef is written as one character pair on purpose: it is the one ligature
 // Arabic forms out of the letters themselves, and it becomes a single glyph whose cluster is the first
@@ -30,6 +31,10 @@ const arabic_text = 'مَرْحَبًا بِالْعَالَمِ'
 
 // A Latin line above it, so the picture shows both directions from the same shape.FontSet and the same call.
 const latin_text = 'Ligature: ffi. Kerning: AV. Mark: a with a grave.'
+
+// An Urdu line below it, drawn in Nastaliq: bari-ye (ے) and heh-doachashmee (ھ) have no Arabic
+// counterparts, so this line proves the Urdu codepoints reach an Urdu face rather than .notdef.
+const urdu_text = 'اردو کا سلام ےھ'
 
 const em_px = 44.0
 const margin = 40
@@ -47,15 +52,19 @@ fn main() {
 	debug := os.args.len > 1 && os.args[1] == '-debug'
 
 	ctx := shape.new_context()
-	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	latin := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	nastaliq := shape.load_font_file(corpus.font('NotoNastaliqUrdu-Regular.ttf')) or { panic('cannot open ${err}') }
 	fs := shape.new_script_font_set(arabic, latin)
+	urdu_fs := shape.new_script_font_set(nastaliq, latin)
 
 	mut width := 0
 	mut ascent := 0.0
 	mut descent := 0.0
-	for text in [latin_text, arabic_text] {
-		w, a, d := paint.measure(fs, ctx, text, em_px)
+	texts := [latin_text, arabic_text, urdu_text]
+	for i, text in texts {
+		line_fs := if i == 2 { urdu_fs } else { fs }
+		w, a, d := paint.measure(line_fs, ctx, text, em_px)
 		if w > width {
 			width = w
 		}
@@ -69,12 +78,13 @@ fn main() {
 	// The debug view needs room below the line for the boxes, and room at the right for the last one.
 	extra := if debug { 30 } else { 0 }
 	canvas_w := width + 2 * margin + extra
-	canvas_h := int((ascent + descent + line_gap) * 2.0) + 2 * margin + extra
+	canvas_h := int((ascent + descent + line_gap) * 3.0) + 2 * margin + extra
 
 	mut canvas := paint.new_canvas(canvas_w, canvas_h, 0xff)
 	mut baseline := f64(margin) + ascent
-	for text in [latin_text, arabic_text] {
-		draw(mut canvas, fs, ctx, text, baseline, debug)
+	for i, text in texts {
+		line_fs := if i == 2 { urdu_fs } else { fs }
+		draw(mut canvas, line_fs, ctx, text, baseline, debug)
 		baseline += ascent + descent + line_gap
 	}
 

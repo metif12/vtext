@@ -1,20 +1,22 @@
 // features shows what a discretionary OpenType feature does to the text rather than to the code.
 //
-// Every word here is laid out twice: once with the required features alone, which is what the engine
-// always applies, and once with one discretionary feature asked for by name. Both widths are printed and
-// both rows are drawn, so the change is something the reader can see and check rather than a claim.
+// Every word here is laid out twice: once with the feature explicitly off (`-tag`, which turns back
+// on one of the defaults calt/liga/clig or names nothing for the rest), and once with it asked for
+// by name. Both widths and both gid lists are printed and both rows are drawn, so the change is
+// something the reader can see and check rather than a claim. Every number below was read off
+// HarfBuzz before it was written here; where this engine and HarfBuzz disagree the case is a null,
+// not a pin.
 //
-// Two words, because a feature does two different kinds of thing:
+// A feature does three kinds of thing, and the cases are one of each:
 //
-//   - "الله" goes from four glyphs to two with `liga` in every Arabic font on this machine. That is a
-//     count change: two of the letters have a shape that only exists as a pair, and the font says so.
-//     Every Arabic font here agrees, which is what makes it a good first thing to look at.
-//   - "فارسی" changes glyphs but not their number under `liga` in Segoe UI, and the line gets ten pixels
-//     narrower. That is a substitution that keeps the count: the same five letters, drawn differently,
-//     taking less room.
-//
-// The second is the one worth understanding. A feature that changes the count is easy to notice and a
-// feature that changes only the width is easy to miss, and the second is the more common.
+//   - `liga` fuses Latin `fi` in Amiri from two glyphs to one. That is a count change, and the easy
+//     one to notice.
+//   - `dlig` fuses الله in Naskh from four glyphs to two: the Allah fusion is discretionary in this
+//     face (off by default) and absent from the others' tables in this form, which is why the same
+//     word is a null under `liga` in Nastaliq.
+//   - `calt` swaps FiraCode's `=>` for its two-piece arrow with the same count and the same width
+//     (a monospace face): a substitution only the printed gid list can see, which is why the list is
+//     printed.
 module main
 
 import math
@@ -36,22 +38,40 @@ struct Case {
 
 const cases = [
 	Case{
-		text:    'الله'
+		text:    'fi'
 		feature: 'liga'
-		about:   'four glyphs become two: a shape that exists only as a pair'
-		font:    corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')
+		about:   'two glyphs become one: the Latin liga in Amiri, HarfBuzz agrees'
+		font:    corpus.font('Amiri-Regular.ttf')
 	}
 	Case{
 		text:    'الله'
-		feature: 'liga'
-		about:   'the same in a second font, which agrees'
-		font:    corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')
+		feature: 'dlig'
+		about:   'four become two in Naskh: the Allah fusion is discretionary here, off by default'
+		font:    corpus.font('NotoNaskhArabic-Regular.ttf')
 	}
 	Case{
 		text:    'فارسی'
 		feature: 'liga'
-		about:   'five glyphs stay five and the line gets narrower'
-		font:    corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')
+		about:   'five stay five: the Persian joins come from the joining features, liga changes nothing and HarfBuzz agrees'
+		font:    corpus.font('Amiri-Regular.ttf')
+	}
+	Case{
+		text:    'الله'
+		feature: 'liga'
+		about:   'Urdu Nastaliq has no liga (GSUB lacks it): off==on, fusion is rlig always-on'
+		font:    corpus.font('NotoNastaliqUrdu-Regular.ttf')
+	}
+	Case{
+		text:    '=>'
+		feature: 'calt'
+		about:   'two stay two, alternates 1730/1736; calt present, liga absent'
+		font:    corpus.font('FiraCode-Variable.ttf')
+	}
+	Case{
+		text:    'АВ Αα'
+		feature: 'calt'
+		about:   'Cyrillic/Greek pass through calt unchanged; FiraCode covers latn/cyrl/grek'
+		font:    corpus.font('FiraCode-Variable.ttf')
 	},
 ]
 
@@ -70,7 +90,13 @@ fn main() {
 	for ci, c in cases {
 		f := shape.load_font_file(c.font) or { panic('cannot open ${c.font}: ${err}') }
 		fs := shape.new_font_set_of(f)
-		off := layout.layout_paragraph(ctx, c.text.runes(), .auto, fs, em_px)
+		// The feature is on by default (calt, liga, clig), so the "without" side names the
+		// off-switch explicitly: `-tag` turns one default back off, and the "with" side is the
+		// default itself. Before the defaults landed, the bare line was the off side; now it
+		// would be the on side twice, and every pair would read as no change.
+		mut off_opts := layout.LayoutOptions{}
+		off_opts.features = ['-' + c.feature]
+		off := layout.layout_paragraph_with(ctx, c.text.runes(), .auto, fs, em_px, &off_opts)
 		mut opts := layout.LayoutOptions{}
 		opts.features = [c.feature]
 		on := layout.layout_paragraph_with(ctx, c.text.runes(), .auto, fs, em_px, &opts)
@@ -78,8 +104,8 @@ fn main() {
 		lines << on
 
 		println('${c.text}   ${c.font.split('/').last()}   ${c.about}')
-		println('  without ${c.feature}: ${off.glyphs.len} glyphs, width ${off.width:.2f}')
-		println('  with    ${c.feature}: ${on.glyphs.len} glyphs, width ${on.width:.2f}')
+		println('  without ${c.feature}: ${off.glyphs.len} glyphs, width ${off.width:.2f} ${gids_of(off)}')
+		println('  with    ${c.feature}: ${on.glyphs.len} glyphs, width ${on.width:.2f} ${gids_of(on)}')
 		println('  change: ${on.glyphs.len - off.glyphs.len} glyphs, ${on.width - off.width:+.2f} px')
 	}
 
@@ -120,6 +146,20 @@ fn main() {
 	}
 
 	canvas.write_png('features.png')
+}
+
+// gids_of lists a line's glyph ids, so a substitution that keeps the count and the width (a
+// monospace calt swap, an unfolded-then-equal advance) still reads as a change rather than as nothing.
+fn gids_of(line layout.Line) string {
+	mut out := '['
+	for i, g in line.glyphs {
+		if i > 0 {
+			out += ' '
+		}
+		out += '${g.gid}'
+	}
+	out += ']'
+	return out
 }
 
 // label_level is faint enough to read the letters through.

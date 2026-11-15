@@ -4,11 +4,13 @@
 // checked rather than admired: the ranges run end to end with no gap and no overlap, and every line but
 // the last ends somewhere a break was allowed.
 //
-// The last paragraph is Arabic, which is the case that makes wrapping a problem rather than an exercise.
-// A Latin paragraph breaks at its spaces and that is all there is to it. Arabic has no spaces, so its
-// breaks come from the line break rules of UAX #14 rather than from the text, and this engine's coverage
-// of those rules is partial: no dictionary and no CJK. The Arabic lines are wrapped by the same call and
-// break where the rules say, which is the honest statement of what that means today.
+// Four paragraphs: Latin at four widths, Cyrillic+Greek mixed, Arabic, and Urdu. A Latin paragraph
+// breaks at its spaces and that is all there is to it. The Cyrillic+Greek line shows one face covering
+// two scripts. Arabic has no spaces, so its breaks come from the line break rules of UAX #14 rather
+// than from the text, and this engine's coverage of those rules is partial: no dictionary and no CJK.
+// Urdu has spaces despite running right to left, so it wraps at spaces like Latin and contrasts with
+// the Arabic paragraph above it. Every paragraph is wrapped by the same call and breaks where the
+// rules say, which is the honest statement of what that means today.
 //
 // Two things are worth measuring off the picture rather than trusting:
 //
@@ -37,6 +39,14 @@ const latin_text = 'The quick brown fox jumps over the lazy dog and keeps on run
 
 const arabic_text = 'اللغة العربية نص طويل يمر دون مسافات بين الكلمات لذلك لا يمكن كسره على الكلمات'
 
+// Mixed Cyrillic+Greek: every rune verified in FiraCode (Cyrillic miss block is only U+047A..U+0489;
+// Greek miss block only unassigned/Coptic). Breaks at spaces.
+const cyrillic_greek_text = 'Быстрая коричневая лиса прыгает через ленивую собаку η γρήγορη καφέ αλεπού πηδάει'
+
+// Urdu: Naskh/Amiri cover it too, but Nastaliq is the assigned face. Has spaces (U+0020 in Nastaliq
+// cmap), so it wraps at spaces like Latin, not by UAX #14.
+const urdu_text = 'اردو ایک خوبصورت زبان ہے جو نستعلیق میں لکھی جاتی ہے'
+
 // The widths to wrap at, chosen so the same paragraph shows a line that fills the margin, a line that
 // falls well short of it, and a word that will not fit at all.
 const widths = [700.0, 400.0, 200.0, 100.0]
@@ -48,25 +58,42 @@ const column_gap = 40.0
 
 fn main() {
 	ctx := shape.new_context()
-	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	fs := shape.new_script_font_set(arabic, latin)
+	// Corpus-only: FiraCode lays out every non-Arab paragraph (Latin, Cyrillic, Greek);
+	// Naskh lays out the Arabic-script paragraph; Nastaliq lays out the Urdu paragraph.
+	fira := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
+	naskh := shape.load_font_file(corpus.font('NotoNaskhArabic-Regular.ttf', 'Amiri-Regular.ttf')) or {
+		panic('cannot open ${err}')
+	}
+	nastaliq := shape.load_font_file(corpus.font('NotoNastaliqUrdu-Regular.ttf')) or { panic('cannot open ${err}') }
+	fs_arabic := shape.new_script_font_set(naskh, fira)
+	fs_urdu := shape.new_script_font_set(nastaliq, fira)
 
 	// Wrap first and measure, so the canvas is sized from what was produced rather than from a guess. A
 	// fixed height crops the last line the moment a width or a word changes, which is how the first
 	// version of the hello example drew two lines and a half.
 	print_breaks(ctx, latin_text)
+	print_breaks(ctx, cyrillic_greek_text)
 	print_breaks(ctx, arabic_text)
+	print_breaks(ctx, urdu_text)
 	mut latin_runs := [][]layout.WrappedLine{cap: widths.len}
 	mut arabic_runs := [][]layout.WrappedLine{cap: 1}
 	for w in widths {
-		runs := layout.wrap_paragraph(ctx, latin_text.runes(), .auto, fs, em_px, w)
+		runs := layout.wrap_paragraph(ctx, latin_text.runes(), .auto, fs_arabic, em_px, w)
 		latin_runs << runs
 		print_paragraph(latin_text, w, runs)
 	}
+	// Cyrillic+Greek under the same set: scripts Latn/Cyrl/Grek all fall to the general (FiraCode).
+	cyrillic_width := 260.0
+	cyrillic_runs := layout.wrap_paragraph(ctx, cyrillic_greek_text.runes(), .auto, fs_arabic, em_px, cyrillic_width)
+	print_paragraph(cyrillic_greek_text, cyrillic_width, cyrillic_runs)
 	arabic_width := 220.0
-	arabic_runs << layout.wrap_paragraph(ctx, arabic_text.runes(), .auto, fs, em_px, arabic_width)
+	arabic_runs << layout.wrap_paragraph(ctx, arabic_text.runes(), .auto, fs_arabic, em_px, arabic_width)
 	print_paragraph(arabic_text, arabic_width, arabic_runs[0])
+	// Urdu MUST use fs_urdu; under fs_arabic the same codepoints would resolve to Naskh instead of
+	// Nastaliq (both have_glyph, primary wins).
+	urdu_width := 220.0
+	urdu_runs := layout.wrap_paragraph(ctx, urdu_text.runes(), .auto, fs_urdu, em_px, urdu_width)
+	print_paragraph(urdu_text, urdu_width, urdu_runs)
 	println('')
 
 	// Each column is as wide as its own widest line and no wider, so the four of them sit side by side
@@ -95,20 +122,38 @@ fn main() {
 			arabic_w = l.line.width
 		}
 	}
+	mut cyrillic_w := 0.0
+	mut cyrillic_h := 0.0
+	for l in cyrillic_runs {
+		if l.line.width > cyrillic_w {
+			cyrillic_w = l.line.width
+		}
+		cyrillic_h += l.line.ascent + l.line.descent
+	}
+	mut urdu_w := 0.0
+	mut urdu_h := 0.0
+	for l in urdu_runs {
+		if l.line.width > urdu_w {
+			urdu_w = l.line.width
+		}
+		urdu_h += l.line.ascent + l.line.descent
+	}
 	// A column is as wide as its content plus its margin rule, and the widest column sets the canvas.
 	mut widest_column := 0.0
+	for w in [cyrillic_w, arabic_w, urdu_w] {
+		if w > widest_column {
+			widest_column = w
+		}
+	}
 	for w in column_w {
 		if w > widest_column {
 			widest_column = w
 		}
 	}
-	if arabic_w > widest_column {
-		widest_column = arabic_w
-	}
 	canvas_w := int((widest_column + column_gap) * f64(widths.len)) + 2 * margin
-	// The canvas is as tall as the tallest column, and the Arabic fits inside the second one's space, so
-	// nothing has to be reserved below.
-	canvas_h := int(tallest) + 2 * margin
+	// The canvas is as tall as the tallest column, and the extra paragraphs fit inside the short
+	// columns' space, so nothing has to be reserved below.
+	canvas_h := int(tallest + cyrillic_h + urdu_h) + 2 * margin
 
 	mut canvas := paint.new_canvas(canvas_w, canvas_h, 0xff)
 
@@ -131,7 +176,8 @@ fn main() {
 	// The Arabic paragraph goes under the shortest column rather than below all of them. The four columns
 	// have two, three, five and ten lines, so a uniform block for each leaves three of them mostly empty
 	// and pushing the Arabic below the tallest as well puts it a long way from anything. It fits in the
-	// second column's space, which is where a reader looks after reading the four widths.
+	// second column's space, which is where a reader looks after reading the four widths. Cyrillic+Greek
+	// and Urdu stack below it in the same column.
 	mut second_bottom := 0.0
 	for l in latin_runs[1] {
 		second_bottom += l.line.ascent + l.line.descent
@@ -144,6 +190,18 @@ fn main() {
 		baseline += l.line.ascent + l.line.descent
 	}
 	draw_margin(mut canvas, arabic_x, arabic_w, arabic_top - 12.0, baseline)
+	baseline += case_gap
+	for l in cyrillic_runs {
+		draw_line(mut canvas, l, arabic_x, baseline)
+		baseline += l.line.ascent + l.line.descent
+	}
+	draw_margin(mut canvas, arabic_x, cyrillic_w, baseline - cyrillic_h - 12.0, baseline)
+	baseline += case_gap
+	for l in urdu_runs {
+		draw_line(mut canvas, l, arabic_x, baseline)
+		baseline += l.line.ascent + l.line.descent
+	}
+	draw_margin(mut canvas, arabic_x, urdu_w, baseline - urdu_h - 12.0, baseline)
 
 	canvas.write_png('line_break.png')
 }

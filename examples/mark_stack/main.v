@@ -25,6 +25,8 @@
 //     the easiest way to believe mark-to-mark works when it never ran.
 //   - The marks on a lam-alef use mark-to-ligature, because the lam-alef is two characters fused into one
 //     glyph and the font says which part of it each mark belongs to.
+//   - A fatha on the Persian gaf and a stack on the Urdu bheh prove the same tables answer beyond Arabic:
+//     the corpus Naskh face carries the Persian and Urdu codepoints, and HarfBuzz reads the same anchors.
 //   - The last row uses a mark the font has a glyph for and no rule anywhere. The engine finds the glyph
 //     and places nothing, which is the correct answer to a font that has said nothing.
 module main
@@ -71,6 +73,14 @@ const rows = [
 	Row{
 		text:  'ب́'
 		about: 'a mark no rule places: the glyph is found and positioned nowhere'
+	}
+	Row{
+		text:  'گَ'
+		about: 'fatha on gaf (Persian U+06AF): mark to base; Naskh draws gaf as keheh plus its sarkash'
+	}
+	Row{
+		text:  'بھِّ'
+		about: 'shadda on kasra on bheh (Urdu U+06BE): mark to mark; Naskh covers U+06AF/U+06BE/U+06D2, FiraCode none'
 	},
 ]
 
@@ -88,13 +98,13 @@ const baseline_level = u8(205)
 
 fn main() {
 	ctx := shape.new_context()
-	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := shape.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('NotoNaskhArabic-Regular.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	latin := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
 	fs := shape.new_script_font_set(arabic, latin)
 
 	// What the font says it can do. Every row below depends on these three answers, and printing them
 	// means a reader does not have to take the picture's word for which rules were used.
-	println(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf'))
+	println(corpus.font('NotoNaskhArabic-Regular.ttf', 'Amiri-Regular.ttf'))
 	println('  places marks on a base      ${arabic.has_mark_attachment()}')
 	println('  stacks one mark on another  ${arabic.stacks_marks()}')
 	println('  puts a mark on a ligature   ${arabic.places_marks_on_ligatures()}')

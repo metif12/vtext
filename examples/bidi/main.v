@@ -8,9 +8,10 @@
 //
 // Four lines, each one a different thing the algorithm has to decide:
 //
-//   - "The word سلام means peace." is mostly Latin with one Arabic word in it. Nothing moves; the Arabic
-//     runs right to left inside a left-to-right paragraph. This is the easy one, and it is here so the
-//     other three have something to be different from.
+//   - "The word سلام means peace: Привет Γειά." is mostly Latin with one Arabic word in it, plus one
+//     Cyrillic and one Greek word. Nothing moves; the Arabic runs right to left inside a left-to-right
+//     paragraph. This is the easy one, and it is here so the other three have something to be
+//     different from.
 //   - "سلام The world" starts right to left, so the Latin moves to the *left* of the Arabic and the
 //     paragraph level is odd. A line like this drawn as if it were the first one has the order of its
 //     halves swapped.
@@ -19,7 +20,9 @@
 //     is the part that surprises people reading the source left to right.
 //   - "۱۲۳ فارسی abc ۴۵۶" has two separate runs of Persian digits. Each one takes the direction of its
 //     own neighbours, so the line reads as two right-to-left islands whose digits each keep their own
-//     left-to-right order. The visual order printed under the line is the only honest way to read it.
+//     left-to-right order, with an Urdu tail (اردو ےھ) proving the Persian digits and the Urdu
+//     letters share one direction. The visual order printed under the line is the only honest way to
+//     read it.
 module main
 
 import math
@@ -30,10 +33,10 @@ import paint
 import vtext.layout
 
 const paragraphs = [
-	'The word سلام means peace.',
+	'The word سلام means peace: Привет Γειά.',
 	'سلام The world',
 	'abc سلام 123 def',
-	'۱۲۳ فارسی abc ۴۵۶',
+	'۱۲۳ فارسی abc ۴۵۶ اردو ےھ',
 ]
 
 const em_px = 40.0
@@ -47,8 +50,10 @@ const print_gap = 14.0
 
 fn main() {
 	ctx := shape.new_context()
-	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	// FiraCode carries the Latin, Cyrillic and Greek words and none of the Arabic; Noto Naskh carries
+	// the Arabic, the Persian digits and the Urdu tail. Both are committed corpus fonts.
+	latin := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('NotoNaskhArabic-Regular.ttf')) or { panic('cannot open ${err}') }
 	fs := shape.new_script_font_set(arabic, latin)
 
 	// Resolve every paragraph first, because both the drawing and the printing need the answer and the

@@ -1,16 +1,17 @@
-// kerning shows the same word in a font that kerns and in one that does not, with each glyph's advance
-// drawn so the gap between two letters can be measured rather than asserted.
+// kerning shows the same word in a font set that kerns and in one that does not, with each glyph's
+// advance drawn so the gap between two letters can be measured rather than asserted.
 //
-// The comparison is only honest because both fonts are real and the difference is a font's own decision.
-// Segoe UI carries 8146 Latin kern pairs and Tahoma carries none at all for Latin, so the two lines below
-// differ by what the fonts say rather than by what the engine did. Tahoma is not missing the table by
-// accident: it has Arabic kerning and no Latin kerning, which is a choice a font can make and this
+// The comparison is only honest because both sets are real and the difference is a font's own decision.
+// Amiri kerns both Latin and Arabic, Noto Naskh kerns Latin but not Arabic, and FiraCode (monospace)
+// kerns nothing at all, so the two lines below differ by what the fonts say rather than by what the
+// engine did. That a font kerns one script and not another is a choice a font can make and this
 // engine has to respect.
 //
 // What to read off the picture:
 //
-//   - The letters are the same and the spacing is not. Segoe UI closes AV, AT and Yo, and Tahoma leaves
-//     them at their own advances. Both are correct for their font.
+//   - The letters are the same and the spacing is not. Amiri closes Latin AV by 62 units and names a
+//     (zero-valued) rule on one Arabic join; the FiraCode+Naskh line leaves both alone. Each is
+//     correct for its fonts.
 //   - The rule under each glyph is its advance. Two rules the same width apart with no kern are the whole
 //     of the difference: a kern is a change to an advance, so a gap that closes is one advance that grew
 //     shorter.
@@ -28,46 +29,41 @@ import paint
 import vtext.layout
 import vtext.shape
 
-// Two fonts that both cover Latin, and differ in how hard they kern.
+// Two sets that both cover Latin, Cyrillic and Arabic, and differ in how hard they kern.
 //
-// Segoe UI carries 8146 Latin kern pairs and Tahoma carries none at all for Latin, which is a choice a
-// font can make: Tahoma has Arabic kerning and no Latin kerning, and this engine has to respect that.
-// The sizes differ too, and that is the second thing to read off the picture: two fonts of the same point
-// size are not the same size, so a line that looks bigger in one of them is the font's doing.
+// Amiri kerns Latin and Arabic; Noto Naskh kerns Latin but not Arabic; FiraCode kerns nothing
+// (monospace, only cpsp). The sizes differ too, and that is the second thing to read off the picture:
+// two fonts of the same point size are not the same size, so a line that looks bigger in one of them
+// is the font's doing.
 
-// Every letter here has a diagonal pair next to it somewhere in the word, which is where a font's
-// kerning lives. Kerning a word with no diagonal in it shows nothing.
-const word = 'AVAST To Yo WAY'
+// A Latin pair the first set kerns and the second does not, and a Cyrillic pair neither kerns
+// (FiraCode is monospace): the discretionary difference and the honest null, both on base glyphs.
+// Arabic kerns address shaped forms, not base letters, so that pair is probed from the laid-out
+// line below rather than from the cmap. The Arabic word is مدرسة because Amiri names a rule on
+// one of its joins (with value zero: a rule saying "no adjustment" is still a rule) while Naskh
+// names none at all, which is exactly the has_kerning distinction drawn above.
+const word = 'AV АВ مدرسة'
 
-// The pairs to report. These are the numbers fontTools reads out of these files, and the test file
-// gpos_kern1_test.v fixes the same values, so the printing and the tests cannot drift apart.
+// The pairs to report, each with the script it resolves under. These are the numbers fontTools reads
+// out of these files, so the printing can be checked against the fonts rather than believed.
 const pairs = [
 	Pair{
-		left:  'A'
-		right: 'V'
+		left:   'A'
+		right:  'V'
+		script: 'latn'
 	}
 	Pair{
-		left:  'T'
-		right: 'o'
-	}
-	Pair{
-		left:  'Y'
-		right: 'o'
-	}
-	Pair{
-		left:  'W'
-		right: 'A'
-	}
-	Pair{
-		left:  'V'
-		right: 'A'
+		left:   'А'
+		right:  'В'
+		script: 'cyrl'
 	},
 ]
 
-// Pair is one pair of letters and where the font has an opinion about it.
+// Pair is one pair of letters, the script it resolves under, and where the font has an opinion about it.
 struct Pair {
-	left  string
-	right string
+	left   string
+	right  string
+	script string
 }
 
 const em_px = 90.0
@@ -79,21 +75,31 @@ const rule_level = u8(205)
 
 fn main() {
 	ctx := shape.new_context()
-	kerned := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	plain := shape.load_font_file(corpus.font('tahoma.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	amiri := shape.load_font_file(corpus.font('Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	naskh := shape.load_font_file(corpus.font('NotoNaskhArabic-Regular.ttf')) or { panic('cannot open ${err}') }
+	fira := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
+	// First covering wins: Latin and Cyrillic come from FiraCode in neither set here, Arabic from Amiri
+	// in the first and from Naskh in the second. Amiri kerns both scripts, Naskh only Latin.
+	kerned_fs := shape.new_font_set_of(amiri, fira)
+	plain_fs := shape.new_font_set_of(fira, naskh)
 
-	// What the two fonts say about themselves, printed because the picture only means something next to
+	// What the fonts say about themselves, printed because the picture only means something next to
 	// it: a difference in the spacing is a difference in the font, not in the engine.
 	println('${word}')
 	println('')
-	println(': kerns latin = ${kerned.kerns('latn', '')}')
-	println(': kerns latin = ${plain.kerns('latn', '')}')
+	println('amiri: kerns latin = ${amiri.kerns('latn', '')}   arab = ${amiri.kerns('arab', '')}')
+	println('naskh: kerns latin = ${naskh.kerns('latn', '')}   arab = ${naskh.kerns('arab', '')}')
+	println('fira:  kerns latin = ${fira.kerns('latn', '')}   arab = ${fira.kerns('arab', '')}')
 	println('')
 	for p in pairs {
 		l := p.left.runes()[0]
 		r := p.right.runes()[0]
-		k := kerned.kern_offset(kerned.glyph_index(l), kerned.glyph_index(r), 'latn', '')
-		u := plain.kern_offset(plain.glyph_index(l), plain.glyph_index(r), 'latn', '')
+		lf := kerned_fs.pick(l) or { amiri }
+		rf := kerned_fs.pick(r) or { amiri }
+		f := if lf.path() == rf.path() { lf } else { lf }
+		k := f.kern_offset(f.glyph_index(l), f.glyph_index(r), p.script, '')
+		pf := plain_fs.pick(l) or { fira }
+		u := pf.kern_offset(pf.glyph_index(l), pf.glyph_index(r), p.script, '')
 		// The value as a plain number, because an Option printed across four lines is not something a
 		// reader can compare down a column.
 		mut ks := 'none'
@@ -106,15 +112,17 @@ fn main() {
 			got := u
 			us = '${got.x}'
 		}
-		println('  ${p.left}${p.right}: segoe ${ks:>7}   tahoma ${us:>7}')
+		println('  ${p.left}${p.right} (${p.script}): kerned ${ks:>7}   plain ${us:>7}')
 	}
 
-	// Lay the word out once in each font to learn how wide it is and how tall it needs to be.
+	// Lay the word out in both sets first: the lines size the canvas, and the kerned line
+	// supplies the shaped Arabic pair below.
+	kerned_line := layout.layout_paragraph(ctx, word.runes(), .auto, kerned_fs, em_px)
+	plain_line := layout.layout_paragraph(ctx, word.runes(), .auto, plain_fs, em_px)
 	mut widest := 0.0
 	mut ascent := 0.0
 	mut descent := 0.0
-	for f in [kerned, plain] {
-		line := layout.layout_paragraph(ctx, word.runes(), .ltr, shape.new_font_set_of(f), em_px)
+	for line in [kerned_line, plain_line] {
 		if line.width > widest {
 			widest = line.width
 		}
@@ -125,18 +133,52 @@ fn main() {
 			descent = line.descent
 		}
 	}
+	println('  ${word}: kerned width ${kerned_line.width:.2f}   plain width ${plain_line.width:.2f}')
+	// The Arabic probe on shaped glyphs: the first adjacent same-font pair of each laid-out
+	// line, asked of its own font. Base letters name no Arabic kern in these faces; the joins
+	// do, and the joins only exist after shaping, so the cmap cannot supply this pair.
+	println('  shaped arab pair: kerned ${shaped_kern(kerned_line, amiri):>7}   plain ${shaped_kern(plain_line, naskh):>7}')
 	canvas_w := int(widest) + 2 * margin
 	canvas_h := int((ascent + descent + row_gap) * 2.0) + 2 * margin + 24
 
 	mut canvas := paint.new_canvas(canvas_w, canvas_h, 0xff)
 	mut baseline := f64(margin) + ascent
-	for f in [kerned, plain] {
-		line := layout.layout_paragraph(ctx, word.runes(), .ltr, shape.new_font_set_of(f), em_px)
-		draw_row(mut canvas, f, line, baseline, ascent, descent)
+	for line in [kerned_line, plain_line] {
+		draw_row(mut canvas, line, baseline, ascent, descent)
 		baseline += ascent + descent + row_gap
 	}
 
 	canvas.write_png('kerning.png')
+}
+
+// shaped_kern asks a font about the adjacent same-font pairs of a laid-out line: the pairs
+// whose glyphs the shaper actually put next to each other, which for Arabic are shaped forms
+// the cmap never names. The first firing rule wins; a zero value is reported as 0 (a rule saying
+// "no adjustment" is still a rule, and different from no rule), and no firing rule is 'none'.
+fn shaped_kern(line layout.Line, f &shape.Font) string {
+	mut fired := false
+	for i in 0 .. line.glyphs.len - 1 {
+		a := line.glyphs[i]
+		b := line.glyphs[i + 1]
+		fa := a.font or { continue }
+		fb := b.font or { continue }
+		if fa.path() != f.path() || fb.path() != f.path() {
+			continue
+		}
+		if a.advance <= 0 || b.advance <= 0 {
+			continue
+		}
+		if k := f.kern_offset(a.gid, b.gid, 'arab', '') {
+			if k.x != 0 || k.y != 0 {
+				return '${k.x},${k.y}'
+			}
+			fired = true
+		}
+	}
+	if fired {
+		return '0'
+	}
+	return 'none'
 }
 
 // draw_row paints one line of the word with each glyph's advance ruled.
@@ -148,9 +190,10 @@ fn main() {
 // The pen is marked with a full-height line and the advance with a short one at the foot, so the three
 // things a reader needs to tell apart are three different marks: where the pen was, where it went, and
 // how far it moved.
-fn draw_row(mut canvas paint.Canvas, f &shape.Font, line layout.Line, baseline f64, ascent f64,
+fn draw_row(mut canvas paint.Canvas, line layout.Line, baseline f64, ascent f64,
 	descent f64) {
 	for g in line.glyphs {
+		f := g.font or { continue }
 		canvas.draw_glyph_at(f, g, baseline, em_px, f64(margin))
 	}
 	baseline_i := int(baseline)

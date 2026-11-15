@@ -37,9 +37,9 @@ struct Row {
 	line_height    f64
 }
 
-// One line with spaces in it, so word spacing has something to open, and a ZWNJ pair, so a
-// reader can check the spacing did not break the join.
-const text = 'این یک جملهٔ فارسی است'
+// One multilingual line: Latin + Cyrillic + Greek + Arabic + Persian + Urdu, with spaces and a ZWNJ,
+// so word spacing has something to open and a reader can check the spacing did not break the join.
+const text = 'Hello AV Αα АВ سلام فارسی می‌روم بھ'
 
 const rows = [
 	Row{
@@ -61,7 +61,7 @@ const rows = [
 		line_height:    0.0
 	}
 	Row{
-		about:          'word spacing 8: only the four spaces opened'
+		about:          'word spacing 8: only the seven spaces opened'
 		letter_spacing: 0.0
 		word_spacing:   8.0
 		line_height:    0.0
@@ -83,9 +83,9 @@ const rule_level = u8(205)
 
 fn main() {
 	ctx := shape.new_context()
-	arabic := shape.load_font_file(corpus.font('trado.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	latin := shape.load_font_file(corpus.font('segoeui.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	fs := shape.new_script_font_set(arabic, latin)
+	fira := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
+	arabic := shape.load_font_file(corpus.font('Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
+	fs := shape.new_font_set_of(fira, arabic)
 
 	// Every row is laid out and measured with the same options, so the printed measure and
 	// the drawn line cannot disagree about the width of the text.

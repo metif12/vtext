@@ -10,12 +10,11 @@
 // How the two are told apart here:
 //
 //   - A glyph some codepoint reaches is drawn at full ink. A glyph more than one codepoint reaches is drawn
-//     lighter. Consolas has 40 such glyphs: U+0000 and U+0008 both land on gid 1, and U+0020 and U+00A0
-//     both land on gid 3. Two characters, one glyph, and the second is invisible.
-//   - A glyph no scanned codepoint reaches is drawn faintly. Consolas has 1650 of its 3031 glyphs like
-//     that. They are not broken: most are reached from the private use area or from above the range
-//     scanned here, and some are there for another application entirely. The point of drawing them at all
-//     is that they are real ink the engine can draw and ordinary text cannot ask for.
+//     lighter. Two characters, one glyph, and the second is invisible.
+//   - A glyph no scanned codepoint reaches is drawn faintly. They are not broken: most are reached from
+//     the private use area or from above the range scanned here, and some are there for another
+//     application entirely. The point of drawing them at all is that they are real ink the engine can
+//     draw and ordinary text cannot ask for.
 //
 // The scan is bounded rather than exhaustive, and the bound is stated rather than hidden: U+0000 to
 // U+24FF, which covers Latin, Greek, Cyrillic, Hebrew, Arabic, Syriac and their punctuation. A glyph drawn
@@ -42,86 +41,118 @@ const many_level = u8(150)
 const none_level = u8(225)
 
 fn main() {
-	f := shape.load_font_file(corpus.font('consola.ttf', 'Amiri-Regular.ttf')) or { panic('cannot open ${err}') }
-	glyphs := f.num_glyphs()
-	println(corpus.font('consola.ttf', 'Amiri-Regular.ttf'))
-	println('  ${glyphs} glyphs, ${f.units_per_em()} units per em')
-
-	// The reverse map, built by asking the font forward for every codepoint in the range. There is no
-	// reverse lookup in the API and there does not need to be: the font is the authority on which
-	// character is which glyph, and walking the other way is harder to get wrong than reading the cmap
-	// tables a second time.
-	mut reached := map[u16][]rune{}
-	mut scanned := 0
-	for cp in scan_first .. scan_last {
-		scanned++
-		r := rune(cp)
-		if !f.has_glyph(r) {
-			continue
-		}
-		gid := f.glyph_index(r)
-		if gid == 0 {
-			// A character the font names .notdef for is absent, not present as a box. Counting it would
-			// put a codepoint against the wrong glyph.
-			continue
-		}
-		reached[gid] << r
+	fira := shape.load_font_file(corpus.font('FiraCode-Variable.ttf')) or { panic('cannot open ${err}') }
+	amiri := shape.load_font_file(corpus.font('Amiri-Regular.ttf', 'NotoNaskhArabic-Regular.ttf')) or {
+		panic('cannot open ${err}')
+	}
+	// Two faces, same range, per-script counts: FiraCode covers Latin/Cyrillic/Greek, Amiri covers
+	// Latin/Arabic-script. A faint cell means unreachable from ordinary text in that face, not absent.
+	fonts := [fira, amiri]
+	mut total_glyphs := 0
+	mut total_rows := 0
+	for f in fonts {
+		glyphs := f.num_glyphs()
+		total_glyphs += glyphs
+		total_rows += (glyphs + columns - 1) / columns
+		println('${f.path().split('/').last()}')
+		println('  ${glyphs} glyphs, ${f.units_per_em()} units per em')
 	}
 
-	mut one := 0
-	mut many := 0
-	mut unreachable := 0
-	for count_index in 0 .. glyphs {
-		// The lookup is not `m[k] or []rune{}`. That form compiles fine on a map whose values are
-		// strings and fails on one whose values are slices of a struct or of a rune, and the failure is
-		// reported as an unexpected end of file at the end of the function rather than at the line, so
-		// the message points nowhere near the expression that caused it.
-		//
-		// Asking whether the key is there first is the form that compiles, and it reads no worse.
-		mut lst := []rune{}
-		if count_index in reached {
-			lst = reached[u16(count_index)]
+	// The reverse maps, built by asking each font forward for every codepoint in the range.
+	mut reached_list := []map[u16][]rune{cap: fonts.len}
+	for f in fonts {
+		mut reached := map[u16][]rune{}
+		for cp in scan_first .. scan_last {
+			r := rune(cp)
+			if !f.has_glyph(r) {
+				continue
+			}
+			gid := f.glyph_index(r)
+			if gid == 0 {
+				continue
+			}
+			reached[gid] << r
 		}
-		if lst.len == 1 {
-			one++
-		} else if lst.len > 1 {
-			many++
-		} else {
-			unreachable++
-		}
+		reached_list << reached
 	}
-	println('  scanned ${scanned} codepoints, U+${scan_first:04X}..U+${scan_last - 1:04X}')
-	println('  ${one} glyphs reached by one codepoint')
-	println('  ${many} reached by more than one, so the others are invisible')
-	println('  ${unreachable} reached by nothing in that range')
-	println('  index 0 is .notdef and is in none of those')
 
-	// The grid: one cell per glyph, in glyph order, so a run of faint cells is a run of glyphs nothing
-	// reaches rather than a gap in the drawing.
-	rows := (glyphs + columns - 1) / columns
+	for fi, f in fonts {
+		reached := reached_list[fi]
+		glyphs := f.num_glyphs()
+		mut one := 0
+		mut many := 0
+		mut unreachable := 0
+		for count_index in 0 .. glyphs {
+			mut lst := []rune{}
+			if count_index in reached {
+				lst = reached[u16(count_index)]
+			}
+			if lst.len == 1 {
+				one++
+			} else if lst.len > 1 {
+				many++
+			} else {
+				unreachable++
+			}
+		}
+		// Per-script reached codepoints (not glyphs): Latin, Greek, Cyrillic, Arabic buckets.
+		mut n_latin := 0
+		mut n_greek := 0
+		mut n_cyrl := 0
+		mut n_arab := 0
+		for _, cps in reached {
+			for cp in cps {
+				if (cp >= 0x20 && cp <= 0x7e) || (cp >= 0xa0 && cp <= 0xff)
+					|| (cp >= 0x100 && cp <= 0x17f) {
+					n_latin++
+				} else if cp >= 0x370 && cp <= 0x3ff {
+					n_greek++
+				} else if cp >= 0x400 && cp <= 0x4ff {
+					n_cyrl++
+				} else if cp >= 0x600 && cp <= 0x6ff {
+					n_arab++
+				}
+			}
+		}
+		println('  scanned U+${scan_first:04X}..U+${scan_last - 1:04X}')
+		println('  ${one} glyphs reached by one codepoint')
+		println('  ${many} reached by more than one, so the others are invisible')
+		println('  ${unreachable} reached by nothing in that range')
+		println('  codepoints reached: latin ${n_latin} greek ${n_greek} cyrillic ${n_cyrl} arabic ${n_arab}')
+		println('  index 0 is .notdef and is in none of those')
+	}
+
+	// The grids stacked: one cell per glyph, in glyph order, so a run of faint cells is a run of
+	// glyphs nothing reaches rather than a gap in the drawing.
 	canvas_w := columns * cell + 2 * margin
-	canvas_h := rows * cell + 2 * margin
+	canvas_h := total_rows * cell + 2 * margin
 	mut canvas := paint.new_canvas(canvas_w, canvas_h, 0xff)
 
-	for g in 1 .. glyphs {
-		gid := u16(g)
-		mut lst := []rune{}
-		if g in reached {
-			lst = reached[gid]
+	mut y0 := margin
+	for fi, f in fonts {
+		reached := reached_list[fi]
+		glyphs := f.num_glyphs()
+		for g in 1 .. glyphs {
+			gid := u16(g)
+			mut lst := []rune{}
+			if g in reached {
+				lst = reached[gid]
+			}
+			mut level := none_level
+			if lst.len > 1 {
+				level = many_level
+			} else if lst.len == 1 {
+				level = one_level
+			}
+			x := margin + (g % columns) * cell
+			y := y0 + (g / columns) * cell
+			draw_cell(mut canvas, f, gid, x, y, level)
 		}
-		mut level := none_level
-		if lst.len > 1 {
-			level = many_level
-		} else if lst.len == 1 {
-			level = one_level
-		}
-		x := margin + (g % columns) * cell
-		y := margin + (g / columns) * cell
-		draw_cell(mut canvas, f, gid, x, y, level)
+		y0 += ((glyphs + columns - 1) / columns) * cell
 	}
 
 	canvas.write_png('glyph_grid.png')
-	println('  wrote a ${canvas_w}x${canvas_h} grid of ${glyphs} glyphs')
+	println('  wrote a ${canvas_w}x${canvas_h} grid of ${total_glyphs} glyphs')
 }
 
 // draw_cell paints one glyph into a grid cell, at a grey chosen by how many codepoints reach it.
