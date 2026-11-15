@@ -248,7 +248,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		}
 		paragraph_level: bidi.paragraph_level
 	}
-	position_marks(mut line, em_px, ctx)
+	position_marks(mut line, em_px, ctx, options.vertical)
 	if options.vertical {
 		measure_vertical_line(mut line, em_px, options)
 	} else {
@@ -691,12 +691,17 @@ pub fn larger(a f64, b f64) f64 {
 // follows. A mark with no letter before it in its run, which happens at the start of a word
 // carrying a stray vowel, is left at the pen position.
 //
-// The anchors are the font's horizontal ones. In a vertical line they place the
-// way horizontal text does, which is a later slice to correct; a vertical line
-// with no marks is unaffected, which is what the vertical tests pin.
+// The anchors are the font's own in both modes: a vertical base is the vert
+// variant the substitution pass already chose, and anchors are written
+// per glyph, so the same tables answer. What changes is the frame: in a
+// horizontal line every base sits at the baseline and the mark's absolute
+// offset lands on it, while in a vertical line the base hangs below the pen
+// by the vertical origin and the mark has to hang with it — measured from
+// the base rather than from zero. A vertical line with no marks is
+// unaffected either way.
 // A `mut` value receiver for the reason given on measure_line: `mut line &Line` as a
 // parameter is a pair V 0.5.2 will not accept at a `position_marks(mut line, ...)` call.
-pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context) {
+pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical bool) {
 	// Two passes, and the order matters. The line is in visual order, and in a right-to-left
 	// line a mark comes before the letter it belongs to, so collecting the letters and then
 	// placing the marks in one pass would find the mark's base already behind it. Collecting
@@ -792,7 +797,11 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context) {
 				if off := stack_font.mark_offset_in(g.gid, target.gid, true, script) {
 					stack_scale := em_px / f64(stack_font.face.units_per_em)
 					line.glyphs[i].x = target.x + f64(off.x) * stack_scale
-					line.glyphs[i].y = -f64(off.y) * stack_scale
+					if vertical {
+						line.glyphs[i].y = target.y - f64(off.y) * stack_scale
+					} else {
+						line.glyphs[i].y = -f64(off.y) * stack_scale
+					}
 					continue
 				}
 			}
@@ -814,8 +823,15 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context) {
 		scale := em_px / f64(f.face.units_per_em)
 		line.glyphs[i].x = base.x + f64(off.x) * scale
 		// y is positive upwards in the font's coordinates and downwards on a line, so the sign
-		// is flipped here rather than leaving every caller to remember.
-		line.glyphs[i].y = -f64(off.y) * scale
+		// is flipped here rather than leaving every caller to remember. In a
+		// vertical line the flip is measured from the base, which hangs below
+		// the pen by the vertical origin: from zero the mark would land a whole
+		// origin above its letter.
+		if vertical {
+			line.glyphs[i].y = base.y - f64(off.y) * scale
+		} else {
+			line.glyphs[i].y = -f64(off.y) * scale
+		}
 	}
 }
 

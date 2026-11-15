@@ -966,6 +966,23 @@ face like Amiri stays unshifted, which the smoke test's column pins. Wrapped
 columns are unaffected — slicing rebases to the kept glyph's y, so the shift
 cancels out and heights stay pen travel. Pinned by `vertical_test.v` with
 revert controls neutering the shift and flipping its sign.
+Slice 2g landed 2026-11-15: hiragana reads the kana rules, vertical marks hang
+with their base, and chaining goes first-match-wins — three sub-fixes one test
+needed. OpenType has no hira tag, so MS Gothic files hiragana vert variants
+and dakuten anchors alike under kana and a run asking under hira finds
+nothing: `ot_script_tag` folds hira to kana in `Gsub.script` and
+`Gpos.lookups_for`, and small ぁ draws its HarfBuzz-pinned vertical form
+(gid 21181) while あ stays unsubstituted. `position_marks` takes the vertical
+flag and measures the mark's y from the hung base instead of zero, so the
+dakuten on あ゙ sits at the anchor difference (18 right, 12 up in font units)
+from its letter in both frames. And `apply_chain`/`apply_context` stop at the
+first matching rule even with empty records, with `parse_chain3` keeping
+zero-record subtables: the ccmp no-op over 127 bases blocks the dotted-circle
+expansion exactly as HarfBuzz does. Pinned by `vertical_test.v` with revert
+controls neutering the mapping, the hang and the first-match rule separately.
+A known gap remains, and it is not vertical: a Common base like the dotted
+circle still resolves arab and misses the kana anchors, and horizontal text
+has the same gap.
 
 ## Phase 2: reach
 

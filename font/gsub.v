@@ -964,27 +964,28 @@ pub fn (g &Gsub) apply_records(records []ChainRecord, m ChainMatch, items []Liga
 }
 
 // apply_chain runs a chaining context's records against the run once its pattern has matched.
+//
+// The first subtable whose pattern matches claims the glyph, even when it names no
+// records at all: a no-op match still ends the search. MS Gothic's ccmp keeps a
+// rule that expands a dakuten into a dotted circle plus the mark behind a rule
+// that matches a dakuten after any of 127 bases and names nothing, and trying on
+// past the no-op draws the dotted circle on every composed kana exactly as
+// HarfBuzz does not.
 pub fn (g &Gsub) apply_chain(lookup Lookup, items []Ligatable, eff []int, at int,
 	depth int) ?Substitution {
 	for chain in lookup.chains {
 		if m := g.match_chain_at(chain, eff, items, at) {
-			if sub := g.apply_records(chain.records, m, items, eff, depth) {
-				return sub
-			}
+			return g.apply_records(chain.records, m, items, eff, depth)
 		}
 	}
 	for cg in lookup.chain_glyphs {
 		if m, rule := g.match_chain_glyph_at(cg, eff, items, at) {
-			if sub := g.apply_records(rule.records, m, items, eff, depth) {
-				return sub
-			}
+			return g.apply_records(rule.records, m, items, eff, depth)
 		}
 	}
 	for cc in lookup.chain_classes {
 		if m, rule := g.match_chain_class_at(cc, eff, items, at) {
-			if sub := g.apply_records(rule.records, m, items, eff, depth) {
-				return sub
-			}
+			return g.apply_records(rule.records, m, items, eff, depth)
 		}
 	}
 	return none
@@ -1005,18 +1006,14 @@ pub fn (g &Gsub) apply_context(lookup Lookup, items []Ligatable, eff []int, at i
 		if ci < lookup.context_sets.len {
 			for rule in lookup.context_sets[ci] {
 				if m := g.match_context_at(rule, eff, items, at) {
-					if sub := g.apply_records(rule.records, m, items, eff, depth) {
-						return sub
-					}
+					return g.apply_records(rule.records, m, items, eff, depth)
 				}
 			}
 		}
 	}
 	for cc in lookup.context_classes {
 		if m, rule := g.match_context_class_at(cc, eff, items, at) {
-			if sub := g.apply_records(rule.records, m, items, eff, depth) {
-				return sub
-			}
+			return g.apply_records(rule.records, m, items, eff, depth)
 		}
 	}
 	return none
@@ -1362,7 +1359,7 @@ pub fn edit_at(edits []Edit, at int) ?Edit {
 // Passing the Unicode spelling straight through would find nothing, and the symptom would be
 // Arabic letters quietly drawing in their base shape with nothing to say why.
 pub fn (g &Gsub) script(tag string) ?Script {
-	want := ascii_lower(tag)
+	want := ot_script_tag(tag)
 	for s in g.scripts {
 		if s.tag == want {
 			return s
@@ -1380,6 +1377,21 @@ pub fn ascii_lower(s string) string {
 		out[i] = if b >= `A` && b <= `Z` { b + 32 } else { b }
 	}
 	return out.bytestr()
+}
+
+// ot_script_tag is the OpenType script tag for a Unicode script tag: lowercased,
+// with the scripts OpenType files under a shared tag folded together. Hiragana
+// has no tag of its own — a font files hiragana and katakana rules alike under
+// kana, which is where MS Gothic keeps its vert variants and its dakuten
+// anchors, so asking under hira finds nothing on a file that reads correctly
+// everywhere else. Katakana, Han and Latin already arrive spelled the way the
+// files spell them and pass through unchanged.
+pub fn ot_script_tag(tag string) string {
+	lower := ascii_lower(tag)
+	if lower == 'hira' {
+		return 'kana'
+	}
+	return lower
 }
 
 // feature_tag_for is the GSUB feature tag that carries a joining shape.
@@ -1890,8 +1902,10 @@ pub fn parse_chain3(r &Reader, at int) ?ChainContext3 {
 	p += 2
 	// Every record is four bytes, so a count that cannot fit in what is left of the table is a
 	// font claiming more than it has. The count is the last thing read from the subtable, so
-	// there is nothing past it to be out of step with.
-	if count < 1 || count * 4 > r.len() - p {
+	// there is nothing past it to be out of step with. Zero records is kept rather than
+	// dropped: a rule that matches and names nothing still claims the glyph, which is what
+	// keeps MS Gothic's dakuten from gaining a dotted circle whenever a base precedes it.
+	if count * 4 > r.len() - p {
 		return none
 	}
 	for i in 0 .. count {

@@ -368,3 +368,54 @@ fn test_vertical_vkrn_tightens() {
 	assert vline.glyphs[1].y == 1.921875, 'second glyph starts where the kerned step ends'
 	assert vline.height == 33.921875, 'shifted tightened column'
 }
+
+// Hiragana files its rules under kana: OpenType has no hira tag, so MS Gothic
+// keeps hiragana vert variants and dakuten anchors alike under kana and a run
+// asking under hira finds nothing. Small ぁ has a vertical variant where あ
+// has none, which is what tells a missed lookup from a missing rule: ぁ must
+// come back substituted and あ unchanged, both HarfBuzz-pinned.
+fn test_vertical_hiragana_reads_kana_rules() {
+	data := msgothic_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	vopts := layout.LayoutOptions{ vertical: true }
+	small := layout.layout_paragraph_with(ctx, 'ぁ'.runes(), .auto, fs, 32.0, &vopts)
+	assert small.glyphs.len == 1
+	assert small.glyphs[0].gid == 21181, 'small a draws its vertical form'
+	assert small.glyphs[0].y == -27.5, 'hung below the pen like every vertical base'
+	plain := layout.layout_paragraph_with(ctx, 'あ'.runes(), .auto, fs, 32.0, &vopts)
+	assert plain.glyphs.len == 1
+	assert plain.glyphs[0].gid == 2102, 'a has no vertical variant'
+}
+
+// A dakuten on a vertical base hangs with the base: the mark's offset is
+// measured from where the base was placed, not from zero, because the base
+// hangs below the pen by the vertical origin and from zero the mark would land
+// a whole origin above its letter. HarfBuzz TTB pins あ゙ in MS Gothic: the mark
+// sits 18 right and 12 up in font units from the base, the anchor difference,
+// and horizontally it sits at the same anchor with the baseline frame.
+fn test_vertical_mark_hangs_with_base() {
+	data := msgothic_bytes() or { return }
+	original := shape.load_font_bytes(data) or { panic(err) }
+	ctx := shape.new_context()
+	mut fs := shape.new_font_set()
+	fs.add(original)
+	vopts := layout.LayoutOptions{ vertical: true }
+	vline := layout.layout_paragraph_with(ctx, 'あ゙'.runes(), .auto, fs, 32.0, &vopts)
+	assert vline.glyphs.len == 2
+	assert vline.glyphs[0].gid == 2102, 'a has no vertical variant'
+	assert !vline.glyphs[0].is_mark
+	assert vline.glyphs[1].gid == 2187, 'dakuten stays a mark'
+	assert vline.glyphs[1].is_mark
+	assert vline.glyphs[0].x == 0 && vline.glyphs[0].y == -27.5
+	assert vline.glyphs[1].x == 2.25, '18 anchor units right of the base'
+	assert vline.glyphs[1].y == -29.0, '12 anchor units above the hung base'
+	assert vline.glyphs[1].advance == 0.0, 'marks never advance the pen'
+	hline := layout.layout_paragraph(ctx, 'あ゙'.runes(), .auto, fs, 32.0)
+	assert hline.glyphs.len == 2
+	assert hline.glyphs[1].is_mark
+	assert hline.glyphs[1].x == 2.25, 'same anchor against the baseline frame'
+	assert hline.glyphs[1].y == -1.5, '12 anchor units above the baseline'
+}

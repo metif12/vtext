@@ -869,7 +869,7 @@ pub fn (g &Gpos) script_tags() []string {
 
 // lookups_for returns the lookups a script's feature names, in the order to apply them.
 pub fn (g &Gpos) lookups_for(script string, feature string) []u16 {
-	want := ascii_lower(script)
+	want := ot_script_tag(script)
 	for s in g.scripts {
 		if s.tag != want {
 			continue
