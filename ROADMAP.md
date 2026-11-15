@@ -2118,10 +2118,19 @@ The inventory, measured against this tree rather than recalled:
 | AAT morx, Graphite | Apple/SIL shaping | no corpus font | triggered, not scheduled |
 | WOFF2/brotli | web fonts | no | triggered spike (no decoder in tree) |
 
-**8.1 WOFF containers.** WOFF1 reads through zlib into the existing sfnt
-reader — one container, same tables, pinned byte-for-byte against fontTools
-on a converted corpus font. WOFF2 stays a triggered spike: no brotli
-decoder lives in this tree and none is vendored for one slice.
+**8.1 WOFF containers — landed 2026-11-15.** WOFF1 reads through zlib into
+the existing sfnt reader: `font/woff.v` unwraps one container to a plain
+sfnt (per-table inflate via the stdlib, directory rebuilt with recomputed
+checksums and a recalculated head adjustment), and `shape.load_font_bytes`
+takes it transparently. Pinned against fontTools on Amiri converted to WOFF
+in-tree: 15 tables and 6710 glyphs on both sides, table bytes identical
+except `head`'s checkSumAdjustment (recalculated because the rebuild moves
+every table, as fontTools does on de-woffing) and `modified` (restamped by
+fontTools on save), sampled cmap lookups and hmtx advances agreeing, and the
+rebuilt file summing to the 0xB1B0AFBA whole-file magic. 437,780 bytes of
+TTF from 209,512 bytes of WOFF. WOFF2 stays a triggered spike: `wOF2` is
+refused with the reason — it needs a brotli decoder and none lives in this
+tree.
 
 **8.2 Words, sentences, and the caret.** UAX #29 word and sentence tables
 as generated data (the `ucd_sa_mark` pattern), each with the committee's

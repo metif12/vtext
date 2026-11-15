@@ -33,8 +33,11 @@ pub mut:
 // load_font_file reads and parses a font from disk.
 pub fn load_font_file(path string) !&Font {
 	data := os.read_bytes(path) or { return error('cannot read font "${path}": ${err}') }
+	// A WOFF1 file unwraps to its sfnt before parsing; anything else passes
+	// through untouched, and WOFF2 refuses with its reason.
+	raw := font.maybe_woff_to_sfnt(data) or { return error('cannot parse font "${path}": ${err}') }
 	mut f := Font{
-		face: font.new_face(data) or { return error('cannot parse font "${path}": ${err}') }
+		face: font.new_face(raw) or { return error('cannot parse font "${path}": ${err}') }
 		path: path
 	}
 	return &f
@@ -42,8 +45,9 @@ pub fn load_font_file(path string) !&Font {
 
 // load_font_bytes parses a font already held in memory.
 pub fn load_font_bytes(data []u8) !&Font {
+	raw := font.maybe_woff_to_sfnt(data) or { return error('cannot parse font: ${err}') }
 	mut f := Font{
-		face: font.new_face(data) or { return error('cannot parse font: ${err}') }
+		face: font.new_face(raw) or { return error('cannot parse font: ${err}') }
 	}
 	return &f
 }
