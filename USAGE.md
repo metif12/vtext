@@ -58,7 +58,7 @@ for b in layout.break_opportunities(ctx, text.runes(), true) {
 }
 ```
 
-Options (discretionary features, line height, letter and word spacing) have
+Options (discretionary features, line height, letter and word spacing, alignment) have
 `_with` forms that take the same `LayoutOptions`. A paragraph wrapped without
 the features was shaped without them, so the box and the line are sized with
 the same options or they disagree about the width of the same text:
@@ -69,6 +69,8 @@ opts.features = ['-calt', '+dlig'] // -tag turns a default-on feature off, +tag 
 opts.line_height = 28.0
 opts.letter_spacing = 0.5
 opts.word_spacing = 2.0
+opts.align = .center
+opts.align_width = 400.0 // the width align resolves against; 0 is the line's own
 line := layout.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 ```
 
@@ -291,9 +293,11 @@ glyphs, not the fonts.
 Options:
 
 ```c
-vtext_options_t opts = { "-calt", 28.0, 0.5, 2.0, 1, NULL, NULL };
+vtext_options_t opts = { "-calt", 28.0, 0.5, 2.0, 1, NULL, NULL, 3, 400.0 };
 /* features, line_height (0 takes the font's own), letter_spacing, word_spacing, vertical,
-   script, language: each NULL or empty for the default ('arab', 'URD' spell the override) */
+   script, language, align (0 left, 1 center, 2 right, 3 justify), align_width (0 is the
+   line's own; wrapped lines use the wrap width instead).
+   script/language: each NULL or empty for the default ('arab', 'URD' spell the override) */
 ```
 
 calt, liga and clig are on by default; `-tag` turns one off, `+tag` names

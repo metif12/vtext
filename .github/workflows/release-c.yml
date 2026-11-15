@@ -122,6 +122,6 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "C API $tag" \
-              --notes "vtext as a C library: vtext.h, the export list, and the shared library per platform. See USAGE.md for the build, the ownership rules, and the 32 MB caller stack."
+              --notes "vtext as a C library: vtext.h, the export list, and the shared library per platform. See USAGE.md for the build, the ownership rules, and the default 1 MB caller stack."
           fi
           gh release upload "$tag" dist/* --clobber

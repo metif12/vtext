@@ -30,12 +30,12 @@ comes with them.
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
 | Line breaking (UAX #14) | done, and measured: **19,346 of 19,346 (100%)** against the Unicode test, with a floor asserted on every run |
-| Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment/justification/kashida are Phase 7.4; hyphenation dictionaries are Phase 7.5 |
+| Line options beyond a feature list | done: line height, letter spacing, word spacing, per-run script/language override, alignment and justification with kashida (7.4). Hyphenation dictionaries are Phase 7.5 |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
 | Vertical extent of a line | done: was twice the ink, found by `tools/metrics` |
 
-Twenty-six test files, all passing. The cursive reader is tested twice over: from words in
+Forty-seven test files, all passing. The cursive reader is tested twice over: from words in
 `gpos_cursive_test.v` for the byte shapes, and against real cursive rules in the licensed corpus under
 `testdata/fonts/`, because a fixture written to match the reader cannot catch a reader that is wrong about
 where the records start. That is not hypothetical — it is how the record-offset bug survived.
@@ -839,6 +839,12 @@ backend. The claims that this library had one — in `v.mod` and in the module c
 rather than implemented. The roadmap had attributed the comment to `Context`; it was in the module
 comment at the top of `vtext.v`.
 
+What landed later, without reopening the decision, is the other half: Phase 7.11's reference
+cache (`shape/cache.v`, pinned by `cache_test.v`). The caller still owns the cache — the engine
+never sees it — but nobody hand-rolls the only honest key twice: font id, gid, size and subpixel
+offset, with hit/miss counts saying when to clear. A memo is not an atlas, and the boundary above
+is unchanged.
+
 ### ~~cmap formats 13 and 14~~
 
 **Done, and it turned up two bugs that were not about cmap at all.**
@@ -989,21 +995,26 @@ has the same gap.
 
 The engine works; whether anyone can find it does not.
 
-### Language and platform coverage
+### Language and platform coverage — done 2026-11-13
 
-The tests read fonts from `C:\Windows\Fonts`, so they only run on this machine.
-Shipping means a test corpus in the repository and a way to run the same checks
-on Linux and macOS. This comes before anything else in this phase, because
-every claim made after it is a claim about a platform nobody has run.
+The tests used to read fonts from `C:\Windows\Fonts`, so they only ran on
+one machine. The suite now reads a committed corpus under `testdata/fonts`
+(`$VTEXT_TEST_FONTS` first, then the corpus, then the platform directory last
+and only on Windows) and runs on Linux and macOS in CI, with OS-specific legs
+answering none elsewhere. Shipping means this, and it is what the platform
+ratchet in Phase 7 holds: every claim after it is a claim about a platform
+that runs.
 
 ### The public API, settled
 
-`LayoutOptions` is one field, and phase 1 says what it needs to grow into. Once
-it has grown, the question is whether it is enough: a caller should be able to
-do everything the library can do through it, and nothing should need a separate
-function that only works for one script. `Face`, `Sfnt` and `Cmap` are still
+`LayoutOptions` was one field when Phase 1 listed what it had to grow into,
+and it has grown since: line height, letter and word spacing, per-run script
+and language override, and opt-in alignment with kashida justification. The
+question was whether it is enough: a caller should be able to do everything
+the library can do through it, and nothing should need a separate function
+that only works for one script. `Face`, `Sfnt` and `Cmap` are still
 private, and whether a font inspection API belongs to the shaping engine or to
-its caller is a question this library has not answered.
+its caller is a question this library has answered below.
 
 Decided 2026-11-10, from the one production caller rather than from taste:
 `Face`, `Gpos` and `Gsub` stay private. vweb shapes, measures, wraps and
@@ -1015,11 +1026,17 @@ would freeze layouts that are still moving — chaining format 1 landed this
 month — for no caller that asks. The boundary is: the engine ends at a
 positioned glyph with a coverage bitmap, and per-call options carry the rest.
 
-### Documentation
+### Documentation — done, and kept current with the slices
 
-The README covers the pipeline and the API. What is missing is the part a
-reader needs before the API: what the library guarantees, what it refuses to
-guess, and what a caller has to decide that the library cannot decide for them.
+The README covers the pipeline and the API; GOAL.md is the one paragraph that
+decides scope arguments, USAGE.md the build recipes and the full C reference.
+What the README used to miss — the part a reader needs before the API: what
+the library guarantees, what it refuses to guess, and what a caller has to
+decide that the library cannot decide for them — lives in "Refused by design"
+and in the per-section contracts (a measurement taken with different options
+is a measurement of a different line). The rule going forward is the one this
+rewrite enforces: landed slices update the four documents in the same tree,
+and a status the docs assert is a status the suite proves.
 
 ## Phase 3: examples
 
@@ -1030,10 +1047,12 @@ config file is a tool.
 ### ~~`examples/hello`~~
 
 **Done**, as a file rather than a window. `v run .` in that directory writes `hello.png` and prints
-its path. Three lines go through the whole pipeline in one call: Latin with an `ffi` ligature, an
-Arabic word, and an English line with one Arabic word in it so bidirectional reordering has to do
-something. The canvas is sized from the lines the engine lays out rather than written down, because a
-fixed height crops the last line the moment the text changes.
+its path. Four lines go through the whole pipeline in one call at 28 pixels, through a
+FiraCode/Amiri script set: a Persian line with a half-space, `Hello Привет Γειά سلام`
+(Latin, Cyrillic, Greek and Arabic in one line), a Persian sentence with an English word in
+it so bidirectional reordering has to do something, and an Urdu line. The canvas is sized
+from the lines the engine lays out rather than written down, because a fixed height crops
+the last line the moment the text changes.
 
 No window, deliberately. A window needs a graphics binding, and a binding is a dependency that has
 nothing to do with the text engine, so the part that shows the engine works is the part that writes a
@@ -1060,11 +1079,12 @@ binding; those files are not recoverable, so this is a rewrite rather than a res
 **Done.** `v run .` writes `rtl_line.png`; `v run . -debug` writes the same line with a box around every
 glyph and its cluster index under it.
 
-A right-to-left line drawn at 44 pixels, with a mark on every letter and a lam-alef in the middle, plus a
-Latin line above it so one FontSet and one call cover both directions. What to read off the debug
-picture:
+Three rows at 44 pixels through script sets — a Latin line (`ffi` ligature, `AV` kern, a
+grave mark), a fully marked Arabic line with a lam-alef in the middle, and an Urdu line
+through Nastaliq — so one file covers both directions plus the tall script. What to read
+off the debug picture:
 
-- The Latin line's cluster indexes ascend from 0 and the Arabic line's descend from 21 to 0, which is
+- The Latin line's cluster indexes ascend from 0 and the Arabic and Urdu lines' descend, which is
   the whole of bidirectional reordering visible in one glance. A line where they ascend on both is laid
   out left to right twice.
 - A mark has no advance and shares its letter's x, so it has no box. Two boxes on one letter would mean
@@ -1089,25 +1109,26 @@ worse trade than the forty lines. The two copies are kept identical.
 
 ### ~~`examples/mark_stack`~~
 
-**Done**, and the comparison is not what it was planned to be. `v run .` writes `mark_stack.png`: seven
-rows, each drawn twice, once as the engine placed it and once with every offset discarded, with the
-baseline ruled under both columns so "is this mark on the baseline or not" can be measured rather than
-believed. A fatha sits 17 pixels higher in the first column than in the second, which is the feature
-visible in one image.
+**Done**, and the comparison is not what it was planned to be. `v run .` writes `mark_stack.png`: nine
+rows under Naskh and Amiri at 56 pixels, each drawn twice, once as the engine placed it and once with
+every offset discarded, with the baseline ruled under both columns so "is this mark on the baseline
+or not" can be measured rather than believed.
 
-The third column was meant to be a font with no mark-to-mark rules. No font on this machine is: of the
-35 that cover beh, fatha, shadda, kasra, lam and alef, all 35 have a `mark` feature. So the row is a
-single mark that the font has a glyph for and no rule for anywhere — U+0301 in Tahoma, which has anchors
-for 53 combining marks and 168 it has glyphs for but no anchors. Both columns are identical there, which
-is the correct answer to a font that has said nothing, and it makes the point better than a second font
-would have: the difference between the columns is the font's anchors, not the engine.
+The rows are one anchoring question each: fatha on a letter, shadda plus fatha, fatha plus shadda,
+shadda alone, shadda on lam, on alef, an acute no rule places (the glyph is found and positioned
+nowhere — both columns identical, which is the correct answer to a font that has said nothing),
+fatha on Persian gaf, and shadda on kasra on Urdu bheh, so Persian and Urdu stack beside Arabic.
+The third column the plan wanted — a font with no mark rules at all — does not exist in the
+corpus; the acute row makes the same point better than a second font would have: the difference
+between the columns is the font's anchors, not the engine.
 
-Two things were wrong in the plan and in the first draft of the text:
+Two things were wrong in the plan and in the first draft of the text, both found against
+Windows fonts and both worth keeping, because the corpus rows invite the same misreading:
 
-A shadda and a fatha together become **one glyph by ligature substitution** in Tahoma, so the row written
-to show mark-to-mark showed no mark-to-mark at all. One glyph and a y of 8.7 is the ligature firing and a
-single placement, and it looks on the page like the row above it. The row that does show mark-to-mark is
-shadda on a kasra, where the two stay separate: gid 2354 placed at y of 18.3 on top of gid 2353 at 2.8.
+A shadda and a fatha together can become **one glyph by ligature substitution**, so a row written
+to show mark-to-mark may show no mark-to-mark at all. One glyph and a single placement is the
+ligature firing; the row that does show mark-to-mark keeps the two marks separate — shadda on a
+kasra on Urdu bheh, each placed on the one below.
 
 And the two columns first looked identical, which was me misreading a small picture rather than a bug.
 Measured, the fatha's ink reaches 22 pixels above the baseline in the first column and 35 in the second.
@@ -1136,20 +1157,19 @@ naming the missing mark.
 
 ### ~~`examples/kerning`~~
 
-**Done.** `v run .` writes `kerning.png`: `AVAST To Yo WAY` at 90 pixels in Segoe UI and in Tahoma,
-with the pen's position at every glyph ruled full height and every advance ruled at the foot.
+**Done.** `v run .` writes `kerning.png`: `AV АВ مدرسة` at 90 pixels in an Amiri+FiraCode set
+against a FiraCode+Naskh one, with the pen's position at every glyph ruled full height and every
+advance ruled at the foot.
 
-The comparison is only honest because both fonts are real and the difference is the font's own decision.
-Segoe UI has 8146 Latin kern pairs and Tahoma has none, which is not an accident: Tahoma has Arabic
-kerning and no Latin kerning, and this engine has to respect that rather than treat an absent table as an
-empty one it may fill in.
-
-Measured, not eyeballed. Segoe UI kerns five of the fourteen pairs in the word, to −4.30 pixels at `To`,
-and the sum of the advances equals the line's width exactly in both fonts, so the kerning is inside the
-measurement rather than added to it afterwards.
-
-This example is also where the previous entry's fix came from: reading it needed real kern pairs to
-compare against, and asking Segoe UI for them produced none at all.
+The comparison is only honest because both sets are real and the difference is a font's own
+decision. Amiri kerns Latin and names a (zero-valued) rule on one Arabic join; Naskh kerns
+Latin but not Arabic; FiraCode kerns nothing at all — it is monospace, with only spacing
+features. The printed table draws the distinction the API draws: base Arabic letters name no
+rule, so the Arabic pair is probed on shaped glyphs from the laid-out line, where Amiri's
+join fires zero and Naskh answers none. Amiri closes Latin AV by 62 units; the Cyrillic
+pair is the honest null neither set kerns. The sum of the advances equals the line's width
+exactly in both sets, so the kerning is inside the measurement rather than added to it
+afterwards.
 
 ### ~~`examples/fallback`~~
 
@@ -1159,12 +1179,13 @@ came from, with the counts printed under each line.
 A line drawn correctly looks exactly like a line drawn from one font, which is why the underlines are
 there: the mechanism is only visible when the report of it is drawn next to the result.
 
-The fonts are chosen to force the choice rather than avoid it. Consolas covers Latin, Greek and Cyrillic
-and no Arabic at all; Traditional Arabic covers Arabic and little else. Neither covers Hebrew.
+The fonts are chosen to force the choice rather than avoid it. FiraCode covers Latin, Greek and
+Cyrillic and no Arabic at all; Amiri covers Arabic and Latin. Hebrew (אבג) is covered by neither,
+which is the third line: three characters from no font.
 
-Measured: line one is 39 glyphs from Consolas and none from the second font. Line two is 29 and 7 — the
-change is at the script, not at a word boundary, because the decision is per character. Line three is 31
-from Consolas and 3 from neither, which are the three Hebrew letters.
+Measured: the Latin/Cyrillic/Greek line comes wholly from the first font, the Arabic words of
+line two from the second at the script boundary — the decision is per character, not per word —
+and the Hebrew of line three from neither.
 
 The last row needed the right test. The engine does not return no font for a character nothing covers: it
 returns the font it asked, with glyph index zero, because that is the font whose `.notdef` is being drawn.
@@ -1180,20 +1201,20 @@ levels, its visual order as the pen meets the characters, and the characters as 
 
 Four lines, each one a different decision:
 
-- `The word سلام means peace.` is mostly Latin with one Arabic word in it. Nothing moves.
+- `The word سلام means peace: Привет Γειά.` is mostly Latin with one Arabic word in it, plus
+  Cyrillic and Greek witnesses that the script set routes. Nothing moves.
 - `سلام The world` starts right to left, so the paragraph level is odd and the Latin moves to the left of
   the Arabic. A line like this drawn as if it were the first has the order of its halves swapped.
 - `abc سلام 123 def` has a number between the scripts. Numbers are weak and take the direction of what
   surrounds them, so `123` comes out before the Arabic rather than after it.
-- `۱۲۳ فارسی abc ۴۵۶` has two runs of Persian digits, and the visual order printed under it is the only
-  honest way to read it.
+- `۱۲۳ فارسی abc ۴۵۶ اردو ےھ` has two runs of Persian digits, an English word and an Urdu tail, and the
+  visual order printed under it is the only honest way to read it.
 
 The two printed orders are not redundant and their agreement is the check. `visual_order` names the
 characters in the order the pen meets them, which for a right-to-left run is the reverse of the order
 they were typed; the drawn glyphs are what a reader actually sees. Where the two differ, the difference
-has a reason: in the first line `السلام` ligates, so `سلام` contributes three glyphs rather than four, and
-the two orders are one character apart because of it. In the fourth line, which has no ligature, they are
-identical.
+has a reason: a lam-alef ligates into one glyph for two characters, so the orders part by the
+ligature. In a line with no ligature they are identical.
 
 Writing this turned up the difference between a visual order and a drawn line, which is easy to confuse
 because both are "the order it comes out in". A glyph array is left to right with a right-to-left run
@@ -1202,27 +1223,34 @@ reverse. Confusing them made the first two lines look like bugs in the engine wh
 
 ### ~~`examples/features`~~
 
-**Done.** `v run .` writes `features.png`: three words laid out twice, once with the required features
-alone and once with one discretionary feature by name, with the pen ruled at every glyph and both widths
-printed.
+**Done.** `v run .` writes `features.png`: six words laid out twice, once with the feature
+explicitly off (`-tag`, which turns back on one of the default calt/liga/clig or names nothing
+for the rest) and once asked for by name, with the pen ruled at every glyph and both widths
+and gid lists printed.
 
-Two words because a feature does two different kinds of thing, and the second kind is the more common:
+Three kinds of thing a feature does, one case each, every number read off HarfBuzz first:
 
-- `الله` goes from four glyphs to two under `liga` in every Arabic font on this machine — Segoe UI 90.84
-  to 80.16 pixels, Tahoma 92.63 to 77.53. That is a count change: two of those letters have a shape that
-  only exists as a pair.
-- `فارسی` stays at five glyphs under `liga` in Segoe UI and the line gets 16 pixels narrower. That is a
-  substitution that keeps the count: the same five letters, drawn differently, taking less room. It is
-  easy to miss, because nothing about the number of glyphs moves.
+- `liga` fuses Latin `fi` in Amiri from two glyphs to one — the count change, and the easy one
+  to notice.
+- `dlig` fuses الله in Naskh from four glyphs to two: the Allah fusion is discretionary in this
+  face (off by default), which is why the same word is a HarfBuzz-verified null under `liga`
+  in Nastaliq — its fusion is `rlig`, always on — and why `فارسی` is a null under `liga` in
+  Amiri (five stay five; the joins come from the joining features).
+- `calt` swaps FiraCode's `=>` for its two-piece arrow with the same count and the same width:
+  a substitution only the printed gid list can see (1730/1736), which is why the list is printed.
+
+The risk in this one was whether any feature changes anything measurable at all — and whether
+the without/with pair is real. The `-tag` off-switch is what makes it real: the defaults are
+on, so without it both sides fuse identically and every case prints a null.
 
 The risk in this one was whether any feature on this machine changes anything measurable at all. It does,
 in every Arabic font tested, so there was real material rather than a contrived case.
 
 ### ~~`examples/line_break`~~
 
-**Done.** `v run .` writes `line_break.png`: one paragraph wrapped at 700, 400, 200 and 100 pixels as
-four columns side by side, each with its margin ruled, and an Arabic paragraph underneath the second
-column.
+**Done.** `v run .` writes `line_break.png`: the quick-brown paragraph wrapped at 700, 400, 200 and
+100 pixels as four columns side by side, each with its margin ruled, with an Arabic, a
+Cyrillic/Greek and an Urdu paragraph wrapping beside them.
 
 Measured rather than believed, and the ranges are the check that matters. At 400 the lines are
 `[0..35]`, `[35..71]`, `[71..83]`: the paragraph accounted for three times over with no gap and no
@@ -1234,10 +1262,11 @@ printed widths say why: `quick brown` is 137, `jumps over` 124, `keeps on` 102. 
 inside a word, so a word that does not fit is overlong rather than hyphenated — a decision the caller
 would have to make for itself and this engine will not make on their behalf.
 
-The Arabic paragraph is what makes wrapping a problem rather than an exercise. A Latin paragraph breaks
-at its spaces and that is all there is to it; Arabic has no spaces, so its breaks come from the UAX #14
-rules and this engine's coverage of them is partial. It wraps by the same call and breaks where the rules
-say, which is the honest statement of what that means today: five lines, none overlong at 220 pixels.
+The non-Latin paragraphs are what make wrapping a problem rather than an exercise. A Latin
+paragraph breaks at its spaces and that is all there is to it; the same call wraps the Arabic,
+Cyrillic/Greek and Urdu paragraphs beside it, and the UAX #14 classes around ideographs the
+engine does not fully carry are the known partial coverage Phase 9.1 owns. What wraps here
+breaks where the rules say.
 
 One API gap found here and since closed: `break_opportunities` was public but returned
 `[]BreakOpportunity`, which was private, so a caller outside the module could not name the type
@@ -1255,18 +1284,19 @@ plus the glyph position counts it twice.
 
 ### ~~`examples/glyph_grid`~~
 
-**Done.** `v run .` writes `glyph_grid.png`: every glyph Consolas has, in a grid, at one of three greys
-depending on how many scanned codepoints reach it.
+**Done.** `v run .` writes `glyph_grid.png`: every glyph FiraCode and Amiri/Naskh have in
+U+0000 to U+24FF, in a grid, at one of three greys depending on how many scanned codepoints
+reach it — one, more than one, or none — with per-script counts (Latin, Greek, Cyrillic,
+Arabic) printed beside the totals.
 
 The three greys answer the question this example exists for, which is whether an empty box means the cmap
 does not name the character or the font has no glyph for it. Those are different faults and only one of
 them is fixed by falling back to another font.
 
-Measured on Consolas: 3031 glyphs, of which 2196 are reached by exactly one codepoint in U+0000 to
-U+24FF, 40 are reached by more than one, and 795 by none. The 40 are invisible characters — U+0000 and
-U+0008 both land on gid 1, U+0020 and U+00A0 both on gid 3 — and they are why a font can cover a character
-and still not draw it. The 795 faint ones are box drawing, powerline and symbol glyphs, and they are real
-ink the engine can draw and ordinary text cannot ask for.
+The multi-codepoint cells are invisible characters — two codepoints landing on one gid — and they
+are why a font can cover a character and still not draw it. The faint cells are glyphs no scanned
+codepoint reaches, real ink the engine can draw and ordinary text cannot ask for. The multi
+column is what `codepoint_for` answers with when it returns the lowest of several.
 
 Two things found while writing it, both about the compiler rather than the engine:
 
@@ -1281,14 +1311,15 @@ And `none` is not available as a variable name. It reads as the option's empty v
 
 ### ~~`examples/spacing`~~
 
-**Done.** `v run .` writes `spacing.png`: one Persian line laid out five ways — plain, letter-spaced,
-tightened, word-spaced, and with a caller line height — drawn stacked with a ruled baseline per
+**Done.** `v run .` writes `spacing.png`: one multilingual line (`Hello AV Αα АВ سلام فارسی`
+plus a Persian verb and an Urdu word) laid out five ways — plain, letter-spaced, tightened,
+word-spaced, and with a caller line height — drawn stacked with a ruled baseline per
 row and a bracket per row's line height, with the laid-out width and `measure_paragraph_with`
-under the same options printed for each.
+under the same options printed for each, and a loud disagreement line if the two ever differ.
 
 The numbers are the claim, not the picture. The letter-spaced row is longer by the spacing times
 the letter count and the tightened row shorter by the same arithmetic; the word-spaced row is
-longer by the spacing times the four spaces, and the letters inside each word do not move. Every
+longer by the spacing times its seven spaces, and the letters inside each word do not move. Every
 row's measured max equals its laid-out width, which is the contract `_with` exists for: a
 measurement taken with different options is a measurement of a different line. The bracket is
 the line height: the last row's is twice as tall while its ink is the same size, and asking for
@@ -1304,7 +1335,7 @@ Programs for people using the library, built out of the examples. Each one
 should be useful on its own without the library, and the library should be
 something it happens to use.
 
-### The 19 copies of a font-path helper, and why the better answer was not taken
+### The 31 copies of a font-path helper, and why the better answer was not taken
 
 Done on 2026-10-13, and recorded because it is the one place in this repository where the right fix
 was known, measured, and deliberately not taken.
@@ -1314,7 +1345,7 @@ was known, measured, and deliberately not taken.
 skip counts per file rather than one number for the directory. So a shared `corpus_font_path`
 helper in a neighbouring test file satisfies `v test .` and fails every run the runner makes.
 
-Eighteen test files therefore each carry the same forty lines of resolution order
+Thirty-one test files therefore each carry the same forty lines of resolution order
 (`$VTEXT_TEST_FONTS`, `testdata/fonts`, then the platform directory last and only on Windows) and
 the same `skip_missing`. That is duplication, and it is the price of the report the runner gives.
 
@@ -1379,7 +1410,7 @@ count its results and read none of them.
 the library cannot disagree about a font: there is one parser and one set of numbers.
 
 ```
-v run tools/fontdump.v C:/Windows/Fonts/segoeui.ttf [--verbose]
+v run tools/fontdump.v testdata/fonts/Amiri-Regular.ttf [--verbose]
 ```
 
 It prints the tables with their offsets, marking the ones this engine reads, the cmap subtables with their
@@ -1414,7 +1445,7 @@ instrumenting `layout_paragraph`. That is what `trace_api.v` is for, and it is w
 engine with prints in it.
 
 ```
-v run tools/shapetrace.v "سلام" C:/Windows/Fonts/segoeui.ttf
+v run tools/shapetrace.v "سلام" testdata/fonts/Amiri-Regular.ttf
 ```
 
 It prints the input, what normalization did, the resolved levels, the joining form each letter took,
@@ -1589,8 +1620,9 @@ mark flag, source font, box, coverage sum, wrap line), and
 `tools/difftest/compare.py` lays four independent engines beside it — the
 HarfBuzz in `uharfbuzz` for shaping decisions, `fontTools` for outline
 identity and advances, Pillow for the rasterized box and coverage, and Pango
-for how many lines a width makes and how wide each is. Thirteen cases, from
-`salam` to the nastaliq torture line to mixed bidi with digits.
+for how many lines a width makes and how wide each is. Seventeen cases today
+(thirteen at the first run below), from `salam` to the nastaliq torture line
+to mixed bidi with digits.
 
 The first run found eighty differences, and sorting them taught something the raw
 count hid. For U+0633 U+0644 U+0627 U+0645 in Amiri the engine emits three
@@ -1702,7 +1734,7 @@ Wired 2026-10-16, as `kern_pairs` inside substitution: same font both sides, no 
 Both directions of the ratchet were tested before the baseline was written:
 eighty observed diffs with an empty file exit 1 listing every one, and a
 baseline entry for a diff that no longer occurs exits 1 naming it stale. The
-one hundred and seventeen now in `tools/difftest/baseline.tsv` are the measured state, and the
+one hundred and fifty-one now in `tools/difftest/baseline.tsv` are the measured state, and the
 CI job beside the suite runs the whole comparison on every push — ubuntu
 only, because only there does libpango exist, and the Pango leg skips aloud
 everywhere else.
@@ -1962,7 +1994,7 @@ all — and no part imports a tool.
 | `vtext.raster` | FreeType's rendering side | Slice 1 landed 2026-11-14: `GlyphBitmap` with `is_empty`/`ink` lives in `raster/` as `module raster`, imported as `vtext.raster`. The `box_only`/`render_into` calls stay methods on `font.Face` — this compiler defines methods only in the type's own module — so `font` imports the leaf `raster` for the data they trade in, and every `font.GlyphBitmap` site (shape's `Font.rasterize`, `subset`, `shapedump`, `probe`) is now `raster.GlyphBitmap`. Verified the full way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. What remains is hinting (TT interpreter plus auto-hinter fallback) and color (COLR/CPAL, CBDT/sbix, SVG refusal-with-reason) as engines behind the box-and-fill contract `box_only`/`render_into` already define. Verified per glyph against FreeType and Pillow like the ink leg does now. |
 | `vtext.inspect` | fontTools introspection (read side) | Decided 2026-11-14: stays as the inspection API on `shape.Font` in `shape/inspect.v`, not a separate part. The surface is eighteen `Font` methods, and the methods-live-with-the-type rule proven twice in the `font` slices forbids moving them; a thin `inspect/` of free functions taking `shape.Font` would cycle `shape` → `inspect` → `shape` through `TableInfo`. `fontdump`, `fontcheck` and `shapetrace` already build on it. |
 | `vtext.subset` | fontTools subsetter | Slice 1 landed 2026-11-14: the closure and the rebuild live in `subset/` as `module subset` behind `subset_font(font, seed)`, and `tools/subset.v` is the CLI around it (shaping the seed, reporting, verifying). The fixed-point loop, the 16-pass bound and the duplicated comment moved with the code; the duplication is gone from the tool. Verified the full way: suite 35/35, fmt 111/0, consumers fail=0, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is CFF/CFF2, explicitly deferred above: 0 faces measured, so a reader would be verified only against tables built to match it. |
-| `vtext.capi` | — (the C face) | Last, since it wraps all of the above. `vtext.h` stays the single header; the header mirror is now proven by `tools/capicheck.v` (48 exports, both directions, CI-gated before the library builds) rather than by the link alone. `subset` is wrapped (`vtext_subset`/`vtext_subset_free`, exercised by the smoke test); raster stays at the combined box-and-fill call by decision, its fields already readable through the bitmap accessors. |
+| `vtext.capi` | — (the C face) | Last, since it wraps all of the above. `vtext.h` stays the single header; the header mirror is now proven by `tools/capicheck.v` (the full export list, both directions, CI-gated before the library builds) rather than by the link alone. `subset` is wrapped (`vtext_subset`/`vtext_subset_free`, exercised by the smoke test); raster stays at the combined box-and-fill call by decision, its fields already readable through the bitmap accessors. |
 | providers | fontconfig / Core Text / DirectWrite | Linux (fontconfig) landed 2026-11-14: `providers/fontconfig.v` (`module providers`) resolves a family through `FcFontMatch` and reports the matched family beside the path, so a silent substitution is visible to the caller; Core Text and DirectWrite stay unwritten, and off Linux the provider answers none. Pinned by `providers_fontconfig_test.v` (self-naming match + substitution report, skip-guarded off Linux and on fontless hosts; wrong-family revert fails). CI installs the headers on the ubuntu suite leg because the test links fontconfig there. |
 
 The seams that keep the parts combinable, each an explicit interface rather

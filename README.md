@@ -21,7 +21,7 @@ import vtext.shape
 fn main() {
 	ctx := shape.new_context()
 	fs := shape.new_font_set()
-	fs.add(shape.load_font_file('C:\\Windows\\Fonts\\tahoma.ttf') or { panic(err) })
+	fs.add(shape.load_font_file('testdata/fonts/Amiri-Regular.ttf') or { panic(err) })
 
 	line := layout.layout_paragraph(ctx, 'بِه'.runes(), .rtl, fs, 32.0)
 	font := fs.pick(`ب`) or { panic('no font') }
@@ -37,6 +37,7 @@ fn main() {
 
 | Part | Replaces | Status |
 | --- | --- | --- |
+| `vtext.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`; case mapping included |
 | `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1, cmap, metrics, variation-store reading |
 | `vtext.shape` | HarfBuzz core | Normalization, bidi, joining, GSUB/GPOS application, case mapping |
 | `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical lines and columns |
@@ -83,6 +84,10 @@ so there are no runtime tables to load and no network access is needed to build.
   wrapping to a width, and vertical lines cut into columns.
 - Measuring a paragraph: min-content and max-content width, vertical extent, resolved line height.
 - Line height, letter spacing and word spacing as caller options.
+- Per-run script and language override for feature resolution.
+- Alignment: left, center, right, and justification — with kashida
+  tatweel insertion for uniform Arabic lines, space stretching
+  everywhere else.
 - Full upper, lower and title case mapping, including the Turkish/Azeri rows.
 - A variable font's axes and named instances, read off fvar and the name table.
 - A glyph's box and its coverage bitmap, and a C API over all of it (`vtext.h`).
@@ -116,9 +121,8 @@ base on its own still draws as text; only the pair draws as emoji.
 
 Each item names the slice that owns it in `ROADMAP.md`.
 
-- Per-tag script and language override (7.2, second half).
-- Alignment, justification, kashida (7.4); hyphenation dictionaries (7.5).
-- Indic and Khmer shaping (7.6).
+- Hyphenation dictionaries (7.5).
+- Indic and Khmer shaping (7.6, with the Phase 9.3 machine behind it).
 - Hinting, color, LCD, synthetic styles, stroking, MATH (7.7, 8.5–8.7).
 - Variable instancing at chosen coordinates (7.10); the store is read, not applied.
 - Core Text and DirectWrite providers (7.8).
@@ -127,6 +131,8 @@ Each item names the slice that owns it in `ROADMAP.md`.
   that reaches its own glyphs is vestigial (four one-sided anchors, no adjacent
   exit-plus-entry pair), and it rewires the day a shaped line grows a pair.
 - Word and sentence breaks, caret and word runs (8.2); wrap modes, ellipsize, tabs (8.4).
+- The remaining scripts (Phase 9): CJK line breaking (9.1), Southeast Asian
+  clusters (9.2), the Indic machine (9.3), and the long tail (9.4).
 
 ## Refused by design
 
@@ -174,7 +180,7 @@ Shaping is measured against four independent engines, not described. `tools/shap
 dumps any case as tab-separated glyphs (advance, offsets, cluster, source font, box,
 coverage), and `tools/difftest/compare.py` lays HarfBuzz, fontTools, Pillow and Pango
 beside it over seventeen cases, from `سلام` to mixed bidi with digits. Every difference
-found is recorded in `tools/difftest/baseline.tsv` — currently one hundred and forty-nine entries, each
+found is recorded in `tools/difftest/baseline.tsv` — currently one hundred and fifty-one entries, each
 with its reason in `ROADMAP.md` — and CI fails on any new difference or any fixed one
 left unrecorded, in both directions. The Pango leg compares wrap widths at a fixed
 width and a full-line Cairo render against a vtext-composed image, pixel by pixel;
@@ -208,11 +214,9 @@ fs.add(latin_font)   // used for codepoints the first has no glyph for
 ```
 
 A flat order cannot express what a mixed-script line usually wants, and the reason is worth stating
-because it is not obvious until you count the glyphs. **Both** Segoe UI and Traditional Arabic cover
-both Latin and Arabic. So a chain of (latin, arabic) draws every Persian letter in Segoe UI and never
-reaches the Arabic font, and a chain of (arabic, latin) draws the English word in a naskh face. Neither
-order is wrong as an order; each is wrong as an answer to "draw this Persian line in a naskh face and
-that English word in a Latin one".
+because it is not obvious until you count the glyphs. A flat chain answers by coverage order —
+the first font that has the codepoint wins — so Latin lands in whichever of Amiri and FiraCode
+stands first, whatever the line is "in". Only the script set routes by what the text is.
 
 ```v
 // Arabic goes to the Arabic font, everything else to the Latin one.
@@ -221,9 +225,10 @@ fs.pick_in(ctx, rune(0x0628))  // -> arabic_font
 fs.pick_in(ctx, rune(0x41))    // -> latin_font
 ```
 
-Measured on Segoe UI and Traditional Arabic, `سلام` drawn through a flat latin-first chain produces
-**0** glyphs from the Arabic font, and through a per-script chain produces **4**, with `hello سلام`
-giving 6 Latin and 4 Arabic.
+Measured on the corpus pair: `examples/fallback` lays three lines through a flat
+(FiraCode, Amiri) chain and prints the counts per line — 53/0/0, then 29/7/0 with the 7
+changing at the script boundary rather than at a word boundary, then 31/0/3 for the three
+Hebrew letters neither font covers.
 
 A per-script set with no primary and no general is exactly a flat set, so the two are interchangeable and
 `pick_in` and `pick` agree in that case. The script test is the same generated table the joining pass
@@ -251,8 +256,8 @@ U+FEB3 ARABIC LETTER SEEN INITIAL FORM as one glyph, so `codepoint_for` on that 
 at rather than inferred.
 
 ```sh
-v run tools/glyphdump.v C:/Windows/Fonts/tahoma.ttf --size 32 --count 256 --boxes
-v run tools/glyphdump.v C:/Windows/Fonts/tahoma.ttf --each out/glyphs --count 64
+v run tools/glyphdump.v testdata/fonts/Amiri-Regular.ttf --size 32 --count 256 --boxes
+v run tools/glyphdump.v testdata/fonts/Amiri-Regular.ttf --each out/glyphs --count 64
 v run tools/glyphdump.v testdata/fonts/NotoNaskhArabic-Regular.ttf --text 'سلام'
 ```
 
@@ -318,6 +323,8 @@ opts.features = ['liga']
 opts.line_height = 28.0       // 0 takes the font's own
 opts.letter_spacing = 0.5
 opts.word_spacing = 2.0
+opts.align = .justify         // left is the default; needs align_width below
+opts.align_width = 400.0      // 0 takes the line's own width (align off)
 
 line := layout.layout_paragraph_with(ctx, text.runes(), .rtl, fs, 32.0, &opts)
 next_baseline := baseline + line.line_height
@@ -344,6 +351,12 @@ two sources for one decision with no stated precedence.
 script tag, `language` names the tagged language system inside it — each empty for the default
 (detection per run, default language system). A BCP 47 code is not a tag (`ur` is not `URD`):
 name the tag the font spells.
+
+**Alignment is visual.** `align` puts the line in the target width — `align_width` for a
+single line, the wrap width for `wrap_paragraph_with` — left, centered, right, or justified.
+Justify stretches spaces by widening advances, except on a uniform Arabic line, where it
+inserts U+0640 tatweels at joining gaps (one per gap, lam-alef skipped) and re-lays the text
+out. The last wrapped line stays flush, and a target narrower than the line changes nothing.
 
 ### Measuring
 
@@ -618,13 +631,14 @@ then the platform directory. On Linux and macOS the corpus is what answers. A fo
 directory carries is a skip that says which font and where it looked, never a silent pass.
 
 ```sh
-v run tools/run.v tools/fontdump.v -- C:/Windows/Fonts/segoeui.ttf
+v run tools/run.v tools/fontdump.v -- testdata/fonts/Amiri-Regular.ttf
 ```
 
 `run.v` builds one program and runs it. Everything after a bare `--` goes to the program.
 
 ```sh
-v run tools/fetch_ucd.v         # the UCD files, which are not committed
+v run tools/fetch_ucd.v         # the UCD source files; the generated tables are
+                                # committed, so a normal build never fetches
 ```
 
 ### Looking at the output in a window
