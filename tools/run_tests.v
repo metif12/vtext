@@ -554,11 +554,16 @@ fn strip_notices(output string) string {
 // print_evidence shows up to limit lines of a failure.
 //
 // A compile error is dozens of lines and the summary is what gets read, so this shows the head rather than
-// the tail: the first error is the one that explains the rest.
+// the tail: the first error is the one that explains the rest. Compiler warnings are skipped, because four
+// pages of deprecation notices above the one assert line is how a real failure hid itself on CI: the evidence
+// head was all `warning: ... in capi.v` and the assert never printed.
 fn print_evidence(output string, limit int) {
 	mut shown := 0
 	for line in output.split('\n') {
 		if line.trim_space() == '' {
+			continue
+		}
+		if line.contains('warning:') {
 			continue
 		}
 		if shown >= limit {

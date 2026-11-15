@@ -31,12 +31,12 @@ fn set_error(errbuf &u8, errcap int, msg string) {
 	}
 	unsafe {
 		n := if msg.len < errcap - 1 { msg.len } else { errcap - 1 }
-		C.memcpy(errbuf, msg.str, usize(n))
+		C.memcpy(errbuf, msg.str, uint(n))
 		errbuf[n] = 0
 	}
 }
 
-fn C.memcpy(dst voidptr, src voidptr, n usize) voidptr
+fn C.memcpy(dst voidptr, src voidptr, n uint) voidptr
 
 // c_text copies a caller-owned byte range into runes. The copy is the point:
 // `tos` borrows and the caller owns the bytes, so returning the borrow would
@@ -132,7 +132,7 @@ fn c_array[T](src []T) []T {
 	unsafe {
 		n := u64(src.len) * u64(sizeof(T))
 		dst := malloc(n)
-		C.memcpy(dst, src.data, usize(n))
+		C.memcpy(dst, src.data, uint(n))
 		mut out := []T{cap: 0}
 		out.data = dst
 		out.len = src.len
@@ -911,7 +911,7 @@ pub fn vtext_subset(f &shape.Font, seed &u16, nseed int, out &&u8, errbuf &u8,
 			return 0
 		}
 		data := &u8(malloc(sub.bytes.len))
-		C.memcpy(data, sub.bytes.data, usize(sub.bytes.len))
+		C.memcpy(data, sub.bytes.data, uint(sub.bytes.len))
 		*out = data
 		return sub.bytes.len
 	}
