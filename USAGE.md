@@ -56,6 +56,13 @@ m := layout.measure_paragraph(ctx, text.runes(), .auto, fs, 32.0)
 for b in layout.break_opportunities(ctx, text.runes(), true) {
 	// b.start is the input index; b.is_mandatory marks hard breaks
 }
+
+// Hyphenation rides the same seam as a policy: UAX #14 alone by default,
+// UAX #14 plus Liang points when asked.
+for w in layout.wrap_paragraph_with_policy(ctx, text.runes(), .auto, fs, 32.0,
+	400.0, &layout.LayoutOptions{}, layout.HyphenBreaks{}) {
+	draw(w.line) // overlong words break with an appended hyphen glyph
+}
 ```
 
 Options (discretionary features, line height, letter and word spacing, alignment) have

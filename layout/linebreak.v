@@ -65,6 +65,10 @@ pub:
 	// or a newline. A mandatory break is not a choice, so a caller may not skip it
 	// the way it skips the others.
 	is_mandatory bool
+	// hyphen says the break falls inside a word and drawing it needs a hyphen
+	// glyph appended: the text carries no character there. Only a hyphenation
+	// policy sets it; the UAX #14 pass never does.
+	hyphen bool
 }
 
 // break_opportunities returns every position in cps where a line may end, in
@@ -170,6 +174,104 @@ pub fn break_opportunities(ctx &shape.Context, cps []rune, mandatory_first bool)
 		is_mandatory: is_mandatory_break_at(classes, n, n, mandatory_first)
 	}
 	return out
+}
+
+// BreakPolicy is where line breaks come from: the seam GOAL.md names, with
+// UAX #14 the default and dictionaries (hyphenation today) behind the same
+// call. A policy answers positions, never glyphs: shaping stays exactly
+// where it is, and wrap measures the same shaped line whatever policy cut it.
+pub interface BreakPolicy {
+	opportunities(ctx &shape.Context, cps []rune, mandatory_first bool) []BreakOpportunity
+}
+
+// Uax14Breaks is the default policy: the committee's own breaks and nothing
+// else. Wrapping under it is wrapping without hyphenation, which is what
+// wrap_paragraph_with has always done.
+pub struct Uax14Breaks {}
+
+pub fn (p Uax14Breaks) opportunities(ctx &shape.Context, cps []rune, mandatory_first bool) []BreakOpportunity {
+	return break_opportunities(ctx, cps, mandatory_first)
+}
+
+// HyphenBreaks is UAX #14 plus hyphenation points inside words, by Liang's
+// algorithm over the patterns it carries. US English rides along by default;
+// a caller with another language's table passes that instead and the
+// algorithm is unchanged.
+//
+// Only ASCII-letter runs are hyphenated: the patterns are ASCII, and a
+// hyphenation point in another script would be a guess rather than a rule.
+// A run shorter than the edge minima hyphenates to nothing by itself, so no
+// minimum length is configured here.
+pub struct HyphenBreaks {
+	// patterns holds Liang rows; empty takes the generated US-English table.
+	patterns []string
+}
+
+pub fn (p HyphenBreaks) opportunities(ctx &shape.Context, cps []rune, mandatory_first bool) []BreakOpportunity {
+	mut ops := break_opportunities(ctx, cps, mandatory_first)
+	pats := if p.patterns.len > 0 { p.patterns } else { hyphen_patterns() }
+	if pats.len == 0 {
+		return ops
+	}
+	// Hyphen points in word order: each word's points ascend, and words ascend.
+	mut extra := []BreakOpportunity{}
+	mut i := 0
+	for i < cps.len {
+		if !is_hyphen_letter(cps[i]) {
+			i++
+			continue
+		}
+		mut j := i
+		for j < cps.len && is_hyphen_letter(cps[j]) {
+			j++
+		}
+		for h in hyphenate(cps[i..j], pats) {
+			extra << BreakOpportunity{
+				start:        i + h
+				is_mandatory: false
+				hyphen:       true
+			}
+		}
+		i = j
+	}
+	if extra.len == 0 {
+		return ops
+	}
+	// Merge two start-sorted lists. A hyphen point landing exactly on a UAX
+	// break is dropped: the boundary break already ends the line there, and a
+	// hyphen glyph on a boundary break would be ink the text never asked for.
+	mut out := []BreakOpportunity{cap: ops.len + extra.len}
+	mut a := 0
+	mut b := 0
+	for a < ops.len && b < extra.len {
+		if extra[b].start < ops[a].start {
+			out << extra[b]
+			b++
+		} else if extra[b].start == ops[a].start {
+			out << ops[a]
+			a++
+			b++
+		} else {
+			out << ops[a]
+			a++
+		}
+	}
+	for a < ops.len {
+		out << ops[a]
+		a++
+	}
+	for b < extra.len {
+		out << extra[b]
+		b++
+	}
+	return out
+}
+
+// is_hyphen_letter reports whether a hyphenation table can read cp. Patterns
+// are ASCII and matched lowercased, so this is the ASCII alphabet and nothing
+// else: hyphenating another script would apply English rules to it.
+fn is_hyphen_letter(cp rune) bool {
+	return (cp >= `A` && cp <= `Z`) || (cp >= `a` && cp <= `z`)
 }
 
 // is_mandatory_break_at says whether the character before position pos is one the
@@ -1575,6 +1677,264 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 		align_wrapped(ctx, mut out, cps, base_dir, fs, em_px, options, max_width)
 	}
 	return out
+}
+
+// wrap_paragraph_with_policy lays text out like wrap_paragraph_with but takes
+// its breaks from a BreakPolicy: UAX #14 under Uax14Breaks (identical answers
+// to wrap_paragraph_with), UAX #14 plus hyphenation points under HyphenBreaks.
+//
+// A line broken at a hyphen point carries a hyphen glyph the text does not
+// contain, drawn from the first font covering '-'. A set with no hyphen glyph
+// hyphenates nothing: the hyphen points are stripped and the answers are the
+// UAX ones. Vertical text hyphenates nothing either — hyphenation is
+// horizontal — and the points are skipped there the same way.
+pub fn wrap_paragraph_with_policy(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64, max_width f64, options &LayoutOptions, policy BreakPolicy) []WrappedLine {
+	if cps.len == 0 {
+		return []WrappedLine{}
+	}
+	full := layout_paragraph_with(ctx, cps, base_dir, fs, em_px, options)
+	mut ops := policy.opportunities(ctx, cps, true)
+	// The hyphen glyph, resolved once: its advance decides whether a part and
+	// its hyphen fit, so it is read here rather than per line.
+	mut hy_gid := u16(0)
+	mut hy_adv := 0.0
+	mut hy_font := &shape.Font(unsafe { nil })
+	mut hy_ok := false
+	if !options.vertical {
+		mut hy_pick := fs.pick_in(ctx, `-`)
+		if hy_pick == none {
+			hy_pick = fs.pick(`-`)
+		}
+		if f := hy_pick {
+			g := f.glyph_index(`-`)
+			if g != 0 {
+				adv := f.glyph_advance(g, em_px)
+				if adv > 0 {
+					hy_gid = g
+					hy_adv = adv
+					hy_font = f
+					hy_ok = true
+				}
+			}
+		}
+	}
+	if !hy_ok {
+		ops = ops.filter(!it.hyphen)
+	}
+
+	mut out := []WrappedLine{}
+	mut from := 0
+	// last is the break that fitted most recently; last_plain the most recent
+	// fitting break that needs no hyphen. A hyphen point that fitted may still
+	// miss once its hyphen is added, and the plain fallback is what keeps the
+	// line from breaking mid-word with no mark to show for it.
+	mut last := from
+	mut have_last := false
+	mut last_plain := from
+	mut have_plain := false
+	mut last_hyphen := false
+
+	for o in ops {
+		if o.start <= from {
+			continue
+		}
+		if o.is_mandatory {
+			mut stop := o.start - 1
+			if stop < from {
+				stop = from
+			}
+			out << WrappedLine{
+				line: slice_for_break(full, from, stop, options.vertical)
+				from: from
+				to:   stop
+			}
+			from = o.start
+			have_last = false
+			last = from
+			have_plain = false
+			last_plain = from
+			last_hyphen = false
+			continue
+		}
+		if width_of_range(full, from, o.start) > max_width {
+			if have_last && last > from {
+				stop, hyph := pick_wrap_stop(full, ops, from, last, last_hyphen,
+					last_plain, have_plain, max_width, hy_adv, hy_ok)
+				if hyph {
+					out << WrappedLine{
+						line: cut_hyphenated(full, from, stop, options.vertical, hy_gid,
+							hy_adv, hy_font)
+						from: from
+						to:   stop
+					}
+				} else {
+					out << WrappedLine{
+						line: slice_for_break(full, from, stop, options.vertical)
+						from: from
+						to:   stop
+					}
+				}
+				from = stop
+				have_last = false
+				last = from
+				have_plain = false
+				last_plain = from
+				last_hyphen = false
+				if width_of_range(full, from, o.start) > max_width {
+					// A single word wider than the whole line. Hyphen points
+					// inside it are the only breaks narrower than the word,
+					// so they are tried before the word overflows on its own.
+					h := hyphen_split(full, ops, from, o.start, max_width, hy_adv, hy_ok)
+					if h > from {
+						out << WrappedLine{
+							line: cut_hyphenated(full, from, h, options.vertical, hy_gid,
+								hy_adv, hy_font)
+							from: from
+							to:   h
+						}
+						from = h
+						last = from
+					} else {
+						out << WrappedLine{
+							line: slice_for_break(full, from, o.start, options.vertical)
+							from: from
+							to:   o.start
+						}
+						from = o.start
+						last = from
+						have_plain = false
+					}
+				}
+				continue
+			}
+			// Nothing has fitted yet, which means the first word is wider than
+			// the line. Its hyphen points are tried before it overflows whole.
+			h := hyphen_split(full, ops, from, o.start, max_width, hy_adv, hy_ok)
+			if h > from {
+				out << WrappedLine{
+					line: cut_hyphenated(full, from, h, options.vertical, hy_gid, hy_adv,
+						hy_font)
+					from: from
+					to:   h
+				}
+				from = h
+				last = from
+				have_last = false
+				continue
+			}
+			out << WrappedLine{
+				line: slice_for_break(full, from, o.start, options.vertical)
+				from: from
+				to:   o.start
+			}
+			from = o.start
+			last = from
+			have_last = false
+			continue
+		}
+		last = o.start
+		have_last = true
+		last_hyphen = o.hyphen
+		if !o.hyphen {
+			last_plain = o.start
+			have_plain = true
+		}
+	}
+	// Whatever is left after the last break, hyphenated down while it fits.
+	if !options.vertical && hy_ok {
+		for from < cps.len && width_of_range(full, from, cps.len) > max_width {
+			h := hyphen_split(full, ops, from, cps.len, max_width, hy_adv, hy_ok)
+			if h <= from {
+				break
+			}
+			out << WrappedLine{
+				line: cut_hyphenated(full, from, h, options.vertical, hy_gid, hy_adv,
+					hy_font)
+				from: from
+				to:   h
+			}
+			from = h
+		}
+	}
+	if from < cps.len || out.len == 0 {
+		out << WrappedLine{
+			line: slice_for_break(full, from, cps.len, options.vertical)
+			from: from
+			to:   cps.len
+		}
+	}
+	if options.align != .left && !options.vertical {
+		align_wrapped(ctx, mut out, cps, base_dir, fs, em_px, options, max_width)
+	}
+	return out
+}
+
+// pick_wrap_stop chooses where a line ends when the next break no longer fits:
+// the last fitting break, hyphenated when it is a hyphen point that still fits
+// once its hyphen is added. A hyphen point whose part plus hyphen overflows
+// falls back to an earlier hyphen point, then to the last plain break, and
+// only then to a mid-word break with no mark — bounded, and only when nothing
+// else fits at all.
+fn pick_wrap_stop(full &Line, ops []BreakOpportunity, from int, last int, last_hyphen bool, last_plain int, have_plain bool, max_width f64, hy_adv f64, hy_ok bool) (int, bool) {
+	if last_hyphen && hy_ok {
+		if width_of_range(full, from, last) + hy_adv <= max_width {
+			return last, true
+		}
+		h := hyphen_split(full, ops, from, last - 1, max_width, hy_adv, hy_ok)
+		if h > from {
+			return h, true
+		}
+	}
+	if last_hyphen {
+		if have_plain && last_plain > from {
+			return last_plain, false
+		}
+		return last, false
+	}
+	return last, false
+}
+
+// hyphen_split finds the last hyphen break at or before stop whose part and
+// hyphen fit max_width, or 0 when no hyphen break can take the line. Only
+// overflow reaches here — a fitting word never needs its hyphen points — so
+// the scan runs once per broken word, not per line.
+fn hyphen_split(full &Line, ops []BreakOpportunity, from int, stop int, max_width f64, hy_adv f64, hy_ok bool) int {
+	if !hy_ok {
+		return 0
+	}
+	mut best := 0
+	for o in ops {
+		if !o.hyphen || o.start <= from || o.start > stop {
+			continue
+		}
+		if width_of_range(full, from, o.start) + hy_adv <= max_width {
+			best = o.start
+		}
+	}
+	return best
+}
+
+// cut_hyphenated slices [from, stop) and appends the hyphen glyph the break
+// asked for: the pen stays where the part ended and the hyphen rides it, the
+// way a laid-out line would have drawn it had the text contained one. The
+// hyphen names the break position, which is where the next line starts.
+fn cut_hyphenated(full &Line, from int, stop int, vertical bool, hy_gid u16, hy_adv f64, hy_font &shape.Font) Line {
+	mut line := slice_for_break(full, from, stop, vertical)
+	if !vertical {
+		line.glyphs << shape.Glyph{
+			gid:      hy_gid
+			advance:  hy_adv
+			x:        line.width
+			y:        0
+			cluster:  stop
+			is_mark:  false
+			form:     .isolated
+			base_gid: 0
+			font:     hy_font
+		}
+		line.width += hy_adv
+	}
+	return line
 }
 
 // align_wrapped resolves every wrapped line against the wrap width: shifting

@@ -21,7 +21,7 @@ is a part with no claim.
 | `vtext.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`. No other part reads the UCD directly. Case mapping landed the same way (Phase 8.3, committee conformance floor); Word/Sentence break data is Phase 8.2. |
 | `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1 (WOFF2 refused: no brotli decoder in tree), cmap, metrics, variation-store reading. The `Font`/`FontSet`/`Glyph` wrappers and layout live in `shape/` and `layout/`; `font/` owns data, parsers, and every method on font types. |
 | `vtext.shape` | HarfBuzz core | Normalization, bidi, joining, `Context`, `Font`/`FontSet`/`Glyph`, `inspect.v`, case mapping. GSUB/GPOS application runs on font types in `font/`; orchestration taking font types as arguments lives here. |
-| `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical columns. Align/justify landed opt-in in 7.4 (kashida tatweels for uniform Arabic, spaces elsewhere); hyphenation is a `BreakPolicy` with generated tables (7.5); log attrs (8.2) and wrap modes/ellipsize/tabs (8.4) finish the Pango surface that is not boxes. |
+| `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical columns. Align/justify landed opt-in in 7.4 (kashida tatweels for uniform Arabic, spaces elsewhere); hyphenation landed as a `BreakPolicy` with generated tables (7.5); log attrs (8.2) and wrap modes/ellipsize/tabs (8.4) finish the Pango surface that is not boxes. |
 | `vtext.raster` | FreeType's rendering side | `GlyphBitmap` behind the box-and-fill contract `box_only`/`render_into` define; unhinted engine today, hinting and color later (7.7). The box and fill calls stay methods on `font.Face` because methods live in the type's own module, so `font` imports the leaf `raster` for the data they trade in. |
 | `vtext.inspect` | fontTools introspection (read side) | The inspection API on `shape.Font` in `shape/inspect.v`, not a separate part: eighteen `Font` methods, and a thin `inspect/` of free functions would cycle `shape` → `inspect` → `shape` through the return type. |
 | `vtext.subset` | fontTools subsetter | `subset/` behind `subset_font(font, seed)` with `tools/subset.v` as the CLI; glyf today, CFF/CFF2 in Phase 7.9 with a real committed font (until then the refusal stays, with its reason). `Font.data()` returns the parsed bytes; the closure rebuilds and the tool verifies by reloading. |
@@ -44,7 +44,7 @@ Worth writing down so that scope arguments end by quoting this file.
 
 - A text editor, or any interactive application. The library is a library.
 - A layout engine for boxes, flex, or CSS beyond the text layer: line breaking,
-  alignment and justification are in (7.4 landed); hyphenation is next (7.5).
+  alignment, justification and hyphenation are in (7.4 and 7.5 landed).
   Boxes, the cascade and painting stay the caller's, which is what `../vweb` builds on.
 - HarfBuzz bindings, or a port of anything. Every part is written from the
   specifications.
@@ -56,8 +56,8 @@ arches CI provides — with every OS-specific leg covered on its own OS (Phase
 7 platform ratchet). WASM is a spike, not a commitment, until a slice is
 measured on it.
 
-The last four of the old list changed status on purpose: kashida and
-justification are `vtext.layout` features now, hyphenation dictionaries are
-a `BreakPolicy` with generated tables, system font discovery is a
-provider rather than a refusal, and variable instancing is Phase 7.10.
+The last four of the old list changed status on purpose: kashida,
+justification and hyphenation are `vtext.layout` features now (7.4 and 7.5),
+system font discovery is a provider rather than a refusal, and variable
+instancing is Phase 7.10.
 What did not change: the engine ends at a positioned glyph with a coverage bitmap, and the cache stays with the caller.

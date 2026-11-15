@@ -89,6 +89,8 @@ so there are no runtime tables to load and no network access is needed to build.
   tatweel insertion for uniform Arabic lines, space stretching
   everywhere else.
 - Full upper, lower and title case mapping, including the Turkish/Azeri rows.
+- Hyphenation by Liang's algorithm over generated US-English patterns,
+  through any `BreakPolicy` — UAX #14 alone by default.
 - A variable font's axes and named instances, read off fvar and the name table.
 - A glyph's box and its coverage bitmap, and a C API over all of it (`vtext.h`).
 
@@ -121,18 +123,20 @@ base on its own still draws as text; only the pair draws as emoji.
 
 Each item names the slice that owns it in `ROADMAP.md`.
 
-- Hyphenation dictionaries (7.5).
 - Indic and Khmer shaping (7.6, with the Phase 9.3 machine behind it).
-- Hinting, color, LCD, synthetic styles, stroking, MATH (7.7, 8.5–8.7).
+- Hinting, color, LCD, synthetic styles, stroking (7.7, 8.5–8.6); MATH constants
+  and variants read beside HarfBuzz (8.7 landed), Face wiring stays follow-up.
 - Variable instancing at chosen coordinates (7.10); the store is read, not applied.
 - Core Text and DirectWrite providers (7.8).
-- CFF/CFF2 rasterization and subsetting (7.9); detection and reporting work today.
+- CFF subsetting (7.9 reader landed; a read is not a rebuild).
 - Cursive attachment: read from real fonts, not applied — the one corpus rule
   that reaches its own glyphs is vestigial (four one-sided anchors, no adjacent
   exit-plus-entry pair), and it rewires the day a shaped line grows a pair.
-- Word and sentence breaks, caret and word runs (8.2); wrap modes, ellipsize, tabs (8.4).
-- The remaining scripts (Phase 9): CJK line breaking (9.1), Southeast Asian
-  clusters (9.2), the Indic machine (9.3), and the long tail (9.4).
+- Word/sentence log attrs and caret runs over the landed 8.2 tables; wrap modes,
+  ellipsize, tabs (8.4).
+- The remaining scripts (Phase 9): CJK breaking pinned (9.1 landed), SE Asian
+  corpus landed with engine gaps documented (9.2), the Indic machine (9.3),
+  and the long tail (9.4).
 
 ## Refused by design
 

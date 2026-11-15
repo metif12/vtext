@@ -2119,11 +2119,18 @@ mirrors both fields. Pinned by `align_test.v` with HarfBuzz-measured grown
 widths (82.432 مدرسة, 60.672 سلام at 32 px); the differential baseline is
 untouched (justified widths are engine-arithmetic, not cross-reader pins).
 
-**7.5 Hyphenation as a `BreakPolicy`.** Liang's algorithm with a dictionary
-loader; the shipped dictionary is embedded US-English patterns as a
-generated table (source and licence recorded the way UCD sources are), and
+**7.5 Hyphenation as a `BreakPolicy` — landed 2026-11-15, both halves.**
+Liang's algorithm (`layout/hyphen.v`) over embedded US-English patterns as a
+generated table (`ucd/ucd_hyphen.v`, hand-authored MIT rows after the TeX
+licence proved unusable — source and licence recorded with the table), and
 every further language is data, not code. Pinned by a word list with
-HarfBuzz-independent expected breaks, not by the UAX #14 floor.
+HarfBuzz-independent expected breaks, not by the UAX #14 floor. The wiring
+half is `wrap_paragraph_with_policy`: `Uax14Breaks` answers exactly what the
+plain call answers (pinned line-for-line), `HyphenBreaks` adds ASCII-word
+points merged in order, overlong words break with an appended hyphen glyph
+(undersized targets fall back to plain breaks, then to whole-word overflow),
+digits and vertical text never hyphenate. C callers keep UAX #14; hyphenation
+is a V-side policy.
 
 **7.6 Indic and Khmer beside HarfBuzz.** Committed OFL Devanagari (Noto
 Sans Devanagari over the network, the wave-2 pattern — not Nirmala/Leelaw,
