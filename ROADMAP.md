@@ -2022,13 +2022,26 @@ test fails the day a shaped line grows a pair. No corpus line moves on this
 slice: pair kerns had already converged the latin-kern cluster and width
 entries to zero, and difftest reports 0 new, 0 stale.
 
-**7.2 Script as a usable control (`ShapeOptions`).** Detection stays the
-default; the caller can now override script, language, direction, and
-features per tag (including `vert`/`vkrn` on and off) through one options
-struct on the proven `LayoutOptions` pattern, threaded through layout and
-the C API (`+tag`/`-tag` spellings ride the existing comma-separated
-string). Pinned by shaping the same text under two scripts beside
-HarfBuzz with the same overrides.
+**7.2 Script as a usable control (`LayoutOptions.script`, `.language`).** Detection stays the
+default; the caller can now override script and language through the options
+struct. Direction stays the `base_dir` argument, the single source the options
+comment demands. `vert`/`vkrn` stay mode-driven rather than tag-toggled: the
+second half is steerage, not a new feature set. The override rides the same
+`+tag`/`-tag` options struct and C struct as the features, and is pinned the
+same way: shaping the same text under two scripts beside HarfBuzz with the
+same overrides.
+
+Landed 2026-11-16, second half: `script` and `language` on `LayoutOptions`
+(and on the C `vtext_options_t`), threaded from run detection through
+substitution, kern, single-pos, marks and the C boundary. Empty is the
+default path byte-for-byte: detection per run, default language system.
+Naming a script forces every run under it (`=>` unfolds under `arab` on Fira
+Code, whose calt lives under latn and zyyy); naming a language asks the
+tagged system with fallback to the default (`URD` digits on Amiri, `FAR`
+separator and `SND` meem on Noto Naskh, each HarfBuzz-measured). `locl` runs
+after `ccmp` and before the joining forms, because it is written against the
+base glyphs. Pinned by `script_lang_test.v` with break-fix controls over both
+overrides, plus the C-struct arrival in `vertical_test.v`.
 
 Landed 2026-11-15, first half: programming ligatures are on by default.
 `calt`, `liga` and `clig` run after `rlig` on every line — HarfBuzz leaves
@@ -2042,8 +2055,10 @@ Tahoma's `dlig` pair stays off and its existing test green. The latin-liga
 corpus line is unchanged by the new default — Noto Naskh Arabic carries no
 Latin liga rules, and both sides shape it unfused with identical advances —
 while two code cases (`code-arrow`, `code-neq`) join the corpus to pin the
-face where the default matters. Script and language override remain the
-second half.
+face where the default matters. Their Pango pixels are baselined beside the
+rest: Pango's full-line Cairo render of the folded ligatures rasterizes past
+the pixel bound (maxdiff 224–255), recorded with the measured numbers rather
+than tuned away.
 
 **7.3 Common-base marks.** Landed 2026-11-15: a Zyyy/Zinh base resolves to
 the neighbouring strong script instead of falling back to arab — read in

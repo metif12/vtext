@@ -194,9 +194,9 @@ fn report_table(f &shape.Font, table string, engine_uses []string, verbose bool)
 // and the one the tables above cannot answer on their own.
 fn report_capabilities(f &shape.Font) {
 	println('  substitutes       ${yes_no(f.has_gsub())}')
-	println('  kerns             ${yes_no(f.kerns('arab'))} (arab)')
-	println('  kerns             ${yes_no(f.kerns('latn'))} (latn)')
-	println('  context positions ${yes_no(f.contextually_positions('arab'))} (arab)')
+	println('  kerns             ${yes_no(f.kerns('arab', ''))} (arab)')
+	println('  kerns             ${yes_no(f.kerns('latn', ''))} (latn)')
+	println('  context positions ${yes_no(f.contextually_positions('arab', ''))} (arab)')
 	println('  marks on marks    ${yes_no(f.stacks_marks())}')
 	println('  marks on ligs     ${yes_no(f.places_marks_on_ligatures())}')
 	// A font that declares a cursive feature but gets none of it applied is the case this section exists

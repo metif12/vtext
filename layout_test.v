@@ -229,7 +229,7 @@ fn test_layout_mark_on_shaped_base_uses_shaped_anchor() {
 	assert mark.is_mark && !base.is_mark, 'only the mark is a mark'
 	f := amiri() or { return }
 	assert base.base_gid != 0, 'a presentation beh must remember its base'
-	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab')
+	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab', '')
 	assert shaped != base.base_gid, 'Amiri must shape initial beh through GSUB'
 	off := f.mark_offset(f.glyph_index(rune(0x0650)), shaped, false) or {
 		panic('the font should anchor kasra on shaped beh')
@@ -357,7 +357,7 @@ fn test_layout_places_a_latin_mark_from_latin_rules() {
 	// The rule must exist and be nonzero, or the assertions below agree with a
 	// font that says nothing.
 	off := arial.mark_offset_in(arial.glyph_index(rune(0x0301)), arial.glyph_index(`q`),
-		false, 'latn') or { panic('Arial should anchor an acute on a q under latn') }
+		false, 'latn', '') or { panic('Arial should anchor an acute on a q under latn') }
 	assert off.x != 0 && off.y != 0, 'a zero anchor places nothing'
 	assert approx(mark.x - base.x, f64(off.x) * scale, 0.01), 'the mark sits at the latn anchor: ${mark.x - base.x} against ${f64(off.x) * scale}'
 	assert approx(mark.y, -f64(off.y) * scale, 0.01), 'the mark lifts off the baseline by the anchor'
@@ -481,7 +481,7 @@ fn test_layout_shapes_persian_through_gsub() {
 			// No cmap form, so the letter has to be drawn from its base glyph put through the
 			// font's table. The drawn glyph then has to differ from the unjoined base, since a
 			// letter with no cmap form is a letter this font only draws correctly shaped.
-			want := arabic.shaped_glyph_index(base, e.form, 'arab')
+			want := arabic.shaped_glyph_index(base, e.form, 'arab', '')
 			assert g.gid == want, 'the letter at ${i} should be the font shaped base glyph'
 			assert want != base, 'the letter at ${i} is meant to be shaped through GSUB'
 			assert e.shaped, 'the letter at ${i} was expected to come from the table'

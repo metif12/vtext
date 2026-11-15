@@ -38,13 +38,18 @@ typedef struct vtext_bitmap vtext_bitmap_t;
  * list of discretionary OpenType features and may be NULL. calt, liga and
  * clig are on by default; "-tag" turns one off and "+tag" names one
  * explicitly. line_height of 0 takes the font's own. vertical is 0 for a
- * horizontal line and nonzero for one column of vertical text. */
+ * horizontal line and nonzero for one column of vertical text. script and
+ * language are the OpenType tags the run resolves its features under, each
+ * NULL or empty for the default, spelt the way the font spells them
+ * ('arab', 'URD'). */
 typedef struct {
 	const char *features;
 	double line_height;
 	double letter_spacing;
 	double word_spacing;
 	int vertical;
+	const char *script;
+	const char *language;
 } vtext_options_t;
 
 /* One drawable glyph: the gid to rasterize, the pen movement, the position

@@ -164,13 +164,13 @@ fn test_gpos_chain_glyph_applies_through_a_lookup() {
 		}]
 	}
 	gids := [u16(5), u16(10), u16(20), u16(30)]
-	apps := g.apply_contextual(gids, 'latn')
+	apps := g.apply_contextual(gids, 'latn', '')
 	assert apps.len == 1, 'one application, got ${apps.len}'
 	assert apps[0].at == 2, 'moving the second input glyph'
 	assert apps[0].lookup == 1, 'through the lookup the record names'
-	off := g.context_offset(gids, 1, 2, 'latn') or { panic('the pair should place contextually') }
+	off := g.context_offset(gids, 1, 2, 'latn', '') or { panic('the pair should place contextually') }
 	assert off.x == -50 && off.y == 0, 'the single positioning moved it, got ${off}'
-	assert g.context_offset([u16(5), u16(10), u16(21), u16(30)], 1, 2, 'latn') == none, 'a run the rule does not match places nothing'
+	assert g.context_offset([u16(5), u16(10), u16(21), u16(30)], 1, 2, 'latn', '') == none, 'a run the rule does not match places nothing'
 }
 
 // LeelawUI, a Windows Malayalam face, is the font that proves the reader against

@@ -197,7 +197,7 @@ fn main() {
 		if i + 1 < line.glyphs.len {
 			next := line.glyphs[i + 1]
 			nf := next.font or { continue }
-			if off := f.kern_offset(g.gid, next.gid, 'arab') {
+			if off := f.kern_offset(g.gid, next.gid, 'arab', '') {
 				moved++
 				println('  pair ${g.gid} ${next.gid}: dx=${off.x}d dy=${off.y}d design units')
 			}

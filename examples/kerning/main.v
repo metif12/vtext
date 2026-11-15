@@ -86,14 +86,14 @@ fn main() {
 	// it: a difference in the spacing is a difference in the font, not in the engine.
 	println('${word}')
 	println('')
-	println(': kerns latin = ${kerned.kerns('latn')}')
-	println(': kerns latin = ${plain.kerns('latn')}')
+	println(': kerns latin = ${kerned.kerns('latn', '')}')
+	println(': kerns latin = ${plain.kerns('latn', '')}')
 	println('')
 	for p in pairs {
 		l := p.left.runes()[0]
 		r := p.right.runes()[0]
-		k := kerned.kern_offset(kerned.glyph_index(l), kerned.glyph_index(r), 'latn')
-		u := plain.kern_offset(plain.glyph_index(l), plain.glyph_index(r), 'latn')
+		k := kerned.kern_offset(kerned.glyph_index(l), kerned.glyph_index(r), 'latn', '')
+		u := plain.kern_offset(plain.glyph_index(l), plain.glyph_index(r), 'latn', '')
 		// The value as a plain number, because an Option printed across four lines is not something a
 		// reader can compare down a column.
 		mut ks := 'none'

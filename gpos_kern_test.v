@@ -91,11 +91,11 @@ fn test_gpos_kerning_latin_pairs_move_the_first_glyph() {
 	f := amiri() or { return }
 	// A, V is the pair a font kerns hardest, and the adjustment is a negative advance because the
 	// two letters lean into each other.
-	av := f.kern_offset(f.glyph_index(`A`), f.glyph_index(`V`), 'latn') or {
+	av := f.kern_offset(f.glyph_index(`A`), f.glyph_index(`V`), 'latn', '') or {
 		panic('times has no rule for AV')
 	}
 	// To, which is what a Latin reader would see at the start of the word "Today".
-	to := f.kern_offset(f.glyph_index(`T`), f.glyph_index(`o`), 'latn') or {
+	to := f.kern_offset(f.glyph_index(`T`), f.glyph_index(`o`), 'latn', '') or {
 		panic('times has no rule for To')
 	}
 	assert av.x < 0.0, 'AV is kerned tighter, not looser'
@@ -113,8 +113,8 @@ fn test_gpos_kerning_of_a_class_pair_does_not_depend_on_order() {
 	f := amiri() or { return }
 	a := f.glyph_index(`A`)
 	v := f.glyph_index(`V`)
-	forward := f.kern_offset(a, v, 'latn') or { panic('no rule for AV') }
-	backward := f.kern_offset(v, a, 'latn') or { panic('no rule for VA') }
+	forward := f.kern_offset(a, v, 'latn', '') or { panic('no rule for AV') }
+	backward := f.kern_offset(v, a, 'latn', '') or { panic('no rule for VA') }
 	assert forward.x == backward.x && forward.y == backward.y
 }
 
@@ -133,10 +133,10 @@ fn test_gpos_kerning_does_not_move_an_omitted_pair() {
 	sp := f.glyph_index(` `)
 	period := f.glyph_index(`.`)
 	// Either answer is correct: no rule, or a rule that says zero. A non-zero one is not.
-	if off := f.kern_offset(sp, period, 'latn') {
+	if off := f.kern_offset(sp, period, 'latn', '') {
 		assert off.x == 0.0 && off.y == 0.0, 'a space and a period are not kerned'
 	}
-	if off := f.kern_offset(period, sp, 'latn') {
+	if off := f.kern_offset(period, sp, 'latn', '') {
 		assert off.x == 0.0 && off.y == 0.0, 'a period and a space are not kerned'
 	}
 }
@@ -145,16 +145,16 @@ fn test_gpos_kerning_does_not_move_an_omitted_pair() {
 fn test_gpos_kerning_reports_whether_a_script_has_any() {
 	// Amiri carries a Latin kerning table, and it kerns Arabic as well.
 	amiri := amiri() or { return }
-	assert amiri.kerns('latn')
+	assert amiri.kerns('latn', '')
 	// A script the font says nothing about has no kerning, whatever the font does for others.
-	assert !amiri.kerns('zzzz')
+	assert !amiri.kerns('zzzz', '')
 }
 
 // The offsets are in design units, as the font's own coordinates run, so they scale with the font
 // and not with a pixel size the caller happened to ask for.
 fn test_gpos_kerning_offsets_are_in_design_units() {
 	f := amiri() or { return }
-	off := f.kern_offset(f.glyph_index(`A`), f.glyph_index(`V`), 'latn') or { panic('no rule') }
+	off := f.kern_offset(f.glyph_index(`A`), f.glyph_index(`V`), 'latn', '') or { panic('no rule') }
 	upm := f64(f.units_per_em())
 	assert -off.x < upm / 4.0, 'a kern is small next to an em'
 	assert off.x != 0.0, 'the pair is kerned, not zero'
@@ -174,22 +174,22 @@ fn test_gpos_kerning_offsets_are_in_design_units() {
 // same question, which the test above already asks of Amiri's Latin table.
 fn test_gpos_kerning_reads_the_arabic_script_rules() {
 	f := kern_font('DUBAI-REGULAR.TTF') or { return }
-	assert f.kerns('arab'), 'dubai carries Arabic kerning rules'
+	assert f.kerns('arab', ''), 'dubai carries Arabic kerning rules'
 	// Glyphs taken from the font's own class definitions rather than picked at random: the rule puts
 	// 448 in one class and 454 in another, and the cell between them is a kern.
-	assert f.kern_offset(448, 454, 'arab') != none, 'a pair the font classes together is kerned'
-	assert f.kern_offset(454, 448, 'arab') != none, 'and in the other order too'
+	assert f.kern_offset(448, 454, 'arab', '') != none, 'a pair the font classes together is kerned'
+	assert f.kern_offset(454, 448, 'arab', '') != none, 'and in the other order too'
 	// A rule that kerns a class of letters against everything else writes into the class 0 row,
 	// because the other side is the glyphs no definition names. Class 0 is therefore a real row and
 	// not an absent one, and a pair in it that the font gives a zero for is the font saying the
 	// pair is already right.
-	assert f.kern_offset(448, 3000, 'arab') != none, 'class 0 is a real row, not an absent one'
-	if off := f.kern_offset(448, 3000, 'arab') {
+	assert f.kern_offset(448, 3000, 'arab', '') != none, 'class 0 is a real row, not an absent one'
+	if off := f.kern_offset(448, 3000, 'arab', '') {
 		assert off.x == 0.0, 'and the font says zero for a pair it has no opinion about'
 	}
 	// A glyph the coverage does not name at all is the one thing that cannot match, which is what
 	// stops an unrelated letter from picking up a kerning it was never given.
-	assert f.kern_offset(65535, 454, 'arab') == none, 'a glyph outside the coverage is not kerned'
+	assert f.kern_offset(65535, 454, 'arab', '') == none, 'a glyph outside the coverage is not kerned'
 }
 
 // Laying a line out and asking about what came out is the only way a caller can kern Arabic, so the
@@ -206,7 +206,7 @@ fn test_gpos_kerning_applies_to_the_shaped_glyphs_of_a_line() {
 	assert line.glyphs.len >= 2, 'the line shaped to more than one glyph'
 	// Whatever the font does with this pair, it must not be a crash and it must be a decision the
 	// font made rather than a number that came from nowhere.
-	if off := f.kern_offset(line.glyphs[0].gid, line.glyphs[1].gid, 'arab') {
+	if off := f.kern_offset(line.glyphs[0].gid, line.glyphs[1].gid, 'arab', '') {
 		upm := f64(f.units_per_em())
 		assert -off.x < upm / 4.0, 'a kern is small next to an em'
 	}

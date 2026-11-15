@@ -171,7 +171,7 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // A `-tag` entry turns a default-on feature back off (`-calt` draws `=>` as two plain glyphs),
 // and `+tag` is the same as naming the tag; the required features above are not toggleable,
 // because a line missing them is not the text.
-pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
+pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, em_px f64,
 	extra []string, vertical bool) []Glyph {
 	g := f.face.gsub or { return glyphs }
 	mut out := []font.Ligatable{cap: glyphs.len}
@@ -185,7 +185,15 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 		}
 	}
 	for feature in ['ccmp'] {
-		out = g.substitute(g.lookups_for(script, feature), out)
+		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
+	}
+	// locl comes next, before the joining forms, because it is written against
+	// the base glyphs: Noto Naskh's Sindhi meem and Urdu digits, Amiri's Urdu
+	// digits. Applied after the joining forms it would look up shaped glyphs
+	// in a coverage of base ones and find nothing. Under a language system
+	// that does not list it the lookup list is empty, so this is nothing.
+	for feature in ['locl'] {
+		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
 	// The four joining features come next and in the specification's order, each masked to the glyphs in
 	// its own shape. They are on for every line for the same reason ccmp is: a line whose letters are all
@@ -202,10 +210,10 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 	// set but its glyph is a shaped one, and these coverages hold base letters, so there is nothing to match.
 	for form in [font.JoiningForm.isolated, font.JoiningForm.initial, font.JoiningForm.medial,
 		font.JoiningForm.final] {
-		out = g.substitute_forms(g.lookups_for(script, font.feature_tag_for(form)), out, form)
+		out = g.substitute_forms(g.lookups_for_lang(script, lang, font.feature_tag_for(form)), out, form)
 	}
 	for feature in ['rlig'] {
-		out = g.substitute(g.lookups_for(script, feature), out)
+		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
 	// calt, liga and clig are on unless the caller turned them off with `-tag`: the
 	// contextual alternates first, because they are written against the same base glyphs
@@ -254,7 +262,7 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 		}
 	}
 	for feature in on {
-		out = g.substitute(g.lookups_for(script, feature), out)
+		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
 	// Vertical forms come next when the line is vertical, for the same reason
 	// rlig is unconditional: a vertical line whose punctuation draws its
@@ -263,11 +271,11 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, em_px f64,
 	// Common and Inherited to the strong script in front of this call.
 	if vertical {
 		for feature in ['vert'] {
-			out = g.substitute(g.lookups_for(script, feature), out)
+			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 		}
 	}
 	for feature in asked {
-		out = g.substitute(g.lookups_for(script, feature), out)
+		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
 	// Every advance is read again, not just the fused ones, so the advance always belongs to the
 	// glyph it is on. A ligature is usually narrower than the glyphs it replaced, and carrying
@@ -357,9 +365,9 @@ pub fn (f &Font) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?fon
 // mark_offset_in is mark_offset for the script the run is in. Mark rules live
 // under per-script features, and asking under the wrong script finds a rule
 // written for another script's glyphs or -- more often -- nothing at all.
-pub fn (f &Font) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string) ?font.Offset2 {
+pub fn (f &Font) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string, lang string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
-	return gpos.mark_offset_in(mark_gid, base_gid, base_is_mark, script)
+	return gpos.mark_offset_in(mark_gid, base_gid, base_is_mark, script, lang)
 }
 
 // cursive_anchors returns where one glyph's joining stroke enters and leaves, in design units, with y
@@ -370,9 +378,9 @@ pub fn (f &Font) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, s
 // is about to place, and each of those may be absent. A letter at the start of a word has an entry and no
 // exit; a letter at the end is the other way round. A font that gives a glyph neither has no opinion
 // about it, and none is returned.
-pub fn (f &Font) cursive_anchors(gid u16, script string) ?font.CursiveAnchors {
+pub fn (f &Font) cursive_anchors(gid u16, script string, lang string) ?font.CursiveAnchors {
 	gpos := f.face.gpos or { return none }
-	return gpos.cursive_anchors(gid, script)
+	return gpos.cursive_anchors(gid, script, lang)
 }
 
 // kern_offset returns how far to move one glyph when another follows it, in design units, with y
@@ -389,17 +397,17 @@ pub fn (f &Font) cursive_anchors(gid u16, script string) ?font.CursiveAnchors {
 // A pair the font says nothing about returns none, and so does a pair it says is already correct as
 // far as this position is concerned, because a zero adjustment and no adjustment cannot be told
 // apart by the number alone and neither one moves the pen.
-pub fn (f &Font) kern_offset(left_gid u16, right_gid u16, script string) ?font.Offset2 {
+pub fn (f &Font) kern_offset(left_gid u16, right_gid u16, script string, lang string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
-	return gpos.kern_offset(left_gid, right_gid, script)
+	return gpos.kern_offset(left_gid, right_gid, script, lang)
 }
 
 // vkern_offset returns how far to move left_gid down when right_gid follows it in a vertical
 // line, in design units. It is the vkrn half of kern_offset: plain pairs, no answer when the font
 // names no rule, and the y of the answer is the y advance the rule carries.
-pub fn (f &Font) vkern_offset(left_gid u16, right_gid u16, script string) ?font.Offset2 {
+pub fn (f &Font) vkern_offset(left_gid u16, right_gid u16, script string, lang string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
-	return gpos.vkern_offset(left_gid, right_gid, script)
+	return gpos.vkern_offset(left_gid, right_gid, script, lang)
 }
 
 // single_adjustment returns one glyph's single positioning under the features the line applies,
@@ -414,7 +422,7 @@ pub fn (f &Font) vkern_offset(left_gid u16, right_gid u16, script string) ?font.
 // shaper puts it. Mark features (abvm, blwm, mark, mkmk) are not consulted: position_marks
 // owns marks, and a second shift from here would move them twice.
 // What this answers for a mark is therefore nothing, and the layout pass skips them.
-pub fn (f &Font) single_adjustment(gid u16, script string, extra []string, vertical bool) ?font.PairValue {
+pub fn (f &Font) single_adjustment(gid u16, script string, lang string, extra []string, vertical bool) ?font.PairValue {
 	gpos := f.face.gpos or { return none }
 	mut enabled := {
 		'calt': true
@@ -452,14 +460,14 @@ pub fn (f &Font) single_adjustment(gid u16, script string, extra []string, verti
 	mut lookups := []u16{}
 	mut seen := map[u16]bool{}
 	if vertical {
-		for li in gpos.lookups_for(script, 'vkrn') {
+		for li in gpos.lookups_for_lang(script, lang, 'vkrn') {
 			if li !in seen {
 				seen[li] = true
 				lookups << li
 			}
 		}
 	} else {
-		for li in gpos.lookups_for(script, 'kern') {
+		for li in gpos.lookups_for_lang(script, lang, 'kern') {
 			if li !in seen {
 				seen[li] = true
 				lookups << li
@@ -468,7 +476,7 @@ pub fn (f &Font) single_adjustment(gid u16, script string, extra []string, verti
 	}
 	for tag in ['calt', 'liga', 'clig'] {
 		if enabled[tag] {
-			for li in gpos.lookups_for(script, tag) {
+			for li in gpos.lookups_for_lang(script, lang, tag) {
 				if li !in seen {
 					seen[li] = true
 					lookups << li
@@ -487,7 +495,7 @@ pub fn (f &Font) single_adjustment(gid u16, script string, extra []string, verti
 		if tag == 'calt' || tag == 'liga' || tag == 'clig' {
 			continue
 		}
-		for li in gpos.lookups_for(script, tag) {
+		for li in gpos.lookups_for_lang(script, lang, tag) {
 			if li !in seen {
 				seen[li] = true
 				lookups << li
@@ -498,9 +506,9 @@ pub fn (f &Font) single_adjustment(gid u16, script string, extra []string, verti
 }
 
 // kerns reports whether the font has any pair adjustment for a script.
-pub fn (f &Font) kerns(script string) bool {
+pub fn (f &Font) kerns(script string, lang string) bool {
 	gpos := f.face.gpos or { return false }
-	return gpos.has_kerning(script)
+	return gpos.has_kerning(script, lang)
 }
 
 // context_placement returns what the font says about a pair of adjacent glyphs in a run, where the
@@ -517,9 +525,9 @@ pub fn (f &Font) kerns(script string) bool {
 //
 // gids is the run in logical order, which is the order the font's patterns are written in. left and
 // right are indices into it, and for a right-to-left run left is the rightmost of the two.
-pub fn (f &Font) context_placement(gids []u16, left int, right int, script string) ?font.Offset2 {
+pub fn (f &Font) context_placement(gids []u16, left int, right int, script string, lang string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
-	return gpos.context_offset(gids, left, right, script)
+	return gpos.context_offset(gids, left, right, script, lang)
 }
 
 // contextually_positions reports whether the font moves a glyph based on what is around it.
@@ -528,9 +536,9 @@ pub fn (f &Font) context_placement(gids []u16, left int, right int, script strin
 // depending on whether there is anything above it, and a font says so with a rule rather than with a
 // fifth shape. A Latin font has none, because Latin has nothing to stack, so this is a question worth
 // asking before expecting a mark to land somewhere particular.
-pub fn (f &Font) contextually_positions(script string) bool {
+pub fn (f &Font) contextually_positions(script string, lang string) bool {
 	gpos := f.face.gpos or { return false }
-	return gpos.has_contextual_positioning(script)
+	return gpos.has_contextual_positioning(script, lang)
 }
 
 // places_marks_on_ligatures reports whether the font can position a mark on a fused pair, which
@@ -560,9 +568,9 @@ pub fn (f &Font) stacks_marks() bool {
 //
 // script is the script of the letter, so a font offering the same feature tag for several
 // scripts resolves the right rule.
-pub fn (f &Font) shaped_glyph_index(gid u16, form font.JoiningForm, script string) u16 {
+pub fn (f &Font) shaped_glyph_index(gid u16, form font.JoiningForm, script string, lang string) u16 {
 	g := f.face.gsub or { return gid }
-	return g.shaped_glyph(gid, form, script)
+	return g.shaped_glyph(gid, form, script, lang)
 }
 
 // glyph_advance is the horizontal advance of a glyph in pixels.

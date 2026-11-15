@@ -806,10 +806,10 @@ pub fn new_gpos(raw []u8) ?&Gpos {
 // what keeps an Arabic rule from placing a Latin mark, and a Latin rule from placing
 // an Arabic one. The parse-time list names arab because that is the script this
 // library was developed against; the shaping path asks per run instead.
-pub fn (g &Gpos) mark_feature_lookups_for(script string) []u16 {
+pub fn (g &Gpos) mark_feature_lookups_for(script string, lang string) []u16 {
 	mut out := []u16{}
 	for feat in ['abvm', 'blwm', 'mark', 'mkmk'] {
-		out << g.lookups_for(script, feat)
+		out << g.lookups_for_lang(script, lang, feat)
 	}
 	return out
 }
@@ -869,10 +869,31 @@ pub fn (g &Gpos) script_tags() []string {
 
 // lookups_for returns the lookups a script's feature names, in the order to apply them.
 pub fn (g &Gpos) lookups_for(script string, feature string) []u16 {
+	return g.lookups_for_lang(script, '', feature)
+}
+
+// lookups_for_lang is lookups_for under a language: the tagged language
+// system when the font names it, the default language system otherwise. An
+// empty language is the default, which is what every line shaped before the
+// language control existed.
+pub fn (g &Gpos) lookups_for_lang(script string, lang string, feature string) []u16 {
 	want := ot_script_tag(script)
 	for s in g.scripts {
 		if s.tag != want {
 			continue
+		}
+		if lang != '' {
+			want_lang := ot_lang_tag(lang)
+			for l in s.langs {
+				if ot_lang_tag(l.tag) == want_lang {
+					for f in l.features {
+						if f.tag == feature {
+							return f.lookups
+						}
+					}
+					return []u16{}
+				}
+			}
 		}
 		for f in s.features {
 			if f.tag == feature {
@@ -919,8 +940,8 @@ pub fn (g &Gpos) mark_offset(mark_gid u16, base_gid u16, base_is_mark bool) ?Off
 // script the library was developed against. The lookups are collected the same way,
 // so for 'arab' the two ask exactly the same list; for anything else the second one
 // reaches rules the first cannot see.
-pub fn (g &Gpos) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string) ?Offset2 {
-	return g.mark_offset_on(mark_gid, base_gid, base_is_mark, g.mark_feature_lookups_for(script))
+pub fn (g &Gpos) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, script string, lang string) ?Offset2 {
+	return g.mark_offset_on(mark_gid, base_gid, base_is_mark, g.mark_feature_lookups_for(script, lang))
 }
 
 // mark_offset_on answers one mark pair from an explicit lookup list, which is what the
@@ -968,8 +989,8 @@ pub fn (g &Gpos) mark_offset_on(mark_gid u16, base_gid u16, base_is_mark bool, l
 //
 // y is positive upwards, as in the rest of the table's output. A renderer working in screen
 // coordinates has to flip it.
-pub fn (g &Gpos) cursive_anchors(gid u16, script string) ?CursiveAnchors {
-	for li in g.lookups_for(script, 'curs') {
+pub fn (g &Gpos) cursive_anchors(gid u16, script string, lang string) ?CursiveAnchors {
+	for li in g.lookups_for_lang(script, lang, 'curs') {
 		if li >= g.lookups.len {
 			continue
 		}
@@ -1056,8 +1077,8 @@ pub fn (g &Gpos) has_mark_to_ligature() bool {
 // its own kerning: a Persian font kerns Arabic letters with one set of rules and Latin letters with
 // another, and a single list would apply the wrong one to both. The Arabic set is collected eagerly
 // because that is the script this library shapes.
-pub fn (g &Gpos) kerning_for(script string) []u16 {
-	return g.lookups_for(script, 'kern')
+pub fn (g &Gpos) kerning_for(script string, lang string) []u16 {
+	return g.lookups_for_lang(script, lang, 'kern')
 }
 
 // kern_offset returns how far to move left_gid when right_gid follows it, in design units.
@@ -1077,11 +1098,11 @@ pub fn (g &Gpos) kerning_for(script string) []u16 {
 // classes do not name, usually for zero, so stopping at the first match would let that zero
 // hide a real kern a contextual lookup holds for the same pair — e-f in Amiri reports (0, 0)
 // from the class row and -11 from the chain, and HarfBuzz draws the -11.
-pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string) ?Offset2 {
+pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string, lang string) ?Offset2 {
 	mut x := 0
 	mut y := 0
 	mut found := false
-	for li in g.kerning_for(script) {
+	for li in g.kerning_for(script, lang) {
 		if li >= g.lookups.len {
 			continue
 		}
@@ -1106,8 +1127,8 @@ pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string) ?Offset
 // vkerning_for are the lookups of the vkrn feature, for the script a caller names: the vertical
 // half of kerning_for. A font is free to kern horizontally and vertically under different rules,
 // and Yu Gothic does — its kern and vkrn are different lookups — so one list cannot answer both.
-pub fn (g &Gpos) vkerning_for(script string) []u16 {
-	return g.lookups_for(script, 'vkrn')
+pub fn (g &Gpos) vkerning_for(script string, lang string) []u16 {
+	return g.lookups_for_lang(script, lang, 'vkrn')
 }
 
 // vkern_offset returns how far to move left_gid down when right_gid follows it in a vertical line,
@@ -1118,10 +1139,10 @@ pub fn (g &Gpos) vkerning_for(script string) []u16 {
 //
 // The answer is the first glyph's, in the text's own direction, the same convention kern_offset
 // keeps. A value of zero is a real answer like it is there, and none means no rule at all.
-pub fn (g &Gpos) vkern_offset(left_gid u16, right_gid u16, script string) ?Offset2 {
+pub fn (g &Gpos) vkern_offset(left_gid u16, right_gid u16, script string, lang string) ?Offset2 {
 	mut y := 0
 	mut found := false
-	for li in g.vkerning_for(script) {
+	for li in g.vkerning_for(script, lang) {
 		if li >= g.lookups.len {
 			continue
 		}
@@ -1220,8 +1241,8 @@ pub fn has_chain_glyphs(l &GposLookup) bool {
 // A context counts. A font whose only rules are context-sensitive kerns just as much as one with a
 // plain pair table, and reporting false for it would make a caller lay a line out twice to learn there
 // was nothing to learn.
-pub fn (g &Gpos) has_kerning(script string) bool {
-	for li in g.kerning_for(script) {
+pub fn (g &Gpos) has_kerning(script string, lang string) bool {
+	for li in g.kerning_for(script, lang) {
 		if li >= g.lookups.len {
 			continue
 		}
@@ -1253,11 +1274,11 @@ pub mut:
 // font carries none at all, and an Arabic font carries them under calt, mark and mkmk depending on
 // which of them has rules that need context. Asking per script rather than collecting once is what
 // keeps a Latin lookup from being run over Arabic text.
-pub fn (g &Gpos) contextual_for(script string) []u16 {
+pub fn (g &Gpos) contextual_for(script string, lang string) []u16 {
 	mut out := []u16{}
 	mut named_lookups := map[u16]bool{}
 	for tag in ['calt', 'mark', 'mkmk', 'abvm', 'blwm', 'rclt', 'curs', 'kern'] {
-		for li in g.lookups_for(script, tag) {
+		for li in g.lookups_for_lang(script, lang, tag) {
 			if named_lookups[li] || li >= g.lookups.len {
 				continue
 			}
@@ -1276,8 +1297,8 @@ pub fn (g &Gpos) contextual_for(script string) []u16 {
 
 // has_contextual_positioning reports whether the font positions a glyph based on what is around it,
 // which is what a script with stacked forms needs and a Latin font does not.
-pub fn (g &Gpos) has_contextual_positioning(script string) bool {
-	for li in g.contextual_for(script) {
+pub fn (g &Gpos) has_contextual_positioning(script string, lang string) bool {
+	for li in g.contextual_for(script, lang) {
 		if li < g.lookups.len
 			&& (g.lookups[li].chains.len > 0 || has_chain_classes(g.lookups[li])
 				|| has_chain_glyphs(g.lookups[li])) {
@@ -1368,7 +1389,7 @@ pub fn (g &Gpos) apply_pos_records(records []ContextRecord, m ChainMatchPosition
 // Both answers count when both exist: adjustments accumulate across lookups rather than stopping at
 // the first, so a class-0 zero from the pairs does not hide a contextual kern for the same glyphs.
 // e-f in Amiri is (0, 0) plain and -11 in context, and HarfBuzz draws the sum.
-pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string) ?Offset2 {
+pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, lang string) ?Offset2 {
 	if left < 0 || right >= gids.len || left >= right {
 		return none
 	}
@@ -1377,12 +1398,12 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string) 
 	mut x := 0
 	mut y := 0
 	mut found := false
-	if off := g.kern_offset(left_gid, right_gid, script) {
+	if off := g.kern_offset(left_gid, right_gid, script, lang) {
 		x += off.x
 		y += off.y
 		found = true
 	}
-	for li in g.kerning_for(script) {
+	for li in g.kerning_for(script, lang) {
 		if li >= g.lookups.len {
 			continue
 		}
@@ -1501,7 +1522,7 @@ pub fn spans_span(backtrack_len int, lookahead_len int, m ChainMatchPositions, l
 // A glyph is reported at most once. Two rules can both match at the same position and both want to
 // move it, and which one wins is the order the lookups are applied in, which the caller owns; this
 // returns what each rule asks for and lets the caller decide.
-pub fn (g &Gpos) apply_contextual(gids []u16, script string) []ChainApplication {
+pub fn (g &Gpos) apply_contextual(gids []u16, script string, lang string) []ChainApplication {
 	mut out := []ChainApplication{}
 	if gids.len == 0 {
 		return out
@@ -1509,7 +1530,7 @@ pub fn (g &Gpos) apply_contextual(gids []u16, script string) []ChainApplication 
 	// The rules are tried in the order the features name them, and within a lookup in the order the
 	// subtables are written, because a later one is meant to override an earlier one and the caller
 	// cannot know that unless the order is preserved.
-	for li in g.contextual_for(script) {
+	for li in g.contextual_for(script, lang) {
 		if li >= g.lookups.len {
 			continue
 		}

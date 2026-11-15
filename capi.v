@@ -104,6 +104,12 @@ fn c_options(opts &COptions) layout.LayoutOptions {
 		out.letter_spacing = opts.letter_spacing
 		out.word_spacing = opts.word_spacing
 		out.vertical = opts.vertical != 0
+		if opts.script != nil && opts.script[0] != 0 {
+			out.script = tos_clone(opts.script)
+		}
+		if opts.language != nil && opts.language[0] != 0 {
+			out.language = tos_clone(opts.language)
+		}
 	}
 	return out
 }
@@ -168,6 +174,9 @@ fn free_line_box(p &layout.Line) {
 // same shape: `vtext_options_t` in vtext.h. The features string is
 // comma-separated and may be null. vertical is an int rather than a bool so the
 // field is four bytes on both sides of the boundary: a C int and a V i32.
+// script and language are the OpenType tags the run resolves its features
+// under, each null or empty for the default, spelt the way the font spells
+// them ('arab', 'URD').
 pub struct COptions {
 pub mut:
 	features       &u8
@@ -175,6 +184,8 @@ pub mut:
 	letter_spacing f64
 	word_spacing   f64
 	vertical       i32
+	script         &u8
+	language       &u8
 }
 
 // CBreaks is what a break query hands back: two parallel arrays of len ints,

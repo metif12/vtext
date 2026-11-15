@@ -72,7 +72,7 @@ fn kern_font(name string) ?&shape.Font {
 // than a sign.
 fn exact_kern(f &shape.Font, left string, right string) i32 {
 	off := f.kern_offset(f.glyph_index(left.runes()[0]), f.glyph_index(right.runes()[0]),
-		'latn') or { return 0 }
+		'latn', '') or { return 0 }
 	return off.x
 }
 
@@ -93,7 +93,7 @@ fn test_gpos_pair_pos_format_one_reads_the_second_glyph_with_its_value() {
 	for pair in [['A', 'V'], ['T', 'o'], ['V', 'A'], ['Y', 'o'], ['A', 'T'], ['F', 'A']] {
 		l := pair[0].runes()[0]
 		r := pair[1].runes()[0]
-		off := f.kern_offset(f.glyph_index(l), f.glyph_index(r), 'latn') or {
+		off := f.kern_offset(f.glyph_index(l), f.glyph_index(r), 'latn', '') or {
 			panic('segoeui has no rule for ${pair[0]}${pair[1]}')
 		}
 		assert off.x < 0, '${pair[0]}${pair[1]} closes rather than opens'
@@ -113,14 +113,14 @@ fn test_gpos_pair_pos_format_two_still_answers_after_format_one_was_fixed() {
 	f := kern_font('times.ttf') or { return }
 	assert exact_kern(f, 'A', 'V') != 0, 'times kerns AV through the class matrix'
 	assert exact_kern(f, 'T', 'o') != 0, 'and To'
-	assert f.kerns('latn'), 'and reports that it kerns the script'
+	assert f.kerns('latn', ''), 'and reports that it kerns the script'
 }
 
 // Verdana's kerning is format 1 too, and in a lookup that is not wrapped in an extension, so it covers
 // the case of a format 1 rule read without unwrapping anything first.
 fn test_gpos_pair_pos_format_one_without_an_extension_wrapper() {
 	f := kern_font('verdana.ttf') or { return }
-	assert f.kerns('latn'), 'verdana carries Latin kerning rules'
+	assert f.kerns('latn', ''), 'verdana carries Latin kerning rules'
 	assert exact_kern(f, 'A', 'V') == -60, 'AV is the font number'
 	assert exact_kern(f, 'T', 'o') == -220, 'and To'
 }
@@ -130,7 +130,7 @@ fn test_gpos_pair_pos_format_one_without_an_extension_wrapper() {
 fn test_gpos_pair_pos_format_one_still_refuses_a_pair_the_font_does_not_have() {
 	f := kern_font('segoeui.ttf') or { return }
 	// A space is not in Segoe UI's kern pair sets, so there is no record to find.
-	assert f.kern_offset(f.glyph_index(' '.runes()[0]), f.glyph_index('.'.runes()[0]), 'latn') == none, 'a space and a period are not kerned'
+	assert f.kern_offset(f.glyph_index(' '.runes()[0]), f.glyph_index('.'.runes()[0]), 'latn', '') == none, 'a space and a period are not kerned'
 }
 
 // The number of sets a rule reports is the count in its header, which is the number of covered first

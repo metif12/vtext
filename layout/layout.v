@@ -77,6 +77,18 @@ pub mut:
 	// the Persian pairs — so a `-tag` entry turns one of those back off (`-calt` draws `=>`
 	// as two plain glyphs) and `+tag` is the same as naming the tag.
 	features []string
+	// script overrides the detected script every run resolves its features under.
+	// Empty detects per run — the first strong script, arab when none — which is
+	// what every line shaped before this control existed. Naming one forces all
+	// runs under it, spelt the way the font spells it ('arab', 'latn').
+	script string
+	// language overrides the language system every run resolves its features
+	// under. Empty is the script's default language system, which is what every
+	// line shaped before this control existed. Naming one asks the tagged
+	// language system instead ('URD', 'FAR'), falling back to the default when
+	// the font does not tag it. It is the OpenType tag the font spells, not a
+	// BCP 47 code: 'urd' is not 'URD'.
+	language string
 	// line_height is the baseline-to-baseline distance in pixels. Zero takes the font's own, which
 	// is the largest natural line height among the fonts that contributed a glyph.
 	//
@@ -176,8 +188,11 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		// glyph's: Common, Inherited and Unknown have no features of their own,
 		// so a run that opens with a comma or a digit would otherwise resolve
 		// none, and HarfBuzz itemizes the same run under its strong script.
+		// The caller's override wins over all of it: one script for every run.
 		mut script := 'arab'
-		if shaped.glyphs.len > 0 {
+		if options.script != '' {
+			script = font.ot_script_tag(options.script)
+		} else if shaped.glyphs.len > 0 {
 			script = shaped.glyphs[0].script
 			for g in shaped.glyphs {
 				if g.script != 'Zyyy' && g.script != 'Zinh' && g.script != 'Zzzz' {
@@ -186,6 +201,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 				}
 			}
 		}
+		lang := options.language
 		for g in shaped.glyphs {
 			// A shaped index counts the restored non-joiners too, so it is an offset
 			// into sub_idx rather than into the sequence; without a restoration the
@@ -218,7 +234,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		// same path for the same reason, and it needs the run's direction: the kern folds
 		// into the advance of the visually first glyph of the pair.
 		rtl := seq.len > 0 && bidi.levels[seq[0]] & 1 == 1
-		mut run_glyphs := substitute_in_fonts(run, em_px, script, options.features, options.vertical, rtl)
+		mut run_glyphs := substitute_in_fonts(run, em_px, script, lang, options.features, options.vertical, rtl)
 		// The vertical swap runs per run rather than over the whole line, because the
 		// vertical kern that follows it needs the run's script and must not cross a
 		// run boundary: a pair from two scripts has no single table to ask. The swap
@@ -226,8 +242,8 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		// must not run again and discard the fold.
 		if options.vertical {
 			apply_vertical_advances(mut run_glyphs, em_px)
-			vkern_pairs(mut run_glyphs, em_px, script, rtl)
-			single_positions(mut run_glyphs, em_px, script, options.features, true)
+			vkern_pairs(mut run_glyphs, em_px, script, lang, rtl)
+			single_positions(mut run_glyphs, em_px, script, lang, options.features, true)
 		}
 		for glyph in run_glyphs {
 			placed << glyph
@@ -250,7 +266,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		}
 		paragraph_level: bidi.paragraph_level
 	}
-	position_marks(mut line, em_px, ctx, options.vertical, cps)
+	position_marks(mut line, em_px, ctx, options.vertical, cps, options.language)
 	if options.vertical {
 		measure_vertical_line(mut line, em_px, options)
 	} else {
@@ -302,7 +318,7 @@ pub fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
 // letters a ligature would have fused are drawn apart. That is the honest answer for a line whose
 // characters came from different fonts: there is no single glyph to draw them as, and a mark
 // composition that needs the letter before it is out of reach for the same reason.
-pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, features []string,
+pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, lang string, features []string,
 	vertical bool, rtl bool) []shape.Glyph {
 	if glyphs.len == 0 {
 		return glyphs
@@ -323,7 +339,7 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, featu
 			}
 			end++
 		}
-		for glyph in f.substitute_glyphs(glyphs[at..end], script, em_px, features, vertical) {
+		for glyph in f.substitute_glyphs(glyphs[at..end], script, lang, em_px, features, vertical) {
 			out << glyph
 		}
 		at = end
@@ -334,8 +350,8 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, featu
 	// run at the call site, so this pass skips kerning entirely in vertical
 	// mode rather than folding a number the swap is about to discard.
 	if !vertical {
-		kern_pairs(mut out, em_px, script, rtl)
-		single_positions(mut out, em_px, script, features, false)
+		kern_pairs(mut out, em_px, script, lang, rtl)
+		single_positions(mut out, em_px, script, lang, features, false)
 	}
 	return out
 }
@@ -372,7 +388,7 @@ pub fn apply_vertical_advances(mut glyphs []shape.Glyph, em_px f64) {
 // The kern folds into the advance of the visually first glyph of the pair — the first
 // logical glyph going left to right, the second going right to left — which is where
 // HarfBuzz reports it: AV tightens A's advance, and e-f in an RTL run tightens f's.
-pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool) {
+pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang string, rtl bool) {
 	if glyphs.len < 2 {
 		return
 	}
@@ -391,7 +407,7 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool) 
 		if fa != fb {
 			continue
 		}
-		off := fa.context_placement(gids, i, i + 1, script) or { continue }
+		off := fa.context_placement(gids, i, i + 1, script, lang) or { continue }
 		scale := em_px / f64(fa.face.units_per_em)
 		// y is positive upwards in the font and downwards on the line, as in
 		// position_marks, so it is flipped here rather than at the callers.
@@ -417,7 +433,7 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool) 
 // considered — same font on both sides, no marks in the pair — and the kern folds into the advance
 // of the visually first glyph of the pair, the first logical glyph going down the column and the
 // second in the rare right-to-left vertical run.
-pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool) {
+pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang string, rtl bool) {
 	if glyphs.len < 2 {
 		return
 	}
@@ -436,7 +452,7 @@ pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool)
 		if fa != fb {
 			continue
 		}
-		off := fa.vkern_offset(a.gid, b.gid, script) or { continue }
+		off := fa.vkern_offset(a.gid, b.gid, script, lang) or { continue }
 		scale := em_px / f64(fa.face.units_per_em)
 		if rtl {
 			glyphs[i + 1].advance += f64(off.y) * scale
@@ -459,14 +475,14 @@ pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool)
 // and a shift from here would move an anchored mark twice; an unanchored mark keeps today's
 // answer rather than a new one. No rule at all leaves the glyph alone, which is the common
 // case: most fonts carry no single positioning under the features a line applies.
-pub fn single_positions(mut glyphs []shape.Glyph, em_px f64, script string, features []string,
+pub fn single_positions(mut glyphs []shape.Glyph, em_px f64, script string, lang string, features []string,
 	vertical bool) {
 	for mut g in glyphs {
 		if g.is_mark {
 			continue
 		}
 		f := g.font or { continue }
-		v := f.single_adjustment(g.gid, script, features, vertical) or { continue }
+		v := f.single_adjustment(g.gid, script, lang, features, vertical) or { continue }
 		scale := em_px / f64(f.face.units_per_em)
 		if vertical {
 			if v.has_y_advance() {
@@ -760,7 +776,7 @@ pub fn larger(a f64, b f64) f64 {
 // unaffected either way.
 // A `mut` value receiver for the reason given on measure_line: `mut line &Line` as a
 // parameter is a pair V 0.5.2 will not accept at a `position_marks(mut line, ...)` call.
-pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical bool, cps []rune) {
+pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical bool, cps []rune, lang string) {
 	// Two passes, and the order matters. The line is in visual order, and in a right-to-left
 	// line a mark comes before the letter it belongs to, so collecting the letters and then
 	// placing the marks in one pass would find the mark's base already behind it. Collecting
@@ -853,7 +869,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 			stack_font := g.font or { continue }
 			stack_target_font := target.font or { continue }
 			if stack_font == stack_target_font {
-				if off := stack_font.mark_offset_in(g.gid, target.gid, true, script) {
+				if off := stack_font.mark_offset_in(g.gid, target.gid, true, script, lang) {
 					stack_scale := em_px / f64(stack_font.face.units_per_em)
 					line.glyphs[i].x = target.x + f64(off.x) * stack_scale
 					if vertical {
@@ -876,7 +892,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		if f != base_font {
 			continue
 		}
-		mut off := shaped_mark_offset(f, g.gid, base, script) or { continue }
+		mut off := shaped_mark_offset(f, g.gid, base, script, lang) or { continue }
 		// The offset is in design units and the line is in pixels, so it is scaled by the same
 		// ratio the advances came from.
 		scale := em_px / f64(f.face.units_per_em)
@@ -908,20 +924,20 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 // reads. base_gid is only ever set on the Arabic presentation-form path, so 'arab' is
 // that path's own script rather than a guess; a font with no such rule answers the
 // base glyph and the last step behaves as before.
-pub fn shaped_mark_offset(f &shape.Font, mark_gid u16, base shape.Glyph, script string) ?font.Offset2 {
-	if off := f.mark_offset_in(mark_gid, base.gid, false, script) {
+pub fn shaped_mark_offset(f &shape.Font, mark_gid u16, base shape.Glyph, script string, lang string) ?font.Offset2 {
+	if off := f.mark_offset_in(mark_gid, base.gid, false, script, lang) {
 		return off
 	}
 	if base.base_gid == 0 {
 		return none
 	}
-	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab')
+	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab', lang)
 	if shaped != base.base_gid {
-		if off := f.mark_offset_in(mark_gid, shaped, false, script) {
+		if off := f.mark_offset_in(mark_gid, shaped, false, script, lang) {
 			return off
 		}
 	}
-	return f.mark_offset_in(mark_gid, base.base_gid, false, script)
+	return f.mark_offset_in(mark_gid, base.base_gid, false, script, lang)
 }
 
 // mark_script resolves the script whose mark rules place this mark: the script of the

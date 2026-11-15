@@ -108,9 +108,9 @@ fn test_gpos_contextual_records_name_a_glyph_that_exists() {
 fn test_gpos_contextual_is_an_arabic_thing_and_not_a_latin_one() {
 	tahoma := ctx_font('Amiri-Regular.ttf') or { return }
 	// Tahoma's chaining-context lookups are all reached through the arab script's features.
-	assert tahoma.contextually_positions('arab'), 'tahoma positions by context for Arabic'
+	assert tahoma.contextually_positions('arab', ''), 'tahoma positions by context for Arabic'
 	// A script the font says nothing about has none, whichever font it is.
-	assert !tahoma.contextually_positions('zzzz')
+	assert !tahoma.contextually_positions('zzzz', '')
 }
 
 // The coverages are what the pattern is matched through, so a rule whose coverage is empty is a rule
@@ -145,9 +145,9 @@ fn test_gpos_contextual_does_not_fire_on_a_run_it_does_not_match() {
 	for c in [`a`, `b`, `c`, `d`, `e`] {
 		run << f.glyph_index(c)
 	}
-	assert gpos.apply_contextual(run, 'arab').len == 0, 'Latin letters match no Arabic pattern'
+	assert gpos.apply_contextual(run, 'arab', '').len == 0, 'Latin letters match no Arabic pattern'
 	// An empty run is nothing rather than a match at position zero.
-	assert gpos.apply_contextual([]u16{}, 'arab').len == 0
+	assert gpos.apply_contextual([]u16{}, 'arab', '').len == 0
 }
 
 // A font's chaining rules are written against the glyphs its own pipeline produces, and for a font
@@ -212,11 +212,11 @@ fn test_gpos_contextual_does_nothing_on_text_it_does_not_match() {
 	for g in line.glyphs {
 		gids << g.gid
 	}
-	assert gpos.apply_contextual(gids, 'arab').len == 0, 'Latin letters match no Arabic pattern'
+	assert gpos.apply_contextual(gids, 'arab', '').len == 0, 'Latin letters match no Arabic pattern'
 	// An empty run is nothing rather than a match at position zero.
-	assert gpos.apply_contextual([]u16{}, 'arab').len == 0
+	assert gpos.apply_contextual([]u16{}, 'arab', '').len == 0
 	// A single glyph cannot match a two glyph pattern, whatever the glyph is.
-	assert gpos.apply_contextual([u16(f.glyph_index(rune(0x0651)))], 'arab').len == 0, 'one glyph cannot satisfy a two glyph pattern'
+	assert gpos.apply_contextual([u16(f.glyph_index(rune(0x0651)))], 'arab', '').len == 0, 'one glyph cannot satisfy a two glyph pattern'
 }
 
 // ctx_produced is every glyph a spread of marked letters produces, which is what a pattern's coverage

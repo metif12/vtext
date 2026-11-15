@@ -291,8 +291,9 @@ glyphs, not the fonts.
 Options:
 
 ```c
-vtext_options_t opts = { "-calt", 28.0, 0.5, 2.0, 1 };
-/* features, line_height (0 takes the font's own), letter_spacing, word_spacing, vertical */
+vtext_options_t opts = { "-calt", 28.0, 0.5, 2.0, 1, NULL, NULL };
+/* features, line_height (0 takes the font's own), letter_spacing, word_spacing, vertical,
+   script, language: each NULL or empty for the default ('arab', 'URD' spell the override) */
 ```
 
 calt, liga and clig are on by default; `-tag` turns one off, `+tag` names
@@ -300,7 +301,10 @@ one explicitly. Features are one comma-separated string because a C caller
 has no string array; an empty entry is skipped, so a trailing comma is
 harmless. A combining mark is not spaced: it shares its base's advance, and
 spacing it too would charge one character twice. `vertical` stacks the line
-downward as one column (see `README.md`); zero lays out horizontally.
+downward as one column (see `README.md`); zero lays out horizontally. `script`
+forces every run's feature resolution under one OpenType script tag, and
+`language` names the tagged language system inside it — the same override the
+V `LayoutOptions` carries, empty for the default.
 
 Wrap: `vtext_wrap` / `vtext_wrap_with` return an owned wrap; lines are
 borrowed (`vtext_wrap_line`, valid until `vtext_wrap_free`) with their

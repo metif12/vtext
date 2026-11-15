@@ -330,7 +330,7 @@ fn test_dubai_composes_and_places_a_mark_on_its_letter() {
 	// nothing, and it is legible, which is what made the bug so quiet.
 	mut shapes := map[u16]bool{}
 	for form in [font.JoiningForm.isolated, .final, .initial, .medial] {
-		shapes[dubai.shaped_glyph_index(beh_gid, form, 'arab')] = true
+		shapes[dubai.shaped_glyph_index(beh_gid, form, 'arab', '')] = true
 	}
 	assert shapes.len == 4, 'the four shapes should be four glyphs, got ${shapes.len}'
 	// A font that does compose its marks is not the only case worth having, so the other tests
@@ -391,12 +391,12 @@ fn test_mark_offset_in_reads_the_scripts_own_rules() {
 		}]
 		scripts: [font.Script{ tag: 'latn', features: [font.ScriptFeature{ tag: 'mark', lookups: [u16(0)] }] }]
 	}
-	if off := g.mark_offset_in(700, 100, false, 'latn') {
+	if off := g.mark_offset_in(700, 100, false, 'latn', '') {
 		assert off.x == 20 && off.y == 200, 'base minus mark anchor, got (${off.x}, ${off.y})'
 	} else {
 		panic('the latn rule should place this pair')
 	}
-	assert g.mark_offset_in(700, 100, false, 'arab') == none, 'no arab rule names this pair'
+	assert g.mark_offset_in(700, 100, false, 'arab', '') == none, 'no arab rule names this pair'
 	assert g.mark_offset(700, 100, false) == none, 'the default arab collection stays empty too'
 	// A subtable that is not format 1 is not this reader's, and a truncated one
 	// parses to nothing rather than half a rule.

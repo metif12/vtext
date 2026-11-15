@@ -53,7 +53,7 @@ fn test_joining_selects_glyphs_the_cursive_rule_covers() {
 	mut with_anchors := 0
 	for g in line.glyphs {
 		if gf := g.font {
-			if a := gf.cursive_anchors(g.gid, 'arab') {
+			if a := gf.cursive_anchors(g.gid, 'arab', '') {
 				if a.entry_exists || a.exit_exists {
 					with_anchors++
 				}

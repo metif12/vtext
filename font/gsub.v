@@ -342,6 +342,16 @@ pub mut:
 	lookups []u16
 }
 
+// ScriptLang is one tagged language inside a script: its tag and the features
+// that language system enables. The default language system is not listed
+// here; it is `Script.features`, which is what every line shaped before the
+// language control existed.
+pub struct ScriptLang {
+pub mut:
+	tag      string
+	features []ScriptFeature
+}
+
 // Script is one script in the table, with its features in the order the language system lists
 // them. Order is kept because a font can give the same feature more than one lookup and the
 // order decides which wins.
@@ -349,6 +359,10 @@ pub struct Script {
 pub mut:
 	tag      string
 	features []ScriptFeature
+	// langs holds every tagged language system in the script, in the order the
+	// ScriptList names them. A language override resolves here; an empty
+	// language answers `features`, which is the default language system.
+	langs []ScriptLang
 }
 
 // Gsub is a parsed GSUB table, reduced to what the positional features need.
@@ -1410,23 +1424,60 @@ pub fn feature_tag_for(form JoiningForm) string {
 // script is the script of the letter rather than a fixed one, so a font that offers the same
 // feature tag for several scripts resolves the right rule. Joining only produces Arabic
 // shapes, so in practice this is 'arab'.
-pub fn (g &Gsub) shaped_glyph(gid u16, form JoiningForm, script string) u16 {
+pub fn (g &Gsub) shaped_glyph(gid u16, form JoiningForm, script string, lang string) u16 {
 	tag := feature_tag_for(form)
 	if tag == '' {
 		return gid
 	}
-	return g.apply(g.lookups_for(script, tag), gid)
+	return g.apply(g.lookups_for_lang(script, lang, tag), gid)
 }
 
 // lookups_for returns the lookups a script's feature names, in the order to apply them.
 pub fn (g &Gsub) lookups_for(script string, feature string) []u16 {
+	return g.lookups_for_lang(script, '', feature)
+}
+
+// lookups_for_lang is lookups_for under a language: the tagged language
+// system when the font names it, the default language system otherwise. An
+// empty language is the default, which is what every line shaped before the
+// language control existed. A language the font does not tag falls back to
+// the default the way HarfBuzz falls back, rather than to nothing.
+pub fn (g &Gsub) lookups_for_lang(script string, lang string, feature string) []u16 {
 	s := g.script(script) or { return []u16{} }
+	if lang != '' {
+		want := ot_lang_tag(lang)
+		for l in s.langs {
+			if ot_lang_tag(l.tag) == want {
+				for f in l.features {
+					if f.tag == feature {
+						return f.lookups
+					}
+				}
+				return []u16{}
+			}
+		}
+	}
 	for f in s.features {
 		if f.tag == feature {
 			return f.lookups
 		}
 	}
 	return []u16{}
+}
+
+// ot_lang_tag is the OpenType language tag for a caller's language: uppercased
+// with the surrounding space tolerated, so 'urd', 'URD' and 'URD ' name one
+// language. It is deliberately not a BCP 47 map: a two-letter code is not an
+// OpenType tag ('ur' is not 'URD'), and a table mapping every code the way
+// HarfBuzz does would be data no font here needs. The caller names the tag
+// the font spells.
+pub fn ot_lang_tag(lang string) string {
+	mut out := []u8{len: lang.len}
+	for i in 0 .. lang.len {
+		b := lang[i]
+		out[i] = if b >= `a` && b <= `z` { b - 32 } else { b }
+	}
+	return out.bytestr().trim_space()
 }
 
 // apply runs a list of lookups over one glyph and returns the result. A lookup that does not
@@ -2598,6 +2649,39 @@ pub fn parse_scripts(r &Reader, off int, features []Feature) []Script {
 		out << Script{
 			tag:      tag
 			features: enabled
+			langs:    parse_script_langs(r, script_at, features)
+		}
+	}
+	return out
+}
+
+// parse_script_langs reads the tagged language systems of one script: every
+// LangSysRecord beside the default, with its tag and the features it enables.
+// A language the font does not tag is not listed, and the caller falls back
+// to the default language system for it.
+pub fn parse_script_langs(r &Reader, script_at int, features []Feature) []ScriptLang {
+	mut out := []ScriptLang{}
+	count := int(r.u16_at(script_at + 2))
+	for i in 0 .. count {
+		base := script_at + 4 + i * 6
+		if !r.has(base, 6) {
+			continue
+		}
+		tag := r.tag_at(base)
+		at := script_at + int(r.u16_at(base + 4))
+		mut enabled := []ScriptFeature{}
+		for fi in langsys_features_at(r, at) {
+			if fi >= features.len {
+				continue
+			}
+			enabled << ScriptFeature{
+				tag:     features[fi].tag
+				lookups: features[fi].lookups
+			}
+		}
+		out << ScriptLang{
+			tag:      tag
+			features: enabled
 		}
 	}
 	return out
@@ -2622,9 +2706,16 @@ pub fn langsys_features(r &Reader, script_at int) []u16 {
 		}
 		at = script_at + int(r.u16_at(script_at + 4 + 2))
 	}
+	return langsys_features_at(r, at)
+}
+
+// langsys_features_at returns the feature indices one language system enables,
+// read at its own offset: the required feature first, then the listed ones.
+// A required feature is not counted in featureIndexCount, so it is read from
+// its own field and put first, since a required feature applies whether or
+// not it is listed.
+pub fn langsys_features_at(r &Reader, at int) []u16 {
 	mut out := []u16{}
-	// A required feature is not counted in featureIndexCount, so it is read from its own
-	// field and put first, since a required feature applies whether or not it is listed.
 	required := int(r.u16_at(at + 2))
 	if required != 0xFFFF {
 		out << u16(required)

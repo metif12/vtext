@@ -103,7 +103,7 @@ fn test_gpos_kern_contexts_answer_the_rules_a_font_wrote() {
 		gpos := f.face.gpos or { continue }
 		mut asked := 0
 		mut answered := 0
-		for li in gpos.kerning_for('arab') {
+		for li in gpos.kerning_for('arab', '') {
 			if int(li) >= gpos.lookups.len {
 				continue
 			}
@@ -133,7 +133,7 @@ fn test_gpos_kern_contexts_answer_the_rules_a_font_wrote() {
 					continue
 				}
 				asked++
-				if gpos.context_offset(run, pair_at, pair_at + 1, 'arab') != none {
+				if gpos.context_offset(run, pair_at, pair_at + 1, 'arab', '') != none {
 					answered++
 				}
 			}
@@ -164,7 +164,7 @@ fn test_gpos_kern_context_placement_is_the_value_the_font_wrote() {
 	mut run := []u16{}
 	run << u16(160)
 	run << u16(3)
-	off := f.context_placement(run, 0, 1, 'arab') or { panic('the andlso rule did not answer') }
+	off := f.context_placement(run, 0, 1, 'arab', '') or { panic('the andlso rule did not answer') }
 	assert off.x == -120, 'the context form gives the same number'
 }
 
@@ -190,7 +190,7 @@ fn test_gpos_kern_context_reaches_a_glyph_through_its_backtrack() {
 		mut run := []u16{}
 		run << bg
 		run << u16(3)
-		if gpos.context_offset(run, 0, 1, 'arab') != none {
+		if gpos.context_offset(run, 0, 1, 'arab', '') != none {
 			answered++
 		}
 	}
@@ -212,9 +212,9 @@ fn test_gpos_kern_context_does_not_fire_on_text_it_does_not_match() {
 	// Whether a font has no rule for two particular glyphs is a property of the font, so what is
 	// checked here is that asking is safe and that an out-of-range pair is refused rather than
 	// answering about whatever happens to be in memory.
-	assert f.context_placement([]u16{}, 0, 1, 'arab') == none
-	assert f.context_placement(gids, 5, 6, 'arab') == none
-	assert f.context_placement(gids, 1, 0, 'arab') == none
+	assert f.context_placement([]u16{}, 0, 1, 'arab', '') == none
+	assert f.context_placement(gids, 5, 6, 'arab', '') == none
+	assert f.context_placement(gids, 1, 0, 'arab', '') == none
 }
 
 // Every record a kern feature names must point at a lookup that exists, and its position must be inside
@@ -224,7 +224,7 @@ fn test_gpos_kern_context_records_are_inside_their_pattern() {
 	for name in ['Amiri-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf'] {
 		f := ctx_font(name) or { return }
 		gpos := f.face.gpos or { continue }
-		for li in gpos.kerning_for('arab') {
+		for li in gpos.kerning_for('arab', '') {
 			if int(li) >= gpos.lookups.len {
 				continue
 			}
@@ -246,7 +246,7 @@ fn test_gpos_kern_class_rules_parse_and_match() {
 	f := amiri() or { return }
 	gpos := f.face.gpos or { panic('Amiri has no GPOS') }
 	mut parsed := 0
-	for li in gpos.kerning_for('latn') {
+	for li in gpos.kerning_for('latn', '') {
 		if int(li) >= gpos.lookups.len {
 			continue
 		}

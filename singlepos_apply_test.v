@@ -239,7 +239,7 @@ fn test_dead_single_lookups_stay_dead() {
 	}
 	assert singles > 0, 'the control: Amiri carries single positioning rules'
 	gid := original.glyph_index(0x0661)
-	if _ := original.single_adjustment(gid, 'arab', [], false) {
+	if _ := original.single_adjustment(gid, 'arab', '', [], false) {
 		assert false, 'no applied feature names a single rule for this digit'
 	}
 }
@@ -266,12 +266,12 @@ fn test_cursive_attachment_stays_unwired() {
 	assert line.glyphs.len > 1
 	mut one_sided := 0
 	for i in 0 .. line.glyphs.len {
-		a := original.cursive_anchors(line.glyphs[i].gid, 'arab') or { continue }
+		a := original.cursive_anchors(line.glyphs[i].gid, 'arab', '') or { continue }
 		if a.entry_exists || a.exit_exists {
 			one_sided++
 		}
 		if i + 1 < line.glyphs.len {
-			b := original.cursive_anchors(line.glyphs[i + 1].gid, 'arab') or { continue }
+			b := original.cursive_anchors(line.glyphs[i + 1].gid, 'arab', '') or { continue }
 			assert !(a.exit_exists && b.entry_exists), 'glyph ${i} exit meets glyph ${i + 1} entry: re-measure the cursive decision'
 		}
 	}

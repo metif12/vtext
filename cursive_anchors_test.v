@@ -26,7 +26,7 @@ fn test_cursive_anchors_are_read_from_real_fonts() {
 	for name in ['Amiri-Regular.ttf', 'NotoNaskhArabic-Regular.ttf', 'NotoNastaliqUrdu-Regular.ttf'] {
 		f := corpus_font(name)
 		for gid in u16(0) .. u16(f.num_glyphs()) {
-			a := f.cursive_anchors(gid, 'arab') or { continue }
+			a := f.cursive_anchors(gid, 'arab', '') or { continue }
 			with_anchors++
 			if a.entry_exists {
 				ends++
@@ -113,8 +113,8 @@ fn test_cursive_anchors_agree_with_an_independent_reader_on_amiri() {
 fn test_cursive_anchors_are_absent_for_an_uncovered_glyph() {
 	f := corpus_font('NotoNaskhArabic-Regular.ttf')
 	// The control font has no cursive rule at all, so every glyph is uncovered.
-	assert f.cursive_anchors(f.glyph_index(`س`), 'arab') == none, 'no rule means no anchors'
-	assert f.cursive_anchors(0, 'arab') == none, 'not even for the first glyph'
+	assert f.cursive_anchors(f.glyph_index(`س`), 'arab', '') == none, 'no rule means no anchors'
+	assert f.cursive_anchors(0, 'arab', '') == none, 'not even for the first glyph'
 }
 
 // The anchors are points in the font's own units. A record array read from two bytes out of position
@@ -124,7 +124,7 @@ fn test_cursive_anchors_are_points_in_font_units() {
 	f := corpus_font('Amiri-Regular.ttf')
 	mut checked := 0
 	for gid in u16(0) .. u16(f.num_glyphs()) {
-		a := f.cursive_anchors(gid, 'arab') or { continue }
+		a := f.cursive_anchors(gid, 'arab', '') or { continue }
 		for p in [a.entry, a.exit] {
 			if !in_font_range(p) {
 				assert false, 'an anchor is a point, not a fragment: (${p.x}, ${p.y})'

@@ -335,6 +335,11 @@ caller clipping a fatha.
 **Direction is not here.** It is the `base_dir` argument, and putting it in both places would leave
 two sources for one decision with no stated precedence.
 
+**Script and language steer feature resolution.** `script` forces every run under one OpenType
+script tag, `language` names the tagged language system inside it — each empty for the default
+(detection per run, default language system). A BCP 47 code is not a tag (`ur` is not `URD`):
+name the tag the font spells.
+
 ### Measuring
 
 The two widths a layout engine needs before it draws anything, from one shaping pass.
@@ -469,7 +474,7 @@ Calibri carries 69 chaining lookups and has none of them under any feature of an
 answer here can mean a rule that nothing can reach.
 
 ```v
-if font.contextually_positions('arab') {
+if font.contextually_positions('arab', '') {
 	// the font has chaining-context rules for this script
 }
 ```
@@ -485,11 +490,11 @@ are named in the order the text reads them, so a right-to-left pair is the right
 `script` names the script because a font may kern one script differently from another.
 
 ```v
-if off := font.kern_offset(left_gid, right_gid, 'arab') {
+if off := font.kern_offset(left_gid, right_gid, 'arab', '') {
 	// off is in design units; divide by units_per_em and multiply by the pixel size
 }
 
-if font.kerns('arab') {
+if font.kerns('arab', '') {
 	// the font has pair rules for this script
 }
 ```
@@ -503,7 +508,7 @@ can need three answers that a pair table cannot give.
 
 ```v
 // gids is the shaped run in logical order; left and right are indices into it.
-if off := font.context_placement(gids, 0, 1, 'arab') {
+if off := font.context_placement(gids, 0, 1, 'arab', '') {
 	// this pair is placed differently here than it would be two letters into the word
 }
 ```

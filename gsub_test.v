@@ -127,8 +127,8 @@ fn test_gsub_accepts_a_script_tag_in_either_case() {
 	assert g.lookups_for('Arab', 'fina') == g.lookups_for('arab', 'fina')
 	// And the same has to hold for the shape it produces, since that is the call layout makes.
 	base := majalla.glyph_index(rune(0x0628))
-	assert g.shaped_glyph(base, .final, 'Arab') == g.shaped_glyph(base, .final, 'arab')
-	assert g.shaped_glyph(base, .final, 'Arab') != base
+	assert g.shaped_glyph(base, .final, 'Arab', '') == g.shaped_glyph(base, .final, 'arab', '')
+	assert g.shaped_glyph(base, .final, 'Arab', '') != base
 }
 
 // Ligature substitution. The rules are read from real fonts and exercised through the line, so
@@ -327,7 +327,7 @@ fn test_gsub_treats_a_missing_isol_rule_as_the_base_letter() {
 	assert g.lookups_for('arab', 'isol').len == 0
 	base := dubai.glyph_index(rune(0x0628))
 	assert base != 0
-	assert g.shaped_glyph(base, .isolated, 'arab') == base, 'with no rule, the base letter is the isolated form'
+	assert g.shaped_glyph(base, .isolated, 'arab', '') == base, 'with no rule, the base letter is the isolated form'
 }
 
 fn test_gsub_substitutes_the_three_shapes_of_a_letter() {
@@ -341,7 +341,7 @@ fn test_gsub_substitutes_the_three_shapes_of_a_letter() {
 	mut got := map[int]u16{}
 	for form in [font.JoiningForm.isolated, font.JoiningForm.final, font.JoiningForm.initial,
 		font.JoiningForm.medial] {
-		out := g.shaped_glyph(base, form, 'arab')
+		out := g.shaped_glyph(base, form, 'arab', '')
 		report += ' ${font.feature_tag_for(form)}=${out}'
 		got[int(form)] = out
 	}
@@ -365,12 +365,12 @@ fn test_gsub_leaves_an_uncovered_glyph_alone() {
 	assert latin != 0
 	for form in [font.JoiningForm.isolated, font.JoiningForm.final, font.JoiningForm.initial,
 		font.JoiningForm.medial] {
-		assert g.shaped_glyph(latin, form, 'arab') == latin, 'a Latin letter is not in any Arabic rule, got ${g.shaped_glyph(latin, form, 'arab')}'
+		assert g.shaped_glyph(latin, form, 'arab', '') == latin, 'a Latin letter is not in any Arabic rule, got ${g.shaped_glyph(latin, form, 'arab', '')}'
 	}
 	// A script the font says nothing about is left alone too, rather than falling back to
 	// some other script's rules.
 	beh := majalla.glyph_index(rune(0x0628))
-	assert g.shaped_glyph(beh, .final, 'zzzz') == beh, 'an unknown script has no rules'
+	assert g.shaped_glyph(beh, .final, 'zzzz', '') == beh, 'an unknown script has no rules'
 }
 
 // The parser has to survive a table that is not one, because font data is untrusted.
@@ -438,7 +438,7 @@ fn test_gsub_finds_shapes_across_the_arabic_fonts() {
 			mut all_same := true
 			for form in [font.JoiningForm.isolated, font.JoiningForm.final, font.JoiningForm.initial,
 				font.JoiningForm.medial] {
-				if g.shaped_glyph(gid, form, 'arab') != gid {
+				if g.shaped_glyph(gid, form, 'arab', '') != gid {
 					any = true
 				} else {
 					all_same = false
@@ -471,7 +471,7 @@ fn test_gsub_finds_shapes_across_the_arabic_fonts() {
 fn test_shaped_glyph_index_follows_the_substitution() {
 	majalla := gsub_font('majalla.ttf') or { return }
 	base := majalla.glyph_index(rune(0x0628))
-	final_form := majalla.shaped_glyph_index(base, .final, 'arab')
+	final_form := majalla.shaped_glyph_index(base, .final, 'arab', '')
 	assert final_form != base, 'the final form should be a different glyph'
 	base_advance := majalla.glyph_advance(base, 32)
 	final_advance := majalla.glyph_advance(final_form, 32)
@@ -480,11 +480,11 @@ fn test_shaped_glyph_index_follows_the_substitution() {
 	// rather than guessing. Consolas does carry a GSUB, just not one with Arabic rules.
 	mono := gsub_font('consola.ttf') or { return }
 	mono_base := mono.glyph_index(`A`)
-	assert mono.shaped_glyph_index(mono_base, .final, 'arab') == mono_base
+	assert mono.shaped_glyph_index(mono_base, .final, 'arab', '') == mono_base
 	// A font with no table at all cannot shape anything, and says so the same way.
 	narrow := gsub_font('ARIALN.TTF') or { return }
 	assert !narrow.has_gsub()
-	assert narrow.shaped_glyph_index(narrow.glyph_index(`A`), .final, 'arab') ==
+	assert narrow.shaped_glyph_index(narrow.glyph_index(`A`), .final, 'arab', '') ==
 		narrow.glyph_index(`A`)
 }
 
@@ -1231,7 +1231,7 @@ fn test_a_font_whose_shapes_are_alternates_gets_them() {
 	}
 	assert kinds == [u16(font.gsub_lookup_alternate)], 'Arabic Typesetting keeps its final forms in alternates, got ${kinds}'
 	beh := at.glyph_index(rune(0x0628))
-	final := g.shaped_glyph(beh, .final, 'arab')
+	final := g.shaped_glyph(beh, .final, 'arab', '')
 	assert final != beh, 'the final form should be a different glyph, got ${beh}'
 
 	// The glyph chosen is the font's first alternate and not its last, since the first is the one
@@ -1265,7 +1265,7 @@ fn test_alternate_shapes_reach_a_second_font_too() {
 		if gid == 0 {
 			continue
 		}
-		if g.shaped_glyph(gid, .initial, 'arab') != gid {
+		if g.shaped_glyph(gid, .initial, 'arab', '') != gid {
 			shaped++
 		}
 	}
