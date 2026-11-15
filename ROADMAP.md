@@ -1,2469 +1,591 @@
 # Roadmap
 
 Where this library is, what is left in the engine, and what comes after it.
+Status first, evidence with every claim, history only where it binds future
+work. Dated entries use the landing date; anything undated is open.
 
-The order matters. Examples come late on purpose: an example is a claim that a
-capability works, and building one before the capability does just produces
-something that has to be rewritten. Tools come last of all, because a tool is a
-program built out of the examples, and a tool written against an API that is
-still moving is work thrown away.
+## How to read this
+
+**Status words** (load-bearing — a slice is one of these):
+
+- **landed** — committed, full suite green, difftest 0 new / 0 stale, pushed.
+- **in progress** — an agent or owner is working it in a worktree right now.
+- **open** — scoped, unassigned.
+- **triggered** — lands when a font needs it, not before; the trigger is stated.
+- **refused** — will not land; the reason is stated.
+
+**Evidence rules** (every landed slice was held to these):
+
+- Pins are measured (HarfBuzz via uharfbuzz, fontTools, FreeType), never invented.
+- Every slice carries a break-fix control: neuter the mechanism, watch the test fail, restore.
+- The gate is the full suite plus `tools/difftest/compare.py` at 0 new / 0 stale.
+- One commit per slice, verified before commit, pushed after.
+- Examples are corpus-only: committed OFL faces, no installed system fonts, no
+  Windows-only faces, rendered PNGs gitignored.
+- Every committed font ships its licence text beside it (OFL almost everywhere;
+  Latin Modern Math is GFL — the one exception, documented where it lands).
+- Generated UCD tables are committed with their inputs; the licence travels
+  with them via `.gitignore` exceptions, the way `LineBreakTest.txt` was first.
 
 ## Where this is
 
-The shaping engine is done for Arabic and Persian, and for the Latin text that
-comes with them.
+The engine is done for Arabic, Persian and Urdu, for Latin/Cyrillic/Greek,
+and for the layout math around them. Hebrew, Syriac, Thaana and NKo are
+HarfBuzz-pinned; Thai, Lao, Khmer and Myanmar carry corpus pins with two
+documented engine gaps; CJK line breaking is conformance-pinned.
 
-| Stage | State |
-| --- | --- |
-| SFNT and TTC containers, table directory | done |
-| cmap formats 0, 4, 6, 12, 13, 14 | done |
-| Metrics, underline placement, rasterization | done |
-| Unicode normalization (UAX #15) | done |
-| Bidirectional paragraphs (UAX #9) | done, and corrected 2026-10-16 for the NFD index drift below |
-| Arabic joining (UAX #53) | done |
-| Grapheme clusters (UAX #29) | done |
-| Font fallback chains | done |
-| GSUB: single, multiple, alternate, ligature, contextual | done |
-| GPOS: mark-to-base, mark-to-ligature, mark-to-mark | done |
-| GPOS: pair adjustment (kerning) | done, both formats |
-| GPOS: single positioning (format 1) | done |
-| GPOS: chaining-context positioning, format 3 | read and applied |
-| GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
-| Line breaking (UAX #14) | done, and measured: **19,346 of 19,346 (100%)** against the Unicode test, with a floor asserted on every run |
-| Line options beyond a feature list | done: line height, letter spacing, word spacing, per-run script/language override, alignment and justification with kashida (7.4). Hyphenation dictionaries are Phase 7.5 |
-| Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
-| Glyph box measurement | done: the layout pass asks for the box, not the pixels |
-| Vertical extent of a line | done: was twice the ink, found by `tools/metrics` |
-
-Forty-seven test files, all passing. The cursive reader is tested twice over: from words in
-`gpos_cursive_test.v` for the byte shapes, and against real cursive rules in the licensed corpus under
-`testdata/fonts/`, because a fixture written to match the reader cannot catch a reader that is wrong about
-where the records start. That is not hypothetical — it is how the record-offset bug survived.
-
-Two UCD conformance files are committed, not fetched, and both are excepted from the `ucd/*` ignore by
-name beside a comment explaining that the licence travels with them. `NormalizationTest.txt` was missing
-from that list until 2026-10-11 and `normalize_test.v` panicked on every checkout that had not fetched
-it — a suite that is green here because the data is on this machine and red anywhere else is the same
-failure as a fixture written to match the reader.
-
-## Performance: what was actually slow
-
-This section was not here before 2026-10-04, and it is here because the section below it was wrong.
-The argument for a glyph cache was that rasterizing per glyph per frame "is the difference between a
-page that scrolls and one that does not". That is true, and it was not where the time went.
-
-Measured on this machine, Segoe UI at 16 pixels, best of five batches, with eight other V builds
-running — so treat the absolutes as carrying that variance and the ratios as the finding:
-
-| Paragraph | Before | After | Cost per character |
-| --- | --- | --- | --- |
-| 128 characters | 1835 us | 656 us | 5.1 us, flat |
-| 256 characters | 5630 us | 1218 us | 4.8 us |
-| 512 characters | 18910 us | 2190 us | 4.3 us |
-| 1024 characters | **72190 us** | **4060 us** | 4.0 us |
-
-The cost per character climbing from 11 to 69 microseconds as the text got longer was the signature:
-`layout_paragraph` was quadratic. It is linear now, and 1024 characters went from 72 milliseconds to
-4.
-
-The cause was not rasterization. One rasterization of a 16 pixel glyph is **3.9 microseconds**, so a
-264 character paragraph spent about a millisecond of a seven millisecond layout inside
-`measure_line`. It is now a box query instead of a fill (`Face.box_only`), which removes an
-allocation and a scanline pass per glyph, and that is the whole of what that change is worth.
-
-The cause was `apply_ligature` in `gsub.v`, which built a view of the entire rest of the run before
-trying a ligature at one position. `match_ligature` only ever reads as far as the longest rule's
-components, so trying it at each of *n* positions copied O(n) each time: 524,000 element copies per
-lookup per layout at 1024 glyphs. The bound is now computed once when the lookup is parsed. Measured
-on its own, `Font.substitute_glyphs` over 1024 glyphs went from 65883 us to 1550 us.
-
-What this changes about the rest of the roadmap: glyph reuse is worth having and is the caller's to
-have, and it is not the difference between scrolling and not. Nothing else in the list is a
-performance item, so there is no longer a performance argument for any of them.
-
-
-## Phase 1: the engine's remaining gaps
-
-These are the things a caller would hit and find missing. Each one is a
-correctness question, not a feature, and none of them is large.
-
-### NFD index drift in visual ordering — fixed 2026-10-16
-
-Bidi runs on the NFD-normalized text, but glyph clusters are original input positions. When NFD
-changes the length — U+0622 splitting to U+0627 plus U+0653 — `place_glyphs` looked up decomposed
-visual indices as original clusters, putting every glyph after the split one position off. The
-visible failure was "ello h" for "hello" in mixed Persian text. Going through the origin mapping
-keeps them aligned, and a `drawn` set skips the second visit when two decomposed characters share
-one origin. A mark sharing its base's cluster (both report 47 for U+0622) now finds that base in
-`position_marks` via `<=` instead of `<`, and skips mark-on-mark stacking when its own cluster has
-a letter.
-
-### ~~Line breaking (UAX #14)~~
-
-**Done.** `break_opportunities` reports where a line may end, and `wrap_paragraph` measures the
-shaped paragraph once and cuts it into lines that fit. It is separate from `layout_paragraph` because a
-line has to be measured before it can be broken, and laying out the whole paragraph once is what
-makes a narrower width affordable to try.
-
-Three rules a caller would otherwise get wrong are handled there: a space is never left at the end of
-a line, a word wider than the margin goes on a line of its own rather than being split, and a
-newline ends the paragraph whatever the width is.
-
-The rules that are not implemented are the ones that need a resolved line-break level and a
-dictionary: LB15a and LB16a for a non-standard level, LB16b and LB17b for dictionary segmentation,
-and the CJK-specific rules LB27 and LB31. None of them affect Arabic or Persian text, which is why
-they are not there.
-
-**Measured, because "done" above was a description and not a number. 19,346 of 19,346 — 100%, the file's own end.**
-
-`ucd/LineBreakTest.txt` is the Unicode committee's own list of cases for this version, and it is now
-committed and run by `linebreak_conformance_test.v` on every test pass. The test asserts a floor rather
-than an exact figure, so a rule landing shows up as a number somebody has to choose to raise the floor to,
-and the property that matters — that a fix cannot be undone by accident — holds without the number ever
-being quietly lowered.
-
-One rule was fixed on the strength of it, and it was the cheapest failure in the file: **an ambiguous
-character was a class no rule matched.** The table names `AI`, nothing in the chain tests for it, so it
-fell through to the permissive default at the end and broke away from its neighbours on both sides. UAX#14
-resolves it to a letter unless the text is being treated as East Asian, and this engine has no such mode,
-so it now resolves to `AL`. Sixteen cases, and `× 2757 × 2757` went from a break to no break, which is
-the whole of the class of failure the first eight reported were.
-
-**A better version of the same fix measured much worse and is not in.** Giving a combining mark its base's
-class, rather than leaving it `.cm`, is what LB9 reads like on both sides, and it took the score from
-13,074 to **10,912** — 8,434 failures against 6,272. The mark then carries its base's class into the rule
-*after* it, and a base that is allowed to break away, a space or a character whose own class permits it,
-has that break suppressed by the mark on top of it.
-
-### The rules that were missing, and the one that was invented — 4,159 cases
-
-The 4,893 that were left were listed as one bullet about CJ characters, and that bullet was the wrong
-shape of answer: most of them were rules that had never been written, and the bullet was describing their
-consequences rather than their cause. Each was found by asking the committee's own test file a question
-directly, which is a better instrument than reading the rule numbers.
-
-**A space was answering before anything could ask it a question.** `× SP × CL` broke where LB13 refuses
-it. The chain opened with LB18 as a leading return, which is right for a space against a letter and wrong
-against every rule that says which character may not start a line. That alone was 2,551, and four other
-rules were hiding behind it. `.bk` shared the return and was dead code: a mandatory break is answered
-above it, so no pair could carry one on the left.
-
-**LB5 was missing and a test asserted its absence.** Nothing handled a hard break on the *right*, so
-`× AL × LF` fell through to the default and produced a break. 67 of the 70 cases the file writes for a
-class in front of a newline are breaks that must not happen. `inspect_test.v` asserted the opposite, that
-the break *exists* and is not mandatory, and named LB7 while doing it. LB7 is about spaces.
-
-**LB8, LB11, LB12a and LB20 were all shaped as the wrong rule.** LB8 is a break *after* a zero width
-space, and there was nothing on either side of one — the committee answers `× 200B ÷ X ÷` with `[8.0]` for
-every class X, which is the whole of why ZW and SP are different characters despite both being spaces.
-LB12a exempts two classes from its prohibition and the reader had three, because `[^SP BA HY]` reads as
-though a break-after character were exempt; `× 3000 × 16FE4 ÷` [12.1] says it is not. LB20 needed both
-halves *and* an LB19 in front of them.
-
-**Four classes were folded into a mark, and only one of them is one.** `is_markish` named `.ap`, `.vi`,
-`.idcj`, `.h2` and `.h3` alongside `.cm`. An aksara pre-base and a virama final are not combines; the
-committee asks for a break before one 497 times and refuses one 615. `.h2` and `.h3` were the surprise —
-Hangul syllables, kept on the strength of LB26's jamo rule, which is true and is not the same thing.
-`.idcj` measured zero and went anyway.
-
-**Three LB1 resolutions were missing** from a function that handled `.ai` alone: unknown, complex context
-and conditional Japanese starter all fell through to the default. `.sa` to a letter is 58, `.xx` 28 and
-`.cj` to a non-starter 13.
-
-**A quotation mark was one class, so an opening one and a closing one answered the same pair two
-different ways.** Derived from the file rather than recalled, over 1,753 quotation positions: a break
-before a mark is allowed only for a `Pi`, or after a hard break, or after a zero width space; a break
-after a mark is never allowed for a `Pi` and is allowed past a space or a mark for the other two. Two
-rules, worth 245, and the `[15.11]`/`[15.21]` failure counts go from 111 and 139 to one each. The
-distinction is the general category, so it could not be a codepoint list in the source:
-`DerivedGeneralCategory.txt` is fetched, `tools/gen_tables.v` emits a `ucd/ucd_quote.v` in the same form as
-its siblings, and nothing was hand-written.
-
-### And the one rule that was invented rather than missing: a line may end on a combining mark. Worth 922 cases
-
-A rule refusing a break *after* a mark was added on 2026-10-04 for 312 cases and was generalised from
-a single case — the file's only one containing U+200C, a zero width non-joiner — into "a line may not
-end on a combining mark". LB9 forbids a break *before* a mark. It says nothing about what follows
-one, and the default there is a break.
-
-Removing it alone was 713 cases; the 768 it broke were `× 2757 × 0308 × 2757 ÷`, where LB28 reads
-through the mark to a pair of letters. Those are recovered by `pair_left`, which reaches the base for
-LB28 and LB23 and for nothing else — and **that is the whole shape of the change**. LB30 reads through
-a mark in the opposite direction: `× 2757 × 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not,
-because LB30 was missing entirely and is not one. An open punctuation may begin a line after a marked
-letter but not after a bare one, which is what a diacritic carrying word-final stress through to the
-next word looks like.
-
-Plus LB28's four pairs — it had one. `× 2757 × 0308 × 05D0 ÷` is annotated `[28.0]` at the Hebrew
-letter, so LB28 reads a Hebrew letter as the same kind of letter as a Latin one. And an opening
-quotation mark's hold now reaches a run ending in a mark as well as one ending in a space,
-`× 00AB × 0308 × 2757 ÷` [15.11], which the `left == .sp` gate had been refusing.
-
-### And the complex-context class is 757 characters, not one. Worth 360 cases
-
-LB1 resolved every SA codepoint to a letter, and the committee splits the class. U+0E31 and U+102C
-answer `[9.0]` and behave as combining marks; U+0E01 answers `[28.0]` and is a letter. The
-distinguishing property is `General_Category` — Lo for the letter, Mn or Mc for the marks — and
-`DerivedGeneralCategory.txt` had been fetched and committed two commits earlier for the quotation
-work, so what was missing was the generator and the plumbing rather than the data. `ucd_sa_mark.v`
-is 27 ranges covering the 191 SA codepoints that are marks, emitted by a `sa_marks` generator that
-mirrors the quotation `quote_roles` one exactly, with `sa_none` at ordinal 0 so an absent range reads
-"not a mark".
-
-The split is asked of a character that *follows* something, which is the same condition LB4a carries,
-and the reason is not a coincidence: an SA mark attaches to the character in front of it, so a leading
-one has nothing to attach to. Measured rather than assumed — resolving a leading SA mark to CM broke
-38 against the 4 it fixed. That leaves a leading mark unresolved in either direction, and the
-committee is inconsistent about a leading *ordinary* mark in exactly the same way, so it is the file
-disagreeing with itself rather than a gap in the engine.
-
-Four small rules landed with it, each measured alone and none breaking anything: LB24's prefix or
-postfix against a letter or Hebrew letter, LB23's prefix against an ideograph or emoji, LB27's prefix
-against a Hangul syllable, and `.ns` leaving the prohibited-end list. That last one is worth **121**
-where the roadmap had carried a note saying 12 — the note was written from a shape rather than from a
-count, which is the same failure as reading a rule number instead of the file.
-
-**The rule that was invented is worth the most instruction in this file.**
-
-Removing it alone was 713 cases; the 768 it broke were `× 2757 × 0308 × 2757 ÷`, where LB28 reads
-through the mark to a pair of letters. Those are recovered by `pair_left`, which reaches the base for
-LB28 and LB23 and for nothing else — and **that is the whole shape of the change**. LB30 reads through
-a mark in the opposite direction: `× 2757 × 0308 × 0028 ÷` breaks, where `× 2757 × 0028 ÷` does not,
-because LB30 was missing entirely and is not one. An open punctuation may begin a line after a marked
-letter but not after a bare one, which is what a diacritic carrying word-final stress through to the
-next word looks like.
-
-Plus LB28's four pairs — it had one. `× 2757 × 0308 × 05D0 ÷` is annotated `[28.0]` at the Hebrew
-letter, so LB28 reads a Hebrew letter as the same kind of letter as a Latin one. And an opening
-quotation mark's hold now reaches a run ending in a mark as well as one ending in a space,
-`× 00AB × 0308 × 2757 ÷` [15.11], which the `left == .sp` gate had been refusing.
-
-**The rule that was invented is worth the most instruction in this file.** It was added for 312 cases,
-removed for 713, and the 768 that came back with LB28 reading through it are a different rule from the
-one that paid for it. A conformance score is a count of cases and cases are not a random sample: the
-312 were a shape the file asks often, and the shape it asks *about* — a letter, a mark, a letter — is
-what the mark was for. The one-sided rule at the end of the chain is what is left, and it is the
-smaller one.
-
-What the remaining **676** are, worth writing down before anyone starts:
-
-- **An opening punctuation holds the run it precedes end to end, and the engine now agrees.** `× OP ×
-  SP × R` and `× OP × CM × SP × R` are 138 × each with no ÷ counterpart in either shape, and the
-  `is_prohibited_end` list could not answer them because it reads the space itself. Measured 223
-  fixed, none broken, by reading the run origin the way LB15a already did.
-- **The leading mark, in either direction.** A mark with nothing in front of it is unresolved: the
-  committee breaks after a leading *ordinary* mark in some cases and not others —
-  `× 302A ÷ 1B05 ÷` breaks, `× 302A × 2757 ÷` does not — and gating the mark rule on the mark having
-  a predecessor measured 76 restored against 75 broken. UAX #14 has no rule for a mark that starts a
-  line, and the file has both answers, so this is the file disagreeing with itself rather than a gap
-  in the engine. The same contradiction accounts for **130 positions**: bare `SP × PO` is `[18.0]` and
-  `SP × CM × PO` is `[24.03]`, across all six of SP, ZW, BK, CR, LF and NL, and no rule answers both.
-- **`.insp`, `.ex`, `.hy` and `.bb` are still class lists where the committee has pairs.** The
-  `× 0029 ÷ 2757 ÷` / `× 0029 × 2757 ÷` split that took `.cp` out measured the same shape for each of
-  them, and it was measured rather than predicted: reading `eff_left` through them fixed 20 and broke
-  94, because it propagated the over-refusal into the mark rules. Each needs its own pass, and they
-  are the largest bucket left.
-- **LB19 is one rule where the committee has two.** `× QU_Pi × SP × QU_Pf ÷` is the pair both rules
-  answer, and the long real-world lines at the end of the file track whether a closing quote closes a
-  span that is still open, which no pair rule can reproduce. UAX #14 has no quotation-span state and
-  this engine's pair chain cannot express one.
-- **LB28's aksara sub-rules**, the 17 cases already noted on `is_markish`, and LB26's jamo run.
-- **LB25's numeric matrix**, which this engine reads as pairs. It is what the one open `(4·)$` case
-  wants, and the currency symbol is a break at four other positions, so the pair cannot be widened.
-
-None of them are Arabic or Persian, which is why the library is usable without them and why they are
-listed rather than fixed here: each is a rule with its own cases, and a run that reports a percentage is
-the wrong unit of work for one of them.
-
-### An aksara is not a combining mark — done 2026-10-04
-
-Worth 51 cases, from 13,402 to 13,453, and it was the last item on the list above.
-
-`is_markish` named `.ak` among the classes it folds into a combining mark, so no line could end before an
-aksara. The conformance test reports it as `× 2757 ÷ 1B05 ÷` — a break the specification asks for and the
-engine refused. U+1B05 BALINESE LETTER AKARA is class AK, and the class is its own in the UCD and treated
-as a base by the rules.
-
-The comment on the function said the list came from "the ones called aksara and virama in older versions of
-the table", which is where the mistake came from: an older UAX #14 folded aksara into CM, and this engine
-carried the folding forward into a version of the table that no longer does it. `.ap` stays — an aksara
-*prebase* is a mark in the same sense a Devanagari prebase is, and it is the one carrying the accent-like
-behaviour. The distinction is the whole point of having two classes.
-
-### A combining mark may no longer end a line, and that is a Persian trade-off
-
-The biggest single gain available was one rule: **a line may not end on a combining mark.** It is worth
-**312** cases, from 13,090 to 13,402, and it is the largest jump in this whole line of work.
-
-It was found by going after the gap the conformance test reported first, which was every case of the form
-`× 2757 × 0308 × 2757 ÷` failing at the index *after* the mark. The engine already refused a break *before*
-one, and the comment said the mark "glues one side only, which is deliberate".
-
-**That is now reversed, and the reason is U+200C.** A zero width non-joiner is class CM in the UCD, so it
-is a combining mark as far as line breaking goes, and a grapheme cluster member is indivisible from both
-sides. The Unicode committee's own test settles it: its single case containing U+200C reads `× 200C ×`.
-There is no interpretation left to argue about, and the spec has one answer.
-
-**The trade-off is real and this is a library for Persian.** A ZWNJ-separated pair is two words —
-`نیم‌فاصله` — and a line may no longer end between them. To break there the text has to carry a word
-joiner. The previous behaviour was deliberate and documented, so it was not an oversight, but it was a
-choice made without the 312 cases in front of it, and the conformance test says it is wrong.
-
-Two things are worth recording about how it was done. The first attempt gave the mark its base's *class*,
-which is what LB9 reads like across both sides; that measured **10,912**, a fall of 2,178, because a base
-that is allowed to break away has its break suppressed by the mark in front of it. Refusing the break *at* a
-mark is a narrower change — one position rather than a class every later rule reads — and it gets all 312.
-And the broken test that followed the first attempt was not a bug in the change: it was the ZWNJ test
-asserting the old behaviour, which is what finally showed the trade-off existed rather than being a free
-correction.
-
-### ~~Numeric breaking: two rules, and the comment that hid one~~ — done 2026-10-04
-
-**This entry first said the cheapest remaining rule was LB28's numeric cases. That was half right, and the
-half that was wrong was the one that mattered.**
-
-LB28's other two pairs — `AL × NU` and `NU × AL` — were genuinely missing, and adding them took the score
-from 13,074 to 13,084. Sixteen cases became ten, which is small, and I wrote a test expecting `19C` to hold
-together and it failed. The reason was not in LB28 at all:
-
-| text | before | after |
+| Part | State | Evidence |
 | --- | --- | --- |
-| `H2O` | one break at the end | one break at the end |
-| `19C` | breaks at **1** and 3 | breaks at 3 |
-| `1,000` | breaks at 3, 4, 5 | breaks at 5 |
-| `a1b` | one break at the end | one break at the end |
+| sfnt/TTC containers, table directory, cmap (incl. 13, 14) | landed | `font_test`, CFF/CFF2 detection |
+| WOFF1 (WOFF2 refused: no brotli decoder) | landed 7.9/8.1 | `woff_test` |
+| Metrics, boxes, unhinted raster | landed | `stbtt_test`, Pillow legs |
+| Normalization (UAX #15) | landed | `normalize_test` + `NormalizationTest.txt` |
+| Bidi (UAX #9) | landed | bidi suite, NFD-drift fix |
+| Arabic joining + GSUB/GPOS application | landed | joining/GSUB/GPOS suites |
+| SinglePos, pair kern, chaining-1, class-contextual | landed | `singlepos_apply_test`, context suites |
+| Script/language override | landed 7.2 | `script_lang_test` |
+| Common-base marks | landed 7.3 | `commonbase_test` |
+| Grapheme clusters; word/sentence tables | tables landed 8.2 | 1944/1944 + 512/512 floors |
+| Case mapping (incl. tr/az) | landed 8.3 | SpecialCasing conformance |
+| Line breaking (UAX #14) | landed, 19,346/19,346 | conformance floor |
+| Wrap: align/justify/kashida/hyphen-policy/modes/ellipsize/tabs | landed 7.4, 7.5, 8.4 | `align_test`, `hyphen_wrap_test`, `ellipsize_wrap_test` |
+| Vertical single column | landed | `vertical_test` (columns open) |
+| CFF reader (CFF2/subset refused) | reader landed 7.9 | `cff_test` |
+| MATH reader (Face wiring open) | reader landed 8.7 | `math_test` |
+| Variable instancing | landed 7.10 | `varinstance_test` + 142,848 sweep |
+| Reference cache helper (caller-owned) | landed 7.11-1H | `cache_test` |
+| fontconfig match/sort/coverage | landed 8.8 | `match_test` (CI-owned leg) |
+| Subsetter (glyf; CFF refused) | landed | `subset_test` |
+| C API + usage guide | landed | `capi.v`, `vtext.h`, `USAGE.md`, smoke test |
+| Inspection API (on `shape.Font`) | landed | `inspect_test`, `fontdump`/`fontcheck`/`shapetrace` |
+| Examples (12, multilingual, corpus-only) | landed | `examples/` |
+| Indic machine, SE-Asian engine, color/hinting, stroking, synth/LCD, CoreText/DW providers, rival A/B | open / in progress | Phase 7–9 below |
 
-**A run of digits was not held together at all.** `12345` could break between any two digits. The code at
-that point carried the comment "LB23a and LB23b: two of the same class that must not be split, which is
-Hangul syllables and a numeric run's own continuation" and implemented only the Hangul half — **a comment
-claiming a rule is not the rule**, and the comment is what kept it from looking absent. Nothing about the
-output said wrong either: a number split across two lines is still a number-shaped thing, and a phone number
-or an account id wrapping as `12` / `345` reads as ordinary wrapping.
+Suite: 57 test files, all passing (2026-11-15). Differential baseline:
+151 entries, exact-string matching, 0 new / 0 stale (Pango legs skip aloud
+on Windows without a Pango stack; CI verifies them).
 
-`NU × NU` is now implemented, worth six cases on the conformance score and rather more than six in text.
-The score is a poor proxy here for the same reason it was a poor proxy in the cursive case: a percentage
-counts cases, and the cases a rule is *about* are not a random sample of the corpus.
+## Conformance floors
 
-`AL × NU` and `NU × AL` matter for the same reason and are Latin, not CJK: `H2O` and `COVID19` are single
-names with a digit in the middle, and a break there leaves a line ending in a digit and the next starting
-with a letter, which reads as a hyphenation nobody asked for.
+Floors asserted on every run — a drop fails the suite, not a review.
 
-LB29 — an infix separator holding to what follows — turned out to be already handled for the digit case,
-which the same table showed; only `IS × AL` was added, and the tests cover `1,000`, `1.5x` and `H2O`
-because each failed for a different reason.
-
-### ~~Chaining-context positioning (GPOS type 8)~~
-
-**Parsed, format 3, and applied.** `apply_contextual` walks a glyph run and returns what each matched
-rule asks for, and `context_placement` answers a pair from one. Counted against fontTools on the same
-fonts, the parse agrees exactly: Tahoma 229 rules over 32 lookups, Simplified Arabic 15 over 11,
-Majalla 71 over 27, Calibri 69 over 69.
-
-The rules under `mark` are unreachable, and the reason is worth more than the rule engine. Tahoma names
-208 glyphs across its patterns and this engine produces one of them. The patterns name glyphs 3426
-through 3440, which GSUB lookup 55 makes from the Persian digits — and no feature in the font names
-lookup 55. It is a dead lookup, so those glyphs cannot exist however the text is shaped, and the rules
-that want them cannot fire in any engine. The same is true of glyph 1499, which no lookup and no
-codepoint produces at all.
-
-That is a font bug rather than a gap here, and it is worth knowing because it means the 229 rules are
-not 229 rules that are being missed. The rules under `kern` are a different matter and do fire.
-
-### ~~Context-sensitive kerning~~
-
-**Done.** `context_placement` takes a shaped run and two indices into it, and answers the pair from
-either a plain pair rule or a rule that matches around it. A font may put both under one feature and the
-caller does not have to know which lookup a given pair lives in.
-
-This is where the chaining rules turn out to matter after all, under `kern` rather than `mark`. Ten of
-Tahoma's are under kern, 17 of Segoe UI's, 10 in Arial and Times, 6 in Traditional Arabic, 11 in
-Simplified Arabic, 22 in Majalla, 8 in Andalus and 26 in Calibri. Asked about the runs they were written
-for, 28 of them answer.
-
-Two things had to be right, and both were found by reading a font's own bytes rather than the
-specification:
-
-A rule under kern usually names a single positioning rather than a pair. Of the records a kern feature
-reaches across these fonts, 186 name a single and 12 name a pair. Andalus's first rule is "if one of
-glyphs 160 through 167 comes before glyph 3, apply lookup 21", and lookup 21 covers glyph 3 with an
-xPlacement of -120: it moves the second letter because of what came before the first.
-
-And a rule with a backtrack is about one glyph with a condition. Its pattern names the glyph being
-placed and reaches back to what makes it different, so the pair a caller names is a glyph and its
-context rather than two the pattern both names.
-
-SinglePos format 1 has no count of its values, because the coverage already says how many there are.
-Reading the first value as a count turns -120 into 65416 and walks off the end of the table. The pair
-tables beside it in the same table do have a count, which is what makes the two easy to confuse.
-
-### ~~SinglePos format 2~~
-
-**Done**, and the refusal the old version of this section asked for turned out to be the wrong shape of
-answer. Refusing is right for a table a reader cannot bound and wrong for a table a reader can bound a
-different way.
-
-The awkward part of the format is that its exception list runs *to the end of the subtable*, and a
-lookup's subtables carry no length of their own. So the question is what stops the scan. Two things do,
-and only one of them is available in general:
-
-- **The extension's length**, when the subtable came through one. `ExtensionPos` writes a uint32
-  `extensionLength` that the reader had no use for until now, and it is plumbed through
-  `ResolvedSubtable`. Nearly every real positioning rule arrives through an extension, so this is the
-  bound that usually applies.
-- **The coverage**, always. An exception names *coverage indices*, so it cannot name more glyphs than
-  the coverage covers. A count larger than that is not a badly aligned record; it is the end of this
-  table and the start of whatever follows.
-
-The second is the one that matters, because it is structural rather than a hope about the font, and
-because it is what stops a format 2 subtable read without a wrapper from eating the next lookup's
-bytes as exceptions.
-
-What the format actually is: one value for the whole coverage, a `valueCount` that must be 1, and then
-exceptions keyed by coverage index. `offset_for` asks the exceptions first and the shared value second,
-and which pair of those is live is decided by whether the shared value is set rather than by a format
-number — so there is one lookup path for both formats instead of two that can disagree.
-
-No font on this machine uses it, so all eight tests build the subtable as bytes. That is not a
-shortcut: a parser that is correct on the specification and never executed is not a parser. The test
-that pins the count check uses a record whose four indices are **all valid** for a two glyph coverage,
-so that removing the count check is what makes it fail — a record with an out-of-range index would be
-refused by either check, and a test using one would pass with the count check deleted. That was caught
-by mutating the code and finding the test still green.
-
-### ~~Cursive attachment: what it actually needs~~ — the premise was wrong, and so was the survey
-
-**The reader had two bugs and the survey was built to hide both. Both are fixed; cursive attachment is
-now read, and it was never a font-availability problem.**
-
-What this section previously claimed is worth recording because it was confidently wrong twice. It said
-the engine read the rule and refused it, that unwrapping extensions found no cursive attachment on any
-font on this machine, and that the blocker was finding a font that has one. Every one of those was a
-consequence of a reader that could not see a cursive rule even when handed one.
-
-The two bugs:
-
-1. **The dispatch never looked.** `parse_cursive` was only called when a lookup resolved to GPOS type 1.
-   Cursive attachment is **type 3**. So the reader ran exclusively against single positionings, always
-   failed, and the failure was then interpreted as "this table is a positioning, not a cursive rule".
-   The comment saying "type 1 is two different tables under one number, a single positioning and a cursive
-   attachment" was the belief that produced it. There is no such ambiguity in GPOS: type 1 is SinglePos and
-   type 3 is CursivePos.
-2. **The record array was read from the wrong offset.** Both cursive formats have an identical six-byte
-   header — `posFormat`, `coverageOffset`, `entryExitCount` — so the records start six bytes in and the
-   count is *stated*, never inferred from the coverage. The reader started at four, the offset of a
-   SinglePos header, which put it two bytes early and shifted every record. The code asserted the opposite
-   in a comment, and the hand-built fixtures in `gpos_cursive_test.v` were written to match the reader, so
-   they agreed with it.
-
-Bug 2 is the one that made bug 1 invisible. Reading two bytes early turns a record into its neighbour's
-fields; the resulting "anchors" fail the plausibility check and the rule is refused, which is exactly what
-a single positioning should do. So the reader was behaving correctly for the wrong reason, on the right
-tables, and the survey built on it reported zero everywhere.
-
-What the corrected reader finds:
-
-| font | cursive rules | glyphs covered | entry anchors | exit anchors |
-| --- | --- | --- | --- | --- |
-| Amiri-Regular.ttf | 1 | 288 | 52 | 236 |
-| NotoNastaliqUrdu-Regular.ttf | 1 | 378 | 196 | 340 |
-| NotoNaskhArabic-Regular.ttf | 0 | — | — | — |
-| DUBAI-REGULAR.TTF | 1 | via `curs` | — | — |
-
-Noto Naskh is the negative control and matters as much as the positive rows: it joins with substitutions
-alone and has no cursive rule, so a reader that accepted every type 3 subtable would fail there rather
-than pass quietly. Amiri declares its rule directly and Noto Nastaliq reaches one through an extension, so
-both dispatch paths are covered.
-
-**On fontTools.** The earlier note in this file held that fontTools reports `CursivePos` for subtables that
-are really mark attachments, and that a conformant consumer should follow `extensionLookupType`. That
-observation was correct — fontTools does classify from shape — and the conclusion drawn from it was wrong.
-Dubai's extension really does resolve to type 3 and really does carry a cursive rule; the shape had been
-read from two bytes out of position. The general rule still stands and is the one worth keeping: **read the
-header that names the type, not the bytes that resemble it.** It was applied in the wrong direction here.
-
-What is still missing is the attachment itself, which is not a positioning rule but a change to advance:
-the pen carries from one glyph's exit anchor to the next glyph's entry anchor, so a letter can end up
-wider or narrower than its advance says. There is now a font for it to be written against.
-
-### ~~Cursive attachment: the attachment itself~~ — the reader is verified; the attachment has no font
-
-**This entry has been rewritten three times and the reader has been right every time. What is left is not a
-gap in the engine.**
-
-The reader is now verified against an independent implementation, glyph for glyph. fontTools' counts for
-Noto Nastaliq Urdu's one cursive lookup are **378 records, 38 entry-only, 182 exit-only, 158 both, none with
-neither** — and this engine reports the same five numbers. Amiri's are 52 entry-only, 236 exit-only and none
-with both, which is also what this engine reports. Those counts are pinned in `cursive_anchors_test.v`, so a
-reader that loses the 158 both-ended glyphs, or shifts the record array and reshuffles which end a glyph
-claims, fails rather than looking plausible.
-
-The glyph names show the rule is a conventional one, and that the entry/exit pattern is what a cursive rule
-should look like:
-
-```
-alef-ar.fina[E]              an alef at the end of a word: receives a stroke, emits none
-behDotless-ar.fina[E]        the same
-behDotless-ar.medi[EX]       a letter joining both ways: both ends
-behDotless-ar.medi.alef[EX]  the lam-alef ligature
-behDotless-ar.medi.cain[EX]  Nastaliq's own stacked two-letter forms
-```
-
-So the anchors are right, the pattern is right, and the attachment is still wrong to write — because the only
-font that reaches its own rule positions its letters with **pre-drawn ligature glyphs**, and on those the
-cursive rule is vestigial. `سلام` shapes to eight glyphs; the sin's exit sits at (0, 0) and the next letter's
-entry at (848, 384), in a face whose advances run about 540 units. Joining those would put the letter 848
-units to the *left*, on top of its neighbour. The font does not want it — it has already drawn the answer
-into the glyph names.
-
-**The blocker is neither a reader nor reachability. It is that no font available here both carries a cursive
-rule and shapes its letters in a way the rule describes.** That is narrower and more honest than what this
-file carried for most of a week, and it took three attempts and one independent reader to reach.
-
-### The two withdrawals, since the reasoning is worth keeping
-
-Not headings of their own — this is the same entry, and the history is kept because each attempt is what the
-next one corrected.
-
-**First attempt — the pass was written and measured.** A cursive rule covers particular glyphs, and a letter
-only reaches one if shaping picked it. Every covered glyph in Amiri was unreachable: all 288 have no codepoint
-in the cmap, because the joining pass resolved a letter's shape through the presentation form rather than the
-font's own features. Nastaliq had 158 both-ended glyphs and the layout selected almost none. The pass was
-withdrawn rather than committed, because a feature that cannot be shown to change a single advance on any
-font available is not a feature, and shipping it behind a test that measures nothing would have been the same
-mistake in a new place.
-
-**Second attempt — reachable, and still not writable.** The joining work fixed reachability, which was a real
-win on its own: Nastaliq went from unjoined base letters to proper Nastaliq. But reaching the rule showed the
-adjacent exit-to-entry pairing is not what it means. The measurements are in the entry on preferring GSUB:
-Dubai, Traditional Arabic and Amiri reach nothing at all, and Nastaliq reaches four anchors, which is enough
-to be worth writing and not enough to write correctly.
-
-### ~~Arabic joining through GSUB~~ — done 2026-10-04
-
-The four joining features now run over the run, each masked to the glyphs in its own shape, between `ccmp`
-and `rlig` as the specification orders them. `Ligatable` carries the shape and `effective` filters on it.
-
-**What it fixed.** Noto Nastaliq Urdu drew its letters as unjoined base letters, because that font keeps its
-shapes in GSUB and its cmap has no presentation forms, so the fallback branch ran a per-glyph call that
-could not apply the rule. `سلام دنیا` is now **18 glyphs from 9 characters** and renders as Nastaliq, with
-the descending letterforms and joined strokes; before, every letter was the base glyph. Amiri and Noto Naskh
-are unchanged, because they map the presentation forms and take the cmap route: Amiri still gives 8 glyphs
-from those 9 characters, one fusion being the lam-alef.
-
-Two things had to be true for this and neither was obvious.
-
-**The mask cannot be a filtered list.** A MultipleSubst changes the length of the list as it runs — 46 of
-Nastaliq's 68 `init` rules turn one glyph into two or three — so a mask built from the input goes stale
-within a few rules. The shape therefore rides on `Ligatable` and `ligatables` copies it to the pieces, which
-is the only arrangement that stays aligned. Removing the mask is not a slower version of this: it produces 4
-glyphs where the correct answer is 8, because unmasked `init` claims every letter and the run is entirely
-initial before `medi` runs.
-
-**A latent loop, in code that was already shipped.** `Substitution.span` measured only what a substitution
-*consumed*, and the walk resumes from it. For a 1:1 that is right. For a 1:3 the resume lands on the second
-of the three pieces, which is in the same rule's coverage because it is the same shaped form, so it expands
-again. Nastaliq hung for over twenty minutes on a four-letter word before this was found; the run grows
-without bound. `span` now takes the larger of the input and output extents, which is correct for a fusion
-(consumes more), an expansion (produces more) and a 1:1 (the same number either way). The single-substitution
-branch had a guard against substituting a glyph to itself and the multiple branch never did; the span is the
-fix that matters, because the guard would only have hidden one way to loop.
-
-**Three versions of the main test were green against a broken build.** Worth writing down, because it is the
-part that would have shipped:
-
-1. Compare the first and last letter of a word. Proves nothing — a *different* letter in the same shape is
-   still a different glyph.
-2. Assert the two occurrences are merely *different*. Also proves nothing — a letter left as its base glyph
-   differs from every shaped form, and removing `medi` leaves exactly that. Still green.
-3. The test that holds: put **the same letter** in two positions (`سسل`), then assert each occurrence was
-   substituted away from the base glyph **and** that the two are not the same form. That fails on a build
-   with `medi` removed, naming the base glyph id.
-
-A test that passes when the feature is removed is not testing the feature. Each version was checked by
-removing the feature and watching it stay green, which is the only way to find out.
-
-The `reshape` helper went with it. It applied one glyph at a time, so leaving it in place would shape a
-letter per-glyph and then miss the run-level rule, because a shaped glyph is no longer in a coverage written
-against base letters. `Font.shaped_glyph_index` stays, as a question, with its limits written down.
-
-### ~~Should GSUB joining win over the cmap?~~ — tried, measured, and reverted 2026-10-04
-
-**No, not yet, and the measurement is a picture rather than a number.**
-
-The argument for preferring the font's own joining features is the one OpenType makes: they are written
-against the base letters, the glyphs they select are the ones the font's own cursive and mark rules are
-written against, and a cmap lookup of a presentation form bypasses all of it. The change was small — take
-the presentation form only when no font in the chain has the four features — and it worked in the sense that
-the routing moved: Amiri's shaped gids all changed, to the font's own, and Noto Naskh began expanding
-letters into the several glyphs its rules ask for.
-
-What it did not do was make the cursive rules reachable, which was the reason for trying it. Measured after
-the change, over `سلام`:
-
-| font | glyphs with a cursive anchor | adjacent exit+entry pairs |
+| Floor | Score | Run by |
 | --- | --- | --- |
-| Dubai | 0 | 0 |
-| Amiri | 0 | 0 |
-| NotoNaskhArabic | 0 | 0 |
-| NotoNastaliqUrdu | 4 | 0 |
-
-So the rules those fonts carry cover glyphs that are neither the presentation forms nor the joining
-results. The preference bought nothing and cost the rendering:
-
-- **Amiri** is visually identical either way, which is what a well-made font should be when asked to shape
-  its own letters.
-- **Noto Naskh Arabic is visibly broken.** `سلام دنیا` renders as mangled letters where it previously read
-  correctly.
-
-**And the cause was not the preference at all. It was the mask.** The mask restricted each joining feature to
-the glyphs in its own shape, and a combining mark has no joining shape, so no mark took part in any of them.
-Arabic joining features are also **mark composition**: a dot sits below the letter in one joining shape and
-above it in another, so a font composes its marks differently per shape, through the very feature that names
-the shape. Excluding marks left every dot in the composition meant for a different shape, and `سلام دنیا`
-came out mangled. Fixing the mask — a mark takes part in every shape — makes Noto Naskh render correctly with
-the preference in place. That is measured on the rendered image, not inferred.
-
-So the preference was rejected on its own merits, not as the cause of the breakage:
-
-| route | glyphs for `سلام دنیا` | width | dots | cursive anchors reached |
-| --- | --- | --- | --- | --- |
-| cmap presentation form | 9 | 186.2 px | correct | 0 |
-| GSUB joining, mask fixed | 12 | 186.2 px | correct | 0 |
-
-Same width, same rendering, **more glyphs**, and still no cursive rule reached. There is nothing to show for
-it, so it is not in. What landed instead is the mask fix, which is a bug fix in its own right and which
-Nastaliq needed before this was found.
-
-One thing the attempt did settle, and the lam-alef depends on it: **the two routes are not interchangeable
-for a ligature.** A shaped letter standing for two characters is a different question from one standing for a
-single character, because the presentation form codepoint *is* the fusion — the cmap maps it to one glyph and
-no rule is needed. Letting GSUB at it expands the pair back into two letters, and three layout and mark
-attachment tests noticed the extra glyph at once. A ligature has to keep the cmap. Which is the order the
-two mechanisms compose in: the shaper fuses what it recognises as one shape, the font shapes what it
-recognises as one letter.
-
-### ~~Why Noto Naskh names one SingleSubst lookup from init, medi and fina~~ — answered 2026-10-04
-
-**It is a mark composition rule, and this engine's reader was right all along.** fontTools agrees with it
-exactly: `init` names lookups [23, 4], `medi` names [24, 4], `fina` names [25], and lookup 4 is a SingleSubst
-with eleven rules that all do the same thing:
-
-```
-dotcenterar               -> dotbelowar
-twodotsverticalcenterar   -> twodotsverticalbelowar
-fourdotscenterar          -> fourdotsbelowar
-tahcenterar               -> tahbelowar
-```
-
-A dot-centred mark becomes a dot-below one. A font names that lookup from all three joining features because
-the same mark has to be composed differently depending on the letter's joining shape, and nothing in
-OpenType stops one lookup being named by several features. The reader read it correctly; the entry above was
-a measurement that had not been interpreted yet.
-
-The cost of not asking an independent reader first is now on record: two entries and one reverted change were
-spent treating this as a parser mystery.
-
----
-
-
-### Device and variation tables — measured before building, 2026-10-04
-
-A GPOS value record can point at a table that says the value is different at a
-different size. Skipping it means a kern is the same at every size, which is
-wrong but not visibly so. Reading it is a matter of applying a table of
-adjustments by pixels-per-em, and a variable font's version needs the variation
-store.
-
-**The reader for this was written and then thrown away, because the machine could no longer compile anything
-and unbuilt code is worse than none.** What survived is the measurement and one real bug, which is the part
-that would otherwise be paid for twice.
-
-**How much is actually out there.** Scanning every GPOS value record in all Windows fonts and the four in
-`testdata/fonts/` with fontTools, 2026-11-14 — 356 files, 379 faces including every TTC face, 2,450,058
-value records:
-
-| | |
-| --- | --- |
-| value records carrying a Device table | **0** |
-| value records carrying a VariationIndex | **9,432** |
-
-The 9,432 are all in two variable fonts: 9,430 in `SegUIVar.ttf`, 2 in `SitkaVF.ttf`, every one an
-X advance. The walk finds value records by type name rather than by field presence — the first
-version checked for `XPlacement` *and* `YPlacement` and a SinglePos record carrying only one of them
-sailed through uncounted — and the device attributes are `XPlaDevice`/`YPlaDevice`/`XAdvDevice`/
-`YAdvDevice`, not the `XPlacementDevice` names the first version asked for. The 9,432 hits are the
-positive control the old entry called for: the same walk that finds zero Device tables finds nine
-thousand VariationIndex ones, so the zero is the fonts' answer and not the walk's.
-
-The old entry said one Device in SitkaVF, and that was a misread of the same bytes. A variable font
-cannot carry a Device table — the specification reserves them for non-variable fonts — and SitkaVF's
-two records agree: their format word is `0x8000`, which is `VARIATION_INDEX`, a delta-set index into
-the item variation store rather than deltas. fontTools reports both with `DeltaFormat: 32768` for
-exactly this reason. There is no Device fixture on this machine, in any of its 379 faces.
-
-**The first scan said zero across all 341 fonts, and that was wrong.** fontTools was opened with `lazy=True`,
-which does not decompile subtables, so the walk over the lookup list never reached a single value record and
-had nothing to find. Tahoma's GPOS holds **13,539** of them. A scanner that reports nothing everywhere is
-indistinguishable from a scanner that is broken, so it needs a positive control: set the Device bit on one
-real record and confirm the walk counts it. It does, and that is the only reason the 341-font number above can
-be believed. **This is the same mistake as a fixture written to match the reader** — a measurement that
-cannot fail is not a measurement — and it is the second time in this repository that a probe has needed
-proving before its result was allowed to mean anything.
-
-**The bug this found, which is worth fixing before anything else here.** `pair_value_size` decides how many
-bytes a value record occupies so the reader can step to the next one, and it counted only
-`0x0001 0x0002 0x0004 0x0008 0x0010 0x0020 0x0040 0x0080` — the four values, two placement device offsets and
-two advance device offsets. The four **VariationIndex** offsets, `0x0100` `0x0200` `0x0400` `0x0800`, are
-missing. A value record carrying one is therefore mis-stepped, and **every pair record after it is read from
-the wrong place**. The read would land in the middle of a neighbouring record and produce plausible small
-numbers, so nothing would look wrong.
-
-No font here uses a VariationIndex, so nothing caught it. That is the honest reason it survived: not because
-the case is unreachable, but because no available font exercises it. Adding the four bits is a one-line fix
-and needs no font to be correct.
-
-**What implementing it would take, for whoever does it with a machine that compiles.** A Device table is
-`startSize`, `endSize`, `deltaFormat` and one delta per pixel size in three encodings — signed 2-, 4-
-or 8-bit values packed most-significant first, `0x123F` for {1, 2, 3, -1}. `read_device` takes the
-encoding from the table rather than inferring it, refuses a `0x8000` VariationIndex and anything else
-that is not 1–3, and clamps the stated count to the bytes actually present, because a table that
-overruns itself is read as far as it goes.
-
-**Done 2026-11-14, as the reader and no further, and the reason is the cursive one.** `read_device`
-lives in `gpos.v` with `Device.delta_at(ppem)`, pinned by `gpos_device_test.v` against bytes: the
-specification's own example, all three encodings with negatives pinning the sign extension, the
-wrapper bound winning over the buffer, and every refusal. What did not land is the `kern_offset_at`
-plumbing the old version of this entry designed: no font anywhere carries a Device table for it to
-read, and no caller in the layout path carries a ppem for it to answer with. A reader with byte
-fixtures is SinglePos format 2's standing — correct and pinned; a behavioural pass no font can reach
-is the cursive attachment's, and that one was withdrawn rather than shipped.
-
-The variation half needs no code, and that is the assessment rather than a deferral. The 9,432
-VariationIndex records resolve through the item variation store against the instance's coordinates,
-and this engine shapes the default instance only — variable instancing is Phase
-7.10, not a gap in this phase —
-where every region scalar is zero and every delta scales to zero. Skipping them is correct at the
-default instance rather than a gap, and the stepping that gets past them is what `pair_value_size`
-counts and `gpos_valuesize_test.v` pins.
-
-### ~~Line options, and measuring a run at a width~~
-
-**Done, in two halves, and one of them is a live bug fixed in the caller.**
-
-`LayoutOptions` has `line_height`, `letter_spacing` and `word_spacing`, and `Line` has
-`line_height`. Direction did not move into it, and that was a decision rather than an omission: the
-`base_dir` argument already carries it, and a second source for one decision with no stated precedence
-is worse than a slightly awkward signature. Alignment is absent for a different reason — aligning
-inside a margin needs a container width the engine does not have, and `Line.glyphs` is already
-mutable, so the knob would have been a field that does nothing.
-
-Spacing is added to **advances**, before `place_glyphs`, not to positions afterwards. The running sum
-in `place_glyphs` and the width in `measure_line` then both account for it with no second walk and no
-way for the width and the positions to disagree. A combining mark is skipped: it shares its base's
-position and has no advance, so spacing both would charge one character twice. That is the whole of
-the implementation and the only non-obvious decision in it.
-
-`line_height` resolves to the caller's value when there is one and otherwise to the largest natural
-line height among the fonts that contributed a glyph. `ascent` and `descent` are deliberately left as
-the ink's extent rather than made to fit the box, and `gpos_test.v`'s assertion that a mark counts
-towards the line height is what pins that. A caller asking for a line height below the glyphs gets the
-smaller number and clips the ink itself, which is the only answer that can be right without knowing
-what the caller will draw. The question `ROADMAP.md` raised about this — what happens below the
-font's natural line height — is answered by that split rather than by a new field.
-
-`measure_paragraph` and `measure_paragraph_with` report the two widths a caller needs before it draws
-anything, out of one shaping. The widest is `layout_paragraph`'s width. The narrowest is the width of
-the widest unbreakable unit, **excluding trailing spaces**.
-
-That exclusion is the reason the function exists rather than a refinement of it. A break opportunity
-falls *after* a space, so the space ends the line before the break rather than starting the one after
-it, and a number copied out of `wrap_paragraph` is one space too wide on every word. Measured at 32
-pixels on Segoe UI that is **8.77 pixels**, which at a 16 pixel size is about a twentieth of a line.
-
-The caller has this bug today. `../vweb/text/shape.v` computes a min-content width by calling
-`wrap_paragraph` with a width of zero and taking the widest line, which is the same number with the
-space still in it. It can call `measure_paragraph` instead; that change is in that repository and is
-not in this one.
-
-Two things about the measurement that are worth knowing rather than re-deriving:
-
-`max(advances)` and `sum(advances)` agree, because `place_glyphs` accumulates `x` as a running sum
-from zero, so for any contiguous run of glyphs the furthest the pen reached equals the total of the
-advances. They diverge only when a logical range spans more than one bidi run, which is what makes
-the per-cluster prefix sum in `cluster_prefix` correct rather than merely convenient.
-
-And it is O(n). Asking `width_of_range` once per break opportunity walks every glyph once per
-opportunity, which is quadratic in the length of a text whose words are short — and short words are
-most of the text anyone measures.
-
-`wrap_paragraph` also grew a `_with` form, which was a bug rather than a feature: it took no options
-at all, so it shaped without the caller's features while `layout_paragraph_with` shaped with them,
-and the two disagreed about the width of the same text.
-
-### ~~A glyph cache~~ — settled, and not in this library
-
-**The cache stays with the caller, and the atlas was never going to arrive.** This reverses what the
-rest of this document said for a year, so the reasoning is worth having in one place.
-
-There is a caller on disk, `../vweb`, and it already has a cache: `GlyphKey` packed into a `u64`, the
-size quantised to a 64th of a pixel, the subpixel offset to a quarter, and about 22 KB of tests for
-it. Both projects had written down that the cache belonged here. It lives there now, which is the only
-honest way to record a decision that was already made by other means.
-
-Keeping it there is also the better answer on the merits, which is not what either document said:
-
-- The cache key needs the **font**, and the font is resolved by the caller's own font library, not by
-  this engine. `vweb` keys on a font *id* it assigned; this engine's key would need a pointer, and a
-  pointer is not comparable across a fallback chain that reloads.
-- A cache on `Font` makes every loaded font's face mutable. Nineteen public methods currently take
-  `&Font`, and `Context` is documented as shareable between threads; a cache would silently reverse
-  that for every caller who took the documentation at face value. `v -race` cannot check the fix here,
-  because Windows is not a supported target for it.
-- A cache is a memoisation of a pure function of (font, gid, size, subpixel offset). That is a few
-  dozen lines of the caller's own code, with no shared mutable state and nothing for the engine to
-  keep compatible.
-
-What arrived here instead is the half of the problem that *was* the engine's: `measure_line`
-rasterized every glyph of every paragraph to read two integers out of the result and threw the pixels
-away. It now asks for the ink box (`Face.box_only`), which is the same two numbers with no fill and
-no allocation. `stbtt_test.v` sweeps all 7000-odd glyphs of Segoe UI and six sizes in Tahoma to prove
-the two paths report identical boxes, because the argument that they do is one step from the
-rasterizer header's own definition of `stbtt_GetGlyphBitmapBox`.
-
-Note that this is not the same as saying it is fast. Rasterization is 3.9 microseconds per glyph and
-was never the bottleneck; see the performance section at the top.
-
-An atlas, if anyone wants one, should be a separate type the caller owns, built from these bitmaps.
-A GPU texture with a shelf packer is a display backend's concern, and this engine has no display
-backend. The claims that this library had one — in `v.mod` and in the module comment — were removed
-rather than implemented. The roadmap had attributed the comment to `Context`; it was in the module
-comment at the top of `vtext.v`.
-
-What landed later, without reopening the decision, is the other half: Phase 7.11's reference
-cache (`shape/cache.v`, pinned by `cache_test.v`). The caller still owns the cache — the engine
-never sees it — but nobody hand-rolls the only honest key twice: font id, gid, size and subpixel
-offset, with hit/miss counts saying when to clear. A memo is not an atlas, and the boundary above
-is unchanged.
-
-### ~~cmap formats 13 and 14~~
-
-**Done, and it turned up two bugs that were not about cmap at all.**
-
-Both formats are read. Format 13 is format 12 with the one difference that matters — a whole span of
-codepoints is a single glyph, so the glyph does not advance with the codepoint. Format 14 is what an
-emoji actually needs, and the interface question the old version of this section raised is real and was
-answered by splitting the lookup rather than by adding a parameter: `Font.glyph_index_variation(cp,
-selectors)` sits beside `Font.glyph_index(cp)` rather than inside it, because everything else in the
-library is built on a glyph lookup being a pure function of one rune and a parameter would have
-undone that quietly.
-
-**The three layout facts in this format are each one a table that reads as empty rather than as
-broken**, which is why all three had to be found by dumping bytes rather than by reading the
-specification carefully. Segoe UI Emoji's subtable starts like this:
-
-```
-00 0E | 00 00 02 E5 | 00 00 00 01 | 00 FE 0F | 00 00 00 15 | 00 00 00 00
-format  length 741   language 1    selector   defaultUVS=21  nonDefault=0
-```
-
-The length is a **uint32** where every other format's is a uint16. The records begin at offset 10,
-immediately after the header, and **there is no count of them** — so a reader expecting the count every
-other format has reads the selector U+FE0F as sixteen million records. And each record is **11** bytes,
-not 12, because the two uint32 offsets after a uint24 selector are aligned to nothing. A `UnicodeValueRange`
-is 4 bytes and a `NonDefaultUVSRecord` is 5, neither of which is what you get by adding the fields as
-4-byte words.
-
-With no count to read, the scan ends on the first record whose table offsets point outside the
-subtable, which is the only signal available and is unambiguous. For a font with one record the second
-"record" is the default table's own bytes, so a reader that does not stop there takes a length of
-several hundred million out of a count field and then tries to allocate it.
-
-Measured: Segoe UI Emoji reports **354** bases it can vary, which is the 179 spans in its default table
-counted out, and `tools/fontdump` prints it. Before this it printed zero, because the table answers
-nothing about any bare codepoint and was being counted by asking.
-
-**The bug that mattered more was not in the cmap.** A variation selector was being dropped during
-shaping, before any font was consulted, and the reason is worth recording because it looks like a
-correct decision. `attach_marks` treated a transparent character with no combining class as an invisible
-format character and gave it no glyph. That is right for a ZWNJ and wrong for U+FE0F, which changes
-which glyph the character in front of it draws as.
-
-The second bug was worse and was not about selectors at all. The pass-through branch of the shaping
-loop — the one for characters that take no joining shape — stepped over the character and continued,
-so **nothing after a non-joining letter was ever attached to it**. For Arabic that never showed,
-because every Arabic letter has a joining type that takes a shape and falls through to the branch
-below. For a script whose letters are transparent it means every mark after every letter was silently
-dropped: Myanmar, Thai and Lao text drew without its vowels. The variation-sequence work found it
-because a Myanmar letter was the fixture.
-
-`ShapedGlyph` therefore carries `selectors`, and its fields are now split into what is known before the
-glyph exists and what the engine fills in while walking the run, which is what let the leftover
-selector at the end of a run reach the letter in front of it.
-
-No font on this machine has a format 13 subtable, so that half is tested against a table built in the
-test file rather than read from disk. Ten have a format 14 and the fixtures are real:
-`seguiemj.ttf` for a default table, `mmrtext.ttf` for 29 non-default mappings, `phagspa.ttf`,
-`msgothic.ttc` for supplementary selectors, and the four `YuGoth*.ttc` for both table kinds at once.
-
-### Vertical text
-
-Slice 1 landed 2026-11-14: vhea/vmtx/VORG are read — vertical advances, top
-side bearings and origins on `Face`, with `has_vertical_metrics` and pixel-scale
-`vertical_advance`/`vertical_origin_y` on `Font`, pinned by `vertical_test.v`
-(synthetic vhea/vmtx/VORG bytes plus MS Gothic measured against fontTools:
-vhea 220/36/0, no VORG, full-width 256 advances, per-glyph bearings; `vert`
-named as the next slice's target). What remains is everything that draws: the
-vertical origin applied to placement, the writing mode, and the substitution of
-vertical forms. No Arabic or Persian need, and worth doing only with CJK —
-MS Gothic on this machine is what the slice is measured on, skipped elsewhere.
-Slice 2a landed 2026-11-14: `LayoutOptions.vertical` collects `vert` for the
-run after the required features, and the run resolves Common/Inherited/Unknown
-to its strong script the way HarfBuzz itemizes — a run opening with a comma no
-longer resolves no features at all. Pinned by `vertical_test.v`: the comma of
-、一 draws the fontTools-measured vertical variant in vertical mode and the CJK
-letter does not, with revert controls neutering the vert loop and the script
-resolution separately. Placement (downward advances, right-to-left columns) is
-slice 2b, validated against Pango vertical runs on WSL.
-Slice 2b landed 2026-11-14: a vertical line is one column — advance boxes at
-x 0, y accumulating downward by vmtx steps (horizontal advance kept when the
-font has no vmtx), `Line.width` the column width, `Line.height` its length, and
-`line_height` the stacking step so callers stack columns leftward by it.
-Horizontal kerning is skipped in vertical runs; vertical kerning, origin
-centering and vertical mark anchors are named follow-ups. Pinned by
-`vertical_test.v` against HarfBuzz TTB on the same file: same gids, 256-unit
-steps, 768-unit column for 、一A, with the half-width A proving the advance
-swap and revert controls neutering the swap and the placement separately.
-Breaking text across columns is slice 2c. Slice 2c landed 2026-11-15:
-`wrap_paragraph_with` cuts columns in vertical mode — the width budget binds
-the column length, each column rebases y to its own top, ranges cover the text
-in order. Only slicing is mode-specific: measuring already sums advances,
-which are vertical by then, so the greedy loop, the mandatory path and the
-overflow rule are unchanged and horizontally pinned. Pinned by
-`vertical_test.v`: greedy halves of 一二三四, a newline cut, and an
-unbreakable Hello overflowing one column, with revert controls neutering the
-dispatcher and the rebase separately. Columns come out in text order for the
-caller to stack right to left; Pango itself is absent from
-WSL, so uharfbuzz is the independent reader.
-Slice 2d landed 2026-11-15: `vkrn` tightens the column — `PairValue.has_y_advance`
-gates a shared offset core onto the y advance, `Gpos.vkern_offset` answers plain
-pairs per script, and `vkern_pairs` folds the answer into the first glyph's advance
-after the per-run vertical swap, which is where it has to run because the swap
-overwrites whatever kerning folded earlier. Only plain pairs are read; no font on
-this machine writes a contextual vkrn. Pinned by `vertical_test.v` on Yu Gothic R:
-small i draws its vert form and the pair step tightens by the fontTools-measured
-123 units, the same 1925-unit step HarfBuzz reports with vert and vkrn on, with
-revert controls neutering the query and flipping the sign separately. The slice
-also corrected its own test midstream: the pair is U+30EA plus small U+30A3,
-not U+30A4, so the vert form and the -123 rule are the right expectations.
-Slice 2e landed 2026-11-15: a vertical line centers its glyphs — each advance
-box lands mid-column against the column width instead of sharing a left edge,
-so the half-width A in 、一A draws at 8 px in a 32 px column. HarfBuzz TTB pins
-it: half the horizontal advance less of an x offset than the full-width
-neighbours. Marks keep the left edge until anchors place them, which is the
-later mark slice's to move. Pinned by `vertical_test.v` on MS Gothic with
-revert controls neutering the centering and centering on the vertical advance
-instead, plus the smoke test's Amiri fallback column, which now checks the
-centering against its own width rather than a shared zero.
-Slice 2f landed 2026-11-15: the vertical origin hangs the glyphs — each y is
-the pen minus the glyph's vertical origin, so MS Gothic's 、一A starts at -27.5
-px and Yu Gothic's kerned pair at -28.16 px, the same negative y offsets
-HarfBuzz reports for both faces (vhea ascender 220 and 1802, no VORG either).
-The shift is gated on vertical metrics the way the advance swap is: a fallback
-face like Amiri stays unshifted, which the smoke test's column pins. Wrapped
-columns are unaffected — slicing rebases to the kept glyph's y, so the shift
-cancels out and heights stay pen travel. Pinned by `vertical_test.v` with
-revert controls neutering the shift and flipping its sign.
-Slice 2g landed 2026-11-15: hiragana reads the kana rules, vertical marks hang
-with their base, and chaining goes first-match-wins — three sub-fixes one test
-needed. OpenType has no hira tag, so MS Gothic files hiragana vert variants
-and dakuten anchors alike under kana and a run asking under hira finds
-nothing: `ot_script_tag` folds hira to kana in `Gsub.script` and
-`Gpos.lookups_for`, and small ぁ draws its HarfBuzz-pinned vertical form
-(gid 21181) while あ stays unsubstituted. `position_marks` takes the vertical
-flag and measures the mark's y from the hung base instead of zero, so the
-dakuten on あ゙ sits at the anchor difference (18 right, 12 up in font units)
-from its letter in both frames. And `apply_chain`/`apply_context` stop at the
-first matching rule even with empty records, with `parse_chain3` keeping
-zero-record subtables: the ccmp no-op over 127 bases blocks the dotted-circle
-expansion exactly as HarfBuzz does. Pinned by `vertical_test.v` with revert
-controls neutering the mapping, the hang and the first-match rule separately.
-A known gap remains, and it is not vertical: a Common base like the dotted
-circle still resolves arab and misses the kana anchors, and horizontal text
-has the same gap.
-
-## Phase 2: reach
-
-The engine works; whether anyone can find it does not.
-
-### Language and platform coverage — done 2026-11-13
-
-The tests used to read fonts from `C:\Windows\Fonts`, so they only ran on
-one machine. The suite now reads a committed corpus under `testdata/fonts`
-(`$VTEXT_TEST_FONTS` first, then the corpus, then the platform directory last
-and only on Windows) and runs on Linux and macOS in CI, with OS-specific legs
-answering none elsewhere. Shipping means this, and it is what the platform
-ratchet in Phase 7 holds: every claim after it is a claim about a platform
-that runs.
-
-### The public API, settled
-
-`LayoutOptions` was one field when Phase 1 listed what it had to grow into,
-and it has grown since: line height, letter and word spacing, per-run script
-and language override, and opt-in alignment with kashida justification. The
-question was whether it is enough: a caller should be able to do everything
-the library can do through it, and nothing should need a separate function
-that only works for one script. `Face`, `Sfnt` and `Cmap` are still
-private, and whether a font inspection API belongs to the shaping engine or to
-its caller is a question this library has answered below.
-
-Decided 2026-11-10, from the one production caller rather than from taste:
-`Face`, `Gpos` and `Gsub` stay private. vweb shapes, measures, wraps and
-rasterizes entirely through the public surface — `Font`, `FontSet`, layout,
-measure, wrap, rasterize, inspect — with no workaround reaching past it, and
-the subset tool's two gaps (no `Font.data`, no closure API) are tool needs it
-already answers by re-reading the file, not engine needs. Opening the tables
-would freeze layouts that are still moving — chaining format 1 landed this
-month — for no caller that asks. The boundary is: the engine ends at a
-positioned glyph with a coverage bitmap, and per-call options carry the rest.
-
-### Documentation — done, and kept current with the slices
-
-The README covers the pipeline and the API; GOAL.md is the one paragraph that
-decides scope arguments, USAGE.md the build recipes and the full C reference.
-What the README used to miss — the part a reader needs before the API: what
-the library guarantees, what it refuses to guess, and what a caller has to
-decide that the library cannot decide for them — lives in "Refused by design"
-and in the per-section contracts (a measurement taken with different options
-is a measurement of a different line). The rule going forward is the one this
-rewrite enforces: landed slices update the four documents in the same tree,
-and a status the docs assert is a status the suite proves.
-
-## Phase 3: examples
-
-Each example demonstrates one capability, is small enough to read in one
-sitting, and runs with one command. An example that needs three arguments and a
-config file is a tool.
-
-### ~~`examples/hello`~~
-
-**Done**, as a file rather than a window. `v run .` in that directory writes `hello.png` and prints
-its path. Four lines go through the whole pipeline in one call at 28 pixels, through a
-FiraCode/Amiri script set: a Persian line with a half-space, `Hello Привет Γειά سلام`
-(Latin, Cyrillic, Greek and Arabic in one line), a Persian sentence with an English word in
-it so bidirectional reordering has to do something, and an Urdu line. The canvas is sized
-from the lines the engine lays out rather than written down, because a fixed height crops
-the last line the moment the text changes.
-
-No window, deliberately. A window needs a graphics binding, and a binding is a dependency that has
-nothing to do with the text engine, so the part that shows the engine works is the part that writes a
-file. The PNG is written by hand out of `compress/zlib` and `hash/crc32` from the standard library, so
-the example depends on nothing but vtext.
-
-Writing it turned up two things worth knowing, both found by looking at the picture rather than at a
-passing test:
-
-A V string is a byte array, so `for r in text` over "مرحبا" yields the UTF-8 bytes `D9 85` as two
-separate runes and the text draws as `Ø` and friends. `.runes()` decodes it. Nothing in the engine
-notices, because by the time it is called the text is already nonsense.
-
-And `rasterize`'s subpixel offset is in quarters of a pixel, not the sixtieths stb_truetype takes, so
-a glyph placed at x of 17.39 wants `sub_x` of 2 and not 25. Sixty-fourths read as quarters is sixteen
-times too far and every glyph lands up to sixteen pixels from where the layout put it. That one is now
-written on the function, since an argument that is too large does not look like a wrong argument.
-
-The original version of this example reached composition and timing work and stopped at the window
-binding; those files are not recoverable, so this is a rewrite rather than a restoration.
-
-### ~~`examples/rtl_line`~~
-
-**Done.** `v run .` writes `rtl_line.png`; `v run . -debug` writes the same line with a box around every
-glyph and its cluster index under it.
-
-Three rows at 44 pixels through script sets — a Latin line (`ffi` ligature, `AV` kern, a
-grave mark), a fully marked Arabic line with a lam-alef in the middle, and an Urdu line
-through Nastaliq — so one file covers both directions plus the tall script. What to read
-off the debug picture:
-
-- The Latin line's cluster indexes ascend from 0 and the Arabic and Urdu lines' descend, which is
-  the whole of bidirectional reordering visible in one glance. A line where they ascend on both is laid
-  out left to right twice.
-- A mark has no advance and shares its letter's x, so it has no box. Two boxes on one letter would mean
-  a mark had been given an advance it should not have.
-- The `ffi` ligature is one glyph with one box and three clusters, because the font says those three
-  characters are one thing and the cluster is what a caret position would use to get back to the text.
-
-Two things about the drawing rather than the engine, both of which look like engine bugs until measured:
-the cluster numbers are laid out with their own hand-drawn digits, because a debug number that fights the
-text is worse than a crude one; and they read left to right in both directions, since a number reads that
-way in every script. Drawing the digits backwards prints 12 as 21 on a mirrored line, which is exactly
-the kind of thing this picture exists to make visible rather than to hide.
-
-A third, found reviewing the examples: the boxes, carets and numbers first carried no margin while the
-glyphs were drawn at one, so every annotation sat one margin left of its letter. On the Latin line it
-read as loose boxes; on the short Arabic line it read as broken placement. The annotation x carries the
-same margin now, because a debug view that disagrees with its own drawing proves nothing.
-
-`paint.v` is a copy in each example rather than a shared module. A V program can only import a module on
-its module path, and making every example depend on a sibling directory to save forty lines of zlib is a
-worse trade than the forty lines. The two copies are kept identical.
-
-### ~~`examples/mark_stack`~~
-
-**Done**, and the comparison is not what it was planned to be. `v run .` writes `mark_stack.png`: nine
-rows under Naskh and Amiri at 56 pixels, each drawn twice, once as the engine placed it and once with
-every offset discarded, with the baseline ruled under both columns so "is this mark on the baseline
-or not" can be measured rather than believed.
-
-The rows are one anchoring question each: fatha on a letter, shadda plus fatha, fatha plus shadda,
-shadda alone, shadda on lam, on alef, an acute no rule places (the glyph is found and positioned
-nowhere — both columns identical, which is the correct answer to a font that has said nothing),
-fatha on Persian gaf, and shadda on kasra on Urdu bheh, so Persian and Urdu stack beside Arabic.
-The third column the plan wanted — a font with no mark rules at all — does not exist in the
-corpus; the acute row makes the same point better than a second font would have: the difference
-between the columns is the font's anchors, not the engine.
-
-Two things were wrong in the plan and in the first draft of the text, both found against
-Windows fonts and both worth keeping, because the corpus rows invite the same misreading:
-
-A shadda and a fatha together can become **one glyph by ligature substitution**, so a row written
-to show mark-to-mark may show no mark-to-mark at all. One glyph and a single placement is the
-ligature firing; the row that does show mark-to-mark keeps the two marks separate — shadda on a
-kasra on Urdu bheh, each placed on the one below.
-
-And the two columns first looked identical, which was me misreading a small picture rather than a bug.
-Measured, the fatha's ink reaches 22 pixels above the baseline in the first column and 35 in the second.
-The offsets are in `Glyph.y`, so clearing y is the whole of "not placed", and the engine stores a mark's
-anchor result there: x at the base's x plus the anchor's, y at minus the anchor's, scaled to pixels.
-
-### The script-set chain dropped every mark — fixed 2026-11-13
-
-Found by reviewing the examples for this phase: `mark_stack` drew every row twice the same, and
-the printed glyphs said why — every mark came back gid 0 with no font. `FontSet.mark_glyph`
-resolved through the flat `pick`, which walks `fonts`, and a per-script set keeps its fonts in
-their own fields, so the chain was empty and every mark missed. Five examples shape through a
-script set, so five examples drew no marks at all; the pictures looked plausible because a
-missing mark is an absence rather than a wrong shape, and the suite's script-set tests resolve
-letters only, so nothing failed either.
-
-The fix is two halves of one decision, and the second was found by fixing the first and watching
-the mark land in the wrong font. `mark_glyph_in` routes through `pick_script` with the mark's
-ShapedGlyph script — `pick_in` itself delegates to it with the codepoint's own tag, so flat sets
-answer exactly what they did — and the joining pass stamps a mark with its base's script rather
-than Inherited, which no per-script set can route. `mark_stack` is the proof: the fatha resolves
-to gid 756 in Tahoma and sits placed, the shadda stacks on the kasra, and the last row — a mark
-no rule places — is identical in both columns. The `layout_test.v` assertion pins it: `بَ` through
-a script set must yield the fatha from the primary font, and with the fix reverted it fails
-naming the missing mark.
-
-### ~~`examples/kerning`~~
-
-**Done.** `v run .` writes `kerning.png`: `AV АВ مدرسة` at 90 pixels in an Amiri+FiraCode set
-against a FiraCode+Naskh one, with the pen's position at every glyph ruled full height and every
-advance ruled at the foot.
-
-The comparison is only honest because both sets are real and the difference is a font's own
-decision. Amiri kerns Latin and names a (zero-valued) rule on one Arabic join; Naskh kerns
-Latin but not Arabic; FiraCode kerns nothing at all — it is monospace, with only spacing
-features. The printed table draws the distinction the API draws: base Arabic letters name no
-rule, so the Arabic pair is probed on shaped glyphs from the laid-out line, where Amiri's
-join fires zero and Naskh answers none. Amiri closes Latin AV by 62 units; the Cyrillic
-pair is the honest null neither set kerns. The sum of the advances equals the line's width
-exactly in both sets, so the kerning is inside the measurement rather than added to it
-afterwards.
-
-### ~~`examples/fallback`~~
-
-**Done.** `v run .` writes `fallback.png`: three lines, every glyph underlined in the grey of the font it
-came from, with the counts printed under each line.
-
-A line drawn correctly looks exactly like a line drawn from one font, which is why the underlines are
-there: the mechanism is only visible when the report of it is drawn next to the result.
-
-The fonts are chosen to force the choice rather than avoid it. FiraCode covers Latin, Greek and
-Cyrillic and no Arabic at all; Amiri covers Arabic and Latin. Hebrew (אבג) is covered by neither,
-which is the third line: three characters from no font.
-
-Measured: the Latin/Cyrillic/Greek line comes wholly from the first font, the Arabic words of
-line two from the second at the script boundary — the decision is per character, not per word —
-and the Hebrew of line three from neither.
-
-The last row needed the right test. The engine does not return no font for a character nothing covers: it
-returns the font it asked, with glyph index zero, because that is the font whose `.notdef` is being drawn.
-So a first version that counted glyphs with no font reported zero missing on a line with three characters
-that no font can draw. The test is the glyph index, and `.notdef` is drawn as the hollow box it is rather
-than dropped — dropping it would move every glyph after it along, which changes the text instead of
-showing that something was lost.
-
-### ~~`examples/bidi`~~
-
-**Done.** `v run .` writes `bidi.png`: four mixed-direction paragraphs, each printed with its resolved
-levels, its visual order as the pen meets the characters, and the characters as they are drawn.
-
-Four lines, each one a different decision:
-
-- `The word سلام means peace: Привет Γειά.` is mostly Latin with one Arabic word in it, plus
-  Cyrillic and Greek witnesses that the script set routes. Nothing moves.
-- `سلام The world` starts right to left, so the paragraph level is odd and the Latin moves to the left of
-  the Arabic. A line like this drawn as if it were the first has the order of its halves swapped.
-- `abc سلام 123 def` has a number between the scripts. Numbers are weak and take the direction of what
-  surrounds them, so `123` comes out before the Arabic rather than after it.
-- `۱۲۳ فارسی abc ۴۵۶ اردو ےھ` has two runs of Persian digits, an English word and an Urdu tail, and the
-  visual order printed under it is the only honest way to read it.
-
-The two printed orders are not redundant and their agreement is the check. `visual_order` names the
-characters in the order the pen meets them, which for a right-to-left run is the reverse of the order
-they were typed; the drawn glyphs are what a reader actually sees. Where the two differ, the difference
-has a reason: a lam-alef ligates into one glyph for two characters, so the orders part by the
-ligature. In a line with no ligature they are identical.
-
-Writing this turned up the difference between a visual order and a drawn line, which is easy to confuse
-because both are "the order it comes out in". A glyph array is left to right with a right-to-left run
-laid out backwards inside it, and the array order is the visual order; the readable reading is the
-reverse. Confusing them made the first two lines look like bugs in the engine when they were neither.
-
-### ~~`examples/features`~~
-
-**Done.** `v run .` writes `features.png`: six words laid out twice, once with the feature
-explicitly off (`-tag`, which turns back on one of the default calt/liga/clig or names nothing
-for the rest) and once asked for by name, with the pen ruled at every glyph and both widths
-and gid lists printed.
-
-Three kinds of thing a feature does, one case each, every number read off HarfBuzz first:
-
-- `liga` fuses Latin `fi` in Amiri from two glyphs to one — the count change, and the easy one
-  to notice.
-- `dlig` fuses الله in Naskh from four glyphs to two: the Allah fusion is discretionary in this
-  face (off by default), which is why the same word is a HarfBuzz-verified null under `liga`
-  in Nastaliq — its fusion is `rlig`, always on — and why `فارسی` is a null under `liga` in
-  Amiri (five stay five; the joins come from the joining features).
-- `calt` swaps FiraCode's `=>` for its two-piece arrow with the same count and the same width:
-  a substitution only the printed gid list can see (1730/1736), which is why the list is printed.
-
-The risk in this one was whether any feature changes anything measurable at all — and whether
-the without/with pair is real. The `-tag` off-switch is what makes it real: the defaults are
-on, so without it both sides fuse identically and every case prints a null.
-
-The risk in this one was whether any feature on this machine changes anything measurable at all. It does,
-in every Arabic font tested, so there was real material rather than a contrived case.
-
-### ~~`examples/line_break`~~
-
-**Done.** `v run .` writes `line_break.png`: the quick-brown paragraph wrapped at 700, 400, 200 and
-100 pixels as four columns side by side, each with its margin ruled, with an Arabic, a
-Cyrillic/Greek and an Urdu paragraph wrapping beside them.
-
-Measured rather than believed, and the ranges are the check that matters. At 400 the lines are
-`[0..35]`, `[35..71]`, `[71..83]`: the paragraph accounted for three times over with no gap and no
-overlap. A wrapper that loses a space between lines or reorders two is visible in the printed ranges and
-nowhere else.
-
-The overflow is the second thing worth reading. At 100 pixels three lines run past the margin, and the
-printed widths say why: `quick brown` is 137, `jumps over` 124, `keeps on` 102. A line is not broken
-inside a word, so a word that does not fit is overlong rather than hyphenated — a decision the caller
-would have to make for itself and this engine will not make on their behalf.
-
-The non-Latin paragraphs are what make wrapping a problem rather than an exercise. A Latin
-paragraph breaks at its spaces and that is all there is to it; the same call wraps the Arabic,
-Cyrillic/Greek and Urdu paragraphs beside it, and the UAX #14 classes around ideographs the
-engine does not fully carry are the known partial coverage Phase 9.1 owns. What wraps here
-breaks where the rules say.
-
-One API gap found here and since closed: `break_opportunities` was public but returned
-`[]BreakOpportunity`, which was private, so a caller outside the module could not name the type
-it got back. The struct is `pub` now, and this example is what exercises it — it prints the
-count and the mandatory positions before it wraps, so the ranges below are checked against
-the breaks rather than believed. `wrap_paragraph` is enough to wrap with, but the ability
-to ask where a line may break is a question a caller has, and the answer is reachable from
-outside. One such gap remains; it is `Face`, `Gpos` and `Gsub`, which are
-unreachable entirely.
-
-Drawing it needed two things the earlier examples did not. A column has to be as wide as its own widest
-line rather than the whole paragraph's, or every column is as wide as the widest and the four drawings
-overlap. And a glyph's x within its line is added by `draw_glyph_at` already, so passing the column offset
-plus the glyph position counts it twice.
-
-### ~~`examples/glyph_grid`~~
-
-**Done.** `v run .` writes `glyph_grid.png`: every glyph FiraCode and Amiri/Naskh have in
-U+0000 to U+24FF, in a grid, at one of three greys depending on how many scanned codepoints
-reach it — one, more than one, or none — with per-script counts (Latin, Greek, Cyrillic,
-Arabic) printed beside the totals.
-
-The three greys answer the question this example exists for, which is whether an empty box means the cmap
-does not name the character or the font has no glyph for it. Those are different faults and only one of
-them is fixed by falling back to another font.
-
-The multi-codepoint cells are invisible characters — two codepoints landing on one gid — and they
-are why a font can cover a character and still not draw it. The faint cells are glyphs no scanned
-codepoint reaches, real ink the engine can draw and ordinary text cannot ask for. The multi
-column is what `codepoint_for` answers with when it returns the lowest of several.
-
-Two things found while writing it, both about the compiler rather than the engine:
-
-`m[k] or []T{}` compiles on a map whose values are strings and fails on one whose values are slices,
-with the failure reported as an unexpected end of file at the end of the function rather than at the
-expression. That is a real fault and it contradicts the compiler-bug section that was removed earlier on
-the grounds that the shapes suspected then did not exist. Asking `if k in m` first compiles and reads no
-worse.
-
-And `none` is not available as a variable name. It reads as the option's empty value, so a counter called
-`none` produces "non-name `none` on left side of `:=`" rather than anything that says the name is taken.
-
-### ~~`examples/spacing`~~
-
-**Done.** `v run .` writes `spacing.png`: one multilingual line (`Hello AV Αα АВ سلام فارسی`
-plus a Persian verb and an Urdu word) laid out five ways — plain, letter-spaced, tightened,
-word-spaced, and with a caller line height — drawn stacked with a ruled baseline per
-row and a bracket per row's line height, with the laid-out width and `measure_paragraph_with`
-under the same options printed for each, and a loud disagreement line if the two ever differ.
-
-The numbers are the claim, not the picture. The letter-spaced row is longer by the spacing times
-the letter count and the tightened row shorter by the same arithmetic; the word-spaced row is
-longer by the spacing times its seven spaces, and the letters inside each word do not move. Every
-row's measured max equals its laid-out width, which is the contract `_with` exists for: a
-measurement taken with different options is a measurement of a different line. The bracket is
-the line height: the last row's is twice as tall while its ink is the same size, and asking for
-less than the glyphs are tall would report the smaller box without shrinking them.
-
-This is also the example that exercises `LayoutOptions` end to end. `features` was the only
-caller of `layout_paragraph_with` before it, and nothing printed a measurement at all; the
-measure half of `USAGE.md` had no example and the spacing half had no picture.
-
-## Phase 4: tools
-
-Programs for people using the library, built out of the examples. Each one
-should be useful on its own without the library, and the library should be
-something it happens to use.
-
-### The 31 copies of a font-path helper, and why the better answer was not taken
-
-Done on 2026-10-13, and recorded because it is the one place in this repository where the right fix
-was known, measured, and deliberately not taken.
-
-`v test <single_file>` compiles that file and not its siblings. `tools/run_tests.v` invokes
-`v test <name>` per file, because per-file invocation is what lets it report pass, fail, blocked and
-skip counts per file rather than one number for the directory. So a shared `corpus_font_path`
-helper in a neighbouring test file satisfies `v test .` and fails every run the runner makes.
-
-Thirty-one test files therefore each carry the same forty lines of resolution order
-(`$VTEXT_TEST_FONTS`, `testdata/fonts`, then the platform directory last and only on Windows) and
-the same `skip_missing`. That is duplication, and it is the price of the report the runner gives.
-
-The better answer is to move the helpers into the module itself, where every test file sees them and
-one copy serves all. It was not taken here because it moves code out of the test files into the
-library's own sources, which is a different change with its own review, and a test-only helper
-reaching into `vtext.v` is a worse arrangement than a duplicated block whose duplication has one
-named cause.
-
-The trigger for writing this down is the platform work on 2026-10-12/13, which made the suite run on
-Linux and macOS for the first time and needed the helper everywhere at once. Before that, one file
-carried a Windows path and the question had never arisen.
-
-### The inspection API
-
-**Done**, in `inspect.v`. `fontdump`, `shapetrace` and `fontcheck` all need to ask a font questions that
-no part of the shaping pipeline was written to answer, and all three were otherwise going to reach into
-private state or re-parse the file themselves. The API is what they are written against.
-
-```
-Font.tables() []TableInfo          tag, offset, length, sorted
-Font.has_table(tag) bool
-Font.table_length(tag) int         zero when absent
-Font.outlines() string             'glyf', 'CFF ', 'CFF2', or ''
-Font.num_lookups(table) int        the LookupList's own count
-Font.features(table) []string      the FeatureList, sorted, deduplicated
-Font.num_features(table) int
-Font.scripts(table) []string       the ScriptList, sorted
-Font.cmap_formats() []int
-Font.cmap_counts() []int           mapped codepoints per subtable, notdef excluded
-Font.glyph_class_counts() [5]int   in the order of glyph_class_names
-Font.is_variable() bool
-Font.variable_axes() []VariableAxis
-Font.variable_instances() []NamedInstance   name, name ID and coords per axis, in fvar order
-Font.variable_instance_names() []string     the UI names alone, in fvar order
-```
-
-Everything here is a report about a font the engine has already read. None of it changes what the engine
-does, and none of it guesses. The distinction worth keeping is between a report and the engine acting:
-`Font.kerns` says whether a font kerns, `Font.kern_offset` says what it does to a pair.
-
-Two decisions in it were settled by measurement rather than by taste.
-
-`features` reads the **FeatureList**, not the features the scripts enable. Those are different sets and
-the difference is not academic: Segoe UI declares 25 tags in GSUB and only 23 are reachable from any
-default language system, because `isol` and `locl` are enabled only under a tagged language. A count of
-23 would say the font cannot isolate a letter, which is false. It can, and this engine does not ask the
-text which language it is in. The shaping path is left reading the scripts, which is still the right
-answer for shaping a run of text.
-
-`glyph_class_counts` puts every glyph in `unclassified` when there is no GDEF, rather than returning zeros.
-Returning early looked reasonable and meant the counts did not add up to anything: a caller summing them
-to check no class had been dropped would conclude all of them had been. That was a real bug, caught
-against a real font with its GDEF stripped rather than against a mock.
-
-`BreakOpportunity` is now public. It was not, and `break_opportunities` was, which left a caller able to
-count its results and read none of them.
-
-### `tools/fontdump`
-
-**Done**, in `tools/fontdump.v`. Everything it prints comes from the inspection API, so this program and
-the library cannot disagree about a font: there is one parser and one set of numbers.
-
-```
-v run tools/fontdump.v testdata/fonts/Amiri-Regular.ttf [--verbose]
-```
-
-It prints the tables with their offsets, marking the ones this engine reads, the cmap subtables with their
-formats and mapped counts, the glyph class histogram by name, and for each of GSUB and GPOS the scripts
-and features split into the ones the engine uses and the ones it skips.
-
-The split is the point. A font's features are not a list of things that work; they are a list of things a
-font contains, some of which any given engine reaches. Printing both side by side is the only way to see
-the difference instead of arguing about it.
-
-`--verbose` adds the per-script lookup count for every feature the engine claims to use. That number is
-what separates a font that offers a feature and implements it from one that offers the name and leaves it
-empty, and on Segoe UI it settles an argument that was previously being had from memory:
-
-```
-isol  no script names it with any lookups
-locl  no script names it with any lookups
-kern under arab  19 lookups
-kern under latn   1 lookup
-```
-
-Both `isol` and `locl` are in Segoe UI's GSUB FeatureList. Neither has a single lookup under any script,
-because this engine asks one language system and none of them names them. A report that stopped at the
-feature tag would say the font can isolate a letter and that the font cannot, which is the same sentence
-pointing both ways.
-
-### ~~`tools/shapetrace`~~
-
-**Done**, in `tools/shapetrace.v`, and it works by calling each stage separately rather than by
-instrumenting `layout_paragraph`. That is what `trace_api.v` is for, and it is why that module is
-`pub`: a trace has to be able to stop between the passes, and the alternative was a build of the
-engine with prints in it.
-
-```
-v run tools/shapetrace.v "سلام" testdata/fonts/Amiri-Regular.ttf
-```
-
-It prints the input, what normalization did, the resolved levels, the joining form each letter took,
-the shaped glyphs, and the laid-out result with its width and vertical extent.
-
-### ~~`tools/fontcheck`~~
-
-**Done**, in `tools/fontcheck.v`. Validate a font against the library and report what it cannot use.
-Not whether the font is valid: whether this library can shape with it, which is a different question
-and the one that matters. A font whose GSUB references a glyph its cmap never produces is valid and
-unusable, and that is a report rather than a crash.
-
-It checks the outlines, the lookup kinds, features no script reaches, the cursive reader's refusal,
-variable fonts, mark attachment, per-script coverage, and cmap formats the engine cannot parse.
-A subtable in format 2, 8 or 10 is dropped by the reader, so characters mapped only there have no
-glyph, and `Font.cmap_table_formats` lists the formats in the font's own bytes — including the
-dropped ones — for exactly this report. The parsed list cannot show what it threw away.
-
-### The vertical extent of a line was twice what it should have been
-
-**Found by `tools/metrics`, which is the argument for writing the tool before it was needed.**
-
-`measure_line` computed the ascent as the top of a glyph's ink box **plus the height of that box**, and
-the descent as the top of the ink read as though it were a depth. The box spans from `top` above the
-baseline down to `top - height`, so `top` is already the distance above the baseline and adding the
-height to it counts the ink twice.
-
-Measured on Segoe UI at 16 pixels, `"Hxbdfpq"` reported **26 above the baseline and 13 below**, where
-the ink is **13 above and 4 below**. A line box two and a third times the em it was drawn at. Every
-example in this repository sizes its canvas from `ascent + descent`, so every one of them had been
-drawing into a canvas roughly twice as tall as it needed, and a caller laying out a page from these
-numbers would have reserved the space and known it.
-
-Two things are worth recording about how it survived. It was not caught by any test, because
-`layout_test.v` only asserted `ascent > 0 && descent > 0`, and because
-`gpos_test.v`'s assertion that a mark counts towards the line height **passed for the wrong reason** —
-the mark did reach past Arial's ascender, and it also reached about twice as far. A test can be right
-about what it says and wrong about why it passes.
-
-And it is the kind of bug that a smaller number would have hidden. Every example draws its baseline and
-its glyphs from `Glyph.y` and the font's own metrics, and both of those were already correct, so the
-pictures looked right. Only `Line.ascent` was wrong, and nothing drew with it.
-
-### ~~tools/metrics~~
-
-**Done**, in `tools/metrics.v`.
-
-```
-v run tools/metrics.v <font.ttf> [--size N] [--glyphs N] [--glyph N]
-```
-
-Vertical metrics at a size, the shape of the font's advances, and the metrics of a glyph you name. The
-part that earns it is a line of ink: the tool lays out a real string and prints what the engine reports
-the ink's extent to be, beside the font's own ascender and descender. That comparison is what found the
-fault above, and it is not a comparison any single number in the library invites — `Font.ascent` is the
-font's number and `Line.ascent` is the ink's, and the interesting case is when they disagree.
-
-It also prints how many glyphs have zero advance, which is the cheapest way to see whether a font's
-space is a real space.
-
-### ~~`tools/glyphdump`~~ — done 2026-10-04
-
-Three modes, because they answer three questions. `--sheet` draws a grid of glyphs on one page on a
-shared baseline, so a whole font can be eyeballed at once and two letters can be compared for sitting at
-the same height. `--each DIR` writes one image per glyph sized to that glyph's own ink box, which is the
-form to diff against another rasteriser. `--text STR` draws the run a string shapes into and tabulates
-it: four characters becoming three glyphs, each naming the character it came from and the substitution
-that replaced it.
-
-Writing it needed one thing the library did not have, which is the other half of this entry: a glyph id
-cannot be named without mapping it back to a character, and nothing in the public API did that.
-`Font.codepoint_for` does now, returning the lowest codepoint that maps to the glyph.
-
-That direction is a search, not a table, and the first version of it had a bug that the first test found:
-V's `..` range is exclusive and a cmap segment is inclusive of its end, so every segment was losing its
-last codepoint. It showed up as a letter answering with its presentation form instead of itself, which is
-a plausible-looking wrong answer rather than a failure. The loops are written as explicit counters now,
-with the reason in a comment.
-
-### ~~`tools/subset`~~ — done 2026-10-10
-
-```
-v run tools/subset.v <font.ttf> --text "STRING" -o out.ttf [--file FILE] [--size N]
-```
-
-Verification always runs, and it is the point of the tool. The font it just wrote is loaded back, the
-same string is shaped through it, and every glyph it kept is rasterized beside its original at three
-sizes and two subpixel bins. A subset that shapes differently is an error, not a small success.
-
-| font | text | chars → glyphs | bytes before → after | glyphs kept |
-| --- | --- | --- | --- | --- |
-| segoeui.ttf | `office ffi difficulty` | 21 → 21 | 959752 → 348168 | 37 of 5394 |
-| tahoma.ttf | `The quick brown fox… Affluent flow office.` | 66 → 66 | 919260 → 311320 | 35 of 4498 |
-| arial.ttf | `efficient staff off shelf flour chaff` | 37 → 37 | 1045720 → 371112 | 50 of 4651 |
-| DUBAI-REGULAR.TTF | `لَآ أَهْلاً بِک` | 16 → 18 | 181484 → 110320 | 21 of 677 |
-| Amiri-Regular.ttf | `بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ` | 14 → 14 | 437780 → 162072 | 36 of 6710 |
-| NotoNaskhArabic-Regular.ttf | `سلام دنیا` | 9 → 8 | 291980 → 73092 | 18 of 1719 |
-| NotoNastaliqUrdu-Regular.ttf | `سلام دنیا` | 9 → **18** | 176600 → 80036 | 47 of 977 |
-| NotoNaskhArabic-Variable.ttf | `متن آزمایشی` | 11 → 13 | 253880 → 140768 | 22 of 1415 |
-| cambria.ttc | `office ffi difficulty` | 21 → 21 | 1792664 → 495412 | 35 of 7614 |
-
-Nastaliq is the number that carries the argument: 9 characters produce 18 glyphs through the
-pipeline, so the per-character cmap walk this tool refuses to use would have kept 9 and dropped 9 the
-run actually draws.
-
-**Glyph ids are preserved rather than renumbered, and that is the whole of the design.** Renumbering
-means rewriting every glyph id in cmap, hmtx, GSUB, GPOS and GDEF, and a wrong rewrite there is a font
-that loads fine and draws the wrong letter. Preserving them means those five tables are copied byte for
-byte and the only claim the tool makes is that the outlines it kept are the outlines it read. The
-price is in the table: the saving is glyf, and the reduction is 2–4x rather than the 10–20x a full
-renumbering subsetter would reach. `maxp.numGlyphs` is left alone for the same reason — lowering it
-buys almost nothing while making every GSUB, GPOS and GDEF reference above the new count point at a
-glyph the font no longer declares.
-
-**Two things had to be right before the tool could be trusted, and both were found by reading the
-output with a second reader rather than by the tool's own report.**
-
-The closure has to run to a fixed point. Running the glyf pass and then the GSUB pass, in that order,
-kept **0** glyphs from composite outlines on Segoe UI: every composite in that run arrived through a
-substitution, so the pass that would have closed over it had already finished. Segoe UI's `i` is gid
-3388, `glyph03315` plus `dotaccent`, and the subset that came out had the dotaccent reference intact
-and its outline empty. The word drawn was a dotless i. Restoring the two passes into a loop that runs
-until neither changes anything fixes it, and is the only ordering that cannot be wrong by accident.
-
-The verification has to cover every glyph the tool kept, not only the ones the shaped run named. The
-first version reported green on exactly that font, because gid 3388 is not in the run's own list — the
-substitution closure added it — so nothing compared it. It now compares every kept glyph, and both
-controls are worth recording: with the single-pass closure restored, the tool reports `gid 3388 at 16
-pixels rasterizes differently` and refuses to write a font at all, which is the behaviour the roadmap
-asked for. With the closure disabled entirely, it verifies on 12 glyphs and says nothing, which is
-the check being vacuous and is why the closure is not what makes the tool correct.
-
-**Independently checked, because the tool's own report is not evidence.** fontTools 4.66.1 reads
-every subset above, agrees the glyph order is unchanged, and reports that no glyph has ink in a subset
-it did not have in the original and that every glyph carrying ink carries identical coordinates. The
-whole-file checksum is `0xB1B0AFBA` on all of them. One real bug was found that way before these were
-written down: the checksum constant had been written in decimal, one digit out, producing fonts that
-every reader loaded and drew correctly while summing to `0xB1B180F2`.
-
-**Refused: CFF, now exercised.** There is no CFF or OpenType font on this machine — measured
-2026-11-13: 0 CFF or CFF2 faces in 352 files plus 38 TTC faces — so the refusal path ran against a
-synthetic one-table OTTO fixture rather than a real font. `inspect_test.v` pins the predicate
-(`outlines()` answers `CFF `, `CFF2`, and empty for neither), and the tool run proves the branch:
-exit 1 with "has CFF outlines" and no output file. `outlines()` names `CFF2` explicitly, which also
-fixes `fontcheck` reporting a CFF2 font as drawing nothing. The reason is in the message rather than
-left to the reader: this rebuilds `glyf` and `loca`, and a charstring is a different language the
-library exposes no reader for. `gvar`, `hdmx`,
-`LTSH` and friends are copied whole for the same reason, which is why NotoNaskhArabic-Variable's
-subset is still 140768 bytes — 83204 of them `gvar` this cannot prune.
-
-**Three API gaps it hit, none of them blocking.** There is no closure API in `inspect.v`, so the tool
-walks `glyf` and the GSUB lookups itself over the raw bytes. `Font` exposes only `path()`, so the tool
-reads the file a second time with `os.read_bytes(font.path())` — closed 2026-11-14: `Font.data()`
-returns the bytes the face was parsed from, the tool uses them, and a `Font` built with
-`load_font_bytes` subsets the same way a path font does, pinned by `test_font_data_round_trips`.
-The closure gap closed the same day: the fixed-point closure and the rebuild moved to
-`subset/` behind `subset.subset_font`, pinned by `subset_test.v` — red without the library,
-red with the GSUB pass neutered (the Segoe `difficulty` seed keeps 8 from the cmap, the
-closure adds 1 composite and 11 substitution glyphs, kept 21), green with it. The one gap
-that remains is `codepoint_for` after subsetting, because the ids are not contiguous.
-Closed 2026-11-14, and the premise with it: ids are preserved and cmap is copied whole,
-so every kept glyph names the same codepoint before and after by construction, pinned by
-`test_subset_codepoint_for_agrees` — the revert control drops the cmap copy and fails
-across the table, shaping and naming asserts alike.
-
-## Differential shaping: four references, one baseline — running 2026-10-16
-
-The engine is written from the specifications, and the specifications are not
-a second implementation. So there is now one: `tools/shapedump.v` dumps any
-case as thirteen tab-separated columns (glyph, advance, offsets, cluster,
-mark flag, source font, box, coverage sum, wrap line), and
-`tools/difftest/compare.py` lays four independent engines beside it — the
-HarfBuzz in `uharfbuzz` for shaping decisions, `fontTools` for outline
-identity and advances, Pillow for the rasterized box and coverage, and Pango
-for how many lines a width makes and how wide each is. Seventeen cases today
-(thirteen at the first run below), from `salam` to the nastaliq torture line
-to mixed bidi with digits.
-
-The first run found eighty differences, and sorting them taught something the raw
-count hid. For U+0633 U+0644 U+0627 U+0645 in Amiri the engine emits three
-glyphs — lam and alef fused as U+FEFC, advance 691, alef's cluster empty —
-where HarfBuzz emits four, lam 245 and alef 446. That fusion is not a bug: it
-is the settled order from the joining attempt above, the shaper fusing what it
-recognises as one shape while the font shapes what it recognises as one
-letter. And it is advance-neutral, 691 against 245 plus 446 exactly, so it
-contributes nothing to any total-width difference. The cluster-split entries
-stay in the baseline with this reason, not as defects.
-
-The defect the suite actually found sat one letter over. The meem after the
-pair came out U+FEE2, final form, advance 522, against HarfBuzz's base gid 85
-at 452 — the whole of the case's 70-unit total difference. The cause was
-`propagate_past_ligature` in joining.v, which handed the lam's forward join to
-whatever followed the alef on the theory that the word would otherwise break
-at the ligature. But the alef is right joining and never connects forward,
-and the fused form is final or isolated, neither of which connects forward
-either: the lam's forward join ends inside the ligature. Feature-by-feature
-shaping confirmed it — with init and medi off, HarfBuzz leaves that meem
-exactly where it is, isolated — and removing the propagation fixed twelve
-diffs across six cases, with Amiri's سلام totals agreeing exactly at 1711.
-U+FEE1, the isolated meem, maps to the same gid 85 in Amiri's cmap, which is
-why the fix converges rather than merely moving the difference.
-
-Two residuals deserve their names so they are leads rather than mysteries.
-In mixed-bidi-number the corrected meem unmasked a separate over-wide
-cluster elsewhere in the case, and in nastaliq-hello the meem itself now
-matches HarfBuzz at 660 while the remaining 585 units sit in the pre-existing
-joining differences. Both are recorded in the baseline with their new values,
-and neither belongs to this fix.
-
-The suite then measured the harness. The mixed-bidi residual — seen at 568
-against HarfBuzz's 992, totals 542 apart — survived the meem fix and did not
-look like shaping at all, because it was not: the comparator fed سلام and
-abc to HarfBuzz in one buffer, which guesses script Latin from the first
-strong character, finds no Latin GSUB records, and returns every Arabic
-letter unshaped, base advances 992/603/217 straight from hmtx. Four of the
-case's five diffs were that artifact. The HarfBuzz leg now itemizes by script
-first, the way Pango does — maximal bidi-class spans with digits and spaces
-folded into the neighbouring strong run, each shaped alone — and the case
-collapsed to the two deliberate fusion-split lines plus eleven units on the
-Latin f. Single-script cases shape byte-identically either way, which the
-ratchet confirmed by reporting nothing else.
-
-The دنیا residual — noon 190 against 274, yeh 244 against 168, totals eight
-apart — analyzed down to the route rather than to a bug. Both engines agree
-on the abstract forms: noon initial, farsi yeh medial, and the presentation
-codepoints' own names say so (FEE7 initial, FBFF medial). They disagree on
-the drawings: Amiri's presentation noon spans x -23 to 150 while its GSUB
-initial spans -41 to 213, and the yeh pair differs the same way. Same form,
-different glyphs, font-internal metric divergence — the measured price of
-the deliberate cmap route, and the baseline entries stay with this reason.
-The dal box on the same word — vtext 12x14 against Pillow 10x13 for the same
-gid 63 — is a third party's convention, not the engine's: the rasterizer is
-stb_truetype while Pillow is FreeType, the outline at 32px spans 2.54 to
-12.23 which is Pillow's 10 almost exactly, and the coverage sums agree within
-the leg's tolerance, so this is edge-pixel rounding on one glyph rather than
-over-fill. It stays as the one ink entry with this reason.
-
-The next bucket is arabic-marks, twenty-eight entries, and it is not more of
-the same: ten mark offsets differ by hundreds of units — (674,201) against
-(68,0), (56,-64) against (8,-259) — which no rounding convention explains,
-and two meems (522 against 565 and 522 against 223) sit in marked contexts
-the isolated-meem fix did not reach. That triage is the next unit.
-
-Diagnosed, root cause in the font's own tables. Amiri's Arabic mark
-attachment lives in GPOS lookups 49 and 50, about five thousand base glyphs
-each, and their coverage names exactly two families: the GSUB joining
-outputs (glyph01543, glyph02588, glyph03259, glyph03662, glyph04030) and the
-base letters (uni0628, uni0633, uni0645). No presentation form appears in any
-of them — not FEE7, FEE2, FE8F, FE8E, FEB3 or FBFF. The engine draws
-presentation forms by the deliberate cmap route, so the glyphs on screen are
-precisely the glyphs the font wrote no anchors against. The comparator's mark
-leg was hardened first, because it compared pen-relative offsets against
-base-relative ones and miscounted a leading mark besides; rebased onto the
-base through the input cluster, fusion-aware, it reports the same ten lines,
-which is what proves they are engine positioning gaps rather than harness
-bookkeeping.
-
-One correction to the story above, because the history matters: the fallback
-already exists. `Glyph.base_gid` records the base letter behind every
-presentation form, and `position_marks` retries a missed anchor through it —
-that is what positioned nine of ten marks in the test line. The ten corpus
-marks are still hundreds of units off, and the reason is now measured to the
-anchor pair, not guessed. Kasra on the beh of بِسْم: vtext reports (276, 0),
-HarfBuzz (-133, 0), and in isolation both report (276, 0). The beh in
-isolation is the base glyph uni0628, whose lookup-50 anchor is (276, 0); the
-beh in context is GSUB-initial glyph03639, whose lookup-50 anchor is
-(-133, 0). vtext draws presentation-initial beh and falls back to the base
-letter's anchor — the isolated shape's number applied to the initial shape's
-glyph. Anchors are per-shape and differ by hundreds, so resolving coverage
-was necessary and is not sufficient. No presentation form appears as a mark
-base or ligature component in any GPOS mark lookup in Amiri — searched all of
-them — so there is no in-font record that names the drawn glyph. The fix is
-shape-aware anchor resolution: from a presentation form and its joining
-shape, reach the GSUB glyph of that shape and read its anchor.
-
-Done 2026-10-16, as `shaped_mark_offset`: presentation glyph, then GSUB glyph of the base's own shape via `shaped_glyph_index`, then base letter. Two things had to be true. First, the point query had to see Amiri's joining tables at all: init, medi and fina there are MultipleSubst lookups with one output each, which `apply` skipped as unanswerable, so every query returned the base and the cascade never fired — the first run moved nothing and the probe said why. `apply` now reads single-output multiples as the single substitutions they are; longer sequences stay with the run-level path. Second, the middle step had to beat the base fallback everywhere it fires, and it does except once: across the ten marks the combined error fell from roughly 2400 to roughly 690 design units, two marks now agree exactly, one is five units off, and the kasra that motivated it went 409 to 45. The exception is the kasra on the final meem, where the fina-direct glyph's anchor sits on the baseline (81, 0) against HarfBuzz's below (8, -259): the direct glyph is one shaping step short of the contextual one, and for this mark the base fallback's below-ish (56, -64) was nearer. That line stays in the baseline with this reason. The layout test pins the shaped anchor with a revert control: kasra on initial beh, -178 against the base's 276, failing with the cascade removed.
-
-A joiner-shaped hole beside it, found through the ZWNJ case and fixed the same day. نیم‌فاصله shaped with its non-joiner invisible to joining: the meem came out medial (FEE4, 463) and the feh medial too, the word rendering joined. The shaper was never at fault — called directly it says final — but the pipeline shapes per bidi sequence and X9 takes boundary neutrals, ZWNJ included, out of sequences. The non-joiners removed between two kept characters are now put back for shaping, mapped through a parallel index so clusters still trace to the caller's text; the shaping loop already drops them from its output. Meem is final FEE2 and feh initial FED3, whose 295 matches HarfBuzz exactly; the meem residual against the GSUB final (522 vs 223) is the route cost with the form now right. A joiner is deliberately not restored — shaped, it is drawn as itself by an enshrined test, so restoring it would add a glyph — and its join-forcing through X9 stays a known gap, named here so it is not rediscovered.
-
-The same week closed the largest single-cluster gap in the baseline, 647 units on a Nastaliq lam, and it took two fixes stacked. The hardcoded lam-alef fusion fires before the font is consulted; in a font without FEFC the pair splits back into base letters, and the split gave every later piece the pair's final form. A lam that joins both ways is medial, so the split lam skipped every medial-masked lookup — including, in Noto Nastaliq, the rlig context that draws the .LA pair. Split lams are medial now. That alone moved lam-ar.fina (848) to lam-ar.medi (295), and the remaining 94 units were the context rule itself: Noto Nastaliq selects .LA through lookup 40, a plain ContextSubst in format 1, which the reader refused as deliberately absent — the comment claiming every Arabic font composes through format 3 alone was falsified by this rule. Format 1 is read now (coverage first glyph, glyph ids after, shared record application with chaining), and lam plus alef come out 201 and 297, exactly HarfBuzz's numbers. The case total went 585 apart to 29, the rest being the dal advance both sides always disagreed on. The reverted test that pinned the old split form now pins the medial one, and the GSUB suite pins the .LA pair with a revert control.
-
-The smallest remaining bucket is one Latin letter: f at 300 against 289 in the mixed cases, same glyph 6261 both sides. Shaping 'def' with HarfBuzz's kern feature off gives 300 exactly, so the eleven units are a GPOS pair kern and nothing else — and the layout pass never applies one. No file outside tests names `kern_offset` or `context_placement`; the readers are built, tested per lookup, direction-aware in their argument order, and unreachable from any line. Wiring them in is a feature, not a fix, with three questions answered here so it starts decided: the fold target is direction-dependent (HarfBuzz reduced f, the second logical glyph in an RTL pair, which the reader's visual-order contract already anticipates), pairs are same-run and same-font with marks left to the lookups' own flags, and every width line in the baseline moves when it lands — the f lines go stale deliberately rather than being edited. Blast radius in this corpus is one pair; the machinery it needs is the one already tested.
-
-Wired 2026-10-16, as `kern_pairs` inside substitution: same font both sides, no marks in the pair, fold into the visually first advance with the run direction deciding the end, and adjustments accumulate across lookups instead of stopping at the first (a class-0 zero would otherwise hide a real kern). AV verifies it end to end at 550 against 612. The -11 itself turned out to be two findings in a trenchcoat. Forcing rtl on the whole buffer made HarfBuzz kern Latin as RTL and invented the f diff outright; per-run direction (strong L runs go ltr) removed it with zero new diffs. The real kern lives in lookup 43's class matrix on the (f, e) order - visual order, found once direction was right - and `life` proves the pass reads it: f at 289 exactly, both engines. Class-based chaining (format 2) is read now too, coverage-gated like the spec's own optimization, with a parse test and a matcher test; it fires on nothing in the corpus yet, and the ratchet will say when it does.
-
-Both directions of the ratchet were tested before the baseline was written:
-eighty observed diffs with an empty file exit 1 listing every one, and a
-baseline entry for a diff that no longer occurs exits 1 naming it stale. The
-one hundred and fifty-one now in `tools/difftest/baseline.tsv` are the measured state, and the
-CI job beside the suite runs the whole comparison on every push — ubuntu
-only, because only there does libpango exist, and the Pango leg skips aloud
-everywhere else.
-
-Pixel legs, 2026-11-13: the ink leg now compares coverage byte-for-byte, not
-just box and sum, and a Pango/Cairo full-line render is compared against a
-vtext-composed image on CI, where libpango exists. Exact equality was never
-on the table and is not claimed: FreeType hints and stb_truetype does not,
-so the same outline lands on different pixels at the edges — verified glyph
-by glyph as ASCII art (a Latin f with its stems shifted one pixel, a beh
-with its edges redrawn, never a different shape). What the legs check is a
-bound — max abs diff, mean abs diff, fraction of pixels differing by more
-than 16 — set just under the smallest measured systematic difference, so
-everything they see is recorded and the recorded numbers are the ratchet:
-any engine change moves them and fails both directions. A no-ink glyph is
-distinguished from a black one by an empty column rather than zeros, and a
-pixel the box does not cover is never read — the IndexError that found the
-un-cropped comparison proved the guard before any baseline entry depended
-on it.
-
-What the end-to-end leg found, 2026-11-13, rehearsed on Ubuntu 24.04 with the
-pinned stack before anything was recorded. Eleven of thirteen cases wrap
-within the tolerance with no entry at all — the layout policy agrees with
-Pango everywhere the shaping does. The two that do not are consequences of
-shaping diffs already in the baseline: arabic-marks lays out 245.3px against
-Pango's 220.0, and the cluster totals differ by 836 design units, about 27px
-at this size; arabic-zwnj differs by 7px on a U+0645 the cluster leg already
-records at 522 against 223. A wrap diff that is not downstream of a shaping
-diff would be a layout bug; neither of these is one.
-
-The thirteen pixel entries are the visual consequences of known shaping
-decisions, checked as images rather than trusted as numbers. الله renders
-23 rows against Pango's 35 because the two engines pick different glyphs for
-it: HarfBuzz takes 1348/6128/1346/55 through the font's ligature path and
-vtext takes presentation forms through the cmap, the deliberate routing split
-the cluster entries already record. Nastaliq renders 53 rows against 30 with
-the *same* glyph set on both sides, and the difference is vertical placement:
-HarfBuzz carries y offsets up to 299 design units on the dot components
-(780 at -84, 762 at -299, 42 at +145, 188 at +95) while vtext places them all
-at the baseline. The mark leg cannot see this — those names fail its uniXXXX
-filter, which is the documented cost of it — so the pixel leg is what pins
-it. That is the largest open placement gap the suite names.
-
-Two harness findings were load-bearing before any of that was recorded.
-First, a Pillow with libraqm — the Linux wheels have it, the Windows wheels
-do not — shapes an isolated combining mark through HarfBuzz and draws it on
-a dotted circle, 20x28 against the bare outline's 8x7 in the same Pillow
-12.3.0. The ink leg pins `Layout.BASIC` so both platforms draw the same
-outline; without the pin the same run is green on one host and red on the
-other for no engine reason. Second, Pango resolves `Noto Naskh Arabic` to
-the static file while vtext shapes the variable file by path, so the
-variable-naskh pixel entry compares across files; with only the variable
-font installed the naskh-joining numbers move, which is why the CI step
-installs the corpus as a set rather than naming one file.
-
-## Phase 5: every script
-
-The goal is every script, not only the ones the engine was developed against,
-and it is a measured goal rather than a statement of intent. The engine's
-pipeline is script-agnostic everywhere it matters — bidi, normalization,
-substitution, positioning, wrapping — and the remaining work is the places
-where it is not, each with its own acceptance test. Arabic and Persian stay
-green through all of it: the corpus cases and the differential baseline are
-the ratchet, and a phase that regresses them is not a phase.
-
-Buckets, in the order they unblock each other:
-
-**GPOS chaining format 1.** Formats 2 and 3 are read and applied; format 1
-matches through a coverage plus following glyph ids and has no reader. Same
-shape as the GSUB format 1 that already exists, with a parse test, a matcher
-test, and the corpus ratchet reporting what it fires on.
-
-Done 2026-11-10, as `chain_glyphs`: the reader, the matcher, both apply loops
-and every kind gate that names the type. No corpus font writes one — 352
-Windows faces scanned, only the four Leela* Malayalam faces do, and lookup 13
-of LeelawUI is the real-font fixture: 46 rules of backtrack, covered glyph and
-lookahead, each positioning through lookup 69. The corpus test pins the
-ratchet instead: any font gaining a format-1 rule fails it deliberately.
-
-**GSUB class-based contextual formats (5/2, 5/3, 6/1, 6/2).** Deliberately
-absent because no font in the corpus writes them. For every script that means
-finding fonts that do, shaping them beside HarfBuzz, and shipping the reader
-with fixtures rather than synthetic tables alone.
-
-Done 2026-11-11, as `context_classes`, `chain_glyphs` and `chain_classes`: the
-readers, the matchers, both apply loops and every kind gate that names the
-type. The premise was stale — Amiri carries all four (lookup 55 is plain
-format 2, lookups 27 and up are plain format 3, lookup 28 is chaining
-format 1, lookup 66 is chaining format 2), so the fixtures are real tables
-beside built bytes: parse tests for each format, matcher tests for each
-sequence kind, and three end-to-end substitutions with fontTools-measured
-glyph ids (1591 to 4031 through lookup 54; 1817 to 3378 and 1632 to 3396
-through lookup 65; 5439 to 5440 through lookup 24). Two misreads caught on
-the way in: the plain format-3 substitution count sits before the coverage
-offsets rather than after them, where the chaining one keeps it — Amiri
-lookup 27 is the control, a 60 where the offsets end against 3 real records —
-and a class-only lookup never reached its subtables until the format-1
-coverage miss stopped returning early, which a revert control re-fails.
-Suite 32/32, difftest 0 new and 0 stale: the new rules fire on none of the
-corpus texts, the way the GPOS format-1 rules fire on none either, so the
-fixtures above are the proof they work and the ratchet is the proof nothing
-else moved.
-
-**Script-specific mark and feature collection.** Mark lookups are collected
-for `arab` only, and the joining feature set is requested the same way for
-every run. A Latin mark positioned by its font's own `latn` rules is
-currently drawn at the pen. The collection has to follow the run's script;
-the presentation-form cascade stays Arabic-specific because only Arabic
-draws presentation forms.
-
-Done 2026-11-10, as `mark_offset_in`: the arab list stays the parse-time
-default, the run's script selects the lookups, and the base letter's
-codepoint decides the script. Arabic behavior is unchanged by construction —
-same script tag asks the same list — and a Latin acute on a q now lands at
-its HarfBuzz-confirmed anchor (825, -328) instead of the pen, which the new
-layout test pins with a revert control. Suite 31/31, difftest 0 new and
-0 stale.
-
-**Line breaking to the file's own end.** 18,777 of 19,346 on 2026-11-10, with
-569 remaining. The buckets are the ones Phase 1 listed: the LB25 numeric
-matrix, CJK ideographic joints (no `.id` handling, CJ folded to NS), the
-`insp`/`ex`/`hy`/`bb` class lists as pairs, quotation-span state, LB28's
-aksara subrules, and the leading-mark contradictions where the file
-disagrees with itself. Each lands with its count, like every rule before it,
-and the floor moves up each time.
-
-Done 2026-11-12, at **19,342 of 19,346**: the width table (UAX#11) lets LB30 tell a
-narrow bracket from a Wide one, LB9's exception resolves a mark after a hard break,
-a space or a zero width space to a letter, `.ex`/`.hy` left the prohibited-end list
-for the pair rules that own them, and LB28a/LB30b/LB26/LB20a/LB21a landed as pairs
-with mark read-through. Four cases remained, each named rather than coded
-around: one [28.14] then thought to need the Indic syllabic categories this
-engine does not carry, and three [31.01] `Pf|ID` span-boundary breaks needing
-quotation-span state (`prev_broke` threads the decision but does not span it).
-Suite green, difftest 0 new and 0 stale.
-
-On 2026-11-13 the [28.14] case landed, and the note above was wrong about why
-it was missing: it is LB28a's fourth arm, `(AK|◌|AS) × (AK|◌|AS) VF`, a
-three-character lookahead the engine never wrote rather than a table it never
-carried. `× 1BD2 × 1BEA × 1BC9 × 1BF3 ÷` holds at 1BEA|1BC9 because the pair
-read through the mark is AS × AS and 1BF3 is VF; without the VF ahead the
-same pair breaks at LB31. The arm follows from UAX #14's LB28a text — four
-patterns, the fourth never written — so no Indic data was fetched and none is
-needed. Floor **19,343 of 19,346**; three span-boundary cases remained, named
-above.
-
-On 2026-11-14 those three landed together, and the note was wrong a second
-time in the same way: it said the pair engine could not span a quotation, and
-a counter threaded through the walk does exactly that. A closing mark breaks
-after itself before an ideograph when it closes a still-open span, whether or
-not the position in front broke (`× FF1F × 201D ÷ 5B50 ÷` and its two
-siblings, whose opener stands dozens of characters back) — but only onto an
-East Asian base. The same marks around a Latin word hold at [19.13]
-(`× 0067 × 201D × 5956 ×`), so a Wide or Fullwidth base breaks and anything
-else holds: LB19a's exception read off the pair, the base read through marks.
-Floor **19,346 of 19,346 — the file's own end, zero remaining.**
-
-**C API and usage guide.** The library is usable from C: `vtext.h` with opaque
-handles over contexts, font sets, fonts, lines, wraps, breaks and bitmaps,
-implemented in `capi.v` with `@[export]` wrappers. Errors come back in a
-caller-owned buffer, so there is no hidden state; every integer crossing the
-boundary is an explicit `i32` on the V side because V `int` is 64-bit here.
-Verified end to end with `examples/c-api/smoke.c` against real fonts through
-both link routes (tcc direct, gcc via a `vtext.def` import library):
-`USAGE.md` is the quickstart plus the full reference with ownership rules.
-
-Two things found on the way in. A Windows DLL built with anything but MSVC
-exports nothing: the compiler only marked the wrappers with the ELF visibility
-attribute, which a PE linker ignores. Fixed upstream in the compiler rather
-than worked around here (the tcc `-export-all-symbols` flag stays as a belt
-until that lands). And a caller thread needed a 32 MB stack, the same reserve V
-gives its own executables: `ucd/ucd_names.v` held three 143,217-element constant
-arrays that the compiler materialised as stack compound literals in the module
-initializer, over 2 MB before a single character was shaped. Fixed 2026-11-14
-by generating those tables as parsed strings like every other `ucd/ucd_*.v`
-file, decoded once at load into heap arrays: the smoke test links a default
-1 MB stack and passes, after faulting with `STATUS_STACK_OVERFLOW` on the same
-stack before, and the CI reserve went with the workaround.
-
-A third thing, found because CI stays red on it while Windows stays silent:
-`vtext_wrap_free` and `vtext_line_free` freed the glyph backing with the C free,
-and a managed V array's backing carries a runtime header (and a possible slice
-offset) that C free must not touch. glibc aborts — `free(): invalid size` on
-Ubuntu, exit 134 on macOS — while the Windows heap tolerates the same interior
-pointer, so a local smoke run passed and CI did not. Reproduced under valgrind,
-which names all three frees (both wrap buffers and the line), and fixed by the
-file's own `CBitmap` rule: the boxes copy glyphs into C memory behind unmanaged
-headers (`c_array`), so the existing frees are exact and `vtext.h` does not
-move. Valgrind-clean after, 0 errors from 0 contexts. The `-gc none` transients
-were already dropped uncollected by design; the boxes add one buffer per call
-to the same heap, which is the documented cost, not a new one.
-
-Windows stayed red after that, with a different signature: no abort and no output at
-all, exit -1073741515 (STATUS_DLL_NOT_FOUND) where bash reports a bare 127. The
-import tables, printed by objdump on CI for exactly this, show why: the smoke binary
-imports `out.exe` — V links the DLL with the internal object name `out` (the same
-root cause as the macOS install name above), and linking straight against vtext.dll
-propagates that name into the exe, which loads nowhere. The MinGW import library step
-already existed to link a clean import table, but it ran after the smoke test; moving
-it before the smoke build makes `-lvtext` resolve to the `--dllname vtext.dll` table
-instead. The MinGW runtime DLLs the runner's gcc links dynamically travel beside the
-outputs for the same reason: a loader failure prints nothing, so the build ships
-everything the tables name.
-
-**Device and variation offsets — done 2026-11-14, as the reader and the assessment.** Zero Device
-tables across 2,450,058 value records on 379 faces; 9,432 VariationIndex, all in two variable
-fonts. `read_device` with `Device.delta_at(ppem)` is pinned by `gpos_device_test.v` against bytes;
-no `kern_offset_at` plumbing, because no font carries a table and no layout caller carries a ppem.
-VariationIndex resolves to zero at the default instance — the only one shaped — so skipping is
-correct and the stepping is what `gpos_valuesize_test.v` pins.
-
-**CFF subsetting.** Deferred with a measurement, not queued behind other work: 0 CFF
-or CFF2 faces in 379 faces scanned 2026-11-14, on a machine whose corpus the
-scan predates. A charstring reader verified only against tables built to match
-it is the fixture-matching-the-reader failure this repository rejects twice
-already, so the subsetter keeps refusing CFF with the reason in the message
-until a real CFF font gives the reader something to be wrong about.
-
-**Vertical text.** Origin, writing mode, vertical forms — only with CJK, as
-Phase 1 already says, and measured against vertical runs rather than
-described.
-
-Acceptance for the phase: the conformance floor at the file's own end with
-every remaining failure named (a file that contradicts itself in 130 places
-cannot score 100%), the differential corpus extended past Arabic with Latin
-mark and kern cases at 0 new and 0 stale, and the suite green on all three
-platforms with CI actually building — the toolchain drift that keeps it red
-since 2026-10-16 is the first thing this phase fixes, because a red gate
-proves nothing about any of the buckets above. Throughput is measured, not
-assumed: best-of runs on Segoe UI at 16 pixels are the number in the README,
-and an optimization lands with a before/after on the same harness or not at
-all — a `time.ticks` best-of under a loaded box once attributed a 7x font gap
-to shaping that a quiet-box A/B cut to a 5% substitution win, because the pass
-that looked dominant recomputes an effective sequence per substitution and the
-fix (in-place 1:1 writes, recompute only when length or matching behavior
-changes) removed it. The remaining cost on heavy fonts is the per-pair kern
-walk, which is its own unit.
-
-## Phase 6: the modular replacement
-
-The goal is one library that does the whole text job — load, shape, lay out,
-rasterize, inspect, subset — where each job is a separate part with its own
-API and its own baseline. `GOAL.md` is the one paragraph that decides scope
-arguments; this section is the work list. A caller uses one part or all of
-them, and nothing is pulled in by accident.
-
-Parts and what each one replaces, in the order they unblock each other.
-Dependencies run one way — `layout` → `shape` → `font` → `ucd`, with `raster` a leaf below `font`, `capi` →
-all — and no part imports a tool.
-
-| Part | Replaces | State |
-| --- | --- | --- |
-| `vtext.ucd` | — (shared data) | Done 2026-11-13: `tables.v`, `properties.v` and the 13 generated `ucd_*.v` files live in `ucd/` as `module ucd`, imported as `vtext.ucd`. Verified the way every split below must be: full suite 32/32 green, fmt gate green, every consumer CI builds (`shapedump`, the C library plus smoke) green. Test files stay at the root; the moved free functions they need (`hex_value`, `lookup_range`, the quote/sa/east-asian/ep helpers, `parse_ranges`/`parse_names`) are `pub` on `ucd`. |
-| `vtext.font` | FreeType's loading side, fontTools' reading side | Slice 1 landed 2026-11-14: sfnt/TTC containers, cmap and the bounds-checked reader live in `font/` as `module font`, imported as `vtext.font`. Suite 34/34, fmt gate, all examples and tools, both difftest hosts and the 1 MB smoke green with no behavior change — the split moves bytes, not answers. What remains moves in an order the imports force: Face owns the Gpos/Gsub tables, so moving it alone would cycle back into `vtext` — slice 2 is Face with metrics plus GSUB/GPOS parsing together, then the shaping application, then layout. Owns the Device-table question Phase 5 closed (zero Device in 2.45M records, `read_device` pinned by bytes). Slice 2's seam is corrected by the compiler, twice over: methods are defined only in the type's own module - `mapped_count` proved it in slice 1, and this slice moves on that rule rather than re-testing it. So `font/` owns data structs, their parsers, and every method on them: substitution, positioning, the shaping application on font types, and the stb raster primitives Face already carried. What stays in `vtext` is orchestration that takes font types as arguments rather than extending them - the Shaper, layout, the Font/FontSet/Glyph wrappers - which the compiler allows as free functions. Glyph and ShapedGlyph stay out - they are pipeline currency, not font data - and FontSet with them, since fallback chains belong to `layout`. The move is atomic (Face owns Gpos/Gsub, so anything less cycles) and lands green or not at all: suite, fmt, consumers, both difftest hosts and the 1 MB smoke, like slice 1. Slice 1 needed one repair pass before CI went green. The qualifier script had qualified method declarations as well as calls (`fn (f &Face) font.codepoint_for`), which the Windows compiler accepts and CI's newer one rejects as a static receiver; declarations stay unqualified with qualified bodies. The same pass completed the visibility the split requires: `pub mut` Sfnt fields, `pub` Vs types and platform consts, `mapped_count` moved into `font/` because this compiler defines methods only in the type's own module, the references the script missed qualified (`raw_cmap_formats`, the platform consts, fontcheck's stale `vtext.` path), and fontcheck's local `font` renamed to `loaded` so the module import resolves. Re-verified the full slice-1 way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. Slice 2 landed the same day: Face, GSUB/GPOS/GDEF data with parsers and application, the stb C bindings with GlyphBitmap and the Face raster methods, and the JoiningForm enum all live in `font/`; `mark_glyphs_passthrough` stayed a Font method in `vtext.v`; VariableAxis moved to `font/` from `inspect.v`. The script qualified 70 moved types, 104 free functions and 58 consts across 26 root and tool files; the compiler enumerated the rest (Gdef/Gsub/Gpos field visibility, GlyphBitmap double-qualification, two tool locals shadowing the module). Verified the same way: suite 34/34, fmt gate, all consumers, 0/0 both hosts, 1 MB smoke. What remains of `vtext.font` is the future `vtext.raster` carve-out from inside it. Slices 4+5 moved the last `vtext`-side pieces out around it — the `Font`/`FontSet`/`Glyph` wrappers, `Context` and `inspect.v` to `shape/`, line breaking and layout to `layout/` — committed as one unit because slice 4 alone does not compile; `font/` itself unchanged by the move. |
-| `vtext.shape` | HarfBuzz core | Slice 1 landed 2026-11-14: joining, normalization, bidi, the bidi rule application and the bracket table live in `shape/` as `module shape`. The bidi report helper `visual_string` moved with its type the way `mapped_count` did. Verified the full way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. Acceptance for the rest is the existing differential baseline extended past Arabic — Indic and Khmer shaping beside HarfBuzz at 0 new and 0 stale. Slice 2 landed the same day: `context.v` (`Context` + `new_context` + `normalize_nfd` + `shape_for_trace`), `font.v` (`Font` + the load delegates), `glyphs.v` (`Glyph`/`FontSet`), `inspect.v`, all in `shape/` as `module shape`. The seam corrected itself mid-slice: `font/` owns data + parsers + application on font types, so the `Font`/`Context`/`Glyph`/`FontSet` knot plus `inspect.v` dissolved into `shape/` after proving the layout/-only move cycles through `capi.v`. The qualifier pass covered ~59 files with the checklist re-proven every slice (declaration-aware; `vtext.X` to `mod.X` with `vtext.mod.X` artifacts fixed in the same pass; `gg.Context`-style foreign paths guarded; comments/strings skipped for CamelCase; missing imports added at the last-import anchor; `font`-named locals renamed line-targeted). Verified the full way: suite 34/34, fmt gate 108/0, all examples and tools, 0 new and 0 stale on both difftest hosts (Windows pango legs skip aloud; CI owns them), DLL plus 1 MB smoke. |
-| `vtext.layout` | Pango's layout math | Slices 4+5 landed 2026-11-14: `linebreak.v` and `layout.v` live in `layout/` as `module layout`, imported as `vtext.layout`. Verified with the rest the full way: suite 34/34, fmt 108/0, consumers, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is vertical columns (breaking across columns; single-column placement landed behind `LayoutOptions.vertical` with HarfBuzz-TTB-pinned geometry, reachable from C since 2026-11-15 through `vertical` in `vtext_options_t` with the smoke test proving the structs agree; columns cut by `wrap_paragraph_with` the same day), kashida/justification as opt-in, and hyphenation dictionaries as a `BreakPolicy` with generated tables. The [28.14] arm showed the shape: a rule with its own cases, measured, not described. |
-| `vtext.raster` | FreeType's rendering side | Slice 1 landed 2026-11-14: `GlyphBitmap` with `is_empty`/`ink` lives in `raster/` as `module raster`, imported as `vtext.raster`. The `box_only`/`render_into` calls stay methods on `font.Face` — this compiler defines methods only in the type's own module — so `font` imports the leaf `raster` for the data they trade in, and every `font.GlyphBitmap` site (shape's `Font.rasterize`, `subset`, `shapedump`, `probe`) is now `raster.GlyphBitmap`. Verified the full way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. What remains is hinting (TT interpreter plus auto-hinter fallback) and color (COLR/CPAL, CBDT/sbix, SVG refusal-with-reason) as engines behind the box-and-fill contract `box_only`/`render_into` already define. Verified per glyph against FreeType and Pillow like the ink leg does now. |
-| `vtext.inspect` | fontTools introspection (read side) | Decided 2026-11-14: stays as the inspection API on `shape.Font` in `shape/inspect.v`, not a separate part. The surface is eighteen `Font` methods, and the methods-live-with-the-type rule proven twice in the `font` slices forbids moving them; a thin `inspect/` of free functions taking `shape.Font` would cycle `shape` → `inspect` → `shape` through `TableInfo`. `fontdump`, `fontcheck` and `shapetrace` already build on it. |
-| `vtext.subset` | fontTools subsetter | Slice 1 landed 2026-11-14: the closure and the rebuild live in `subset/` as `module subset` behind `subset_font(font, seed)`, and `tools/subset.v` is the CLI around it (shaping the seed, reporting, verifying). The fixed-point loop, the 16-pass bound and the duplicated comment moved with the code; the duplication is gone from the tool. Verified the full way: suite 35/35, fmt 111/0, consumers fail=0, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is CFF/CFF2, explicitly deferred above: 0 faces measured, so a reader would be verified only against tables built to match it. |
-| `vtext.capi` | — (the C face) | Last, since it wraps all of the above. `vtext.h` stays the single header; the header mirror is now proven by `tools/capicheck.v` (the full export list, both directions, CI-gated before the library builds) rather than by the link alone. `subset` is wrapped (`vtext_subset`/`vtext_subset_free`, exercised by the smoke test); raster stays at the combined box-and-fill call by decision, its fields already readable through the bitmap accessors. |
-| providers | fontconfig / Core Text / DirectWrite | Linux (fontconfig) landed 2026-11-14: `providers/fontconfig.v` (`module providers`) resolves a family through `FcFontMatch` and reports the matched family beside the path, so a silent substitution is visible to the caller; Core Text and DirectWrite stay unwritten, and off Linux the provider answers none. Pinned by `providers_fontconfig_test.v` (self-naming match + substitution report, skip-guarded off Linux and on fontless hosts; wrong-family revert fails). CI installs the headers on the ubuntu suite leg because the test links fontconfig there. |
-
-The seams that keep the parts combinable, each an explicit interface rather
-than an argument about taste: `FontSource` (where fonts come from — file,
-bytes, or a provider), `RasterBackend` (box-for-gid plus fill-this-buffer),
-`BreakPolicy` (UAX #14 default today, dictionaries tomorrow), the
-caller-owned glyph cache (keyed on font id, gid, size, subpixel offset, which
-is the only honest key), and per-part options structs on the proven
-`LayoutOptions` pattern (`ShapeOptions` for features and script behavior,
-`RasterOptions` for subpixel and gamma) rather than one god-struct.
-
-What changed status to make room: kashida and justification are
-`vtext.layout` features now rather than caller homework, hyphenation
-dictionaries are a `BreakPolicy` with generated tables rather than a
-refusal, and system font discovery is a provider rather than a gap. What did
-not change: the engine ends at a positioned glyph with a coverage bitmap,
-the cache stays with the caller, and there are still no HarfBuzz bindings,
-no ports and no font authoring. Variable instancing moved to Phase 7.10.
-
-Acceptance per part, not per release: each part lands with its own
-conformance floor and its own differential baseline, green on all three
-platforms, or it does not land. The ucd carve-out above is the template:
-full suite green, fmt gate green, every consumer green, then commit.
+| UAX #14 `LineBreakTest.txt` (18.0.0) | 19,346/19,346 | `linebreak_conformance_test` |
+| UAX #29 `WordBreakTest.txt` | 1944/1944 | `wordbreak_test` |
+| UAX #29 `SentenceBreakTest.txt` | 512/512 | `wordbreak_test` |
+| `SpecialCasing.txt` expectations | 120 cases, 0 failed | `case_test` |
+| Case table rows | 1601/1508/1578/16 | `case_test` (dropping U+0061 fails at 1600) |
+| Hyphenation word list | 8 words + injection/edge rows | `hyphen_test` |
+| CJK ID-class / CJK-subset | 0 fail on 1,753 / 0 on 5,333 | `cjkbreak_test` |
+| `script`/`language` overrides | locl positions, gid swaps | `script_lang_test` |
+| Device deltas / VariationIndex reads | byte-pinned | `gpos_device_test`, `gpos_valuesize_test` |
+| Chaining-format-1 ratchet | fires on nothing in corpus | corpus test (deliberate fail on gain) |
+
+## Phase 1: the engine's remaining gaps — closed
+
+Everything here was a correctness question, not a feature. What survives is
+the decisions, because they bind later work:
+
+- **NFD index drift in visual ordering** — fixed 2026-10-16.
+- **Line breaking to the file's own end** — 19,346/19,346. LB28a's fourth arm
+  (`(AK|◌|AS) × (AK|◌|AS) VF`) was an unwritten lookahead, not missing data;
+  the three `Pf|ID` span cases fell to a counter threaded through the walk;
+  LB19a's exception reads off the pair with the base read through marks. The
+  file contradicts itself in 130 places; every remaining disagreement is
+  named, none is coded around.
+- **Numeric breaking, aksara-vs-mark, chaining-context positioning,
+  context-sensitive kerning, SinglePos format 2, GSUB joining, cmap 13/14,
+  vertical-extent double-count, tools/metrics** — done (struck sections kept
+  in history).
+- **Cursive attachment** — read and verified glyph-for-glyph against
+  fontTools, never wired: the one corpus rule that reaches its own glyphs is
+  vestigial (Noto Nastaliq, four one-sided anchors, no adjacent exit+entry
+  pair; HarfBuzz reports zero x-offsets on سلام). The test fails the day a
+  shaped line grows a pair.
+- **A glyph cache in this library** — settled against: the cache is the
+  caller's (see the performance section and 7.11). No atlas was ever real.
+- **Performance** — `layout_paragraph` was quadratic (72 ms at 1024 chars);
+  linear now (4 ms). Cause was ligature matching copying O(n) per position,
+  fixed by a once-computed bound; rasterization was never the cost (3.9 us
+  per glyph). Consequence: nothing else on this roadmap is a performance
+  item, and optimizations land with before/after on the same harness or not
+  at all.
+- **Device and variation offsets** — zero Device tables in 2,450,058 value
+  records over 379 faces; 9,432 VariationIndex, all in two variable fonts,
+  resolving to zero at the default instance. Readers pinned; no plumbing.
+- **CFF subsetting** — deferred by measurement (0 CFF faces in the 379-face
+  scan): a reader verified only against matching tables is the
+  fixture-matches-reader failure, so the subsetter refused until 7.9 brought
+  a real font.
+
+## Phase 2: reach — done
+
+Language and platform coverage, the public API, documentation — all landed.
+
+- The shaping engine covers Arabic/Persian plus the Latin that comes with
+  them; the script map in Phase 9 tracks everything after.
+- The C API is `vtext.h` with opaque handles over contexts, font sets, fonts,
+  lines, wraps, breaks and bitmaps (`capi.v`, `@[export]` wrappers, errors in
+  a caller-owned buffer, explicit `i32` at the boundary because V `int` is
+  64-bit here). Verified by `examples/c-api/smoke.c` through both link routes
+  (tcc direct, gcc via `vtext.def`). No versioned C release exists (only
+  GitHub Release `v0.1.0`, 2026-10-16) — the C library ships as per-run CI
+  artifacts, not releases.
+- Hard-won C-export facts, kept because they bite again: the wrappers needed
+  the compiler's export fix (the tcc `-export-all-symbols` belt stays until
+  that lands); the module initializer needed 1 MB of stack until the big
+  `ucd_names` tables became parsed strings like every other generated table
+  (the smoke test links a default 1 MB stack and proves it); glyph backings
+  cross to C only behind unmanaged headers (`c_array` rule, valgrind-clean),
+  because a managed V array's backing must not meet C free (glibc aborted
+  while the Windows heap tolerated it); the MinGW import-library step runs
+  before the smoke build because V links the DLL under the internal object
+  name `out` (same root cause as the macOS install name); the MinGW runtime
+  DLLs travel beside the outputs because a loader failure prints nothing.
+- `USAGE.md` is the quickstart plus the full reference with ownership rules;
+  `GOAL.md` is the one paragraph that settles scope arguments.
+
+## Phase 3: examples — done
+
+Twelve examples, all corpus-only, all multilingual by requirement — every
+example draws Arabic-script, Latin and CJK text, and the set covers the
+terminal/geek faces (FiraCode, JetBrainsMono, Cascadia Code, the Nerd patch
+with PUA icons) with no size limit (NotoSansSC rides along at 17 MB).
+`hello`, `rtl_line`, `mark_stack` (NotoNaskhArabic — Amiri anchors sit at
+y=0, Naskh gives nonzero placement, both HarfBuzz-verified), `kerning`
+(Amiri closes Latin AV by 62; AV at 550 vs 612 end to end), `fallback`,
+`bidi`, `features` (Amiri `fi`/liga nulls beside HarfBuzz — HB fuses
+neither; real pins are Amiri `fi`→6630, Naskh Allah/dlig, `=>` gid swaps on
+FiraCode/JetBrainsMono/Cascadia/nerd, icon F09B), `line_break`, `glyph_grid`,
+`spacing`, `corpus`, `c-api`. No Windows-only faces anywhere; rendered PNGs
+are gitignored, never committed.
+
+## Phase 4: tools — done
+
+`fontdump`, `shapetrace`, `fontcheck`, `metrics` (found the doubled vertical
+extent), `glyphdump`, `subset` (glyf; CFF refused with the reason),
+`capicheck` (the full C export list, both directions, CI-gated before the
+library builds). Deliberately not taken: deduplicating the 31 copies of a
+font-path helper across test files — each test stays self-contained so any
+single file runs alone.
+
+## Differential shaping: four references, one baseline
+
+`tools/shapedump.v` dumps any case as tab-separated columns (glyph, advance,
+offsets, cluster, mark flag, source font, box, coverage sum, wrap line);
+`tools/difftest/compare.py` lays four engines beside it — uharfbuzz for
+shaping, fontTools for outline identity and advances, Pillow for box and
+coverage, Pango for line counts and widths. Baseline matching is
+exact-string: 151 entries, 0 new / 0 stale.
+
+Rules that cost real debugging, kept:
+
+- Shape multi-script cases per script span (maximal bidi-class spans, digits
+  folded into the neighbouring strong run) — one buffer lets HarfBuzz guess
+  Latin from the first strong character and return Arabic unshaped.
+- The lam-alef fusion is not a bug: the shaper fuses what it recognises as
+  one shape (advance-neutral, 691 vs 245+446). The cluster-split entries stay
+  with this reason.
+- Same form, different drawings is font-internal metric divergence, not a
+  defect: Amiri's presentation noon/yeh vs its GSUB initials (the deliberate
+  cmap route's measured price). Baseline entries stay with this reason.
+- stb-vs-FreeType edge pixels are a third party's convention (Pillow box
+  10x13 vs stb 12x14 on one dal gid, outlines agreeing) — the one ink entry
+  with its reason. Pango's full-line Cairo renders of folded code ligatures
+  rasterize past the pixel bound (maxdiff 224–255): recorded, not tuned.
+
+## Phase 5: every script — done, holes moved to Phase 9
+
+- **Chaining format 1** — `chain_glyphs`: reader, matcher, both apply loops,
+  every kind gate. No corpus font writes one (352 Windows faces scanned;
+  only Leela* Malayalam), so lookup 13 of LeelawUI is the real-font fixture
+  (46 backtrack/covered/lookahead rules through lookup 69) and the corpus
+  test fails deliberately if any font gains a rule.
+- **Class-based contextual (GSUB 5/2, 5/3, 6/1, 6/2)** — `context_classes`,
+  `chain_glyphs`, `chain_classes`. The "no font writes them" premise was
+  stale: Amiri carries all four (lookups 55/27/28/66), so fixtures are real
+  tables beside built bytes (1591→4031, 1817→3378, 1632→3396, 5439→5440).
+  Two misreads caught on the way: plain format-3 counts sit before coverage
+  offsets (Amiri lookup 27 is the control), and class-only lookups needed the
+  format-1 coverage miss to stop returning early.
+- **Script-following mark collection** — `mark_offset_in`: arab stays the
+  parse-time default, the run's script selects the lookups. Arabic unchanged
+  by construction; a Latin acute on q lands at its HarfBuzz anchor (825, −328).
+- **Line breaking to 19,346** — the width table (UAX#11) for LB30, LB9's
+  post-break mark exception, `.ex`/`.hy` leaving the prohibited-end list,
+  LB28a/LB30b/LB26/LB20a/LB21a as pairs with mark read-through.
+- **UCD carve-out** — `tables.v`, `properties.v` and the 13 generated
+  `ucd_*.v` in `ucd/` as `module ucd`; moved free functions are `pub`.
+  `parse_names` preserves the interned empty group name (lam reported Meem
+  before the fix). Conformance inputs committed with licence-travels
+  comments; `emoji-data.txt`'s tree copy is 16.0.0 while the word-break work
+  needed 18.0.0, so `emoji-data-18.0.0.txt` is versioned beside it (U+2701
+  answers WB3c wrong on the old file — 2 committee cases).
+- **Vertical text** — single-column placement behind `LayoutOptions.vertical`
+  with HarfBuzz-TTB-pinned geometry, reachable from C. Columns stay open.
+
+## Phase 6: the modular replacement — done
+
+One library, separate parts, dependencies one way
+(`layout` → `shape` → `font` → `ucd`, `raster` a leaf below `font`,
+`capi` over all, no part imports a tool): `vtext.ucd`, `vtext.font`
+(containers, cmap, reader, Face with metrics + GSUB/GPOS parsing +
+application, stb primitives), `vtext.shape` (joining, normalization, bidi,
+`Context`, `Font`/`FontSet`/`Glyph`, `inspect.v`), `vtext.layout`
+(`linebreak.v`, `layout.v`), `vtext.raster` (`GlyphBitmap`; `box_only` /
+`render_into` stay methods on `font.Face` because methods live in the type's
+own module, so `font` imports the leaf), `vtext.subset`
+(`subset_font(font, seed)` + CLI), `vtext.capi` (last, wraps all;
+`vtext.h` stays the single header).
+
+Seams, each an explicit interface: `FontSource` (file, bytes, provider),
+`RasterBackend` (box-for-gid plus fill-this-buffer), `BreakPolicy` (UAX #14
+default, dictionaries behind it), the caller-owned glyph cache (font id,
+gid, size, subpixel offset — the only honest key), per-part options structs
+on the `LayoutOptions` pattern. Not goals, unchanged throughout: no HarfBuzz
+bindings, no ports, no font authoring; boxes/cascade/painting are the
+caller's (`../vweb` builds on this line).
 
 ## Phase 7: the full replacement, on every platform
 
-A caller drops HarfBuzz, FreeType, Pango and fontconfig and gets the same
-answers or better, faster, on Windows, Linux and macOS. "Replacement" stays
-per part with its own baseline — a part with no baseline is a part with no
-claim — and every slice below lands green on all three platforms or does not
-land. "Faster" is claimed only where the same box measured it: the rival A/B
-harness (uharfbuzz shaping, Pillow/FreeType rasterization, same fonts, same
-text) reports both sides, and an optimization lands with a before/after on
-that harness or not at all, the rule phase 5 already enforces. "Every
-platform" is the three CI runners, which also cover both arches (macOS runs
-arm64, Linux and Windows run amd64); the byte reader is already endian-clean
-by construction (byte-wise big-endian reads, `font/reader.v`), so no porting
-pass is owed. WASM is a spike, not a commitment: the backend exists but no
-slice depends on it until one is measured.
+Per-part replacement with its own baseline, green on all three CI runners
+(Windows/Linux/macOS, both arches CI provides) or it does not land. The byte
+reader is endian-clean by construction; WASM is a spike, not a commitment.
 
-Buckets, in the order they unblock each other:
+**7.1 GPOS positioning in layout — landed 2026-11-15.** SinglePos folds into
+advances and placements after substitution, under the pair-kern feature's
+single half (`kern` horizontal, `vkrn` vertical) plus the applied
+discretionary features — same off-switch semantics as substitution, each
+lookup consulted once. Marks keep the anchor pass's answer (no double
+shift); single-pos applies to non-marks only. Pinned by
+`singlepos_apply_test.v` (first-match and accumulation hand lookups,
+U+06E5/U+06E6 at (−170, +230) beside HarfBuzz, Amiri's thirty dead singles
+staying dead). Cursive stays unwired — vestigial, see Phase 1. No corpus
+line moves; difftest 0/0.
 
-**7.1 GPOS positioning wired into layout.** Landed 2026-11-15: single
-adjustments (SinglePos) fold into advances and placements per glyph, after
-substitution, under the pair-kerning feature's single half (kern in a
-horizontal line, vkrn in a vertical one) plus the applied discretionary
-features — the same off-switch semantics substitution keeps, each lookup
-consulted once. Marks keep the anchor pass's answer: a second shift would
-move them twice. Pinned by `singlepos_apply_test.v`: hand-built lookups for
-first-match-within-a-lookup and accumulation-across-lookups, Simplified
-Arabic U+06E5/U+06E6 shifted (-170, +230) beside HarfBuzz, Amiri's thirty
-dead single lookups staying dead, and kern named explicitly applying once.
-Cursive attachment stays unwired on the measured reason: Noto Nastaliq's
-rule is vestigial — four one-sided anchors and no adjacent exit-plus-entry
-pair over سلام, HarfBuzz reporting zero x-offsets on the same text — and the
-test fails the day a shaped line grows a pair. No corpus line moves on this
-slice: pair kerns had already converged the latin-kern cluster and width
-entries to zero, and difftest reports 0 new, 0 stale.
-
-**7.2 Script as a usable control (`LayoutOptions.script`, `.language`).** Detection stays the
-default; the caller can now override script and language through the options
-struct. Direction stays the `base_dir` argument, the single source the options
-comment demands. `vert`/`vkrn` stay mode-driven rather than tag-toggled: the
-second half is steerage, not a new feature set. The override rides the same
-`+tag`/`-tag` options struct and C struct as the features, and is pinned the
-same way: shaping the same text under two scripts beside HarfBuzz with the
-same overrides.
-
-Landed 2026-11-16, second half: `script` and `language` on `LayoutOptions`
-(and on the C `vtext_options_t`), threaded from run detection through
+**7.2 Script and language override — landed 2026-11-15 (both halves).**
+`LayoutOptions.script` / `.language`, threaded from run detection through
 substitution, kern, single-pos, marks and the C boundary. Empty is the
-default path byte-for-byte: detection per run, default language system.
-Naming a script forces every run under it (`=>` unfolds under `arab` on Fira
-Code, whose calt lives under latn and zyyy); naming a language asks the
-tagged system with fallback to the default (`URD` digits on Amiri, `FAR`
-separator and `SND` meem on Noto Naskh, each HarfBuzz-measured). `locl` runs
-after `ccmp` and before the joining forms, because it is written against the
-base glyphs. Pinned by `script_lang_test.v` with break-fix controls over both
-overrides, plus the C-struct arrival in `vertical_test.v`.
+default path byte-for-byte. Naming a script forces every run under it (`=>`
+unfolds under `arab` on FiraCode, whose calt lives under latn); naming a
+language asks the tagged system with default fallback (Amiri UR U+06F4
+gid 260→1463, Naskh FAR U+066B gid 160→162, Naskh SND U+0645 gid 72→73).
+`locl` runs after `ccmp` and before joining forms (written against base
+glyphs). Direction stays the `base_dir` argument; `vert`/`vkrn` stay
+mode-driven. First half also turned programming ligatures on by default
+(`calt`/`liga`/`clig` after `rlig`; `-tag` off-switch, `+tag` explicit).
+Pinned by `script_lang_test.v` and `calt_liga_test.v`, each with break-fix
+controls, plus the C-struct arrival in `vertical_test.v`.
 
-Landed 2026-11-15, first half: programming ligatures are on by default.
-`calt`, `liga` and `clig` run after `rlig` on every line — HarfBuzz leaves
-them on, and a line that draws `=>` unfolded while every editor folds it
-is not the text. The toggle is the other half of the feature: `-calt`
-draws two plain glyphs, `+tag` names one explicitly. Pinned by
-`calt_liga_test.v` on committed fonts (Fira Code `=>` to the
-HarfBuzz-measured 1730/1736 at full width, Amiri `fi` to the fused 6630),
-with revert controls neutering the defaults and the off-switch separately.
-Tahoma's `dlig` pair stays off and its existing test green. The latin-liga
-corpus line is unchanged by the new default — Noto Naskh Arabic carries no
-Latin liga rules, and both sides shape it unfused with identical advances —
-while two code cases (`code-arrow`, `code-neq`) join the corpus to pin the
-face where the default matters. Their Pango pixels are baselined beside the
-rest: Pango's full-line Cairo render of the folded ligatures rasterizes past
-the pixel bound (maxdiff 224–255), recorded with the measured numbers rather
-than tuned away.
+**7.3 Common-base marks — landed 2026-11-15.** Zyyy/Zinh resolves to the
+neighbouring strong script in logical order (preceding first, arab last
+resort), mode-independent. Pinned by `commonbase_test.v` on MS Gothic
+(dakuten/handakuten on the dotted circle land on the latn anchor, hiragana
+keeps kana, neighbourless tatweel keeps arab).
 
-**7.3 Common-base marks.** Landed 2026-11-15: a Zyyy/Zinh base resolves to
-the neighbouring strong script instead of falling back to arab — read in
-logical order, preceding first, with arab kept as the last resort when no
-strong character is on either side. Pinned by `commonbase_test.v` on MS
-Gothic: dakuten and handakuten on a dotted circle in Latin text land on the
-latn anchor (mark (0, 0) on base (-68, 0), the point HarfBuzz reports as
--766 at its 1000-unit scale), the hiragana base keeps its kana answer, and a
-tatweel with no strong neighbour keeps arab. Break-fix verified: the old
-fallback leaves the dotted-circle marks at the pen. Horizontal and vertical
-share the rule — mark_script is mode-independent, and the y flip stays
-where it was.
+**7.4 Align, justify, kashida — landed 2026-11-16.** Opt-in `align` /
+`align_width` (single line) with wrap width for wrapped lines. Center/right
+shift; justify widens spaces, or inserts U+0640 tatweels for uniform Arabic
+lines where slack buys whole advances (no corpus `just` feature; all three
+Arabic faces carry the glyph). Kashida re-lays the line's own text —
+neighbours keep join states, one tatweel per gap (stacked tatweels fuse into
+dedicated ligatures per HarfBuzz), lam-alef gap skipped, remainder to
+spaces; mixed lines stretch spaces, last wrapped line stays flush, vertical
+ignores align. C struct mirrors both fields. Pinned by `align_test.v`
+(HB-grown 82.432 مدرسة, 60.672 سلام at 32 px).
 
-**7.4 Alignment, justification, kashida — landed 2026-11-16.** Opt-in on
-`LayoutOptions`: `align` left/center/right/justify with `align_width` for a
-single line and the wrap width for every line `wrap_paragraph_with` cuts.
-Center and right shift the line; justify stretches spaces by widening
-advances, or inserts U+0640 tatweels for a uniform Arabic line where the
-slack buys whole advances (no corpus font carries a `just` feature; all
-three Arabic faces carry the glyph). Kashida re-lays the line's own text:
-a tatweel changes its neighbours' join states, one tatweel per gap (stacked
-tatweels fuse into dedicated ligatures), the lam-alef gap skipped so the
-ligature survives, remainder to spaces; mixed lines stretch spaces only,
-the last wrapped line stays flush, vertical ignores align. The C struct
-mirrors both fields. Pinned by `align_test.v` with HarfBuzz-measured grown
-widths (82.432 مدرسة, 60.672 سلام at 32 px); the differential baseline is
-untouched (justified widths are engine-arithmetic, not cross-reader pins).
+**7.5 Hyphenation as a `BreakPolicy` — landed 2026-11-15 (both halves).**
+Liang over embedded US-English patterns (`layout/hyphen.v`,
+`ucd/ucd_hyphen.v` — hand-authored MIT rows; TeX ushyph evaluated and
+rejected, CTAN's licence text unusable, source and rationale recorded with
+the table). Every further language is data, not code. The wiring half is
+`wrap_paragraph_with_policy`: `Uax14Breaks` answers the plain call
+line-for-line; `HyphenBreaks` merges ASCII-word points in order; overlong
+words break with an appended hyphen glyph (undersized targets fall back to
+plain breaks, then whole-word overflow); digits and vertical never
+hyphenate. C callers keep UAX #14. Pinned by `hyphen_test.v` (word list,
+edge minima 2/3) and `hyphen_wrap_test.v` (equivalence + hyphen pins).
 
-**7.5 Hyphenation as a `BreakPolicy` — landed 2026-11-15, both halves.**
-Liang's algorithm (`layout/hyphen.v`) over embedded US-English patterns as a
-generated table (`ucd/ucd_hyphen.v`, hand-authored MIT rows after the TeX
-licence proved unusable — source and licence recorded with the table), and
-every further language is data, not code. Pinned by a word list with
-HarfBuzz-independent expected breaks, not by the UAX #14 floor. The wiring
-half is `wrap_paragraph_with_policy`: `Uax14Breaks` answers exactly what the
-plain call answers (pinned line-for-line), `HyphenBreaks` adds ASCII-word
-points merged in order, overlong words break with an appended hyphen glyph
-(undersized targets fall back to plain breaks, then to whole-word overflow),
-digits and vertical text never hyphenate. C callers keep UAX #14; hyphenation
-is a V-side policy.
+**7.6 Indic and Khmer — in progress.** OFL Devanagari (Noto Sans Devanagari,
+wave pattern — not Nirmala/Leelaw, Windows-only, fails the platform
+ratchet) with corpus cases at 0/0. The machine is Phase 9.3; this slice is
+its acceptance: the font, the cases, the ratchet.
 
-**7.6 Indic and Khmer beside HarfBuzz.** Committed OFL Devanagari (Noto
-Sans Devanagari over the network, the wave-2 pattern — not Nirmala/Leelaw,
-which are Windows-only and fail the platform ratchet) with corpus cases at
-0 new and 0 stale. The shaping machine this needs is Phase 9.3; this slice
-is the acceptance it names: the font, the cases, and the ratchet.
+**7.7 Color and hinting — open.** COLR/CPAL, CBDT/EBDT, sbix behind
+`box_only`/`render_into`; SVG refuses with its reason. Grid-fit
+autohinting verified against FreeType's own autohinter per glyph. A full
+bytecode interpreter lands only if a corpus font needs one — measured
+first, not assumed.
 
-**7.7 Color and hinting behind the box-and-fill contract.** COLR/CPAL,
-CBDT/EBDT and sbix as engines behind `box_only`/`render_into`, SVG
-refusing with its reason; grid-fit autohinting verified against FreeType's
-own autohinter per glyph. A full bytecode interpreter lands only if a
-corpus font needs one — assessed with a measurement first, not assumed.
+**7.8 Providers: Core Text and DirectWrite — open.** Each pinned on its own
+OS, none elsewhere — the fontconfig pattern exactly.
 
-**7.8 Providers: Core Text and DirectWrite.** Each pinned on its own OS
-and answering none elsewhere, the fontconfig pattern exactly. No host
-carries another host's leg.
+**7.9 CFF/CFF2 with a real font — reader landed 2026-11-15.** OFL Source
+Sans 3 OTF (non-CID Type 2, 2,478 glyphs); `font/cff.v` reads header,
+INDEXes, Top DICT, CharStrings, charset, Private, both subr sets through
+the existing curve path. Pinned by `cff_test.v` against fontTools with a
+corrupt-byte break-fix. CFF2 still refuses (no committed face carries it);
+subsetting still refuses CFF (a read is not a rebuild).
 
-**7.9 CFF and CFF2, with a real font — landed 2026-11-15 as the reader half.**
-Committed OFL Source Sans 3 OTF (non-CID Type 2, 2,478 glyphs); `font/cff.v`
-reads header, INDEXes, Top DICT, CharStrings, charset, Private and both
-subr sets through the existing curve path, pinned by `cff_test.v` against
-fontTools with a corrupt-byte break-fix. CFF2 still refuses (no committed
-face carries it) and subsetting still refuses CFF (a read is not a rebuild),
-each with the reason in the message — the deferral condition is satisfied
-for reading, and the rebuild stays future work until a slice needs it.
+**7.10 Variable instancing — landed 2026-11-15.** fvar/gvar at
+caller-chosen coordinates (`font/var.v`: normalize, avar warp, tuple
+tents, packed runs, IUP, `FT_MulFix` op-for-op — including the exact-.5 IUP
+fix found by measuring against the FT 2.13.2 source), behind additive
+`set_var_coords` / `instanced_glyph_points` on Face and Font. Pinned by
+`varinstance_test.v` beside FreeType and fontTools, plus a dev-time sweep
+of every simple glyph × four coords at 142,848/142,848 exact across four
+variable faces. Follow-ups: composites, HVAR/MVAR/cvar, raster wiring.
 
-**7.10 Variable instancing — landed 2026-11-15.** fvar/gvar application at
-caller-chosen coordinates (`font/var.v`: normalize, avar warp, tuple tents,
-packed runs, IUP, `FT_MulFix` op-for-op incl. the exact-.5 IUP fix found by
-measuring), behind `set_var_coords`/`instanced_glyph_points` on Face and
-Font (purely additive). Pinned by `varinstance_test.v` beside FreeType and
-fontTools: full point lists at min/default/mid/max on FiraCode and
-NotoSansSC, plus a dev-time sweep of every simple glyph × four coords at
-142,848/142,848 exact across four variable faces. Follow-ups: composite
-instancing, HVAR/MVAR/cvar reading, raster wiring of instanced outlines.
+**7.11 Cache and the rival number — cache landed 2026-11-15.** `shape/cache.v`:
+`CacheKey` (font id, gid, size bits, subpixel x/y) with `==` and canonical
+`str` (V maps take no struct keys; every field is in the encoding, two
+tests fail if size or subpixel drops out), caller-owned `Cache` with
+`get_or_rasterize`, `clear`, `len`, hit/miss counts. Font id is the caller's
+assignment (nothing on `Font` is stable across calls); one id names one
+(file, face). No eviction — the caller clears. Miss 19.1 us, hit 1.2 us
+(Amiri `A`, 32 px). Pinned by `cache_test.v` with break-fix over all four
+key dimensions. **Second half (rival A/B harness) open**: README numbers
+become vtext-vs-rival on the same box, re-measured per release.
 
-**7.11 The reference cache and the rival number.** An opt-in cache helper
-keyed on font id, gid, size and subpixel offset — the boundary holds, the
-caller still owns the cache, but nobody hand-rolls the only honest key
-twice. And the A/B harness both sides run on: README numbers become
-vtext-vs-rival on the same box, re-measured per release.
-
-Landed 2026-11-15, first half: the reference cache. `shape/cache.v` holds
-`CacheKey` — font id, gid, size bits, subpixel x/y — with `==` and a
-canonical `str` encoding, plus `Cache`, the caller-owned store behind
-`get_or_rasterize` with `clear`, `len` and hit/miss counts. V maps take no
-struct keys, so the store is keyed on the encoded string, and every field
-is in that encoding: two tests fail if size or subpixel ever drops out of
-it, and the key matrix covers font and gid the same way. The font id is the
-caller's own assignment — an index into its own font list does — because
-nothing on `Font` is stable across calls: the face is a pointer (object
-identity, dangling after free), the path is empty for memory fonts and
-ambiguous for collections, and hashing the font bytes on every lookup was
-never measured. One id must therefore name one (file, face); loading one
-file twice under one id shares entries, which is correct because the ink is
-a pure function of the bytes. No eviction: the map is unbounded and the
-caller clears it, which is what the counters say when to do. Measured on
-this box, Amiri `A` at 32 px, best of five batches of 20,000 (`-gc none`,
-tcc): a miss is 19.1 us and a hit 1.2 us — the hit is the map lookup and
-the key encoding, not the ink. Pinned by `cache_test.v`, self-contained on
-the committed Amiri with break-fix controls over all four key dimensions.
-The rival A/B harness stays the second half.
-
-**Platform ratchet.** The suite passes with no host-skips on any of the
-three runners: every OS-specific leg (fontconfig, Core Text, DirectWrite,
-Windows-only faces) is covered on its own OS and answers none elsewhere.
-A skip that prints why stays a skip; a gap that prints nothing is a
-failure.
+**Platform ratchet.** No host-skips on any runner: every OS leg is covered
+on its own OS and answers none elsewhere. A skip that prints why stays a
+skip; a silent gap is a failure.
 
 ## Phase 8: the rival parity sweep
 
-Phase 7 makes every slice replace an incumbent per part. This phase lists
-every other library in the stack, names the features each one carries that
-no slice above covers, and schedules them — or records why not, with the
-same trigger discipline CFF had (a slice lands when a font needs it, not
-before, and a refusal states its trigger).
+Every other library in the stack, measured against this tree. Landed slices
+are done; the rest name their trigger or their assignee.
 
-The inventory, measured against this tree rather than recalled:
-
-| Library | Carries | Covered | Not covered → slice |
+| Library | Carries | Covered | Not covered |
 | --- | --- | --- | --- |
-| HarfBuzz core | GSUB/GPOS, features, variations | yes (7.1–7.2 finish it) | MATH table → 8.7 |
-| hb-subset | subsetting | glyf yes, CFF 7.9 | — |
-| FreeType load | sfnt/TTC | yes | WOFF → 8.1 (WOFF2 triggered) |
-| FreeType raster | unhinted/hinted/auto/LCD | unhinted yes, hint 7.7 | LCD → 8.5 |
-| FreeType API | embolden/oblique, stroker | no | 8.5, 8.6 |
-| FreeType color | COLR/CBDT/sbix/SVG | 7.7 | — |
-| FreeType var | instancing | 7.10 | — |
-| Pango layout | wrap modes, align, ellipsize, tabs | align 7.4 | 8.4 |
-| Pango log attrs | cursor/word/sentence runs | no | 8.2 |
+| HarfBuzz core | GSUB/GPOS, features, variations | yes (7.1, 7.2, 7.10) | MATH → 8.7 ✓ |
+| hb-subset | subsetting | glyf yes | CFF → 7.9 (refused, see 7.9) |
+| FreeType load | sfnt/TTC | yes | WOFF → 8.1 ✓ (WOFF2 triggered) |
+| FreeType raster | unhinted/hinted/auto/LCD | unhinted yes; hint → 7.7 | LCD → 8.5 (in progress) |
+| FreeType API | embolden/oblique, stroker | no | 8.5 (in progress), 8.6 open |
+| FreeType color | COLR/CBDT/sbix/SVG | → 7.7 | — |
+| FreeType var | instancing | 7.10 ✓ | — |
+| Pango layout | wrap modes, align, ellipsize, tabs | 7.4, 8.4 ✓ | — |
+| Pango log attrs | cursor/word/sentence runs | tables 8.2 ✓ | log-attr pass open |
 | Pango markup | attribute markup | out (app-level, like CSS) | — |
-| fontconfig | match/sort/coverage | match yes | 8.8 |
-| ICU text parts | bidi/normalize/breaks/case | bidi, NFD, graphemes yes | word/sentence 8.2, case 8.3 |
+| fontconfig | match/sort/coverage | match + 8.8 ✓ | — |
+| ICU text | bidi/normalize/breaks/case | bidi, NFD, graphemes, 8.2 tables, 8.3 ✓ | log-attr pass open |
 | ICU rest | collation, numbers, dates | out (not the text layer) | — |
-| FriBidi | bidi + N0 brackets | yes, incl. generated bracket table | — |
+| FriBidi | bidi + N0 brackets | yes, incl. bracket table | — |
 | Raqm | bidi+shaping glue | yes, own pipeline | — |
-| DirectWrite/CoreText | per-OS shape+layout+raster | providers 7.8, engine runs on their fonts | — |
-| AAT morx, Graphite | Apple/SIL shaping | no corpus font | triggered, not scheduled |
-| WOFF2/brotli | web fonts | no | triggered spike (no decoder in tree) |
+| DirectWrite/CoreText | OS shape+layout+raster | providers → 7.8 | engine runs on their fonts ✓ |
+| AAT morx, Graphite | Apple/SIL shaping | no corpus font | triggered |
+| WOFF2/brotli | web fonts | no | triggered (no decoder in tree) |
 
-**8.1 WOFF containers — landed 2026-11-15.** WOFF1 reads through zlib into
-the existing sfnt reader: `font/woff.v` unwraps one container to a plain
-sfnt (per-table inflate via the stdlib, directory rebuilt with recomputed
-checksums and a recalculated head adjustment), and `shape.load_font_bytes`
-takes it transparently. Pinned against fontTools on Amiri converted to WOFF
-in-tree: 15 tables and 6710 glyphs on both sides, table bytes identical
-except `head`'s checkSumAdjustment (recalculated because the rebuild moves
-every table, as fontTools does on de-woffing) and `modified` (restamped by
-fontTools on save), sampled cmap lookups and hmtx advances agreeing, and the
-rebuilt file summing to the 0xB1B0AFBA whole-file magic. 437,780 bytes of
-TTF from 209,512 bytes of WOFF. WOFF2 stays a triggered spike: `wOF2` is
-refused with the reason — it needs a brotli decoder and none lives in this
-tree.
+**8.1 WOFF1 — landed 2026-11-15.** `font/woff.v` unwraps one container to
+plain sfnt (per-table inflate, rebuilt directory, recomputed checksums and
+head adjustment); `load_font_bytes` takes it transparently. Pinned against
+fontTools on in-tree-converted Amiri: 15 tables, 6710 glyphs, bytes
+identical except checkSumAdjustment and `modified`, whole file summing to
+0xB1B0AFBA. WOFF2 refused with its reason.
 
-**8.2 Words, sentences, and the caret.** UAX #29 word and sentence tables
-as generated data (the `ucd_sa_mark` pattern), each with the committee's
-own conformance file run as a floor the way `LineBreakTest` runs today,
-plus a log-attr pass over a laid-out line: cursor offsets per character,
-word boundaries, and combining-aware deletion spans — the PangoLogAttr
-surface editors need, measured against Pango where the stack exists.
-Graphemes are already in; this is the rest of #29.
+**8.2 Words, sentences — tables landed 2026-11-15.** UAX #29 tables as
+generated data (`tools/gen_wordbreak.v` → `ucd_wordbreak.v`,
+`ucd_sentence.v`); committee floors 1944/1944 + 512/512 with break-fix
+controls that move the score (no WB4: 858; no RI ranges: 1937; no SB8a:
+498). UCD 18.0.0 inputs committed with licence-travels exceptions. **Open:
+the log-attr/caret pass** over laid-out lines (cursor offsets, word
+boundaries, deletion spans) — engines live test-local in the meantime.
 
-**8.3 Case mapping — landed 2026-11-15.** Upper, lower and title through generated tables plus
-`SpecialCasing.txt`, pinned by the committee's own expectations and the
-Turkish/Azeri dotted-I rules that make a hand table wrong.
-
-`tools/gen_tables.v` gains a `case_mappings` generator mirroring `quote_roles`
-and `sa_marks`: the simple mappings in `UnicodeData.txt` overlaid with the
-unconditional `SpecialCasing.txt` rows (an identity row removes the simple
-entry, so an absent codepoint maps to itself), plus every conditional row
-verbatim. It emits `ucd/ucd_case.v` in the same banner form as its siblings:
-upper 1601 rows, lower 1508, title 1578, conditional 16. The generator's
-`emit_header` now writes `module ucd` rather than `module vtext`, left over
-from before the split; without it every regeneration rewrites all ten tables.
-`ucd/SpecialCasing.txt` (18.0.0) is committed with the `.gitignore` exception
-and the licence-travels-with-it comment, the way `LineBreakTest.txt` was.
-
-`shape/case.v` holds `to_upper`, `to_lower` and `to_title` over `[]rune` with
-a `locale string`: `tr`/`az` (BCP47 primary, `-`/`_` equivalent,
-case-insensitive) select the conditional rows, everything else the
-unconditional ones. Title is the first cased letter of each word through the
-title table and the rest through lower; a word is a maximal run of cased
-letters, a combining mark rides on the letter before it and neither ends nor
-starts one, anything else breaks. Turkish: U+0069 uppercases to U+0130 in
-tr/az, U+0130 lowercases to U+0069 alone there against U+0069 U+0307
-unconditionally, U+0049 to U+0131 unless a U+0307 follows, and a U+0307 after
-an I deletes. Final_Sigma is the neighbouring cased letters with marks
-skipped. Lithuanian `More_Above`/`After_Soft_Dotted` rows are carried in the
-conditional table and pinned there but not applied, so they read the
-unconditional mapping.
-
-`case_test.v` is self-contained and round-trips every `SpecialCasing.txt`
-entry: 104 unconditional rows through the three functions, 16 conditional rows
-through the generated table plus tr/az, `After_I`, `Not_Before_Dot` and
-`Final_Sigma` through the functions with the context that triggers them.
-Turkish dotted-I, a 1-to-N row (U+00DF to SS, U+0130 to i plus dot, U+FB00 to
-FF/Ff), title-casing and sigma final/middle/lone are asserted directly. The
-break-fix control asserts the exact row counts (1601/1508/1578/16): dropping
-the U+0061 upper row fails with 1600. Measured: SpecialCasing conformance 120
-cases, 0 failed; `v test case_test.v` passes.
+**8.3 Case mapping — landed 2026-11-15.** Upper/lower/title through
+generated tables plus `SpecialCasing.txt` (unconditional over simple, 16
+conditional rows verbatim; 1601/1508/1578/16). `shape/case.v` with
+`tr`/`az` locale rows (BCP47 primary, `-`/`_` equivalent); Final_Sigma by
+neighbouring cased letters; Lithuanian rows carried but not applied.
+`case_test.v` round-trips every row plus context triggers.
 
 **8.4 Wrap modes, ellipsize, tabs — landed 2026-11-15.** `WrapMode`
-word/char/word-char threaded through both wrap entry points (word is all
-prior behavior; char breaks before every splittable character with marks
-and CR/LF held; word_char keeps word breaks and splits overlong words),
-`ellipsize_line` for end/start/middle with a caller-owned U+2026 glyph
-(no glyph: the line comes back whole; vertical: whole, mirroring the
-hyphen skip), and additive `LayoutOptions.tab_stops` expanding after
-placing, horizontal only. Documented choice: hyphenation is word-mode
-only — char splits strip hyphen points rather than mixing lineages.
-Pinned by `ellipsize_wrap_test.v` with fontTools-measured pins and a
-three-way break-fix (char arm, ellipsis append). Follow-up: C-side
-spelling for the two new `LayoutOptions` fields (`COptions` untouched,
-no ABI break — C callers keep word-wrap, no tabs).
+word/char/word_char through both wrap entry points (word is all prior
+behavior; char holds marks and CR/LF; word_char splits overlong words);
+`ellipsize_line` end/start/middle with a caller-owned U+2026 (no glyph:
+line comes back whole; vertical: whole); additive `tab_stops` expanding
+after placing, horizontal only. Hyphenation is word-mode only by decision.
+Pinned by `ellipsize_wrap_test.v` with fontTools-measured pins and two
+break-fix controls (char arm, ellipsis append). Follow-up:
+C-side spelling for the two new fields (`COptions` untouched, no ABI break).
 
-**8.5 Synthetic styles and LCD.** Embolden and oblique at the glyph level
-(FreeType's `FT_GlyphSlot_Embolden`/`Oblique` parity, pixel-compared), and
-subpixel LCD rendering as a raster option beside the current coverage
-fill, verified against FreeType's LCD output.
+**8.5 Synthetic styles and LCD — in progress.** Embolden/oblique at glyph
+level (`FT_GlyphSlot_*` parity, pixel-compared); subpixel LCD as an opt-in
+raster option, default off.
 
-**8.6 Stroking.** Outline stroking with joins, caps and miter limits —
-`FT_Stroker` parity — flattened through the existing curve path and
-pixel-compared on corpus glyphs. Text effects are the caller's; the
+**8.6 Stroking — open.** `FT_Stroker` parity (joins, caps, miter limits)
+flattened through the curve path, pixel-compared. Effects are the caller's;
 geometry is the library's.
 
-**8.7 MATH shaping — landed 2026-11-15 as the reader half.** The MATH table behind
-an opt-in math pass (`shape/math.v`: variant selection, px scaling, disabled-pass
-answers base/zero), pinned against HarfBuzz on committed STIX Two Math (OFL) and
-Latin Modern Math (GUST licence, documented in-tree; its OFL backup carries no
-MATH table and was rejected). `font/math.v` reads constants, italics correction,
-top accents, extended shapes, variants and assemblies; two spec traps caught by
-measuring first are pinned in the tests (52 MATH records, not 54; construction
-records inline, no parts offset). Follow-ups: Face/subset wiring, and HB's
-extent-derived top-accent fallback for uncovered glyphs.
+**8.7 MATH — reader landed 2026-11-15.** Opt-in `shape/math.v` pass
+(variants, px scaling, disabled-pass answers base/zero) over `font/math.v`
+(constants, italics, top accents, extended shapes, variants, assemblies),
+pinned against HarfBuzz on STIX Two Math (OFL) and Latin Modern Math (GFL —
+its OFL backup carries no MATH table and was rejected). Two spec traps
+caught by measuring: 52 records not 54, inline construction records.
+Follow-ups: Face/subset wiring; extent-derived top-accent fallback.
 
-**8.8 Matching and instances — landed 2026-11-15.** `providers/fontconfig.v`
-sorts beside the existing match: `system_fonts_sorted` answers the ranked
-`FcFontSort` list for a family, best match first and capped at the caller's
-limit, with the path and the matched family per entry — so a substitution is
-visible at every rank rather than only at the first. `system_font_covers_char`
-and `system_font_covers_lang` ask the matched pattern's own `charset` and
-`lang` objects (`FcPatternGetCharSet`/`FcPatternGetLangSet` with
-`FcCharSetHasChar`/`FcLangSetHasLang`), which is where a caller learns a
-family lacks a codepoint or a language before it draws. Off Linux all three
-answer none/false with the reason printed, the same arrangement the existing
-`FcFontMatch` provider keeps: nothing links fontconfig unless a caller asks,
-and the stubs are what this host verifies (none, none, false, false). The
-Linux half is written against the headers and left to CI on Linux, stated
-here rather than implied: the ubuntu suite leg links fontconfig and runs
-`match_test.v` against installed families (self-naming best match first,
-existing paths, `covers_char` for `A`, `covers_lang` for `en`), with a skip
-where no self-naming family is installed. The sorted-list reader takes no
-struct-typed access to `FcFontSet` — two revisions segfaulted on CI inside
-`FcPatternGetString` through it while every address idiom probed fine
-locally, so `nfont` reads as u32 at offset 0 and the pointer vector at
-offset 8; CI is green on the offset revision.
-
-The fvar half is measured here. `shape/inspect.v` gains `variable_instances`
-(name, name ID and one coordinate per axis in fvar order) and
-`variable_instance_names` (the names alone, in fvar order), read off the
-committed `NotoNaskhArabic-Variable.ttf` and agreeing with fontTools exactly:
-4 instances — Regular/Medium/SemiBold/Bold at wght 400/500/600/700, subfamily
-name IDs 257/259/261/263. The records carry only the IDs; the names come from
-joining them against the `name` table (Windows English preferred, any Windows
-or Unicode entry otherwise), and the break-fix control pins the names so that
-dropping the join fails with four empty strings. A font with no fvar answers
-empty, told apart from a variable font with no named instances by
-`is_variable`. The axis reader is pinned beside the instances on the same
-font: one `wght` axis, 400 to 700, default 400. It once validated the table
-by the word at offset 12, which is the instance count (4 here), not the axis
-size, and refused every variable font carrying any other number of instances
-than twenty; the merge fixes the check to the word at offset 10 and the test
-fails without it.
-
-Triggered, not scheduled, each with its reason: AAT `morx` and Graphite
-(no corpus font carries either — the day one does, it gets a slice like
-CFF did); WOFF2 (needs a brotli decoder first); the full TrueType bytecode
-interpreter (7.7 already gates it on a corpus font that needs it).
+**8.8 Matching, sorting, coverage, instances — landed 2026-11-15.**
+`system_fonts_sorted` answers the ranked `FcFontSort` list (path + matched
+family per rank); `system_font_covers_char` / `_covers_lang` ask the
+pattern's own charset/lang (`FcLangSetHasLang` coverage is `!= 2`; BCP 47
+codes are not OT tags). Off Linux all three answer none/false with the
+reason. The sorted reader takes no struct-typed access to `FcFontSet` — two
+revisions segfaulted on CI inside `FcPatternGetString` through it while
+every address idiom probed fine locally, so nfont reads as u32 at offset 0
+and the pointer vector at offset 8; CI is green on the offset revision.
+fvar instances read beside fontTools on NotoNaskhArabic-Variable (4 named
+instances, name-ID join pinned; `is_variable` tells empty apart).
 
 ## Phase 9: the remaining scripts
 
-The goal is every script, stated per script with its evidence rather than as
-one claim. Phase 5 proved the pipeline is script-agnostic where it matters
-and named the script-specific holes one by one; this phase closes the map
-that work drew. Levels are load-bearing words here: **full** means suite plus
-difftest cases, **pinned** means a HarfBuzz-measured test without a difftest
-case, **smoke** means loads-shapes-rasterises, **untested** means the
-mechanism should answer but no test proves it, **absent** means the mechanism
-does not exist.
+Levels are load-bearing: **full** = suite plus difftest cases, **pinned** =
+HarfBuzz-measured test without a difftest case, **smoke** =
+loads-shapes-rasterises, **untested** = mechanism should answer but no test
+proves it, **absent** = the mechanism does not exist.
 
 | Family | Level | Evidence |
 | --- | --- | --- |
-| Latin, Cyrillic, Greek | full | kern/calt suites, `latin-*` difftest cases, wave-2 fold pins |
-| Arabic, Persian, Urdu | full | joining/GSUB/GPOS suites, `arabic-*`/`persian-*`/`nastaliq-*` cases, `script_lang_test` locl pins |
-| Hebrew | pinned | `extra_fonts_test`: coverage, niqqud flagged with zero advance, shaping + raster smoke. Mark placement is not HB-pinned and Hebrew is not a difftest case |
-| CJK Han | smoke + breaks pinned | `extra_fonts_test` on NotoSansSC: 2-glyph line, rasterise. ID/CJ/NS/OP/CL breaking pinned 0-fail in `cjkbreak_test.v` with HB wrap pins on the same face |
-| Hangul (precomposed) | untested | modern syllables need cmap only, but no font and no test prove it |
-| Kana | partial | vertical kana rules in `vertical_test`; horizontal kana has no dedicated pin |
-| Thai, Lao, Khmer, Myanmar | untested | transparent-letter mark attachment exists in `joining.v` by comment, with no font and no test |
-| Tibetan | absent | stacking needs a machine of its own |
-| Indic (Devanagari et al.) | absent | no UCD tables, no syllable machine, no corpus font |
-| Syriac | untested | the joining machine is generic over JoiningType, but no font and no test prove it |
-| Thaana, NKo | untested | bidi plus trivial shaping should answer; nothing proves it |
-| Mongolian/Phags-pa vertical | absent | no vertical-columns path for them |
-| Simple alphabets (Georgian, Armenian, Ethiopic, …) | untested | cmap shaping should answer; nothing proves it |
-| Emoji | unassessed | `emoji-data.txt` ships; color formats and ZWJ sequences are not surveyed |
+| Latin, Cyrillic, Greek | full | kern/calt suites, `latin-*` cases, wave-2 fold pins |
+| Arabic, Persian, Urdu | full | joining/GSUB/GPOS suites, `arabic-*`/`persian-*`/`nastaliq-*`, locl pins |
+| Hebrew | pinned | `extra_fonts_test`: coverage, niqqud zero-advance, smoke. Placement not HB-pinned, no difftest case |
+| CJK Han | smoke + breaks pinned | `extra_fonts_test` (2-glyph line, rasterise); 9.1 pins |
+| Thai, Lao, Khmer, Myanmar | pinned (corpus; engine gaps open) | `seasian_test.v`, HB-measured (Thai 6E/86/2D/6E/0C/5E, Lao, Khmer coeng mark, Myanmar kinzi order) |
+| Syriac, Thaana, NKo | pinned | `longtail_test.v`: Syriac init/medi/rlig + lone-SHIN joining acceptance |
+| Hangul (precomposed) | untested | cmap suffices, no face, no test |
+| Kana | partial | vertical rules in `vertical_test`; horizontal unpinned |
+| Tibetan | absent | stacking needs its own machine |
+| Indic (Devanagari et al.) | absent → 9.3/7.6 | no tables, no machine, Devanagari face in progress |
+| Mongolian/Phags-pa vertical | absent | no vertical-columns path |
+| Simple alphabets (Georgian, Armenian, Ethiopic, …) | untested | cmap should answer; nothing proves it |
+| Emoji | unassessed | `emoji-data.txt` ships; color formats + ZWJ unsurveyed |
 
-**9.1 CJK line breaking — landed 2026-11-15 as pins.** The UAX#14 ID/CJ/NS/OP/CL
-rules around ideographs were already complete in the 19,346 tail; this slice
-pins the slice rather than writing it: 0 failures on 1,753 ID-class cases and
-0 on 5,333 CJK-subset cases in `cjkbreak_test.v`, with wrap pins beside
-HarfBuzz on the committed SC face and a break-fix control that moves the
-score (520 cases when the ID rules are neutered). Hangul conjoining-Jamo
-composition and vertical CJK punctuation gaps found on the way stay follow-ups,
-each needing its own pin (and, for Hangul, a corpus face).
+**9.1 CJK line breaking — landed 2026-11-15 as pins.** ID/CJ/NS/OP/CL were
+already complete in the 19,346 tail: 0 fail on 1,753 ID cases and 0 on
+5,333 CJK-subset cases in `cjkbreak_test.v`, HB wrap pins on NotoSansSC, a
+520-case break-fix control. Follow-ups, each needing its own pin: Hangul
+conjoining-Jamo composition (needs a Korean face), vertical CJK
+punctuation.
 
-**9.2 Southeast Asian clusters.** Thai, Lao, Khmer and Myanmar committed
-from google/fonts under OFL (the wave-2 pattern), shaped beside HarfBuzz:
-cluster segmentation for breaks and carets, mark attachment order, one
-pin per script. Corpus half landed 2026-11-15 (wave 3: NotoSansThai/Lao/
-Khmer/Myanmar variable faces with HB-measured pins in `seasian_test.v`;
-engine gaps documented in-file — ccc=0 spacing marks draw nothing, no
-Khmer coeng fusion or Myanmar kinzi/stacks yet). Tibetan stacks are the
-harder sibling and are listed, not hidden: they arrive as their own slice
-with a stacking font, or this slice says why they cannot.
+**9.2 Southeast Asian clusters — corpus landed 2026-11-15.** Wave 3
+(NotoSansThai/Lao/Khmer/Myanmar variable faces, HB pins in
+`seasian_test.v`). Engine gaps documented in-file: ccc=0 spacing marks draw
+nothing; no Khmer coeng fusion or Myanmar kinzi/stacks. Tibetan stacks
+arrive as their own slice with a stacking font, or the slice says why they
+cannot.
 
-**9.3 The Indic machine.** Slices, because one commit cannot hold it:
-UCD Indic tables generated like the rest; a committed Devanagari face;
-the syllable machine with matra reordering; conjunct features
-(`rphf`/`pref`/`blwf`/`pstf`/`vatu`/`cjct`); HarfBuzz pins; then a second
-script (Bengali) to prove generality. 7.6 is this program's acceptance
-half. Each slice carries its own break-fix controls, and Arabic stays
-green through all of it — the corpus cases and the differential baseline
-are the ratchet, and a phase that regresses them is not a phase.
+**9.3 The Indic machine — open (7.6 is its acceptance).** Slices: UCD Indic
+tables generated like the rest; a committed Devanagari face; the syllable
+machine with matra reordering; conjunct features
+(`rphf`/`pref`/`blwf`/`pstf`/`vatu`/`cjct`); HarfBuzz pins; then Bengali to
+prove generality. Each slice carries break-fix; Arabic stays green — the
+ratchet, not a wish.
 
-**9.4 The long tail — corpus half landed 2026-11-15.** Syriac (the joining
-acceptance: init/medi/rlig pins match HarfBuzz exactly), Thaana and NKo, one
-smoke line each, in wave 4 (`longtail_test.v`, all HB-measured, break-fix on
-the Syriac SHIN pin). Two engine gaps documented in-test, not fixed: ccc=0
-transparent marks draw nothing (Thaana fili, same gap as the SE-Asian wave),
-and `ot_script_tag` misses space-padded OpenType tags (`nko ` vs `Nkoo` —
-the forms prove right under an override, only the tag fold is wrong).
-Remaining: one smoke line each for the other simple alphabets, and the emoji
-survey (cmap monochrome ships; color formats refuse, with the reason).
+**9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
+NKo; `longtail_test.v`, break-fix on the SHIN pin). Gaps documented
+in-test: ccc=0 marks (Thaana fili, same gap as wave 3), `ot_script_tag`
+missing space-padded tags (`nko ` vs `Nkoo` — forms prove right under
+override, only the fold is wrong). Remaining: one smoke line each for the
+other simple alphabets; the emoji survey (cmap monochrome ships, color
+formats refuse with the reason).
 
-Rule for the whole phase, the wave-2 rule: every new script arrives as a
-committed OFL font plus HarfBuzz-measured pins. A shaping-affecting
-script also extends the difftest corpus, with the pango legs verified on
-CI the way the code-case pixels were.
+Wave rule for the whole phase: every new script arrives as a committed OFL
+font plus HarfBuzz-measured pins. A shaping-affecting script also extends
+the difftest corpus, pango legs verified on CI.
+
+## Corpus register
+
+Every face below ships its licence text as `OFL-<Name>.txt` (or
+`GFL-LatinModernMath.txt` — the one exception) beside the font. Fetched
+from google/fonts raw URLs (wave pattern) except the pre-existing Amiri,
+Naskh, Nastaliq and SC faces.
+
+| Face | Bytes | Scripts | Licence |
+| --- | --- | --- | --- |
+| `Amiri-Regular.ttf` (+ `.woff`) | 437,780 | Arabic-script | OFL |
+| `NotoNaskhArabic-Regular/Variable.ttf` | 291,980 / 253,880 | Arabic-script | OFL |
+| `NotoNastaliqUrdu-Regular.ttf` | 176,600 | Urdu | OFL |
+| `FiraCode-Variable.ttf` | 260,364 | Latin/Cyrillic/Greek + code | OFL |
+| `JetBrainsMono-Variable.ttf` | 187,208 | Latin + code | OFL |
+| `JetBrainsMonoNerdFont-Regular.ttf` | 2,571,596 | Latin + PUA icons | OFL |
+| `CascadiaCode-Variable.ttf` | 727,940 | Latin + code | OFL |
+| `NotoSansHebrew-Variable.ttf` | 112,640 | Hebrew | OFL |
+| `NotoSansSC-Variable.ttf` | 17,772,300 | CJK Han | OFL |
+| `NotoSansThai/Lao/Khmer/Myanmar-Variable.ttf` | 218,652 / 176,620 / 359,788 / 784,832 | Thai / Lao / Khmer / Myanmar | OFL |
+| `NotoSansSyriac-Variable.ttf` | 171,996 | Syriac | OFL |
+| `NotoSansThaana-Variable.ttf` | 114,724 | Thaana | OFL |
+| `NotoSansNKo-Regular.ttf` | 79,696 | NKo | OFL |
+| `SourceSans3-Regular.otf` (CFF) | 334,924 | Latin | OFL |
+| `STIXTwoMath-Regular.ttf` | 1,517,976 | Math | OFL |
+| `LatinModernMath-Regular.otf` (CFF) | 733,736 | Math | GFL (LPPL instance; OFL backup carries no MATH table — rejected) |
+
+## Open work
+
+Everything not landed, in one place. Text above owns the detail; this table
+owns the queue.
+
+| Slice | Item | State |
+| --- | --- | --- |
+| 7.6 / 9.3 | Indic machine + Devanagari acceptance | in progress |
+| 8.5 | Synthetic styles + LCD | in progress |
+| 7.7 | Color + hinting engines | open |
+| 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
+| 7.11-2H | Rival A/B harness | open |
+| 8.2 | Log-attr/caret pass over laid-out lines | open (engines test-local) |
+| 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | open (no ABI break) |
+| 8.6 | Stroking | open |
+| 8.7 | Face/subset MATH wiring; top-accent fallback | open |
+| 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
+| 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
+| 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
+| 9.2-engine | ccc=0 mark drawing; Khmer coeng; Myanmar kinzi/stacks; `nko ` tag fold | open |
+| 9.4-rest | More simple alphabets; emoji survey | open |
+| 9.3 | Bengali generality proof (after Devanagari) | open |
+
+**Triggered, not scheduled** (a slice lands when a font needs it): AAT
+`morx`, Graphite, WOFF2/brotli, the full TrueType bytecode interpreter,
+CFF2, Tibetan stacking (arrives with its own slice and stacking font, or
+says why it cannot).
 
 ## Explicitly not planned
 
-Worth writing down so that these do not come back as questions.
+Worth writing down so these do not come back as questions.
 
 - A text editor, or any interactive application. The library is a library.
-- A layout engine for boxes, flex, or CSS. Line breaking is the most this needs
-  and no further.
+- A layout engine for boxes, flex, or CSS beyond the text layer. Line
+  breaking, wrapping, alignment, hyphenation, wrap modes, ellipsize and tabs
+  are in; boxes, the cascade and painting stay the caller's.
 - HarfBuzz bindings, or a port of anything. The engine is written from the
   specifications.
 - Font authoring. vtext reads fonts, subsets them, and reports on them; it
   does not build them.
-- Variable font instancing was here and is Phase 7.10 now: reading the store
-  was always in, and generating instances at chosen coordinates has a caller
-  and a baseline (FreeType itself).
 
-The last of those is now the load-bearing boundary. There is a caller: a
-from-scratch HTML and CSS engine (`../vweb`) that uses this library as its only
-text layer, and it is why the three gaps in phase 1 above are written down as
-gaps rather than left for later. The division holds as long as it stays this
-way: boxes, the cascade and painting are the caller's, and this library ends at
-a positioned glyph with a coverage bitmap. Glyph reuse is the one place the
-boundary was genuinely awkward, and it has been settled against this document's
-earlier reading: the caller rasterizes into its own buffer, so it needs a cache
-and not an atlas, and **the cache is the caller's**. See the glyph cache section
-for why that is also the better answer on the merits rather than only the one
-that was already in force.
+The last boundary has a caller: a from-scratch HTML/CSS engine (`../vweb`)
+uses this library as its only text layer. Boxes, the cascade and painting
+are the caller's; this library ends at a positioned glyph with a coverage
+bitmap. Glyph reuse is the one place the boundary was awkward, and it is
+settled: the caller rasterizes into its own buffer, so it needs a cache and
+not an atlas — **the cache is the caller's**.
+
+## Process
+
+How slices land, kept here so it is not re-derived each session:
+
+- One commit per slice on its own branch, merged with `--no-ff` (fast-forward
+  only for purely additive corpus/table slices).
+- Before commit: `v fmt -w` every touched V file, `v fmt -l` clean, full diff
+  read (fmt must be whitespace-only), targeted tests plus the full suite
+  (`VJOBS` sized to free RAM, private `TMPDIR`) plus difftest 0/0, plus a
+  break-fix control that moves the score.
+- At merge: review the diff, re-run the suite and difftest on the merge,
+  then push. Worktrees and branches are pruned after landing.
+- Parallel slices share nothing: disjoint file sets, new files where
+  possible, exclusive ownership where shared files are unavoidable. Agents
+  never touch `ROADMAP.md`, docs, or another slice's files; docs and wiring
+  land with the owner.
+- V resolves `vtext.*` imports by ancestor walk, so a worktree named
+  `vtext-NN` tests the sibling checkout named `vtext` instead of itself.
+  Verify worktree-local through a `VMODULES` junction (`<tmpmod>\vtext` →
+  the worktree) plus `v -path <tmpmod>|@vlib|@vmodules`; merge-time runs
+  happen in a `vtext`-named root.

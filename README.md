@@ -123,8 +123,8 @@ base on its own still draws as text; only the pair draws as emoji.
 
 Each item names the slice that owns it in `ROADMAP.md`.
 
-- Indic and Khmer shaping (7.6, with the Phase 9.3 machine behind it).
-- Hinting, color, LCD, synthetic styles, stroking (7.7, 8.5–8.6); MATH constants
+- Indic and Khmer shaping (7.6, with the Phase 9.3 machine behind it — in progress).
+- Hinting and color (7.7), synthetic styles and LCD (8.5 — in progress), stroking (8.6); MATH constants
   and variants read beside HarfBuzz (8.7 landed), Face wiring stays follow-up.
 - Variable instancing at chosen coordinates landed (7.10), FreeType parity.
 - Core Text and DirectWrite providers (7.8).
@@ -135,8 +135,8 @@ Each item names the slice that owns it in `ROADMAP.md`.
 - Word/sentence log attrs and caret runs over the landed 8.2 tables; Pango
   wrap modes, ellipsize and tabs landed (8.4), C spelling stays follow-up.
 - The remaining scripts (Phase 9): CJK breaking pinned (9.1 landed), SE Asian
-  corpus landed with engine gaps documented (9.2), the Indic machine (9.3),
-  and the long tail (9.4).
+  corpus landed with engine gaps documented (9.2), the Indic machine (9.3, in
+  progress with 7.6), and the long tail (9.4 corpus landed, emoji survey open).
 
 ## Refused by design
 
@@ -176,7 +176,7 @@ Font License (an LPPL instance); the licence text sits beside each font.
 | `JetBrainsMono-Variable.ttf` | A second code face: `=>` folds under `latn` `calt` beside FiraCode. |
 | `CascadiaCode-Variable.ttf` | A third code face that also covers Arabic and Hebrew: the multilingual-mono pin. |
 | `NotoSansHebrew-Variable.ttf` | Hebrew with niqqud: bidi plus mark attachment outside the Arabic script. |
-| `NotoSansSC-Variable.ttf` | Simplified Chinese: CJK coverage and shaping smoke (no CJK line-breaking yet). |
+| `NotoSansSC-Variable.ttf` | Simplified Chinese: CJK coverage, shaping smoke, and pinned ID/CJ/NS/OP/CL breaks (9.1). |
 | `JetBrainsMonoNerdFont-Regular.ttf` | The same code face patched with PUA icons: terminal/geek glyphs beside text. |
 | `STIXTwoMath-Regular.ttf` | A math face: MATH constants, variants and assemblies beside HarfBuzz. |
 | `LatinModernMath-Regular.otf` | A second math face (CFF outlines, GUST licence): same pins, different tables. |

@@ -18,13 +18,13 @@ is a part with no claim.
 
 | Part | Replaces | Objective |
 | --- | --- | --- |
-| `vtext.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`. No other part reads the UCD directly. Case mapping landed the same way (Phase 8.3, committee conformance floor); Word/Sentence break data is Phase 8.2. |
+| `vtext.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`. No other part reads the UCD directly. Case mapping (8.3) and word/sentence tables (8.2) landed the same way, each with its committee conformance floor. |
 | `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1 (WOFF2 refused: no brotli decoder in tree), cmap, metrics, variation-store reading. The `Font`/`FontSet`/`Glyph` wrappers and layout live in `shape/` and `layout/`; `font/` owns data, parsers, and every method on font types. |
 | `vtext.shape` | HarfBuzz core | Normalization, bidi, joining, `Context`, `Font`/`FontSet`/`Glyph`, `inspect.v`, case mapping. GSUB/GPOS application runs on font types in `font/`; orchestration taking font types as arguments lives here. |
-| `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical columns. Align/justify landed opt-in in 7.4 (kashida tatweels for uniform Arabic, spaces elsewhere); hyphenation landed as a `BreakPolicy` with generated tables (7.5); log attrs (8.2) and wrap modes/ellipsize/tabs (8.4) finish the Pango surface that is not boxes. |
-| `vtext.raster` | FreeType's rendering side | `GlyphBitmap` behind the box-and-fill contract `box_only`/`render_into` define; unhinted engine today, hinting and color later (7.7). The box and fill calls stay methods on `font.Face` because methods live in the type's own module, so `font` imports the leaf `raster` for the data they trade in. |
+| `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical columns. Align/justify landed opt-in in 7.4 (kashida tatweels for uniform Arabic, spaces elsewhere); hyphenation, wrap modes, ellipsize and tabs landed as `BreakPolicy` plus options (7.5, 8.4); log attrs over the 8.2 tables stay open. |
+| `vtext.raster` | FreeType's rendering side | `GlyphBitmap` behind the box-and-fill contract `box_only`/`render_into` define; unhinted engine today, hinting and color in 7.7, synthetic styles and LCD in 8.5. The box and fill calls stay methods on `font.Face` because methods live in the type's own module, so `font` imports the leaf `raster` for the data they trade in. |
 | `vtext.inspect` | fontTools introspection (read side) | The inspection API on `shape.Font` in `shape/inspect.v`, not a separate part: eighteen `Font` methods, and a thin `inspect/` of free functions would cycle `shape` → `inspect` → `shape` through the return type. |
-| `vtext.subset` | fontTools subsetter | `subset/` behind `subset_font(font, seed)` with `tools/subset.v` as the CLI; glyf today, CFF/CFF2 in Phase 7.9 with a real committed font (until then the refusal stays, with its reason). `Font.data()` returns the parsed bytes; the closure rebuilds and the tool verifies by reloading. |
+| `vtext.subset` | fontTools subsetter | `subset/` behind `subset_font(font, seed)` with `tools/subset.v` as the CLI; glyf today (the 7.9 CFF reader reads but does not rebuild — subsetting still refuses CFF with its reason). `Font.data()` returns the parsed bytes; the closure rebuilds and the tool verifies by reloading. |
 | `vtext.capi` | — (the C face of all of the above) | Opaque handles over every part; `vtext.h` stays the single header. The header mirror is proven, not claimed: `tools/capicheck.v` reads `capi.v`, `vtext.h` and `vtext.def` as text and fails either direction (49 exports). |
 | providers | fontconfig / Core Text / DirectWrite | Per-OS font lookup, optional, never linked by default. Linux (fontconfig) resolves a family and reports the matched family beside the path, plus ranked sort with charset/language coverage (8.8); Core Text and DirectWrite are Phase 7.8, each pinned on its own OS and answering none elsewhere. |
 
@@ -34,7 +34,7 @@ nothing depends upward. A part never imports a tool, and no tool is imported.
 The seams that keep the parts combinable, each an explicit interface rather
 than an argument about taste, are `FontSource` (where fonts come from),
 `RasterBackend` (box-for-gid plus fill-this-buffer), `BreakPolicy` (UAX #14
-default today, dictionaries tomorrow), the caller-owned glyph cache (keyed on
+plus hyphenation dictionaries behind one call), the caller-owned glyph cache (keyed on
 font id, gid, size, subpixel), and per-part options structs on the proven
 `LayoutOptions` pattern.
 
@@ -57,7 +57,7 @@ arches CI provides — with every OS-specific leg covered on its own OS (Phase
 measured on it.
 
 The last four of the old list changed status on purpose: kashida,
-justification and hyphenation are `vtext.layout` features now (7.4 and 7.5),
-system font discovery is a provider rather than a refusal, and variable
-instancing is Phase 7.10.
+justification, hyphenation and wrap modes are `vtext.layout` features now
+(7.4, 7.5, 8.4), system font discovery is a provider rather than a refusal,
+and variable instancing landed (7.10).
 What did not change: the engine ends at a positioned glyph with a coverage bitmap, and the cache stays with the caller.
