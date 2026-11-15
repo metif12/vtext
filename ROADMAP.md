@@ -2141,10 +2141,14 @@ corpus font needs one — assessed with a measurement first, not assumed.
 and answering none elsewhere, the fontconfig pattern exactly. No host
 carries another host's leg.
 
-**7.9 CFF and CFF2, with a real font.** The deferral condition is now
-satisfiable: fetch an OFL CFF font, read charstrings against its bytes,
-subset and rasterize through the existing curve path. Until that font is
-committed the subsetter keeps refusing, with the reason in the message.
+**7.9 CFF and CFF2, with a real font — landed 2026-11-15 as the reader half.**
+Committed OFL Source Sans 3 OTF (non-CID Type 2, 2,478 glyphs); `font/cff.v`
+reads header, INDEXes, Top DICT, CharStrings, charset, Private and both
+subr sets through the existing curve path, pinned by `cff_test.v` against
+fontTools with a corrupt-byte break-fix. CFF2 still refuses (no committed
+face carries it) and subsetting still refuses CFF (a read is not a rebuild),
+each with the reason in the message — the deferral condition is satisfied
+for reading, and the rebuild stays future work until a slice needs it.
 
 **7.10 Variable instancing.** fvar/gvar application at chosen coordinates —
 FreeType's `FT_Set_Var_Design_Coordinates` parity, pinned beside it. This
