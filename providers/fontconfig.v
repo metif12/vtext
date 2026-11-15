@@ -230,6 +230,17 @@ $if linux {
 		return C.FcCharSetHasChar(cs, u32(cp)) != 0
 	}
 
+	// FcLangResult answers coverage backwards from a boolean, so the
+	// comparison is against the refusal rather than for equality: exact
+	// (the language itself) is 0 and the same language in another
+	// territory is 1, and only a different language refuses with 2.
+	// Measured against Ubuntu Mono here ('en' in its set answers 0,
+	// 'en-us' answers 1, 'xx' answers 2) and read off the installed
+	// fontconfig.h, where equal is 0, different-territory is 1 and
+	// different-language is 2. A font carrying 'en-us' still renders
+	// English, so both 0 and 1 count as coverage.
+	const fc_lang_different_lang = 2
+
 	// system_font_covers_lang reports whether the pattern a family matches to
 	// claims the language, asked of the match's own lang set. The name is a
 	// BCP 47 tag the way fontconfig spells it ('en', 'fa', 'ar'). Anything
@@ -252,7 +263,7 @@ $if linux {
 		if C.FcPatternGetLangSet(m, c'lang', 0, &ls) != fc_result_match || ls == 0 {
 			return false
 		}
-		return C.FcLangSetHasLang(ls, lang.str) != 0
+		return C.FcLangSetHasLang(ls, lang.str) != fc_lang_different_lang
 	}
 } $else {
 	// Everywhere else there is no provider yet. A caller asking here gets no

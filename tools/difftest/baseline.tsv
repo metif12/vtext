@@ -147,3 +147,5 @@ latin-kern	pango	pixel latin-kern: maxdiff 245 meandiff 23.1 over16 817/3726
 arabic-digits	pango	pixel arabic-digits: maxdiff 245 meandiff 4.8 over16 336/5292
 nastaliq-hello	pango	pixel nastaliq-hello: maxdiff 255 meandiff 27.8 over16 762/4277
 variable-naskh	pango	pixel variable-naskh: maxdiff 245 meandiff 4.7 over16 323/5292
+code-arrow	pango	pixel code-arrow: maxdiff 224 meandiff 22.4 over16 217/640
+code-neq	pango	pixel code-neq: maxdiff 255 meandiff 91.9 over16 519/848
