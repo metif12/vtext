@@ -267,6 +267,40 @@ pub fn (p HyphenBreaks) opportunities(ctx &shape.Context, cps []rune, mandatory_
 	return out
 }
 
+// WrapMode is where a wrapped line may end.
+//
+// word breaks only at the policy's opportunities: UAX #14 boundaries, plus
+// hyphenation points under HyphenBreaks. It is the default and what every
+// wrap before this control did — a word longer than the width overflows whole
+// rather than splitting, because a click on half a word maps nowhere.
+//
+// char breaks between any two characters. A combining mark still rides its
+// base (no break before one) and a CR|LF pair still holds, because splitting
+// either would draw half a character; everything else parts, including
+// inside words. Hyphenation points are dropped in this mode: a char split
+// draws no hyphen, and a hyphen point that coincides with a char break would
+// otherwise draw ink the mode never asked for.
+//
+// word_char breaks at word boundaries like word, and splits overlong words
+// between characters like char. The split draws no hyphen: hyphenation lives
+// in word mode only, and a word_char fallback that hyphenated some splits
+// and not others would report two different lineages for one word.
+pub enum WrapMode {
+	word      = 0
+	char      = 1
+	word_char = 2
+}
+
+// EllipsizeMode is which end of a single line gives way to the ellipsis.
+// none draws the whole line whatever its width; end keeps the head, start
+// keeps the tail, middle keeps both ends and cuts the middle out.
+pub enum EllipsizeMode {
+	none   = 0
+	start  = 1
+	middle = 2
+	end    = 3
+}
+
 // is_hyphen_letter reports whether a hyphenation table can read cp. Patterns
 // are ASCII and matched lowercased, so this is the ASCII alphabet and nothing
 // else: hyphenating another script would apply English rules to it.
@@ -1539,6 +1573,130 @@ pub mut:
 	to   int
 }
 
+// char_break_allowed reports whether a char-mode break may fall before
+// cps[i], splitting the text there.
+//
+// Char wrapping parts anywhere except where splitting would draw half a
+// character: a combining mark rides its base, a zero width joiner joins, and
+// a CR|LF pair is one break. Everything else — letters, digits, spaces,
+// ideographs — parts, which is what makes char mode split inside words.
+fn char_break_allowed(props &ucd.Properties, cps []rune, i int) bool {
+	if i <= 0 || i >= cps.len {
+		return true
+	}
+	if props.combining_class_of(cps[i]) != 0 {
+		return false
+	}
+	if cps[i] == rune(0x200D) {
+		return false
+	}
+	if cps[i] == rune(0x000A) && cps[i - 1] == rune(0x000D) {
+		return false
+	}
+	return true
+}
+
+// ops_for_mode merges the policy's breaks with the wrap mode.
+//
+// word returns the policy list untouched, hyphen points included. char and
+// word_char strip hyphen points — hyphenation is word-mode only, and a split
+// that drew hyphens on some breaks and not others would report two lineages
+// for one word — and char additionally merges a break before every splittable
+// character, the policy's entry winning a shared start so a boundary keeps
+// its mandatory flag.
+fn ops_for_mode(ctx &shape.Context, cps []rune, base []BreakOpportunity, mode WrapMode) []BreakOpportunity {
+	if mode == .word {
+		return base
+	}
+	mut stripped := []BreakOpportunity{}
+	for o in base {
+		if o.hyphen {
+			continue
+		}
+		stripped << o
+	}
+	if mode == .word_char {
+		return stripped
+	}
+	mut out := []BreakOpportunity{cap: stripped.len + cps.len}
+	mut a := 0
+	for i in 1 .. cps.len {
+		for a < stripped.len && stripped[a].start < i {
+			out << stripped[a]
+			a++
+		}
+		if a < stripped.len && stripped[a].start == i {
+			continue
+		}
+		if char_break_allowed(ctx.properties, cps, i) {
+			out << BreakOpportunity{
+				start: i
+			}
+		}
+	}
+	for a < stripped.len {
+		out << stripped[a]
+		a++
+	}
+	return out
+}
+
+// last_char_fit returns the last position at or before stop whose part fits
+// max_width when the run may split between characters.
+//
+// Every char-allowed break in (from, stop] counts and stop itself always
+// does, because it is a word break the caller already chose. When even the
+// first character overflows, one character is taken anyway — marks riding
+// along — so the loop still makes progress and a lone wide glyph overflows
+// on a line of its own, the way word mode overflows a lone wide word.
+fn last_char_fit(ctx &shape.Context, full &Line, cps []rune, from int, stop int, max_width f64) int {
+	mut best := 0
+	mut k := from + 1
+	for k <= stop && k <= cps.len {
+		if k == stop || char_break_allowed(ctx.properties, cps, k) {
+			if width_of_range(full, from, k) <= max_width {
+				best = k
+			}
+		}
+		k++
+	}
+	if best > from {
+		return best
+	}
+	mut end := from + 1
+	for end < stop && end < cps.len && !char_break_allowed(ctx.properties, cps, end) {
+		end++
+	}
+	if end > cps.len {
+		end = cps.len
+	}
+	return end
+}
+
+// emit_char_splits cuts [from, stop) into fitting lines between characters
+// and returns where the fitting stopped.
+//
+// Each emitted line ends at the last char-allowed break that fits; the
+// remainder (which fits, or is one overflowing character when nothing fits)
+// is left for the caller, so an overlong word becomes as many fitting lines
+// as it takes rather than one overflowing one.
+fn emit_char_splits(ctx &shape.Context, full &Line, cps []rune, from int, stop int, max_width f64, vertical bool, mut out []WrappedLine) int {
+	mut at := from
+	for at < stop && width_of_range(full, at, stop) > max_width {
+		h := last_char_fit(ctx, full, cps, at, stop, max_width)
+		if h <= at {
+			break
+		}
+		out << WrappedLine{
+			line: slice_for_break(full, at, h, vertical)
+			from: at
+			to:   h
+		}
+		at = h
+	}
+	return at
+}
+
 // wrap_paragraph lays text out into as many lines as it takes to fit max_width, and returns them
 // with the input range each covers.
 //
@@ -1587,7 +1745,7 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 	// point: shaping is the expensive part, and a paragraph is shaped the same way whether it ends
 	// up on one line or ten.
 	full := layout_paragraph_with(ctx, cps, base_dir, fs, em_px, options)
-	ops := break_opportunities(ctx, cps, true)
+	ops := ops_for_mode(ctx, cps, break_opportunities(ctx, cps, true), options.wrap_mode)
 
 	mut out := []WrappedLine{}
 	mut from := 0
@@ -1636,22 +1794,47 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 				have_last = false
 				last = from
 				if width_of_range(full, from, o.start) > max_width {
-					// A single word wider than the whole line. It goes on a line of its own and
-					// overflows, because a caller cannot map a click on one half of a broken word
-					// back to the text.
-					out << WrappedLine{
-						line: slice_for_break(full, from, o.start, options.vertical)
-						from: from
-						to:   o.start
+					if options.wrap_mode == .word_char {
+						// The word overflows: split it between characters, and
+						// the fitting remainder becomes the candidate the
+						// loop would have kept had it fitted all along.
+						from = emit_char_splits(ctx, full, cps, from, o.start,
+							max_width, options.vertical, mut out)
+						if from < o.start {
+							last = o.start
+							have_last = true
+						}
+					} else {
+						// A single word wider than the whole line. It goes on a line of its own and
+						// overflows, because a caller cannot map a click on one half of a broken word
+						// back to the text.
+						out << WrappedLine{
+							line: slice_for_break(full, from, o.start, options.vertical)
+							from: from
+							to:   o.start
+						}
+						from = o.start
+						last = from
+						have_last = false
 					}
-					from = o.start
+				}
+				continue
+			}
+			// Nothing has fitted yet, which means the first word is wider than the line. In
+			// word_char mode it is split between characters; otherwise it is put on a line of
+			// its own rather than being split.
+			if options.wrap_mode == .word_char {
+				from = emit_char_splits(ctx, full, cps, from, o.start, max_width,
+					options.vertical, mut out)
+				if from < o.start {
+					last = o.start
+					have_last = true
+				} else {
 					last = from
 					have_last = false
 				}
 				continue
 			}
-			// Nothing has fitted yet, which means the first word is wider than the line. It is put
-			// on a line of its own rather than being split.
 			out << WrappedLine{
 				line: slice_for_break(full, from, o.start, options.vertical)
 				from: from
@@ -1666,6 +1849,10 @@ pub fn wrap_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direct
 		have_last = true
 	}
 	// Whatever is left after the last break, and the whole text when it never broke.
+	// In word_char mode the tail is split between characters while it overflows.
+	if options.wrap_mode == .word_char && from < cps.len {
+		from = emit_char_splits(ctx, full, cps, from, cps.len, max_width, options.vertical, mut out)
+	}
 	if from < cps.len || out.len == 0 {
 		out << WrappedLine{
 			line: slice_for_break(full, from, cps.len, options.vertical)
@@ -1693,7 +1880,10 @@ pub fn wrap_paragraph_with_policy(ctx &shape.Context, cps []rune, base_dir shape
 		return []WrappedLine{}
 	}
 	full := layout_paragraph_with(ctx, cps, base_dir, fs, em_px, options)
-	mut ops := policy.opportunities(ctx, cps, true)
+	// The mode merges with the policy: char and word_char strip hyphen
+	// points (hyphenation is word-mode only) and char adds breaks between
+	// characters, so both wrap loops below read one list whatever the mode.
+	mut ops := ops_for_mode(ctx, cps, policy.opportunities(ctx, cps, true), options.wrap_mode)
 	// The hyphen glyph, resolved once: its advance decides whether a part and
 	// its hyphen fit, so it is read here rather than per line.
 	mut hy_gid := u16(0)
@@ -1781,34 +1971,64 @@ pub fn wrap_paragraph_with_policy(ctx &shape.Context, cps []rune, base_dir shape
 				last_plain = from
 				last_hyphen = false
 				if width_of_range(full, from, o.start) > max_width {
-					// A single word wider than the whole line. Hyphen points
-					// inside it are the only breaks narrower than the word,
-					// so they are tried before the word overflows on its own.
-					h := hyphen_split(full, ops, from, o.start, max_width, hy_adv, hy_ok)
-					if h > from {
-						out << WrappedLine{
-							line: cut_hyphenated(full, from, h, options.vertical, hy_gid,
-								hy_adv, hy_font)
-							from: from
-							to:   h
+					if options.wrap_mode == .word_char {
+						// The word overflows: split it between characters,
+						// and the fitting remainder becomes the plain
+						// candidate the loop would have kept had it fitted.
+						from = emit_char_splits(ctx, full, cps, from, o.start,
+							max_width, options.vertical, mut out)
+						if from < o.start {
+							last = o.start
+							have_last = true
+							last_plain = o.start
+							have_plain = true
 						}
-						from = h
-						last = from
 					} else {
-						out << WrappedLine{
-							line: slice_for_break(full, from, o.start, options.vertical)
-							from: from
-							to:   o.start
+						// A single word wider than the whole line. Hyphen points
+						// inside it are the only breaks narrower than the word,
+						// so they are tried before the word overflows on its own.
+						h := hyphen_split(full, ops, from, o.start, max_width, hy_adv, hy_ok)
+						if h > from {
+							out << WrappedLine{
+								line: cut_hyphenated(full, from, h, options.vertical, hy_gid,
+									hy_adv, hy_font)
+								from: from
+								to:   h
+							}
+							from = h
+							last = from
+						} else {
+							out << WrappedLine{
+								line: slice_for_break(full, from, o.start, options.vertical)
+								from: from
+								to:   o.start
+							}
+							from = o.start
+							last = from
+							have_plain = false
 						}
-						from = o.start
-						last = from
-						have_plain = false
 					}
 				}
 				continue
 			}
 			// Nothing has fitted yet, which means the first word is wider than
-			// the line. Its hyphen points are tried before it overflows whole.
+			// the line. In word_char mode it is split between characters;
+			// otherwise its hyphen points are tried before it overflows whole.
+			if options.wrap_mode == .word_char {
+				from = emit_char_splits(ctx, full, cps, from, o.start, max_width,
+					options.vertical, mut out)
+				if from < o.start {
+					last = o.start
+					have_last = true
+					last_plain = o.start
+					have_plain = true
+					last_hyphen = false
+				} else {
+					last = from
+					have_last = false
+				}
+				continue
+			}
 			h := hyphen_split(full, ops, from, o.start, max_width, hy_adv, hy_ok)
 			if h > from {
 				out << WrappedLine{
@@ -1840,8 +2060,11 @@ pub fn wrap_paragraph_with_policy(ctx &shape.Context, cps []rune, base_dir shape
 			have_plain = true
 		}
 	}
-	// Whatever is left after the last break, hyphenated down while it fits.
-	if !options.vertical && hy_ok {
+	// Whatever is left after the last break. In word mode it is hyphenated
+	// down while it fits; in word_char mode it is split between characters.
+	// Hyphenation is word-mode only, so the hyphen loop is gated on the mode
+	// as well as on the glyph: char and word_char stripped the points above.
+	if !options.vertical && hy_ok && options.wrap_mode == .word {
 		for from < cps.len && width_of_range(full, from, cps.len) > max_width {
 			h := hyphen_split(full, ops, from, cps.len, max_width, hy_adv, hy_ok)
 			if h <= from {
@@ -1855,6 +2078,9 @@ pub fn wrap_paragraph_with_policy(ctx &shape.Context, cps []rune, base_dir shape
 			}
 			from = h
 		}
+	}
+	if options.wrap_mode == .word_char && from < cps.len {
+		from = emit_char_splits(ctx, full, cps, from, cps.len, max_width, options.vertical, mut out)
 	}
 	if from < cps.len || out.len == 0 {
 		out << WrappedLine{
@@ -1954,6 +2180,165 @@ fn align_wrapped(ctx &shape.Context, mut out []WrappedLine, cps []rune, base_dir
 			max_width, is_last)
 		out[i] = wl
 	}
+}
+
+// ellipsis_glyph is one ellipsis drawn at the pen: the cluster names the cut
+// position, which is where the missing text starts (end, middle) or resumes
+// (start). It mirrors the hyphen glyph cut_hyphenated appends, down to the
+// isolated form.
+fn ellipsis_glyph(gid u16, adv f64, x f64, cluster int, font &shape.Font) shape.Glyph {
+	return shape.Glyph{
+		gid:      gid
+		advance:  adv
+		x:        x
+		y:        0
+		cluster:  cluster
+		is_mark:  false
+		form:     .isolated
+		base_gid: 0
+		font:     font
+	}
+}
+
+// ellipsize_line lays one paragraph out on one line narrowed to max_width,
+// cutting text out for an ellipsis glyph where the mode says.
+//
+// end keeps the head, start keeps the tail, middle keeps both ends and cuts
+// the middle out; none draws the whole line whatever its width. The kept
+// ranges are maximal: the longest head (tail, ends) whose width beside the
+// ellipsis still fits. When nothing of the text fits, the line is the
+// ellipsis alone, which then overflows a width narrower than itself — the
+// caller clips, because only it knows what clipping means.
+//
+// The ellipsis is U+2026 HORIZONTAL ELLIPSIS, resolved from the font set the
+// way wrap_paragraph_with_policy resolves its hyphen: the first font covering
+// it, falling back to the flat pick. A set with no ellipsis glyph ellipsizes
+// nothing and the full line comes back, the way a set with no hyphen glyph
+// hyphenates nothing. Tabs are already expanded by layout_paragraph_with, so
+// a tabbed line narrows against its stops; wrap modes do not apply, because
+// there is only one line; vertical text is out of scope and comes back whole,
+// the way hyphenation skips vertical columns.
+pub fn ellipsize_line(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet, em_px f64, max_width f64, options &LayoutOptions, mode EllipsizeMode) Line {
+	full := layout_paragraph_with(ctx, cps, base_dir, fs, em_px, options)
+	if cps.len == 0 || mode == .none || options.vertical {
+		return full
+	}
+	if full.width <= max_width {
+		return full
+	}
+	mut el_gid := u16(0)
+	mut el_adv := 0.0
+	mut el_font := &shape.Font(unsafe { nil })
+	mut el_ok := false
+	mut el_pick := fs.pick_in(ctx, rune(0x2026))
+	if el_pick == none {
+		el_pick = fs.pick(rune(0x2026))
+	}
+	if f := el_pick {
+		g := f.glyph_index(rune(0x2026))
+		if g != 0 {
+			adv := f.glyph_advance(g, em_px)
+			if adv > 0 {
+				el_gid = g
+				el_adv = adv
+				el_font = f
+				el_ok = true
+			}
+		}
+	}
+	if !el_ok {
+		return full
+	}
+	cum := cluster_prefix(full, cps.len)
+	budget := max_width - el_adv
+	// The ellipsis alone: nothing of the text fits beside it.
+	if budget < 0 {
+		mut lone := Line{
+			ascent:      full.ascent
+			descent:     full.descent
+			line_height: full.line_height
+		}
+		lone.glyphs << ellipsis_glyph(el_gid, el_adv, 0, 0, el_font)
+		lone.width = el_adv
+		return lone
+	}
+	if mode == .end {
+		mut cut := 0
+		for k := cps.len; k >= 0; k-- {
+			if cum[k] - cum[0] <= budget {
+				cut = k
+				break
+			}
+		}
+		mut line := slice_for_range(full, 0, cut)
+		line.glyphs << ellipsis_glyph(el_gid, el_adv, line.width, cut, el_font)
+		line.width += el_adv
+		return line
+	}
+	if mode == .start {
+		mut keep := cps.len
+		for k := 0; k <= cps.len; k++ {
+			if cum[cps.len] - cum[k] <= budget {
+				keep = k
+				break
+			}
+		}
+		mut line := slice_for_range(full, keep, cps.len)
+		for mut g in line.glyphs {
+			g.x += el_adv
+		}
+		line.glyphs.insert(0, ellipsis_glyph(el_gid, el_adv, 0, keep, el_font))
+		line.width += el_adv
+		return line
+	}
+	// Middle: the longest head that fits in half the budget, then the longest
+	// tail that fits in what is left. Halving keeps both ends visible rather
+	// than spending the whole budget on one side.
+	half := budget / 2.0
+	mut a := 0
+	for k := cps.len; k >= 0; k-- {
+		if cum[k] - cum[0] <= half {
+			a = k
+			break
+		}
+	}
+	rem := budget - (cum[a] - cum[0])
+	mut b := cps.len
+	for k := a; k <= cps.len; k++ {
+		if cum[cps.len] - cum[k] <= rem {
+			b = k
+			break
+		}
+	}
+	mut head := slice_for_range(full, 0, a)
+	mut tail := slice_for_range(full, b, cps.len)
+	mut line := Line{
+		ascent:      full.ascent
+		descent:     full.descent
+		line_height: full.line_height
+	}
+	ltr := full.paragraph_level % 2 == 0
+	if ltr {
+		for g in head.glyphs {
+			line.glyphs << g
+		}
+		line.glyphs << ellipsis_glyph(el_gid, el_adv, head.width, a, el_font)
+		for mut g in tail.glyphs {
+			g.x += head.width + el_adv
+			line.glyphs << g
+		}
+	} else {
+		for g in tail.glyphs {
+			line.glyphs << g
+		}
+		line.glyphs << ellipsis_glyph(el_gid, el_adv, tail.width, a, el_font)
+		for mut g in head.glyphs {
+			g.x += tail.width + el_adv
+			line.glyphs << g
+		}
+	}
+	line.width = head.width + el_adv + tail.width
+	return line
 }
 
 // width_of_range measures the glyphs of a shaped line that belong to a range of input characters.
