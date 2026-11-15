@@ -332,7 +332,7 @@ pub fn (f &Face) read_variable_axes() []VariableAxis {
 	if !r.has(rec.offset + 16, 2) {
 		return []VariableAxis{}
 	}
-	if r.u16_at(rec.offset + 12) != 20 {
+	if r.u16_at(rec.offset + 10) != 20 {
 		return []VariableAxis{}
 	}
 	axes_at := rec.offset + int(r.u16_at(rec.offset + 4))
