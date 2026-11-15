@@ -132,8 +132,8 @@ Each item names the slice that owns it in `ROADMAP.md`.
 - Cursive attachment: read from real fonts, not applied — the one corpus rule
   that reaches its own glyphs is vestigial (four one-sided anchors, no adjacent
   exit-plus-entry pair), and it rewires the day a shaped line grows a pair.
-- Word/sentence log attrs and caret runs over the landed 8.2 tables; wrap modes,
-  ellipsize, tabs (8.4).
+- Word/sentence log attrs and caret runs over the landed 8.2 tables; Pango
+  wrap modes, ellipsize and tabs landed (8.4), C spelling stays follow-up.
 - The remaining scripts (Phase 9): CJK breaking pinned (9.1 landed), SE Asian
   corpus landed with engine gaps documented (9.2), the Indic machine (9.3),
   and the long tail (9.4).

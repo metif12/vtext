@@ -2286,9 +2286,19 @@ break-fix control asserts the exact row counts (1601/1508/1578/16): dropping
 the U+0061 upper row fails with 1600. Measured: SpecialCasing conformance 120
 cases, 0 failed; `v test case_test.v` passes.
 
-**8.4 Wrap modes, ellipsize, tabs.** Word/char/word-char wrapping,
-end/middle/start ellipsization with a caller-owned ellipsis glyph, and tab
-stops as a layout option — the Pango layout surface that is not boxes.
+**8.4 Wrap modes, ellipsize, tabs — landed 2026-11-15.** `WrapMode`
+word/char/word-char threaded through both wrap entry points (word is all
+prior behavior; char breaks before every splittable character with marks
+and CR/LF held; word_char keeps word breaks and splits overlong words),
+`ellipsize_line` for end/start/middle with a caller-owned U+2026 glyph
+(no glyph: the line comes back whole; vertical: whole, mirroring the
+hyphen skip), and additive `LayoutOptions.tab_stops` expanding after
+placing, horizontal only. Documented choice: hyphenation is word-mode
+only — char splits strip hyphen points rather than mixing lineages.
+Pinned by `ellipsize_wrap_test.v` with fontTools-measured pins and a
+three-way break-fix (char arm, ellipsis append). Follow-up: C-side
+spelling for the two new `LayoutOptions` fields (`COptions` untouched,
+no ABI break — C callers keep word-wrap, no tabs).
 
 **8.5 Synthetic styles and LCD.** Embolden and oblique at the glyph level
 (FreeType's `FT_GlyphSlot_Embolden`/`Oblique` parity, pixel-compared), and
