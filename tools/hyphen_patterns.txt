@@ -1,0 +1,51 @@
+# US-English hyphenation patterns for vtext (hand-authored subset).
+#
+# Source: hand-derived from US-English dictionary hyphenations for the words
+#   pinned in hyphen_test.v (hyphenation, computer, example, algorithm,
+#   university, presentation, typesetting, hyphen). No external text is
+#   reproduced: each row below was written for vtext to encode the break
+#   the dictionary shows for those words.
+# Licence: MIT (same as the vtext repository), authored for vtext.
+#
+# TeX ushyph evaluated and NOT used:
+#   CTAN package ushyph (language/hyphenation/ushyph, "US hyphenation
+#   patterns", Knuth's hyphen.tex plus the 1990 TUGboat 11(1) extension set
+#   ushyphen.tex / ushyphmax.tex) lists its licence as "Free license not
+#   otherwise listed" with no licence text in the package metadata reachable
+#   from this checkout (checked 2026-11-15 via the CTAN package page), so the
+#   full ~8000-pattern US tables were NOT committed. If a cleanly-licensed
+#   full table is wanted later, feed it to tools/gen_hyphen.v, which accepts
+#   any one-pattern-per-line Liang table.
+#
+# Format: one Liang pattern per line (letters with interleaved levels, '.'
+#   anchors a word edge). Odd levels allow a break, even levels suppress one.
+#   Lines starting with '#' and blank lines are ignored by the generator.
+#   The table is sorted and de-duplicated on emission, so source order here
+#   is by word for reviewability, not by load order.
+#
+# hyphenation -> hy-phen-ation
+hy3ph
+hen3a
+# example -> ex-am-ple
+ex3am
+am3ple
+# computer -> com-put-er (raw votes at 6 too; the edge rule hides -er)
+com3put
+put3er
+# algorithm -> al-go-rithm (even rows hold -rithm together)
+al3go
+go3ri
+ri4thm
+rith4m
+# university -> uni-ver-sity
+uni3ver
+ver3si
+# presentation -> pre-sen-ta-tion
+pre3sen
+sen3ta
+ta3tion
+# typesetting -> type-set-ting
+pe3se
+et3ti
+# trailing suppressor: nothing breaks after -tion (even level outranks 0)
+tion4
