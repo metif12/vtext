@@ -54,6 +54,8 @@ pub const tag_cpal = 'CPAL'
 pub const tag_sbix = 'sbix'
 pub const tag_cbdt = 'CBDT'
 pub const tag_svg = 'SVG '
+pub const tag_cff = 'CFF '
+pub const tag_cff2 = 'CFF2'
 
 // parse_sfnt parses the table directory of the first font in data.
 pub fn parse_sfnt(data []u8) !Sfnt {
