@@ -1348,6 +1348,8 @@ Font.cmap_counts() []int           mapped codepoints per subtable, notdef exclud
 Font.glyph_class_counts() [5]int   in the order of glyph_class_names
 Font.is_variable() bool
 Font.variable_axes() []VariableAxis
+Font.variable_instances() []NamedInstance   name, name ID and coords per axis, in fvar order
+Font.variable_instance_names() []string     the UI names alone, in fvar order
 ```
 
 Everything here is a report about a font the engine has already read. None of it changes what the engine
@@ -1958,7 +1960,7 @@ all — and no part imports a tool.
 | `vtext.shape` | HarfBuzz core | Slice 1 landed 2026-11-14: joining, normalization, bidi, the bidi rule application and the bracket table live in `shape/` as `module shape`. The bidi report helper `visual_string` moved with its type the way `mapped_count` did. Verified the full way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. Acceptance for the rest is the existing differential baseline extended past Arabic — Indic and Khmer shaping beside HarfBuzz at 0 new and 0 stale. Slice 2 landed the same day: `context.v` (`Context` + `new_context` + `normalize_nfd` + `shape_for_trace`), `font.v` (`Font` + the load delegates), `glyphs.v` (`Glyph`/`FontSet`), `inspect.v`, all in `shape/` as `module shape`. The seam corrected itself mid-slice: `font/` owns data + parsers + application on font types, so the `Font`/`Context`/`Glyph`/`FontSet` knot plus `inspect.v` dissolved into `shape/` after proving the layout/-only move cycles through `capi.v`. The qualifier pass covered ~59 files with the checklist re-proven every slice (declaration-aware; `vtext.X` to `mod.X` with `vtext.mod.X` artifacts fixed in the same pass; `gg.Context`-style foreign paths guarded; comments/strings skipped for CamelCase; missing imports added at the last-import anchor; `font`-named locals renamed line-targeted). Verified the full way: suite 34/34, fmt gate 108/0, all examples and tools, 0 new and 0 stale on both difftest hosts (Windows pango legs skip aloud; CI owns them), DLL plus 1 MB smoke. |
 | `vtext.layout` | Pango's layout math | Slices 4+5 landed 2026-11-14: `linebreak.v` and `layout.v` live in `layout/` as `module layout`, imported as `vtext.layout`. Verified with the rest the full way: suite 34/34, fmt 108/0, consumers, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is vertical columns (breaking across columns; single-column placement landed behind `LayoutOptions.vertical` with HarfBuzz-TTB-pinned geometry, reachable from C since 2026-11-15 through `vertical` in `vtext_options_t` with the smoke test proving the structs agree; columns cut by `wrap_paragraph_with` the same day), kashida/justification as opt-in, and hyphenation dictionaries as a `BreakPolicy` with generated tables. The [28.14] arm showed the shape: a rule with its own cases, measured, not described. |
 | `vtext.raster` | FreeType's rendering side | Slice 1 landed 2026-11-14: `GlyphBitmap` with `is_empty`/`ink` lives in `raster/` as `module raster`, imported as `vtext.raster`. The `box_only`/`render_into` calls stay methods on `font.Face` — this compiler defines methods only in the type's own module — so `font` imports the leaf `raster` for the data they trade in, and every `font.GlyphBitmap` site (shape's `Font.rasterize`, `subset`, `shapedump`, `probe`) is now `raster.GlyphBitmap`. Verified the full way: suite 34/34, fmt gate, all consumers, 0 new and 0 stale on both difftest hosts, DLL plus 1 MB smoke. What remains is hinting (TT interpreter plus auto-hinter fallback) and color (COLR/CPAL, CBDT/sbix, SVG refusal-with-reason) as engines behind the box-and-fill contract `box_only`/`render_into` already define. Verified per glyph against FreeType and Pillow like the ink leg does now. |
-| `vtext.inspect` | fontTools introspection (read side) | Decided 2026-11-14: stays as the inspection API on `shape.Font` in `shape/inspect.v`, not a separate part. The surface is sixteen `Font` methods, and the methods-live-with-the-type rule proven twice in the `font` slices forbids moving them; a thin `inspect/` of free functions taking `shape.Font` would cycle `shape` → `inspect` → `shape` through `TableInfo`. `fontdump`, `fontcheck` and `shapetrace` already build on it. |
+| `vtext.inspect` | fontTools introspection (read side) | Decided 2026-11-14: stays as the inspection API on `shape.Font` in `shape/inspect.v`, not a separate part. The surface is eighteen `Font` methods, and the methods-live-with-the-type rule proven twice in the `font` slices forbids moving them; a thin `inspect/` of free functions taking `shape.Font` would cycle `shape` → `inspect` → `shape` through `TableInfo`. `fontdump`, `fontcheck` and `shapetrace` already build on it. |
 | `vtext.subset` | fontTools subsetter | Slice 1 landed 2026-11-14: the closure and the rebuild live in `subset/` as `module subset` behind `subset_font(font, seed)`, and `tools/subset.v` is the CLI around it (shaping the seed, reporting, verifying). The fixed-point loop, the 16-pass bound and the duplicated comment moved with the code; the duplication is gone from the tool. Verified the full way: suite 35/35, fmt 111/0, consumers fail=0, both difftest hosts 0/0, DLL + 1 MB smoke. What remains is CFF/CFF2, explicitly deferred above: 0 faces measured, so a reader would be verified only against tables built to match it. |
 | `vtext.capi` | — (the C face) | Last, since it wraps all of the above. `vtext.h` stays the single header; the header mirror is now proven by `tools/capicheck.v` (48 exports, both directions, CI-gated before the library builds) rather than by the link alone. `subset` is wrapped (`vtext_subset`/`vtext_subset_free`, exercised by the smoke test); raster stays at the combined box-and-fill call by decision, its fields already readable through the bitmap accessors. |
 | providers | fontconfig / Core Text / DirectWrite | Linux (fontconfig) landed 2026-11-14: `providers/fontconfig.v` (`module providers`) resolves a family through `FcFontMatch` and reports the matched family beside the path, so a silent substitution is visible to the caller; Core Text and DirectWrite stay unwritten, and off Linux the provider answers none. Pinned by `providers_fontconfig_test.v` (self-naming match + substitution report, skip-guarded off Linux and on fontless hosts; wrong-family revert fails). CI installs the headers on the ubuntu suite leg because the test links fontconfig there. |
@@ -2203,10 +2205,40 @@ geometry is the library's.
 italics correction, variants and parts), pinned against HarfBuzz on Latin
 Modern Math and STIX, which arrive over the network like Fira Code did.
 
-**8.8 Matching and instances.** fontconfig sort-by-match with charset and
-language coverage queries beside `FcFontMatch`, and the fvar named
-instances listed on the inspect API (axes are already there; names are
-what a UI shows).
+**8.8 Matching and instances — landed 2026-11-15.** `providers/fontconfig.v`
+sorts beside the existing match: `system_fonts_sorted` answers the ranked
+`FcFontSort` list for a family, best match first and capped at the caller's
+limit, with the path and the matched family per entry — so a substitution is
+visible at every rank rather than only at the first. `system_font_covers_char`
+and `system_font_covers_lang` ask the matched pattern's own `charset` and
+`lang` objects (`FcPatternGetCharSet`/`FcPatternGetLangSet` with
+`FcCharSetHasChar`/`FcLangSetHasLang`), which is where a caller learns a
+family lacks a codepoint or a language before it draws. Off Linux all three
+answer none/false with the reason printed, the same arrangement the existing
+`FcFontMatch` provider keeps: nothing links fontconfig unless a caller asks,
+and the stubs are what this host verifies (none, none, false, false). The
+Linux half is written against the headers and left to CI on Linux, stated
+here rather than implied: the ubuntu suite leg links fontconfig and runs
+`match_test.v` against installed families (self-naming best match first,
+existing paths, `covers_char` for `A`, `covers_lang` for `en`), with a skip
+where no self-naming family is installed.
+
+The fvar half is measured here. `shape/inspect.v` gains `variable_instances`
+(name, name ID and one coordinate per axis in fvar order) and
+`variable_instance_names` (the names alone, in fvar order), read off the
+committed `NotoNaskhArabic-Variable.ttf` and agreeing with fontTools exactly:
+4 instances — Regular/Medium/SemiBold/Bold at wght 400/500/600/700, subfamily
+name IDs 257/259/261/263. The records carry only the IDs; the names come from
+joining them against the `name` table (Windows English preferred, any Windows
+or Unicode entry otherwise), and the break-fix control pins the names so that
+dropping the join fails with four empty strings. A font with no fvar answers
+empty, told apart from a variable font with no named instances by
+`is_variable`. Axes predate this slice and are not re-pinned — and one of
+them cannot be: `read_variable_axes` validates the table by the word at
+offset 12, which is the instance count (4 here), not the axis size, so it
+refuses every variable font carrying any other number of instances than
+twenty. That body is frozen for this slice; the one-line correction to it is
+queued behind this one, and the instances path reads its own header.
 
 Triggered, not scheduled, each with its reason: AAT `morx` and Graphite
 (no corpus font carries either — the day one does, it gets a slice like

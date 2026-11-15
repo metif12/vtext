@@ -323,6 +323,189 @@ pub fn (f &Font) variable_axes() []font.VariableAxis {
 	return f.face.read_variable_axes()
 }
 
+// NamedInstance is one named point in a variable font's design space: the name
+// a UI shows, and where it sits along each axis.
+pub struct NamedInstance {
+pub:
+	// name_id is the fvar record's subfamily name ID: the number the `name`
+	// table was asked for, kept so a caller comparing against another reader
+	// has the raw record as well as the resolved string.
+	name_id int
+	// name is the resolved string, or empty when the font names no entry for
+	// the ID. The records carry only the number, so an empty name here is what
+	// a dropped name-table join looks like.
+	name string
+	// coords holds one coordinate per axis, in the order `variable_axes`
+	// reports them. A UI offering the instances as a list reads the name; one
+	// offering them as positions reads these.
+	coords []f64
+}
+
+// variable_instances lists a variable font's named instances in fvar order.
+//
+// The header is read here rather than through the axis reader, because that
+// reader validates the table by its instance count and refuses every variable
+// font carrying any other number of instances — this one carries four. The
+// axis records themselves are the same twenty-byte shape both readers use,
+// and the coordinates below run in fvar axis order. That reader's body is
+// frozen for this slice, so the one-line correction to it is queued behind
+// this one rather than made inside it. A font with no `fvar` answers nothing,
+// told apart from a variable font with no named instances by `is_variable`.
+pub fn (f &Font) variable_instances() []NamedInstance {
+	return fvar_named_instances(f.face.sfnt)
+}
+
+// variable_instance_names lists just the names of a variable font's instances,
+// in fvar order. A UI showing a weight menu reads this; one positioning the
+// instances in the design space reads `variable_instances`.
+pub fn (f &Font) variable_instance_names() []string {
+	mut out := []string{}
+	for inst in f.variable_instances() {
+		out << inst.name
+	}
+	return out
+}
+
+// fvar_named_instances reads the instance records out of an `fvar` table:
+// instanceCount, instanceSize, then one record of subfamilyNameID, flags and
+// one Fixed coordinate per axis, the axis array starting where the header's
+// axes offset says. The axis size is checked rather than assumed, the way the
+// axis reader checks it: a table whose records are not the shape this reader
+// knows is refused rather than read as plausible numbers that are not the
+// font's. A trailing postscript name ID, when the instance size carries one,
+// is left unread: the UI name is the subfamily ID.
+fn fvar_named_instances(sfnt &font.Sfnt) []NamedInstance {
+	r := font.new_reader(sfnt.table_data(font.tag_fvar))
+	if !r.has(0, 16) {
+		return []NamedInstance{}
+	}
+	if int(r.u16_at(10)) != 20 {
+		return []NamedInstance{}
+	}
+	axis_count := int(r.u16_at(8))
+	count := int(r.u16_at(12))
+	size := int(r.u16_at(14))
+	base := int(r.u16_at(4)) + axis_count * 20
+	if axis_count <= 0 || count <= 0 || size < 4 + axis_count * 4 {
+		return []NamedInstance{}
+	}
+	name_data := sfnt.table_data(font.tag_name)
+	mut out := []NamedInstance{cap: count}
+	for i in 0 .. count {
+		at := base + i * size
+		if !r.has(at, size) {
+			break
+		}
+		id := int(r.u16_at(at))
+		mut coords := []f64{cap: axis_count}
+		for a in 0 .. axis_count {
+			coords << f64(r.i32_at(at + 4 + a * 4)) / 65536.0
+		}
+		out << NamedInstance{
+			name_id: id
+			name:    name_string_for(name_data, id)
+			coords:  coords
+		}
+	}
+	return out
+}
+
+// name_string_for resolves a name ID through the font's `name` table,
+// preferring the Windows English entry and falling back to any Windows or
+// Unicode one. Mac-encoded entries are skipped: the variable fonts here name
+// every instance in Windows Unicode, and a MacRoman decoder no font needs
+// would be untested code. No entry at all answers empty, which is how a caller
+// tells an unnamed instance from a named one.
+fn name_string_for(data []u8, name_id int) string {
+	r := font.new_reader(data)
+	if !r.has(0, 6) {
+		return ''
+	}
+	count := int(r.u16_at(2))
+	storage := int(r.u16_at(4))
+	mut best := ''
+	mut best_score := -1
+	for i in 0 .. count {
+		at := 6 + i * 12
+		if !r.has(at, 12) {
+			break
+		}
+		platform := int(r.u16_at(at))
+		encoding := int(r.u16_at(at + 2))
+		lang := int(r.u16_at(at + 4))
+		id := int(r.u16_at(at + 6))
+		length := int(r.u16_at(at + 8))
+		off := int(r.u16_at(at + 10))
+		if id != name_id || length <= 0 {
+			continue
+		}
+		score := name_record_score(platform, encoding, lang)
+		if score < 0 || score <= best_score {
+			continue
+		}
+		if storage + off < 0 || length < 0 || storage + off + length > data.len {
+			continue
+		}
+		best = decode_utf16be(data, storage + off, length)
+		best_score = score
+		if best_score == 4 {
+			break
+		}
+	}
+	return best
+}
+
+// name_record_score ranks a `name` record: Windows Unicode BMP in English
+// first, then any Windows Unicode BMP entry, then Windows symbol, then any
+// Unicode entry. Anything else is refused with -1.
+fn name_record_score(platform int, encoding int, lang int) int {
+	if platform == 3 && encoding == 1 {
+		if lang == 0x0409 {
+			return 4
+		}
+		return 3
+	}
+	if platform == 3 && encoding == 0 {
+		return 2
+	}
+	if platform == 0 {
+		return 1
+	}
+	return -1
+}
+
+// decode_utf16be reads UTF-16BE bytes as a string. A split surrogate and a
+// lone trailing half answer U+FFFD rather than a wrong rune or a panic,
+// because a name table is untrusted file input and not every entry in one is
+// well-formed.
+fn decode_utf16be(data []u8, off int, n int) string {
+	mut out := []rune{}
+	mut i := 0
+	for i + 1 < n {
+		if off + i + 1 >= data.len {
+			break
+		}
+		hi := (u16(data[off + i]) << 8) | u16(data[off + i + 1])
+		i += 2
+		if hi >= 0xD800 && hi <= 0xDBFF {
+			if i + 1 < n && off + i + 1 < data.len {
+				lo := (u16(data[off + i]) << 8) | u16(data[off + i + 1])
+				if lo >= 0xDC00 && lo <= 0xDFFF {
+					out << rune(u32(0x10000) + (u32(hi - 0xD800) << 10) + u32(lo - 0xDC00))
+					i += 2
+					continue
+				}
+			}
+			out << rune(0xFFFD)
+		} else if hi >= 0xDC00 && hi <= 0xDFFF {
+			out << rune(0xFFFD)
+		} else {
+			out << rune(hi)
+		}
+	}
+	return out.string()
+}
+
 // sort_table_info orders a table list by tag.
 //
 // The sort is written out rather than reached for because this V has no sort_with on a slice of a struct,

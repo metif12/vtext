@@ -588,8 +588,16 @@ font.scripts('GPOS')              // the ScriptList, sorted
 font.cmap_counts()                // mapped codepoints per subtable
 font.glyph_class_counts()         // in the order of glyph_class_names
 font.is_variable()                // has an fvar table, which is not the same as reading one
-font.variable_axes()
+font.variable_axes()                // one entry per fvar axis: tag, range, default
+font.variable_instances()           // the named instances: UI name, name ID, coords per axis
+font.variable_instance_names()      // the names alone, in fvar order
 ```
+
+`variable_axes` reports the design space; `variable_instances` reports the
+named points in it. The records carry only numeric IDs, so the names come
+from joining them against the font's `name` table — a variable font whose
+instances a caller lists by name draws the same default instance either way,
+because instancing itself is Phase 7.10, not this section.
 
 `features` reads the FeatureList rather than the features the scripts enable, and those are different
 sets. Segoe UI declares 25 tags in GSUB; only 23 are reachable from any default language system,

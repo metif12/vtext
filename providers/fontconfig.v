@@ -41,6 +41,50 @@ $if linux {
 	const fc_match_pattern = 0
 	const fc_result_match = 0
 
+	// C_FcFontSet mirrors fontconfig's FcFontSet: the ranked matches FcFontSort
+	// answers, best first. Only nfont and the font pointers are read; sfont is
+	// fontconfig's own allocation size.
+	struct C_FcFontSet {
+		nfont int
+		sfont int
+		fonts &voidptr
+	}
+
+	fn C.FcFontSort(voidptr, voidptr, int, voidptr, &int) &C_FcFontSet
+	fn C.FcFontSetDestroy(voidptr)
+	fn C.FcPatternGetCharSet(voidptr, &u8, int, &voidptr) int
+	fn C.FcPatternGetLangSet(voidptr, &u8, int, &voidptr) int
+	fn C.FcCharSetHasChar(voidptr, u32) int
+	fn C.FcLangSetHasLang(voidptr, &u8) int
+
+	// match_first_pattern runs the match half every query here needs: parse,
+	// substitute and match a family, answering the config and the match. The
+	// caller destroys both. Either half unusable answers (nil, nil).
+	fn match_first_pattern(family string) (voidptr, voidptr) {
+		if family == '' {
+			return unsafe { nil }, unsafe { nil }
+		}
+		config := C.FcInitLoadConfigAndFonts()
+		if config == 0 {
+			return unsafe { nil }, unsafe { nil }
+		}
+		pat := C.FcNameParse(family.str)
+		if pat == 0 {
+			C.FcConfigDestroy(config)
+			return unsafe { nil }, unsafe { nil }
+		}
+		C.FcConfigSubstitute(config, pat, fc_match_pattern)
+		C.FcDefaultSubstitute(pat)
+		mut res := 0
+		m := C.FcFontMatch(config, pat, &res)
+		C.FcPatternDestroy(pat)
+		if m == 0 || res != fc_result_match {
+			C.FcConfigDestroy(config)
+			return unsafe { nil }, unsafe { nil }
+		}
+		return config, m
+	}
+
 	// system_font resolves a family name through fontconfig. It answers none
 	// when fontconfig itself is unusable — no config, no parse, no match —
 	// and a SystemFont otherwise, whose family the caller compares against
@@ -90,10 +134,151 @@ $if linux {
 			family: name
 		}
 	}
+
+	// system_fonts_sorted answers the ranked list FcFontSort reports for a
+	// family, best match first, capped at limit entries. Each entry carries its
+	// own matched family beside its path, so a substitution is visible at
+	// every rank rather than only at the first: asking for a family that is not
+	// installed answers the closest installed families in order. It answers
+	// none when fontconfig itself is unusable, the limit names nothing, or no
+	// entry survives.
+	pub fn system_fonts_sorted(family string, limit int) ?[]SystemFont {
+		if family == '' || limit <= 0 {
+			return none
+		}
+		config := C.FcInitLoadConfigAndFonts()
+		if config == 0 {
+			return none
+		}
+		defer {
+			C.FcConfigDestroy(config)
+		}
+		pat := C.FcNameParse(family.str)
+		if pat == 0 {
+			return none
+		}
+		defer {
+			C.FcPatternDestroy(pat)
+		}
+		C.FcConfigSubstitute(config, pat, fc_match_pattern)
+		C.FcDefaultSubstitute(pat)
+		mut res := 0
+		// A nil charset vector: the per-font charsets stay inside fontconfig,
+		// and the coverage questions below ask the matched patterns instead.
+		set := C.FcFontSort(config, pat, 0, unsafe { nil }, &res)
+		if isnil(set) || res != fc_result_match {
+			return none
+		}
+		defer {
+			C.FcFontSetDestroy(set)
+		}
+		mut n := set.nfont
+		if n > limit {
+			n = limit
+		}
+		mut out := []SystemFont{cap: n}
+		for i in 0 .. n {
+			m := unsafe { set.fonts[i] }
+			if isnil(m) {
+				continue
+			}
+			mut file := &u8(unsafe { nil })
+			if C.FcPatternGetString(m, c'file', 0, &file) != fc_result_match
+				|| file == unsafe { nil } {
+				continue
+			}
+			mut fam := &u8(unsafe { nil })
+			if C.FcPatternGetString(m, c'family', 0, &fam) != fc_result_match
+				|| fam == unsafe { nil } {
+				continue
+			}
+			out << SystemFont{
+				path:   unsafe { file.vstring() }.clone()
+				family: unsafe { fam.vstring() }.clone()
+			}
+		}
+		if out.len == 0 {
+			return none
+		}
+		return out
+	}
+
+	// system_font_covers_char reports whether the pattern a family matches to
+	// covers cp, asked of the match's own charset rather than of any font file.
+	// A caller deciding whether a family can draw a codepoint asks here before
+	// it draws; anything unusable on the way there answers false.
+	pub fn system_font_covers_char(family string, cp rune) bool {
+		if family == '' || cp < 0 {
+			return false
+		}
+		config, m := match_first_pattern(family)
+		if config == 0 || m == 0 {
+			return false
+		}
+		defer {
+			C.FcPatternDestroy(m)
+		}
+		defer {
+			C.FcConfigDestroy(config)
+		}
+		mut cs := voidptr(unsafe { nil })
+		if C.FcPatternGetCharSet(m, c'charset', 0, &cs) != fc_result_match || cs == 0 {
+			return false
+		}
+		// The charset belongs to the match, which the defers destroy, so there
+		// is nothing to free here beyond answering.
+		return C.FcCharSetHasChar(cs, u32(cp)) != 0
+	}
+
+	// system_font_covers_lang reports whether the pattern a family matches to
+	// claims the language, asked of the match's own lang set. The name is a
+	// BCP 47 tag the way fontconfig spells it ('en', 'fa', 'ar'). Anything
+	// unusable on the way there answers false.
+	pub fn system_font_covers_lang(family string, lang string) bool {
+		if family == '' || lang == '' {
+			return false
+		}
+		config, m := match_first_pattern(family)
+		if config == 0 || m == 0 {
+			return false
+		}
+		defer {
+			C.FcPatternDestroy(m)
+		}
+		defer {
+			C.FcConfigDestroy(config)
+		}
+		mut ls := voidptr(unsafe { nil })
+		if C.FcPatternGetLangSet(m, c'lang', 0, &ls) != fc_result_match || ls == 0 {
+			return false
+		}
+		return C.FcLangSetHasLang(ls, lang.str) != 0
+	}
 } $else {
 	// Everywhere else there is no provider yet. A caller asking here gets no
 	// font rather than a build break, and the test logs a skip saying so.
 	pub fn system_font(family string) ?SystemFont {
 		return none
+	}
+
+	// Off Linux there is nothing to sort: no provider, so no ranked list, and
+	// the reason is printed where the answer would have been.
+	pub fn system_fonts_sorted(family string, limit int) ?[]SystemFont {
+		println('providers: fontconfig sort is linux-only; no provider on this platform')
+		return none
+	}
+
+	// Off Linux there is no match whose charset could be asked: the coverage is
+	// reported as absent, with the reason printed.
+	pub fn system_font_covers_char(family string, cp rune) bool {
+		println('providers: fontconfig charset coverage is linux-only; no provider on this platform')
+		return false
+	}
+
+	// Off Linux there is no match whose language set could be asked: the
+	// coverage is reported as absent, with the reason printed.
+	pub fn system_font_covers_lang(family string, lang string) bool {
+		println('providers: fontconfig language coverage is linux-only; no provider on this platform')
+		return false
 	}
 }
