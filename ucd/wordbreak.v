@@ -62,6 +62,47 @@ pub fn word_ep_ranges() []CodeRange {
 	return parse_ranges(word_ep_ranges_data)
 }
 
+// emoji_mod_ranges decodes the generated emoji-modifier table: the skin
+// tones GB10 holds a base to.
+pub fn emoji_mod_ranges() []CodeRange {
+	return parse_ranges(emoji_mod_ranges_data)
+}
+
+// emoji_base_ranges decodes the generated modifier-base table: the
+// characters a skin tone modifies.
+pub fn emoji_base_ranges() []CodeRange {
+	return parse_ranges(emoji_base_ranges_data)
+}
+
+// ebg_ranges decodes the generated EBG table (emoji with a text-default
+// presentation: Emoji minus Emoji_Presentation, derived once in
+// tools/gen_wordbreak.v). GB10 reads it beside E_Base and the pictographs.
+pub fn ebg_ranges() []CodeRange {
+	return parse_ranges(ebg_ranges_data)
+}
+
+// incb_ranges decodes the generated Indic_Conjunct_Break table, read from
+// the InCB rows of DerivedCoreProperties.txt. GB9c reads it: a Linker
+// holding through Extends to a Consonant never breaks.
+pub fn incb_ranges() []CodeRange {
+	return parse_ranges(incb_ranges_data)
+}
+
+// is_incb_linker reports whether cp links a conjunct (viramas and friends).
+pub fn is_incb_linker(ranges []CodeRange, cp rune) bool {
+	return lookup_range(ranges, u32(cp), 0) == 1
+}
+
+// is_incb_extend reports whether cp is transparent to the conjunct link.
+pub fn is_incb_extend(ranges []CodeRange, cp rune) bool {
+	return lookup_range(ranges, u32(cp), 0) == 2
+}
+
+// is_incb_consonant reports whether cp can close a conjunct link.
+pub fn is_incb_consonant(ranges []CodeRange, cp rune) bool {
+	return lookup_range(ranges, u32(cp), 0) == 3
+}
+
 // is_word_ep reports whether cp is an extended pictograph: the right-hand
 // side WB3c holds a ZWJ to.
 pub fn is_word_ep(ranges []CodeRange, cp rune) bool {

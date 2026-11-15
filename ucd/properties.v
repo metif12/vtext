@@ -379,6 +379,23 @@ pub fn quote_ranges() []CodeRange {
 	return parse_ranges(quote_ranges_data)
 }
 
+// white_space_ranges decodes the generated White_Space table, read from
+// PropList.txt by tools/gen_whitespace.v.
+//
+// Decoded by the caller the way quote_ranges is and for the same reason: 10
+// ranges, read by the log-attr pass alone, so paying one small decode per
+// call beats carrying the table on every Properties.
+pub fn white_space_ranges() []CodeRange {
+	return parse_ranges(whitespace_ranges_data)
+}
+
+// is_white_space reports whether cp carries the White_Space property: spaces
+// and separators, plus the controls TAB, LF, VT, FF and CR that Pango's
+// is_white counts.
+pub fn is_white_space(ranges []CodeRange, cp rune) bool {
+	return lookup_range(ranges, u32(cp), 0) == 1
+}
+
 // SaMark is which of the two resolutions LB1 gives a complex-context character.
 //
 // LineBreak.txt has one class, SA, for a Thai letter and for the sign that sits above it, and the

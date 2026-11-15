@@ -45,7 +45,7 @@ documented engine gaps; CJK line breaking is conformance-pinned.
 | SinglePos, pair kern, chaining-1, class-contextual | landed | `singlepos_apply_test`, context suites |
 | Script/language override | landed 7.2 | `script_lang_test` |
 | Common-base marks | landed 7.3 | `commonbase_test` |
-| Grapheme clusters; word/sentence tables | tables landed 8.2 | 1944/1944 + 512/512 floors |
+| Grapheme clusters; word/sentence tables | landed 8.2 (engines in `layout/`) | 1944/1944 + 512/512 + 853/853 floors |
 | Case mapping (incl. tr/az) | landed 8.3 | SpecialCasing conformance |
 | Line breaking (UAX #14) | landed, 19,346/19,346 | conformance floor |
 | Wrap: align/justify/kashida/hyphen-policy/modes/ellipsize/tabs | landed 7.4, 7.5, 8.4 | `align_test`, `hyphen_wrap_test`, `ellipsize_wrap_test` |
@@ -376,10 +376,10 @@ are done; the rest name their trigger or their assignee.
 | FreeType color | COLR/CBDT/sbix/SVG | → 7.7 | — |
 | FreeType var | instancing | 7.10 ✓ | — |
 | Pango layout | wrap modes, align, ellipsize, tabs | 7.4, 8.4 ✓ | — |
-| Pango log attrs | cursor/word/sentence runs | tables 8.2 ✓ | log-attr pass open |
+| Pango log attrs | cursor/word/sentence runs | landed 8.2 (`layout/logattr.v`) | — |
 | Pango markup | attribute markup | out (app-level, like CSS) | — |
 | fontconfig | match/sort/coverage | match + 8.8 ✓ | — |
-| ICU text | bidi/normalize/breaks/case | bidi, NFD, graphemes, 8.2 tables, 8.3 ✓ | log-attr pass open |
+| ICU text | bidi/normalize/breaks/case | bidi, NFD, graphemes, 8.2 tables + log attrs, 8.3 ✓ | — |
 | ICU rest | collation, numbers, dates | out (not the text layer) | — |
 | FriBidi | bidi + N0 brackets | yes, incl. bracket table | — |
 | Raqm | bidi+shaping glue | yes, own pipeline | — |
@@ -394,13 +394,26 @@ fontTools on in-tree-converted Amiri: 15 tables, 6710 glyphs, bytes
 identical except checkSumAdjustment and `modified`, whole file summing to
 0xB1B0AFBA. WOFF2 refused with its reason.
 
-**8.2 Words, sentences — tables landed 2026-11-15.** UAX #29 tables as
-generated data (`tools/gen_wordbreak.v` → `ucd_wordbreak.v`,
-`ucd_sentence.v`); committee floors 1944/1944 + 512/512 with break-fix
-controls that move the score (no WB4: 858; no RI ranges: 1937; no SB8a:
-498). UCD 18.0.0 inputs committed with licence-travels exceptions. **Open:
-the log-attr/caret pass** over laid-out lines (cursor offsets, word
-boundaries, deletion spans) — engines live test-local in the meantime.
+**8.2 Words, sentences, graphemes, log attrs — landed 2026-11-15/16.**
+UAX #29 tables as generated data (`tools/gen_wordbreak.v` →
+`ucd_wordbreak.v`, `ucd_sentence.v`); committee floors 1944/1944 + 512/512
+with break-fix controls that move the score (no WB4: 858; no RI ranges:
+1937; no SB8a: 498). UCD 18.0.0 inputs committed with licence-travels
+exceptions. The engines then moved to production (`layout/textbreaks.v` —
+the floors pin the same functions the library calls) and the slice closed
+with the grapheme engine plus the log-attr pass: `layout/graphemes.v`
+implements GB1–GB13 including GB9c (InCB Linker Extend* × Consonant, read
+off the InCB rows of the committed 1.16 MB DerivedCoreProperties.txt —
+there is no InCB file of its own) and GB10/GB11 (emoji tables extended in
+the same generator: EBG derived as Emoji minus Presentation, plus
+E_Modifier and E_Base); `GraphemeBreakTest.txt` committed with exception
+and run as an 853/853 floor with a GB9-neutered break-fix. `layout/logattr.v`
+answers PangoLogAttr per boundary (line/mandatory/char/cursor/white/word
+start/word end/sentence/deletion span) from those engines plus
+`white_space_ranges` (PropList.txt White_Space via `tools/gen_whitespace.v`,
+committed with exception); `logattr_test.v` pins word runs, cluster
+deletion, whitespace flags, wrap-engine agreement and the double-space
+control (naive every-break-starts-a-word fails it).
 
 **8.3 Case mapping — landed 2026-11-15.** Upper/lower/title through
 generated tables plus `SpecialCasing.txt` (unconditional over simple, 16
@@ -549,7 +562,7 @@ owns the queue.
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
 | 7.11-2H | Rival A/B harness | open |
-| 8.2 | Log-attr/caret pass over laid-out lines | open (engines test-local) |
+| 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | open (no ABI break) |
 | 8.6 | Stroking | open |
 | 8.7 | Face/subset MATH wiring; top-accent fallback | open |

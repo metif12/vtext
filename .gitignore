@@ -82,9 +82,24 @@ ucd/*
 
 # The generated word and sentence tables and their lookup helpers are committed
 # the way the other ucd_*.v files are, so a build never needs the UCD inputs.
+# The emoji sets GB10 reads (modifiers, EBG) come from the same emoji source.
 !ucd/ucd_wordbreak.v
 !ucd/ucd_sentence.v
 !ucd/wordbreak.v
+
+# GraphemeBreakTest.txt is the committee's own grapheme conformance file,
+# committed the way WordBreakTest.txt is, and the licence travels with it
+# the way it does with the other committed UCD files above.
+!ucd/GraphemeBreakTest.txt
+
+# PropList.txt is the UCD White_Space source tools/gen_whitespace.v reads for
+# the log-attr pass the way WordBreakProperty.txt feeds the word tables: the
+# committed table in ucd_whitespace.v cannot be regenerated without it.
+# DerivedCoreProperties.txt is the UCD Indic_Conjunct_Break source GB9c reads:
+# InCB rows carry the conjunct Linker/Extend/Consonant roles.
+!ucd/PropList.txt
+!ucd/ucd_whitespace.v
+!ucd/DerivedCoreProperties.txt
 
 # IndicSyllabicCategory.txt and IndicPositionalCategory.txt are the UCD Indic
 # generator inputs the way WordBreakProperty.txt is above: the committed table

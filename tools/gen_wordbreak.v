@@ -216,6 +216,56 @@ fn coalesce(ranges []ParsedRange, reg &Registry) []CodeRange {
 	return out
 }
 
+// subtract_ranges answers base minus cut as a sorted range list. Both inputs
+// are UCD range soup (grouped by property, overlapping freely); the output
+// is sorted by codepoint and non-overlapping, ready for coalesce. Only
+// bounds are compared — values never are — so this is set difference on
+// codepoint sets, which is what EBG needs.
+fn subtract_ranges(base []ParsedRange, cut []ParsedRange) []ParsedRange {
+	mut bs := base.clone()
+	bs.sort_with_compare(fn (a &ParsedRange, b &ParsedRange) int {
+		if a.lo < b.lo {
+			return -1
+		}
+		if a.lo > b.lo {
+			return 1
+		}
+		return 0
+	})
+	mut cs := cut.clone()
+	cs.sort_with_compare(fn (a &ParsedRange, b &ParsedRange) int {
+		if a.lo < b.lo {
+			return -1
+		}
+		if a.lo > b.lo {
+			return 1
+		}
+		return 0
+	})
+	mut out := []ParsedRange{}
+	mut j := 0
+	for b in bs {
+		mut lo := b.lo
+		for j < cs.len && cs[j].hi < lo {
+			j++
+		}
+		mut k := j
+		for k < cs.len && cs[k].lo <= b.hi {
+			if cs[k].lo > lo {
+				out << ParsedRange{ lo: lo, hi: cs[k].lo - 1, value: b.value }
+			}
+			if cs[k].hi + 1 > lo {
+				lo = cs[k].hi + 1
+			}
+			k++
+		}
+		if lo <= b.hi {
+			out << ParsedRange{ lo: lo, hi: b.hi, value: b.value }
+		}
+	}
+	return out
+}
+
 // ------------------------------------------------------------------- emission
 
 // emit_header writes the banner every generated file starts with.
@@ -305,6 +355,103 @@ fn main() {
 		er)
 	emit_ranges(mut t, 'word_ep_ranges', 'whether a codepoint is an extended pictograph',
 		ep_ranges)
+
+	// GB10 needs two more emoji sets from the same file: E_Modifier (a
+	// combining skin tone holds to what precedes it) and EBG, the emoji that
+	// take a modifier without being bases or pictographs themselves. EBG is
+	// derived, not listed: Emoji ranges minus Emoji_Presentation ranges, per
+	// UAX #29 (EBG = Emoji AND NOT Emoji_Presentation). The derivation runs
+	// once here; the committed artifact is data like every other table.
+	mut emoji_all := []ParsedRange{}
+	mut emoji_pres := []ParsedRange{}
+	mut emoji_mod := []ParsedRange{}
+	mut emoji_base := []ParsedRange{}
+	for r in ucd_ranges(os.join_path(ucd_dir, 'emoji-data-18.0.0.txt'), 1) {
+		if r.value == 'Emoji' {
+			emoji_all << r
+		} else if r.value == 'Emoji_Presentation' {
+			emoji_pres << r
+		} else if r.value == 'Emoji_Modifier' {
+			emoji_mod << ParsedRange{ lo: r.lo, hi: r.hi, value: 'emoji_mod' }
+		} else if r.value == 'Emoji_Modifier_Base' {
+			emoji_base << ParsedRange{ lo: r.lo, hi: r.hi, value: 'emoji_base' }
+		}
+	}
+	ebg_parts := subtract_ranges(emoji_all, emoji_pres)
+	mut ebg := []ParsedRange{}
+	for r in ebg_parts {
+		ebg << ParsedRange{ lo: r.lo, hi: r.hi, value: 'ebg' }
+	}
+	mut mr := new_registry()
+	mr.intern('_')
+	mr.intern('emoji_mod')
+	mod_ranges := coalesce(emoji_mod, mr)
+	emit_values(mut t, 'emoji_mod_names', 'whether a codepoint is an emoji modifier',
+		mr)
+	emit_ranges(mut t, 'emoji_mod_ranges', 'whether a codepoint is an emoji modifier',
+		mod_ranges)
+	mut ar := new_registry()
+	ar.intern('_')
+	ar.intern('emoji_base')
+	base_ranges := coalesce(emoji_base, ar)
+	emit_values(mut t, 'emoji_base_names', 'whether a codepoint is an emoji modifier base',
+		ar)
+	emit_ranges(mut t, 'emoji_base_ranges', 'whether a codepoint is an emoji modifier base',
+		base_ranges)
+	mut br := new_registry()
+	br.intern('_')
+	br.intern('ebg')
+	ebg_ranges := coalesce(ebg, br)
+	emit_values(mut t, 'ebg_names', 'whether a codepoint is emoji with a text-default presentation',
+		br)
+	emit_ranges(mut t, 'ebg_ranges', 'whether a codepoint is emoji with a text-default presentation',
+		ebg_ranges)
+
+	// GB9c reads Indic_Conjunct_Break: a Linker holding through Extends to a
+	// Consonant never breaks. The InCB rows live in DerivedCoreProperties.txt
+	// (format `CP ; InCB; Value`), not in an InCB file of their own — the UCD
+	// root carries no such file, and the property aliases confirm the three
+	// values. Ordinal 0 is the @missing default the file states (None), so
+	// an absent range reads as no conjunct role.
+	mut incb_all := []ParsedRange{}
+	incb_src := os.read_file(os.join_path(ucd_dir, 'DerivedCoreProperties.txt')) or {
+		panic('cannot read DerivedCoreProperties.txt: ${err.msg()}. Run tools/fetch_ucd.v first.')
+	}
+	for line in incb_src.split_into_lines() {
+		cut := line.index('#') or { line.len }
+		body := line[..cut].trim_space()
+		if body == '' {
+			continue
+		}
+		fields := body.split(';')
+		if fields.len != 3 || fields[1].trim_space() != 'InCB' {
+			continue
+		}
+		codes := fields[0].split('..')
+		lo_cp := parse_hex(codes[0])
+		hi_cp := if codes.len > 1 {
+			parse_hex(codes[1])
+		} else {
+			lo_cp
+		}
+		incb_all << ParsedRange{ lo: lo_cp, hi: hi_cp, value: fields[2].trim_space() }
+	}
+	if incb_all.len == 0 {
+		panic('DerivedCoreProperties.txt held no InCB rows')
+	}
+	mut ir := new_registry()
+	ir.intern('_')
+	ir.intern('Linker')
+	ir.intern('Extend')
+	ir.intern('Consonant')
+	incb_ranges := coalesce(incb_all, ir)
+	if ir.values.len != 4 {
+		panic('DerivedCoreProperties.txt held an InCB value outside _, Linker, Extend, Consonant: ${ir.values}')
+	}
+	emit_values(mut t, 'incb_names', 'the Indic_Conjunct_Break value of every codepoint',
+		ir)
+	emit_ranges(mut t, 'incb_ranges', 'the Indic_Conjunct_Break value of every codepoint',
+		incb_ranges)
 	emit('ucd_wordbreak.v', mut t)
 
 	// UAX #29 sentence break property.
