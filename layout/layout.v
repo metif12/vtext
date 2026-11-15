@@ -250,7 +250,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		}
 		paragraph_level: bidi.paragraph_level
 	}
-	position_marks(mut line, em_px, ctx, options.vertical)
+	position_marks(mut line, em_px, ctx, options.vertical, cps)
 	if options.vertical {
 		measure_vertical_line(mut line, em_px, options)
 	} else {
@@ -760,7 +760,7 @@ pub fn larger(a f64, b f64) f64 {
 // unaffected either way.
 // A `mut` value receiver for the reason given on measure_line: `mut line &Line` as a
 // parameter is a pair V 0.5.2 will not accept at a `position_marks(mut line, ...)` call.
-pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical bool) {
+pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical bool, cps []rune) {
 	// Two passes, and the order matters. The line is in visual order, and in a right-to-left
 	// line a mark comes before the letter it belongs to, so collecting the letters and then
 	// placing the marks in one pass would find the mark's base already behind it. Collecting
@@ -814,7 +814,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 			cand := line.glyphs[base_index]
 			if bf := cand.font {
 				if bf == f {
-					script = mark_script(ctx.properties, f, cand)
+					script = mark_script(ctx.properties, f, cand, cps)
 				}
 			}
 		}
@@ -927,12 +927,39 @@ pub fn shaped_mark_offset(f &shape.Font, mark_gid u16, base shape.Glyph, script 
 // mark_script resolves the script whose mark rules place this mark: the script of the
 // letter it belongs to, read off the base glyph. A combining mark on its own is
 // inherited script and answers nothing; the base letter's codepoint is what the font
-// wrote its anchors against. An unresolvable base keeps 'arab', which is what every
-// mark used before scripts were asked, so nothing that placed before moves.
-pub fn mark_script(props &ucd.Properties, f &shape.Font, base shape.Glyph) string {
+// wrote its anchors against.
+//
+// A base with no script of its own — Common, Inherited or Unknown, the dotted circle
+// a dakuten sits on — resolves to the neighbouring strong script instead of falling
+// back to arab: the mark sits among that script's letters, and the font wrote the
+// anchors it needs under that script. The neighbours are read in logical order,
+// preceding first, because a mark follows its base. With no strong character on
+// either side the answer keeps arab, which is what every mark used before scripts
+// were asked, so nothing that placed before moves.
+pub fn mark_script(props &ucd.Properties, f &shape.Font, base shape.Glyph, cps []rune) string {
 	gid := if base.base_gid != 0 { base.base_gid } else { base.gid }
 	if cp := f.codepoint_for(gid) {
 		tag := props.script_tag_of(cp)
+		if tag != 'Zzzz' && tag != 'Zinh' && tag != 'Zyyy' {
+			return tag
+		}
+	}
+	return neighbour_script(props, cps, base.cluster)
+}
+
+// neighbour_script is the strong script around an input position: the nearest
+// character in logical order whose script is its own, preceding first, then
+// following. A position with no strong neighbour keeps arab, the historical
+// default, rather than inventing one.
+pub fn neighbour_script(props &ucd.Properties, cps []rune, at int) string {
+	for i := at - 1; i >= 0; i-- {
+		tag := props.script_tag_of(cps[i])
+		if tag != 'Zzzz' && tag != 'Zinh' && tag != 'Zyyy' {
+			return tag
+		}
+	}
+	for i := at + 1; i < cps.len; i++ {
+		tag := props.script_tag_of(cps[i])
 		if tag != 'Zzzz' && tag != 'Zinh' && tag != 'Zyyy' {
 			return tag
 		}

@@ -544,7 +544,10 @@ offset := font.mark_offset(mark_gid, base_gid, true)   // over another mark
 ```
 
 The offsets are in design units with y upwards, as the font's own coordinates run. A font that has
-no rule for the pair returns `none`, and the caller leaves the mark at the pen.
+no rule for the pair returns `none`, and the caller leaves the mark at the pen. The script the
+rules are read under is the base letter's; a base with no script of its own — the dotted
+circle a dakuten sits on — resolves to the neighbouring strong script, with arab as the last
+resort when no strong character is on either side.
 
 ### Asking a font what it has
 

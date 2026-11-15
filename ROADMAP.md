@@ -2043,10 +2043,17 @@ while two code cases (`code-arrow`, `code-neq`) join the corpus to pin the
 face where the default matters. Script and language override remain the
 second half.
 
-**7.3 Common-base marks.** The 2g gap, closed: a Zyyy/Zinh base resolves to
-the neighbouring strong script instead of falling back to `arab`, measured
-against HarfBuzz on ◌゙ and its siblings. Horizontal and vertical share the
-rule.
+**7.3 Common-base marks.** Landed 2026-11-15: a Zyyy/Zinh base resolves to
+the neighbouring strong script instead of falling back to arab — read in
+logical order, preceding first, with arab kept as the last resort when no
+strong character is on either side. Pinned by `commonbase_test.v` on MS
+Gothic: dakuten and handakuten on a dotted circle in Latin text land on the
+latn anchor (mark (0, 0) on base (-68, 0), the point HarfBuzz reports as
+-766 at its 1000-unit scale), the hiragana base keeps its kana answer, and a
+tatweel with no strong neighbour keeps arab. Break-fix verified: the old
+fallback leaves the dotted-circle marks at the pen. Horizontal and vertical
+share the rule — mark_script is mode-independent, and the y flip stays
+where it was.
 
 **7.4 Alignment, justification, kashida.** Opt-in on `LayoutOptions`:
 flush, center, and justified lines with kashida Kashida where the font
