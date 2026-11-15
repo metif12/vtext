@@ -30,7 +30,7 @@ comes with them.
 | GPOS: chaining-context positioning, format 3 | read and applied |
 | GPOS: cursive attachment, format 1 and 2 | read and verified glyph-for-glyph against fontTools; the attachment is not written, and no font here both carries a rule and shapes letters the way a rule describes |
 | Line breaking (UAX #14) | done, and measured: **19,346 of 19,346 (100%)** against the Unicode test, with a floor asserted on every run |
-| Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment absent by decision |
+| Line options beyond a feature list | done: line height, letter spacing, word spacing. Alignment/justification/kashida are Phase 7.4; hyphenation dictionaries are Phase 7.5 |
 | Rasterized glyph reuse | absent: the cache is the caller's, and the atlas was never real |
 | Glyph box measurement | done: the layout pass asks for the box, not the pixels |
 | Vertical extent of a line | done: was twice the ink, found by `tools/metrics` |
@@ -740,7 +740,8 @@ is the cursive attachment's, and that one was withdrawn rather than shipped.
 
 The variation half needs no code, and that is the assessment rather than a deferral. The 9,432
 VariationIndex records resolve through the item variation store against the instance's coordinates,
-and this engine shapes the default instance only — variable instancing is explicitly not a goal —
+and this engine shapes the default instance only — variable instancing is Phase
+7.10, not a gap in this phase —
 where every region scalar is zero and every delta scales to zero. Skipping them is correct at the
 default instance rather than a gap, and the stepping that gets past them is what `pair_value_size`
 counts and `gpos_valuesize_test.v` pins.
@@ -1977,12 +1978,98 @@ dictionaries are a `BreakPolicy` with generated tables rather than a
 refusal, and system font discovery is a provider rather than a gap. What did
 not change: the engine ends at a positioned glyph with a coverage bitmap,
 the cache stays with the caller, and there are still no HarfBuzz bindings,
-no ports, no font authoring, and no variable instancing.
+no ports and no font authoring. Variable instancing moved to Phase 7.10.
 
 Acceptance per part, not per release: each part lands with its own
 conformance floor and its own differential baseline, green on all three
 platforms, or it does not land. The ucd carve-out above is the template:
 full suite green, fmt gate green, every consumer green, then commit.
+
+## Phase 7: the full replacement, on every platform
+
+A caller drops HarfBuzz, FreeType, Pango and fontconfig and gets the same
+answers or better, faster, on Windows, Linux and macOS. "Replacement" stays
+per part with its own baseline — a part with no baseline is a part with no
+claim — and every slice below lands green on all three platforms or does not
+land. "Faster" is claimed only where the same box measured it: the rival A/B
+harness (uharfbuzz shaping, Pillow/FreeType rasterization, same fonts, same
+text) reports both sides, and an optimization lands with a before/after on
+that harness or not at all, the rule phase 5 already enforces. "Every
+platform" is the three CI runners, which also cover both arches (macOS runs
+arm64, Linux and Windows run amd64); the byte reader is already endian-clean
+by construction (byte-wise big-endian reads, `font/reader.v`), so no porting
+pass is owed. WASM is a spike, not a commitment: the backend exists but no
+slice depends on it until one is measured.
+
+Buckets, in the order they unblock each other:
+
+**7.1 GPOS positioning wired into layout.** The readers are built and the
+layout pass never applies one: pair kerns, single adjustments, and
+entry/exit cursive attachment (Noto Nastaliq is the fixture — cursive is
+what makes it Nastaliq). The fold target is direction-dependent per the
+phase-5 note, pairs are same-run and same-font with marks left to the
+lookups' own flags, and the width lines that move go stale deliberately
+rather than being edited. Pinned the way every positioning slice is: revert
+controls plus the latin-kern baseline entries converging to zero.
+
+**7.2 Script as a usable control (`ShapeOptions`).** Detection stays the
+default; the caller can now override script, language, direction, and
+features per tag (including `vert`/`vkrn` on and off) through one options
+struct on the proven `LayoutOptions` pattern, threaded through layout and
+the C API. Pinned by shaping the same text under two scripts beside
+HarfBuzz with the same overrides.
+
+**7.3 Common-base marks.** The 2g gap, closed: a Zyyy/Zinh base resolves to
+the neighbouring strong script instead of falling back to `arab`, measured
+against HarfBuzz on ◌゙ and its siblings. Horizontal and vertical share the
+rule.
+
+**7.4 Alignment, justification, kashida.** Opt-in on `LayoutOptions`:
+flush, center, and justified lines with kashida Kashida where the font
+carries it, spaces elsewhere. Pango's wrap widths stay the independent
+reader wherever the stack exists.
+
+**7.5 Hyphenation as a `BreakPolicy`.** Liang's algorithm with a dictionary
+loader; the shipped dictionary is embedded US-English patterns as a
+generated table (source and licence recorded the way UCD sources are), and
+every further language is data, not code. Pinned by a word list with
+HarfBuzz-independent expected breaks, not by the UAX #14 floor.
+
+**7.6 Indic and Khmer beside HarfBuzz.** Committed OFL fonts (Nirmala and
+Leelaw measure on this box; Khmer arrives over the network, which works)
+with corpus cases at 0 new and 0 stale — the acceptance the shape slice
+named and never collected.
+
+**7.7 Color and hinting behind the box-and-fill contract.** COLR/CPAL,
+CBDT/EBDT and sbix as engines behind `box_only`/`render_into`, SVG
+refusing with its reason; grid-fit autohinting verified against FreeType's
+own autohinter per glyph. A full bytecode interpreter lands only if a
+corpus font needs one — assessed with a measurement first, not assumed.
+
+**7.8 Providers: Core Text and DirectWrite.** Each pinned on its own OS
+and answering none elsewhere, the fontconfig pattern exactly. No host
+carries another host's leg.
+
+**7.9 CFF and CFF2, with a real font.** The deferral condition is now
+satisfiable: fetch an OFL CFF font, read charstrings against its bytes,
+subset and rasterize through the existing curve path. Until that font is
+committed the subsetter keeps refusing, with the reason in the message.
+
+**7.10 Variable instancing.** fvar/gvar application at chosen coordinates —
+FreeType's `FT_Set_Var_Design_Coordinates` parity, pinned beside it. This
+moves instancing from not-goals to goals; reading the store was always in.
+
+**7.11 The reference cache and the rival number.** An opt-in cache helper
+keyed on font id, gid, size and subpixel offset — the boundary holds, the
+caller still owns the cache, but nobody hand-rolls the only honest key
+twice. And the A/B harness both sides run on: README numbers become
+vtext-vs-rival on the same box, re-measured per release.
+
+**Platform ratchet.** The suite passes with no host-skips on any of the
+three runners: every OS-specific leg (fontconfig, Core Text, DirectWrite,
+Windows-only faces) is covered on its own OS and answers none elsewhere.
+A skip that prints why stays a skip; a gap that prints nothing is a
+failure.
 
 ## Explicitly not planned
 
@@ -1993,8 +2080,11 @@ Worth writing down so that these do not come back as questions.
   and no further.
 - HarfBuzz bindings, or a port of anything. The engine is written from the
   specifications.
-- Variable font instancing. Reading the variation store is in phase 1 because
-  the hints depend on it; generating new instances is not.
+- Font authoring. vtext reads fonts, subsets them, and reports on them; it
+  does not build them.
+- Variable font instancing was here and is Phase 7.10 now: reading the store
+  was always in, and generating instances at chosen coordinates has a caller
+  and a baseline (FreeType itself).
 
 The last of those is now the load-bearing boundary. There is a caller: a
 from-scratch HTML and CSS engine (`../vweb`) that uses this library as its only
