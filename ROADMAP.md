@@ -2371,9 +2371,12 @@ Acceptance: the CJK conformance delta at zero and 0 new/0 stale.
 **9.2 Southeast Asian clusters.** Thai, Lao, Khmer and Myanmar committed
 from google/fonts under OFL (the wave-2 pattern), shaped beside HarfBuzz:
 cluster segmentation for breaks and carets, mark attachment order, one
-pin per script. Tibetan stacks are the harder sibling and are listed,
-not hidden: they arrive as their own slice with a stacking font, or this
-slice says why they cannot.
+pin per script. Corpus half landed 2026-11-15 (wave 3: NotoSansThai/Lao/
+Khmer/Myanmar variable faces with HB-measured pins in `seasian_test.v`;
+engine gaps documented in-file — ccc=0 spacing marks draw nothing, no
+Khmer coeng fusion or Myanmar kinzi/stacks yet). Tibetan stacks are the
+harder sibling and are listed, not hidden: they arrive as their own slice
+with a stacking font, or this slice says why they cannot.
 
 **9.3 The Indic machine.** Slices, because one commit cannot hold it:
 UCD Indic tables generated like the rest; a committed Devanagari face;
