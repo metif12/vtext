@@ -146,6 +146,19 @@ pub mut:
 	// line. Zero takes the line's own width, which makes every mode a no-op.
 	// Wrapped lines resolve against the wrap width instead and ignore this.
 	align_width f64
+	// wrap_mode is where a wrapped line may end: word breaks only at the
+	// policy's opportunities (the default, and what every wrap before this
+	// control did), char between any two characters, word_char at word
+	// breaks with overlong words split between characters. Single lines
+	// ignore it: nothing wraps them.
+	wrap_mode WrapMode
+	// tab_stops are the visual x positions a tab advances to, in pixels.
+	// A tab takes the pen to the first stop past it; past the
+	// last stop the last interval repeats, and with fewer than two stops the
+	// tab keeps its font advance. Empty (the default) disables the whole
+	// mechanism: every tab keeps its font advance exactly as before. Only
+	// horizontal lines expand tabs; vertical columns ignore this.
+	tab_stops []f64
 }
 
 // layout_paragraph runs normalization, the bidirectional algorithm and Arabic joining over
@@ -292,6 +305,12 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		}
 		paragraph_level: bidi.paragraph_level
 	}
+	// Tabs expand after placing and before marks anchor: the pen the stops
+	// are read against is the placed one, and a mark on a letter after a tab
+	// anchors from the letter's moved position rather than its unmoved one.
+	if !options.vertical && options.tab_stops.len > 0 {
+		expand_tabs(mut line, cps, options.tab_stops)
+	}
 	position_marks(mut line, em_px, ctx, options.vertical, cps, options.language)
 	if options.vertical {
 		measure_vertical_line(mut line, em_px, options)
@@ -344,6 +363,74 @@ pub fn is_space_at(props &ucd.Properties, cps []rune, i int) bool {
 		return false
 	}
 	return props.line_break_of(cps[i]) == .sp
+}
+
+// expand_tabs walks a placed line in draw order and stretches each tab so the
+// pen lands on a tab stop.
+//
+// A stop is a visual x, so the walk is in the order the glyphs draw in with
+// the pen held as an x: the tab's own left edge after every earlier tab has
+// moved it. The target is the least stop past the pen; past the last stop the
+// last interval repeats, and with fewer than two stops there is no interval
+// to repeat and the tab keeps its font advance. A mark rides its base: it
+// takes the shift and pays nothing, because it has no advance of its own.
+//
+// The tab keeps its font glyph — this moves ink, it does not unmap .notdef —
+// and word spacing still passes tabs by, because a tab is not a space under
+// is_space_at. Vertical lines never reach here: their pen runs down, where a
+// horizontal stop names nothing.
+fn expand_tabs(mut line Line, cps []rune, stops []f64) {
+	if stops.len == 0 || line.glyphs.len == 0 {
+		return
+	}
+	mut shift := f64(0)
+	for mut g in line.glyphs {
+		g.x += shift
+		if g.is_mark {
+			continue
+		}
+		if g.cluster < 0 || g.cluster >= cps.len {
+			continue
+		}
+		if cps[g.cluster] != rune(0x0009) {
+			continue
+		}
+		pen := g.x
+		// Order-independent: the least stop past the pen, whatever order the
+		// caller listed them in.
+		mut best := f64(-1)
+		mut mx1 := f64(-1)
+		mut mx2 := f64(-1)
+		for s in stops {
+			if s > pen && (best < 0 || s < best) {
+				best = s
+			}
+			if s > mx1 {
+				mx2 = mx1
+				mx1 = s
+			} else if s > mx2 {
+				mx2 = s
+			}
+		}
+		mut target := best
+		if target < 0 {
+			if mx2 < 0 {
+				continue
+			}
+			gap := mx1 - mx2
+			if gap <= 0 {
+				continue
+			}
+			mut k := int((pen - mx1) / gap) + 1
+			if k < 1 {
+				k = 1
+			}
+			target = mx1 + f64(k) * gap
+		}
+		old_tab_adv := g.advance
+		g.advance = target - pen
+		shift += g.advance - old_tab_adv
+	}
 }
 
 // kashida_tatweel is the filler U+0640 ARABIC TATWEEL, the stretch Arabic
