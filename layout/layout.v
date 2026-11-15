@@ -543,12 +543,21 @@ pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin
 			// have no advance box to center, and centering one would move the
 			// mark the anchor math then measures from.
 			g.x = 0
+			g.y = y
 			if !g.is_mark {
 				if f := g.font {
 					g.x = (width - f.glyph_advance(g.gid, em_px)) / 2.0
+					// The vertical origin hangs the glyph below the pen, the
+					// way the horizontal origin sits left of the ink: HarfBuzz
+					// reports the same negative y offset for every glyph of a
+					// VORG-less face, equal to the vhea ascender. A font with
+					// no vertical metrics leaves y at the pen, the way it
+					// keeps the horizontal advance — the fallback is unshifted.
+					if f.has_vertical_metrics() {
+						g.y = y - f.vertical_origin_y(g.gid, em_px)
+					}
 				}
 			}
-			g.y = y
 			out << g
 			y += g.advance
 		}

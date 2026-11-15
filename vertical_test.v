@@ -214,7 +214,8 @@ fn test_vert_substitutes_in_vertical_mode() {
 }
 
 // A vertical line is one column: advance boxes centered in it, y accumulating
-// downward by vertical advances, width the column width, height its length.
+// downward by vertical advances, hung below the pen by the vertical origin,
+// width the column width, height its length.
 // Measured at 32 px against HarfBuzz TTB on the same file, which reports the
 // same gids, 256-unit steps and a 768-unit column for this text; the half-width
 // A is what proves both the advance swap, stepping the full 256 vertically
@@ -239,11 +240,11 @@ fn test_vertical_line_places_downward() {
 	for g in vline.glyphs {
 		assert g.advance == 32.0, 'full vertical step'
 	}
-	assert vline.glyphs[0].y == 0
-	assert vline.glyphs[1].y == 32.0
-	assert vline.glyphs[2].y == 64.0
+	assert vline.glyphs[0].y == -27.5, 'hung below the pen by the vhea ascender'
+	assert vline.glyphs[1].y == 4.5
+	assert vline.glyphs[2].y == 36.5
 	assert vline.width == 32.0, 'column fits the full em'
-	assert vline.height == 96.0, 'three full steps'
+	assert vline.height == 68.5, 'shifted column extent'
 	assert vline.line_height == 32.0, 'stacking step is the column width'
 	assert vline.ascent == 0, 'no horizontal ink metrics on a vertical line'
 	assert vline.descent == 0
@@ -363,7 +364,7 @@ fn test_vertical_vkrn_tightens() {
 	assert vline.glyphs[1].gid == 7931, 'small i draws its vertical form'
 	assert vline.glyphs[0].advance == 30.078125, '2048 minus 123 at 32 px'
 	assert vline.glyphs[1].advance == 32.0, 'unkerned step'
-	assert vline.glyphs[0].y == 0
-	assert vline.glyphs[1].y == 30.078125, 'second glyph starts where the kerned step ends'
-	assert vline.height == 62.078125, 'tightened column'
+	assert vline.glyphs[0].y == -28.15625, 'hung below the pen by the vhea ascender'
+	assert vline.glyphs[1].y == 1.921875, 'second glyph starts where the kerned step ends'
+	assert vline.height == 33.921875, 'shifted tightened column'
 }

@@ -957,6 +957,15 @@ later mark slice's to move. Pinned by `vertical_test.v` on MS Gothic with
 revert controls neutering the centering and centering on the vertical advance
 instead, plus the smoke test's Amiri fallback column, which now checks the
 centering against its own width rather than a shared zero.
+Slice 2f landed 2026-11-15: the vertical origin hangs the glyphs — each y is
+the pen minus the glyph's vertical origin, so MS Gothic's 、一A starts at -27.5
+px and Yu Gothic's kerned pair at -28.16 px, the same negative y offsets
+HarfBuzz reports for both faces (vhea ascender 220 and 1802, no VORG either).
+The shift is gated on vertical metrics the way the advance swap is: a fallback
+face like Amiri stays unshifted, which the smoke test's column pins. Wrapped
+columns are unaffected — slicing rebases to the kept glyph's y, so the shift
+cancels out and heights stay pen travel. Pinned by `vertical_test.v` with
+revert controls neutering the shift and flipping its sign.
 
 ## Phase 2: reach
 
