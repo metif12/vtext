@@ -362,8 +362,8 @@ are done; the rest name their trigger or their assignee.
 | HarfBuzz core | GSUB/GPOS, features, variations | yes (7.1, 7.2, 7.10) | MATH → 8.7 ✓ |
 | hb-subset | subsetting | glyf yes | CFF → 7.9 (refused, see 7.9) |
 | FreeType load | sfnt/TTC | yes | WOFF → 8.1 ✓ (WOFF2 triggered) |
-| FreeType raster | unhinted/hinted/auto/LCD | unhinted yes; hint → 7.7 | LCD → 8.5 (in progress) |
-| FreeType API | embolden/oblique, stroker | no | 8.5 (in progress), 8.6 open |
+| FreeType raster | unhinted/hinted/auto/LCD | unhinted yes; hint → 7.7 | LCD → 8.5 ✓ (bitmap-level; FIR follow-up) |
+| FreeType API | embolden/oblique, stroker | bitmap-level 8.5 ✓ (outline-level follow-up) | 8.6 open |
 | FreeType color | COLR/CBDT/sbix/SVG | → 7.7 | — |
 | FreeType var | instancing | 7.10 ✓ | — |
 | Pango layout | wrap modes, align, ellipsize, tabs | 7.4, 8.4 ✓ | — |
@@ -410,9 +410,17 @@ Pinned by `ellipsize_wrap_test.v` with fontTools-measured pins and two
 break-fix controls (char arm, ellipsis append). Follow-up:
 C-side spelling for the two new fields (`COptions` untouched, no ABI break).
 
-**8.5 Synthetic styles and LCD — in progress.** Embolden/oblique at glyph
-level (`FT_GlyphSlot_*` parity, pixel-compared); subpixel LCD as an opt-in
-raster option, default off.
+**8.5 Synthetic styles and LCD — landed 2026-11-15 at bitmap level.**
+`raster/synth.v`: embolden (max-filter dilation, FT `em/24` default) then
+oblique (baseline shear, slant 0.2126 from outline regression), zero-value
+identity; `raster/lcd.v`: triple-width `LcdBitmap`, G-center ±⅓ resample,
+opt-in `RenderOptions` (default off = byte-identical output). Pinned by
+`synth_test.v` against freetype-py: embolden boxes match FT exactly in
+height and exactly/+1 in width; oblique heights exact, widths within +2,
+sums within 1%. Honest divergence, pinned not hidden: bitmap dilation
+roughly doubles the ink (2.0–2.4×) where outline-level FT lifts 1.55–1.75×,
+and LCD lacks FT's one-column FIR spill. Follow-ups: outline-level
+embolden, true FIR LCD (needs ⅓-px shifts; the API quantizes to quarters).
 
 **8.6 Stroking — open.** `FT_Stroker` parity (joins, caps, miter limits)
 flattened through the curve path, pixel-compared. Effects are the caller's;
@@ -528,7 +536,7 @@ owns the queue.
 | Slice | Item | State |
 | --- | --- | --- |
 | 7.6 / 9.3 | Indic machine + Devanagari acceptance | in progress |
-| 8.5 | Synthetic styles + LCD | in progress |
+| 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
 | 7.11-2H | Rival A/B harness | open |

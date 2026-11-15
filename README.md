@@ -124,7 +124,7 @@ base on its own still draws as text; only the pair draws as emoji.
 Each item names the slice that owns it in `ROADMAP.md`.
 
 - Indic and Khmer shaping (7.6, with the Phase 9.3 machine behind it — in progress).
-- Hinting and color (7.7), synthetic styles and LCD (8.5 — in progress), stroking (8.6); MATH constants
+- Hinting and color (7.7), synthetic styles and LCD landed at bitmap level (8.5; outline-level embolden and FIR LCD stay follow-ups), stroking (8.6); MATH constants
   and variants read beside HarfBuzz (8.7 landed), Face wiring stays follow-up.
 - Variable instancing at chosen coordinates landed (7.10), FreeType parity.
 - Core Text and DirectWrite providers (7.8).
