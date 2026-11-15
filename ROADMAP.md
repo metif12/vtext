@@ -2349,7 +2349,7 @@ does not exist.
 | Latin, Cyrillic, Greek | full | kern/calt suites, `latin-*` difftest cases, wave-2 fold pins |
 | Arabic, Persian, Urdu | full | joining/GSUB/GPOS suites, `arabic-*`/`persian-*`/`nastaliq-*` cases, `script_lang_test` locl pins |
 | Hebrew | pinned | `extra_fonts_test`: coverage, niqqud flagged with zero advance, shaping + raster smoke. Mark placement is not HB-pinned and Hebrew is not a difftest case |
-| CJK Han | smoke | `extra_fonts_test` on NotoSansSC: 2-glyph line, rasterise. Breaking is partial (EA width is read; ID-class rules are not complete) |
+| CJK Han | smoke + breaks pinned | `extra_fonts_test` on NotoSansSC: 2-glyph line, rasterise. ID/CJ/NS/OP/CL breaking pinned 0-fail in `cjkbreak_test.v` with HB wrap pins on the same face |
 | Hangul (precomposed) | untested | modern syllables need cmap only, but no font and no test prove it |
 | Kana | partial | vertical kana rules in `vertical_test`; horizontal kana has no dedicated pin |
 | Thai, Lao, Khmer, Myanmar | untested | transparent-letter mark attachment exists in `joining.v` by comment, with no font and no test |
@@ -2361,12 +2361,14 @@ does not exist.
 | Simple alphabets (Georgian, Armenian, Ethiopic, …) | untested | cmap shaping should answer; nothing proves it |
 | Emoji | unassessed | `emoji-data.txt` ships; color formats and ZWJ sequences are not surveyed |
 
-**9.1 CJK line breaking.** The UAX#14 ID/CJ/NS/OP/CL rules around
-ideographs to conformance on the CJK subset of `LineBreakTest.txt`, with
-wrap pins beside HarfBuzz on the committed SC face (which Phase 8's wave 2
-already carries). Hangul conjoining-Jamo composition and vertical CJK
-punctuation gaps found on the way belong here, each with its own pin.
-Acceptance: the CJK conformance delta at zero and 0 new/0 stale.
+**9.1 CJK line breaking — landed 2026-11-15 as pins.** The UAX#14 ID/CJ/NS/OP/CL
+rules around ideographs were already complete in the 19,346 tail; this slice
+pins the slice rather than writing it: 0 failures on 1,753 ID-class cases and
+0 on 5,333 CJK-subset cases in `cjkbreak_test.v`, with wrap pins beside
+HarfBuzz on the committed SC face and a break-fix control that moves the
+score (520 cases when the ID rules are neutered). Hangul conjoining-Jamo
+composition and vertical CJK punctuation gaps found on the way stay follow-ups,
+each needing its own pin (and, for Hangul, a corpus face).
 
 **9.2 Southeast Asian clusters.** Thai, Lao, Khmer and Myanmar committed
 from google/fonts under OFL (the wave-2 pattern), shaped beside HarfBuzz:
