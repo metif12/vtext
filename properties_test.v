@@ -90,6 +90,14 @@ fn test_joining_group_covers_arabic_letters() {
 	beh := p.joining_group_name(rune(0x0628))
 	assert beh != ''
 	assert beh != lam
+	// Exact names, not just distinctness: parse_names once dropped the
+	// interned empty first entry and every group reported its neighbour
+	// (LAM read Meem, ALEF Waw). A decoder regression fails here.
+	assert lam == 'Lam', 'LAM names its group, got ${lam}'
+	assert alef == 'Alef', 'ALEF names its group, got ${alef}'
+	assert beh == 'Beh', 'BEH names its group, got ${beh}'
+	assert p.joining_group_name(`A`) == '', 'Latin has no joining group'
+	assert p.joining_group_name(rune(0x0020)) == '', 'a space has no joining group'
 }
 
 fn test_combining_class_of_known_codepoints() {
@@ -165,8 +173,10 @@ fn test_parse_ranges_round_trip() {
 fn test_parse_names() {
 	assert ucd.parse_names('L\nR\nEN\n') == ['L', 'R', 'EN']
 	assert ucd.parse_names('').len == 0
-	// Blank lines are skipped so a trailing newline is harmless.
-	assert ucd.parse_names('A\n\nB\n').len == 2
+	// A middle empty is a value: the joining groups intern '' at index 0 for
+	// "no group", and skipping it shifted every group name down by one.
+	// Only the single trailing empty the closing newline leaves is skipped.
+	assert ucd.parse_names('A\n\nB\n') == ['A', '', 'B']
 }
 
 // test_tables_are_not_trivially_empty guards against a generator run that wrote

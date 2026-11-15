@@ -164,16 +164,23 @@ pub fn parse_ranges(data string) []CodeRange {
 //
 // Public for the same reason lookup_range is: the property tests pin the
 // decoder directly rather than through a table that happens to use it.
+//
+// Empty lines are values, not separators: the joining groups intern '' at
+// index 0 for "no group", and dropping it shifted every group name down by
+// one (lam reported Meem, alef Waw). Only the single trailing empty the
+// closing newline leaves is skipped, because it is the data ending rather
+// than a value; no table carries an empty in the middle.
 pub fn parse_names(data string) []string {
 	mut out := []string{}
 	if data.len == 0 {
 		return out
 	}
-	for line in data.split_into_lines() {
-		s := line.trim_space()
-		if s != '' {
-			out << s
-		}
+	mut lines := data.split_into_lines()
+	if lines.len > 0 && lines[lines.len - 1].trim_space() == '' {
+		lines = lines[..lines.len - 1]
+	}
+	for line in lines {
+		out << line.trim_space()
 	}
 	return out
 }
