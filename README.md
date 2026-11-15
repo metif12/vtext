@@ -468,6 +468,27 @@ was assigned the input index and so always equalled the first; it was removed ra
 because a function handed text cannot compute a glyph index and two fields carrying one value is the
 same defect as a comment that contradicts the code.
 
+### Case mapping
+
+Full upper, lower and title mappings from the UCD, including the 1-to-N rows
+(`ß` to `SS`, `İ` to `i` plus dot) and the Turkish/Azeri dotted-I rows that
+make a hand table wrong.
+
+```v
+import vtext.shape
+
+upper := shape.to_upper('ß'.runes(), '')          // SS
+lower := shape.to_lower('İ'.runes(), '')          // i + dot
+lower_tr := shape.to_lower('I'.runes(), 'tr')     // dotless ı
+upper_tr := shape.to_upper('i'.runes(), 'tr')     // dotted İ
+title := shape.to_title('hello world'.runes(), '') // Hello World
+```
+
+The second argument is the locale: `tr`/`az` select the conditional rows,
+everything else the unconditional ones. Title is the first cased letter of
+each word through the title table and the rest through lower, where a word is
+a maximal run of cased letters and a combining mark rides on its base.
+
 ### Contextual positioning
 
 A font that moves a glyph based on what is around it. A `true` here means the font has such rules for

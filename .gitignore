@@ -49,6 +49,11 @@ ucd/*
 # never committed, so normalize_test.v panicked on every checkout that had not fetched it — a suite
 # that is green only because the data is on the machine is the same failure as a fixture written to
 # match the reader.
+# SpecialCasing.txt is the UCD's full case mapping supplement, and case_test.v reads it
+# directly for the same reason: a suite that is green only where the file was fetched
+# is not a suite. The licence travels with it the way it does with the other
+# committed UCD files above, which is why it is excepted here rather than fetched.
+!ucd/SpecialCasing.txt
 !ucd/NormalizationTest.txt
 !ucd/DerivedJoiningType.txt
 !ucd/LineBreakTest.txt
