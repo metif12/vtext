@@ -2083,10 +2083,11 @@ generated table (source and licence recorded the way UCD sources are), and
 every further language is data, not code. Pinned by a word list with
 HarfBuzz-independent expected breaks, not by the UAX #14 floor.
 
-**7.6 Indic and Khmer beside HarfBuzz.** Committed OFL fonts (Nirmala and
-Leelaw measure on this box; Khmer arrives over the network, which works)
-with corpus cases at 0 new and 0 stale — the acceptance the shape slice
-named and never collected.
+**7.6 Indic and Khmer beside HarfBuzz.** Committed OFL Devanagari (Noto
+Sans Devanagari over the network, the wave-2 pattern — not Nirmala/Leelaw,
+which are Windows-only and fail the platform ratchet) with corpus cases at
+0 new and 0 stale. The shaping machine this needs is Phase 9.3; this slice
+is the acceptance it names: the font, the cases, and the ratchet.
 
 **7.7 Color and hinting behind the box-and-fill contract.** COLR/CPAL,
 CBDT/EBDT and sbix as engines behind `box_only`/`render_into`, SVG
@@ -2289,6 +2290,67 @@ Triggered, not scheduled, each with its reason: AAT `morx` and Graphite
 (no corpus font carries either — the day one does, it gets a slice like
 CFF did); WOFF2 (needs a brotli decoder first); the full TrueType bytecode
 interpreter (7.7 already gates it on a corpus font that needs it).
+
+## Phase 9: the remaining scripts
+
+The goal is every script, stated per script with its evidence rather than as
+one claim. Phase 5 proved the pipeline is script-agnostic where it matters
+and named the script-specific holes one by one; this phase closes the map
+that work drew. Levels are load-bearing words here: **full** means suite plus
+difftest cases, **pinned** means a HarfBuzz-measured test without a difftest
+case, **smoke** means loads-shapes-rasterises, **untested** means the
+mechanism should answer but no test proves it, **absent** means the mechanism
+does not exist.
+
+| Family | Level | Evidence |
+| --- | --- | --- |
+| Latin, Cyrillic, Greek | full | kern/calt suites, `latin-*` difftest cases, wave-2 fold pins |
+| Arabic, Persian, Urdu | full | joining/GSUB/GPOS suites, `arabic-*`/`persian-*`/`nastaliq-*` cases, `script_lang_test` locl pins |
+| Hebrew | pinned | `extra_fonts_test`: coverage, niqqud flagged with zero advance, shaping + raster smoke. Mark placement is not HB-pinned and Hebrew is not a difftest case |
+| CJK Han | smoke | `extra_fonts_test` on NotoSansSC: 2-glyph line, rasterise. Breaking is partial (EA width is read; ID-class rules are not complete) |
+| Hangul (precomposed) | untested | modern syllables need cmap only, but no font and no test prove it |
+| Kana | partial | vertical kana rules in `vertical_test`; horizontal kana has no dedicated pin |
+| Thai, Lao, Khmer, Myanmar | untested | transparent-letter mark attachment exists in `joining.v` by comment, with no font and no test |
+| Tibetan | absent | stacking needs a machine of its own |
+| Indic (Devanagari et al.) | absent | no UCD tables, no syllable machine, no corpus font |
+| Syriac | untested | the joining machine is generic over JoiningType, but no font and no test prove it |
+| Thaana, NKo | untested | bidi plus trivial shaping should answer; nothing proves it |
+| Mongolian/Phags-pa vertical | absent | no vertical-columns path for them |
+| Simple alphabets (Georgian, Armenian, Ethiopic, …) | untested | cmap shaping should answer; nothing proves it |
+| Emoji | unassessed | `emoji-data.txt` ships; color formats and ZWJ sequences are not surveyed |
+
+**9.1 CJK line breaking.** The UAX#14 ID/CJ/NS/OP/CL rules around
+ideographs to conformance on the CJK subset of `LineBreakTest.txt`, with
+wrap pins beside HarfBuzz on the committed SC face (which Phase 8's wave 2
+already carries). Hangul conjoining-Jamo composition and vertical CJK
+punctuation gaps found on the way belong here, each with its own pin.
+Acceptance: the CJK conformance delta at zero and 0 new/0 stale.
+
+**9.2 Southeast Asian clusters.** Thai, Lao, Khmer and Myanmar committed
+from google/fonts under OFL (the wave-2 pattern), shaped beside HarfBuzz:
+cluster segmentation for breaks and carets, mark attachment order, one
+pin per script. Tibetan stacks are the harder sibling and are listed,
+not hidden: they arrive as their own slice with a stacking font, or this
+slice says why they cannot.
+
+**9.3 The Indic machine.** Slices, because one commit cannot hold it:
+UCD Indic tables generated like the rest; a committed Devanagari face;
+the syllable machine with matra reordering; conjunct features
+(`rphf`/`pref`/`blwf`/`pstf`/`vatu`/`cjct`); HarfBuzz pins; then a second
+script (Bengali) to prove generality. 7.6 is this program's acceptance
+half. Each slice carries its own break-fix controls, and Arabic stays
+green through all of it — the corpus cases and the differential baseline
+are the ratchet, and a phase that regresses them is not a phase.
+
+**9.4 The long tail.** Syriac (joining test on a committed face),
+Thaana, NKo, one smoke line each for the simple alphabets, and the emoji
+survey (what ships: cmap monochrome; what refuses: color formats, with
+the reason). Small slices, each a font plus a test.
+
+Rule for the whole phase, the wave-2 rule: every new script arrives as a
+committed OFL font plus HarfBuzz-measured pins. A shaping-affecting
+script also extends the difftest corpus, with the pango legs verified on
+CI the way the code-case pixels were.
 
 ## Explicitly not planned
 
