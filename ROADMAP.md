@@ -307,10 +307,19 @@ plain breaks, then whole-word overflow); digits and vertical never
 hyphenate. C callers keep UAX #14. Pinned by `hyphen_test.v` (word list,
 edge minima 2/3) and `hyphen_wrap_test.v` (equivalence + hyphen pins).
 
-**7.6 Indic and Khmer — in progress.** OFL Devanagari (Noto Sans Devanagari,
-wave pattern — not Nirmala/Leelaw, Windows-only, fails the platform
-ratchet) with corpus cases at 0/0. The machine is Phase 9.3; this slice is
-its acceptance: the font, the cases, the ratchet.
+**7.6 Indic and Khmer — first cut landed 2026-11-16.** UCD Indic tables
+generated like the rest (`tools/gen_indic.v` → `ucd/ucd_indic.v`: 37
+syllabic values, 16 positional; inputs committed with licence-travels
+exceptions); committed OFL NotoSansDevanagari-Variable (1117 glyphs,
+`akhn rphf blwf cjct` under `deva`+`dev2`); the syllable machine as
+`shape/indic.v` (segmentation, Left-matra reorder, conjunct finder —
+imports only `vtext.ucd`, nothing existing touched). Pinned by
+`indic_test.v` beside HarfBuzz: segmentation == HB clusters, reorder ==
+HB visual order, akhn smoke (KSSA → gid 90), राम exact agreement, with
+mutation break-fix (neutered reorder, dropped Virama row). Engine gaps
+documented in-test: logical-order spacing matras, dropped ccc-0 matras, no
+fusion by default. Follow-up: feeding reordered runs into GSUB (the
+joining hook), repha, split matras, pres/half/blwf/rphf, GPOS marks.
 
 **7.7 Color and hinting — open.** COLR/CPAL, CBDT/EBDT, sbix behind
 `box_only`/`render_into`; SVG refuses with its reason. Grid-fit
@@ -464,7 +473,7 @@ proves it, **absent** = the mechanism does not exist.
 | Hangul (precomposed) | untested | cmap suffices, no face, no test |
 | Kana | partial | vertical rules in `vertical_test`; horizontal unpinned |
 | Tibetan | absent | stacking needs its own machine |
-| Indic (Devanagari et al.) | absent → 9.3/7.6 | no tables, no machine, Devanagari face in progress |
+| Indic (Devanagari et al.) | syllable machine first cut | tables + Devanagari face + machine (unwired), HB-pinned |
 | Mongolian/Phags-pa vertical | absent | no vertical-columns path |
 | Simple alphabets (Georgian, Armenian, Ethiopic, …) | untested | cmap should answer; nothing proves it |
 | Emoji | unassessed | `emoji-data.txt` ships; color formats + ZWJ unsurveyed |
@@ -535,7 +544,7 @@ owns the queue.
 
 | Slice | Item | State |
 | --- | --- | --- |
-| 7.6 / 9.3 | Indic machine + Devanagari acceptance | in progress |
+| 7.6 / 9.3 | Indic machine + Devanagari acceptance | first cut landed (unwired); joining hook + Bengali open |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
