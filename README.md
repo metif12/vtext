@@ -66,7 +66,7 @@ accident. Dependencies run one way — `layout` → `shape` → `font` → `ucd`
 | Part | Directory | What it is | Replaces |
 | --- | --- | --- | --- |
 | `vtext.ucd` | `ucd/` | Generated UCD tables decoded once into `Properties`. No other part reads the UCD directly. Carved out 2026-11-13; the split is verified by the full suite, the fmt gate, the difftest tool, and the C library plus smoke test. | — (shared data) |
-| `vtext.font` | `font/` | sfnt/TTC containers, cmap, Face with metrics, GSUB/GPOS/GDEF, stb bindings with the Face box/fill calls. Carved out in three slices; each verified by suite, fmt, difftest and smoke. | FreeType loading, fontTools reading |
+| `vtext.font` | `font/` | sfnt/TTC containers, cmap, Face with metrics, GSUB/GPOS/GDEF, stb bindings with the Face box/fill calls. Carved out in three slices; each verified by suite, fmt, difftest and smoke. WOFF1 containers since 8.1, unwrapped to sfnt in the load path (WOFF2 refused with its reason). | FreeType loading, fontTools reading |
 | `vtext.shape` | `shape/` | Normalization, bidi, joining, the text-system Context, Font/FontSet/Glyph currency. Carved out in two slices; same verification. | HarfBuzz core |
 | `vtext.layout` | `layout/` | Line breaking, wrapping, measuring, fallback-driven layout. Files moved; same verification. | Pango's layout math |
 | `vtext.raster` | `raster/` | `GlyphBitmap` behind the box-and-fill contract; unhinted stb today, hinting and color later. Landed slice 1, same verification. | FreeType rendering |
@@ -816,6 +816,7 @@ shape/normalize.v UAX #15
 shape/bidi.v      UAX #9
 font/reader.v     bounds-checked big-endian byte reading
 font/sfnt.v       the font file: tables, collections, offsets
+font/woff.v       WOFF1 containers, unwrapped to sfnt before parsing
 font/cmap.v       codepoint to glyph
 font/face.v       loads GDEF, GSUB and GPOS for a font
 font/gsub.v       OpenType substitution
