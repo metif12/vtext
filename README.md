@@ -162,6 +162,11 @@ All are under the SIL Open Font License; the licence text sits beside each font.
 | `NotoNaskhArabic-Regular.ttf` | Joins with substitutions alone, so it has **no** cursive rule. It is the negative control: a reader that accepted every type 3 subtable would fail here. |
 | `NotoNaskhArabic-Variable.ttf` | A variable naskh face: the fvar axes and named-instances pin. |
 | `NotoNastaliqUrdu-Regular.ttf` | Nastaliq, whose positioning reaches its rule through an extension. |
+| `JetBrainsMono-Variable.ttf` | A second code face: `=>` folds under `latn` `calt` beside FiraCode. |
+| `CascadiaCode-Variable.ttf` | A third code face that also covers Arabic and Hebrew: the multilingual-mono pin. |
+| `NotoSansHebrew-Variable.ttf` | Hebrew with niqqud: bidi plus mark attachment outside the Arabic script. |
+| `NotoSansSC-Variable.ttf` | Simplified Chinese: CJK coverage and shaping smoke (no CJK line-breaking yet). |
+| `JetBrainsMonoNerdFont-Regular.ttf` | The same code face patched with PUA icons: terminal/geek glyphs beside text. |
 
 ## Differential testing
 
