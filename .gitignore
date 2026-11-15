@@ -63,3 +63,25 @@ ucd/*
 !ucd/PropertyValueAliases.txt
 !ucd/ArabicShaping.txt
 !ucd/LICENSE-UNICODE.txt
+
+# WordBreakProperty.txt and SentenceBreakProperty.txt are the UAX#29 generator
+# inputs the way GraphemeBreakProperty.txt and LineBreak.txt are above: the
+# committed tables in ucd_wordbreak.v and ucd_sentence.v cannot be regenerated
+# without them. WordBreakTest.txt and SentenceBreakTest.txt are the committee's
+# own conformance files, committed the way LineBreakTest.txt is, and the
+# licence travels with them the way it does with the other committed UCD files
+# above, which is why they are excepted here rather than fetched.
+!ucd/WordBreakProperty.txt
+!ucd/SentenceBreakProperty.txt
+!ucd/WordBreakTest.txt
+!ucd/SentenceBreakTest.txt
+# emoji-data-18.0.0.txt is the 18.0.0 emoji source tools/gen_wordbreak.v reads
+# for WB3c. The versioned name keeps it apart from the 16.0.0 emoji-data.txt
+# tools/fetch_ucd.v fetches for the line breaking tables.
+!ucd/emoji-data-18.0.0.txt
+
+# The generated word and sentence tables and their lookup helpers are committed
+# the way the other ucd_*.v files are, so a build never needs the UCD inputs.
+!ucd/ucd_wordbreak.v
+!ucd/ucd_sentence.v
+!ucd/wordbreak.v
