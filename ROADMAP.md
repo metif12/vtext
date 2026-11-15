@@ -2342,7 +2342,11 @@ Linux half is written against the headers and left to CI on Linux, stated
 here rather than implied: the ubuntu suite leg links fontconfig and runs
 `match_test.v` against installed families (self-naming best match first,
 existing paths, `covers_char` for `A`, `covers_lang` for `en`), with a skip
-where no self-naming family is installed.
+where no self-naming family is installed. The sorted-list reader takes no
+struct-typed access to `FcFontSet` — two revisions segfaulted on CI inside
+`FcPatternGetString` through it while every address idiom probed fine
+locally, so `nfont` reads as u32 at offset 0 and the pointer vector at
+offset 8; CI is green on the offset revision.
 
 The fvar half is measured here. `shape/inspect.v` gains `variable_instances`
 (name, name ID and one coordinate per axis in fvar order) and
