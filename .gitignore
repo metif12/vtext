@@ -85,3 +85,15 @@ ucd/*
 !ucd/ucd_wordbreak.v
 !ucd/ucd_sentence.v
 !ucd/wordbreak.v
+
+# IndicSyllabicCategory.txt and IndicPositionalCategory.txt are the UCD Indic
+# generator inputs the way WordBreakProperty.txt is above: the committed table
+# in ucd_indic.v cannot be regenerated without them. The licence travels with
+# them the way it does with the other committed UCD files above, which is why
+# they are excepted here rather than fetched.
+!ucd/IndicSyllabicCategory.txt
+!ucd/IndicPositionalCategory.txt
+
+# The generated Indic table is committed the way the other ucd_*.v files are,
+# so a build never needs the UCD inputs.
+!ucd/ucd_indic.v
