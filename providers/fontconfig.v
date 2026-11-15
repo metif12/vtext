@@ -43,11 +43,13 @@ $if linux {
 
 	// C_FcFontSet mirrors fontconfig's FcFontSet: the ranked matches FcFontSort
 	// answers, best first. Only nfont and the font pointers are read; sfont is
-	// fontconfig's own allocation size.
+	// fontconfig's own allocation size. fonts is a pointer to pointer so that
+	// indexing strides one pointer (8 bytes on every runner here): a single
+	// voidptr level leaves the stride to the compiler's void arithmetic.
 	struct C_FcFontSet {
 		nfont int
 		sfont int
-		fonts &voidptr
+		fonts &&voidptr
 	}
 
 	fn C.FcFontSort(voidptr, voidptr, int, voidptr, &int) &C_FcFontSet

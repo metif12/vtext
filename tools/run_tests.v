@@ -522,9 +522,13 @@ fn run_one(name string, attempt int) Outcome {
 	// compile this repository at all besides. So the workflow that runs this builds V from source, and that
 	// is recorded there with the two measurements.
 	r := os.exec_opt(args) or {
+		// The failure path carries the same text as the non-zero path, so it
+		// gets the same notice filter: without it a failing file prints only
+		// compiler diagnostics in the evidence head, which is how CI hid a
+		// real assert behind four pages of `notice:` context.
 		return Outcome{
 			exit_code: -1
-			output:    err.msg()
+			output:    strip_notices(err.msg())
 			attempts:  attempt
 		}
 	}
@@ -533,6 +537,22 @@ fn run_one(name string, attempt int) Outcome {
 		output:    strip_notices(r.output)
 		attempts:  attempt
 	}
+}
+
+// is_decoration reports whether a line is only compiler decoration: pipes,
+// tildes, carets and spaces, the way source-context markers print. A test
+// proving a failure always carries words, so dropping wordless lines cannot
+// hide an assert or its message.
+fn is_decoration(t string) bool {
+	if t == '' {
+		return false
+	}
+	for c in t {
+		if c != `|` && c != `~` && c != `^` && c != ` ` && c != `.` {
+			return false
+		}
+	}
+	return true
 }
 
 // strip_notices drops the compiler's notices from its output.
@@ -554,16 +574,28 @@ fn strip_notices(output string) string {
 // print_evidence shows up to limit lines of a failure.
 //
 // A compile error is dozens of lines and the summary is what gets read, so this shows the head rather than
-// the tail: the first error is the one that explains the rest. Compiler warnings are skipped, because four
-// pages of deprecation notices above the one assert line is how a real failure hid itself on CI: the evidence
-// head was all `warning: ... in capi.v` and the assert never printed.
+// the tail: the first error is the one that explains the rest. Compiler diagnostics are skipped — warnings,
+// notices and the numbered source-context lines around them — because four pages of them above the one assert
+// line is how a real failure hid itself on CI twice: first behind `warning: ... in capi.v`, then behind
+// `notice:` context that the error path never filtered.
 fn print_evidence(output string, limit int) {
 	mut shown := 0
 	for line in output.split('\n') {
-		if line.trim_space() == '' {
+		t := line.trim_space()
+		if t == '' {
 			continue
 		}
-		if line.contains('warning:') {
+		if line.contains('warning:') || line.contains('notice:') {
+			continue
+		}
+		// A compiler source-context line: `  627 |     mut out := items`, or a
+		// bare decoration line of pipes and tildes. Nothing a test prints to
+		// prove a failure looks like a line number, a pipe and code; an
+		// assert and its message always carry words.
+		if t.len > 0 && t[0].is_digit() && t.contains('|') {
+			continue
+		}
+		if is_decoration(t) {
 			continue
 		}
 		if shown >= limit {
