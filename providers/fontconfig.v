@@ -42,17 +42,20 @@ $if linux {
 	const fc_result_match = 0
 
 	// C_FcFontSet mirrors fontconfig's FcFontSet: the ranked matches FcFontSort
-	// answers, best first. Only nfont and the font pointers are read; sfont is
-	// fontconfig's own allocation size. fonts is a pointer to pointer so that
-	// indexing strides one pointer (8 bytes on every runner here): a single
-	// voidptr level leaves the stride to the compiler's void arithmetic.
+	// answers, best first. The set is NEVER read through this type — two
+	// revisions crashed in FcPatternGetString on CI reading struct-typed
+	// access (first a double-pointer index, then a computed address from a
+	// struct-read base) while every address idiom probed fine locally, so
+	// the reader below takes a voidptr and reads by byte offset instead.
+	// Only nfont and the font pointers are read; sfont is fontconfig's own
+	// allocation size. Kept for documentation, not for access.
 	struct C_FcFontSet {
 		nfont int
 		sfont int
 		fonts &&voidptr
 	}
 
-	fn C.FcFontSort(voidptr, voidptr, int, voidptr, &int) &C_FcFontSet
+	fn C.FcFontSort(voidptr, voidptr, int, voidptr, &int) voidptr
 	fn C.FcFontSetDestroy(voidptr)
 	fn C.FcPatternGetCharSet(voidptr, &u8, int, &voidptr) int
 	fn C.FcPatternGetLangSet(voidptr, &u8, int, &voidptr) int
@@ -167,28 +170,29 @@ $if linux {
 		mut res := 0
 		// A nil charset vector: the per-font charsets stay inside fontconfig,
 		// and the coverage questions below ask the matched patterns instead.
-		set := C.FcFontSort(config, pat, 0, unsafe { nil }, &res)
-		if isnil(set) || res != fc_result_match {
+		set_addr := usize(C.FcFontSort(config, pat, 0, unsafe { nil }, &res))
+		if set_addr == 0 || res != fc_result_match {
 			return none
 		}
 		defer {
-			C.FcFontSetDestroy(set)
+			C.FcFontSetDestroy(voidptr(set_addr))
 		}
-		mut n := set.nfont
+		// The set is read by byte offset, never through a struct type:
+		// fontconfig's FcFontSet is two C ints (nfont, sfont) followed by the
+		// font pointers, a layout stable for twenty years. nfont at offset 0,
+		// the pointer vector at offset 8. Each idiom here is runtime-probed
+		// locally (u32 write/read, offset-8 pointer write/read, slot deref);
+		// what is NOT trusted is struct-typed access to this set, which two
+		// revisions crashed on inside FcPatternGetString on CI.
+		mut n := int(unsafe { *&u32(set_addr) })
 		if n > limit {
 			n = limit
 		}
 		mut out := []SystemFont{cap: n}
-		// Each ranked pattern is read with explicit address arithmetic: the
-		// set packs one pointer per entry, and a computed address leaves the
-		// stride to construction (one pointer) rather than to however any
-		// compiler version shapes a double-pointer index — which segfaulted
-		// in FcPatternGetString on CI while the same index read fine on the
-		// local toolchain. A nil entry is skipped; anything else answers.
-		base := usize(set.fonts)
+		fonts_at := unsafe { *&usize(set_addr + 8) }
 		stride := usize(sizeof(voidptr))
 		for i in 0 .. n {
-			m := unsafe { *&voidptr(base + usize(i) * stride) }
+			m := unsafe { *&voidptr(fonts_at + usize(i) * stride) }
 			if isnil(m) {
 				continue
 			}
