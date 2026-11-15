@@ -179,8 +179,16 @@ $if linux {
 			n = limit
 		}
 		mut out := []SystemFont{cap: n}
+		// Each ranked pattern is read with explicit address arithmetic: the
+		// set packs one pointer per entry, and a computed address leaves the
+		// stride to construction (one pointer) rather than to however any
+		// compiler version shapes a double-pointer index — which segfaulted
+		// in FcPatternGetString on CI while the same index read fine on the
+		// local toolchain. A nil entry is skipped; anything else answers.
+		base := usize(set.fonts)
+		stride := usize(sizeof(voidptr))
 		for i in 0 .. n {
-			m := unsafe { set.fonts[i] }
+			m := unsafe { *&voidptr(base + usize(i) * stride) }
 			if isnil(m) {
 				continue
 			}
