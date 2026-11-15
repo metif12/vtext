@@ -2003,14 +2003,22 @@ slice depends on it until one is measured.
 
 Buckets, in the order they unblock each other:
 
-**7.1 GPOS positioning wired into layout.** The readers are built and the
-layout pass never applies one: pair kerns, single adjustments, and
-entry/exit cursive attachment (Noto Nastaliq is the fixture — cursive is
-what makes it Nastaliq). The fold target is direction-dependent per the
-phase-5 note, pairs are same-run and same-font with marks left to the
-lookups' own flags, and the width lines that move go stale deliberately
-rather than being edited. Pinned the way every positioning slice is: revert
-controls plus the latin-kern baseline entries converging to zero.
+**7.1 GPOS positioning wired into layout.** Landed 2026-11-15: single
+adjustments (SinglePos) fold into advances and placements per glyph, after
+substitution, under the pair-kerning feature's single half (kern in a
+horizontal line, vkrn in a vertical one) plus the applied discretionary
+features — the same off-switch semantics substitution keeps, each lookup
+consulted once. Marks keep the anchor pass's answer: a second shift would
+move them twice. Pinned by `singlepos_apply_test.v`: hand-built lookups for
+first-match-within-a-lookup and accumulation-across-lookups, Simplified
+Arabic U+06E5/U+06E6 shifted (-170, +230) beside HarfBuzz, Amiri's thirty
+dead single lookups staying dead, and kern named explicitly applying once.
+Cursive attachment stays unwired on the measured reason: Noto Nastaliq's
+rule is vestigial — four one-sided anchors and no adjacent exit-plus-entry
+pair over سلام, HarfBuzz reporting zero x-offsets on the same text — and the
+test fails the day a shaped line grows a pair. No corpus line moves on this
+slice: pair kerns had already converged the latin-kern cluster and width
+entries to zero, and difftest reports 0 new, 0 stale.
 
 **7.2 Script as a usable control (`ShapeOptions`).** Detection stays the
 default; the caller can now override script, language, direction, and

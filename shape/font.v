@@ -398,6 +398,101 @@ pub fn (f &Font) vkern_offset(left_gid u16, right_gid u16, script string) ?font.
 	return gpos.vkern_offset(left_gid, right_gid, script)
 }
 
+// single_adjustment returns one glyph's single positioning under the features the line applies,
+// in design units: the placements and the advances together, with the format saying which
+// fields the font wrote. No rule at all is none, which is not the same as a rule of zeros.
+//
+// The lookups consulted are the pair-kerning feature's single half — kern in a horizontal
+// line, vkrn in a vertical one — plus the default-on discretionary features and the caller's
+// extras, resolved with the same off-switch semantics substitute_glyphs keeps: `-tag` turns
+// a default off, `+tag` names one explicitly. Each lookup is consulted once however many
+// features name it, because a shift applied twice is a letter moved to where no other
+// shaper puts it. Mark features (abvm, blwm, mark, mkmk) are not consulted: position_marks
+// owns marks, and a second shift from here would move them twice.
+// What this answers for a mark is therefore nothing, and the layout pass skips them.
+pub fn (f &Font) single_adjustment(gid u16, script string, extra []string, vertical bool) ?font.PairValue {
+	gpos := f.face.gpos or { return none }
+	mut enabled := {
+		'calt': true
+		'liga': true
+		'clig': true
+	}
+	mut asked := []string{}
+	for feature in extra {
+		if feature.starts_with('-') && feature.len > 1 {
+			tag := feature[1..]
+			if tag == 'calt' || tag == 'liga' || tag == 'clig' {
+				enabled[tag] = false
+			}
+		} else {
+			mut tag := feature
+			if tag.starts_with('+') && tag.len > 1 {
+				tag = tag[1..]
+			}
+			if tag == 'calt' || tag == 'liga' || tag == 'clig' {
+				enabled[tag] = true
+			} else {
+				mut seen := false
+				for prev in asked {
+					if prev == tag {
+						seen = true
+						break
+					}
+				}
+				if !seen {
+					asked << tag
+				}
+			}
+		}
+	}
+	mut lookups := []u16{}
+	mut seen := map[u16]bool{}
+	if vertical {
+		for li in gpos.lookups_for(script, 'vkrn') {
+			if li !in seen {
+				seen[li] = true
+				lookups << li
+			}
+		}
+	} else {
+		for li in gpos.lookups_for(script, 'kern') {
+			if li !in seen {
+				seen[li] = true
+				lookups << li
+			}
+		}
+	}
+	for tag in ['calt', 'liga', 'clig'] {
+		if enabled[tag] {
+			for li in gpos.lookups_for(script, tag) {
+				if li !in seen {
+					seen[li] = true
+					lookups << li
+				}
+			}
+		}
+	}
+	for tag in asked {
+		// A tag consulted above is already in the list: the kern feature is
+		// unconditional, and a default the caller named explicitly is enabled.
+		// Adding its lookups again would apply every one of them twice, and a
+		// shift applied twice is a letter moved to where no shaper puts it.
+		if (!vertical && tag == 'kern') || (vertical && tag == 'vkrn') {
+			continue
+		}
+		if tag == 'calt' || tag == 'liga' || tag == 'clig' {
+			continue
+		}
+		for li in gpos.lookups_for(script, tag) {
+			if li !in seen {
+				seen[li] = true
+				lookups << li
+			}
+		}
+	}
+	return gpos.single_offset_on(gid, lookups)
+}
+
 // kerns reports whether the font has any pair adjustment for a script.
 pub fn (f &Font) kerns(script string) bool {
 	gpos := f.face.gpos or { return false }

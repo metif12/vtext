@@ -1142,6 +1142,50 @@ pub fn (g &Gpos) vkern_offset(left_gid u16, right_gid u16, script string) ?Offse
 	}
 }
 
+// single_offset_on answers one glyph's single positioning from an explicit lookup list, in
+// design units: the placements and the advances together, with the format saying which
+// fields the font wrote. A value of zero in every field is a real answer, like it is for
+// kern_offset, and none means no rule at all.
+//
+// Adjustments accumulate across lookups rather than stopping at the first, the same rule
+// kern_offset keeps: every lookup that matches applies, and the line moves by their sum.
+// Within one lookup the first matching rule wins, because one lookup applies once however
+// many of its subtables cover the glyph.
+pub fn (g &Gpos) single_offset_on(gid u16, lookups []u16) ?PairValue {
+	mut x_pl := 0
+	mut y_pl := 0
+	mut x_adv := 0
+	mut y_adv := 0
+	mut format := u16(0)
+	mut found := false
+	for li in lookups {
+		if li >= g.lookups.len {
+			continue
+		}
+		for rule in g.lookups[li].singles {
+			if v := rule.value_for(gid) {
+				x_pl += v.x_placement
+				y_pl += v.y_placement
+				x_adv += v.x_advance
+				y_adv += v.y_advance
+				format |= v.format
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return none
+	}
+	return PairValue{
+		x_placement: i16(x_pl)
+		y_placement: i16(y_pl)
+		x_advance:   i16(x_adv)
+		y_advance:   i16(y_adv)
+		format:      format
+	}
+}
+
 // has_chain_classes reports whether a lookup holds any class-based chaining rule. An
 // empty rule list positions nothing, and without this a lookup whose subtables all
 // failed to parse would still claim the chaining type.
@@ -2267,6 +2311,31 @@ pub fn (rule &SinglePos) offset_for(gid u16) ?Offset2 {
 		return none
 	}
 	return placement_of(rule.values[idx])
+}
+
+// value_for finds the full value record for one glyph within a single rule: the
+// placements and the advances together, with the format saying which fields the
+// font wrote. offset_for answers the placement half for callers that position
+// marks; a caller that also folds advances needs the record itself, because a
+// record that says nothing about placement is still a kern when it carries an
+// advance, and placement_of would report it as no rule at all.
+pub fn (rule &SinglePos) value_for(gid u16) ?PairValue {
+	idx := coverage_index(rule.ranges, gid) or { return none }
+	// Format 2 asks the exceptions first and the shared value second, and a rule cannot have both, so
+	// which pair of these is live is decided by whether base is set rather than by a format number. That
+	// keeps one lookup path for both formats instead of two that can disagree.
+	if rule.base != none {
+		for o in rule.overrides {
+			if o.index == int(idx) {
+				return o.value
+			}
+		}
+		return rule.base or { return none }
+	}
+	if idx >= rule.values.len {
+		return none
+	}
+	return rule.values[idx]
 }
 
 // placement_of turns a value record into an offset, or reports that the record says nothing about

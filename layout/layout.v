@@ -227,6 +227,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		if options.vertical {
 			apply_vertical_advances(mut run_glyphs, em_px)
 			vkern_pairs(mut run_glyphs, em_px, script, rtl)
+			single_positions(mut run_glyphs, em_px, script, options.features, true)
 		}
 		for glyph in run_glyphs {
 			placed << glyph
@@ -334,6 +335,7 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, featu
 	// mode rather than folding a number the swap is about to discard.
 	if !vertical {
 		kern_pairs(mut out, em_px, script, rtl)
+		single_positions(mut out, em_px, script, features, false)
 	}
 	return out
 }
@@ -444,6 +446,48 @@ pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, rtl bool)
 	}
 }
 
+// single_positions folds one glyph's single positioning into its advance and placement, after
+// every substitution has run so the glyphs are the ones the font's rules are written against.
+//
+// An advance adjustment moves the pen and everything after it, so it folds into the advance
+// the placing pass accumulates from, the way kern_pairs folds pair kerns. A placement moves
+// only its own glyph, so it rides in x and y, which the placing pass accumulates from rather
+// than overwrites: every glyph enters the placing pass with x and y holding only what this
+// pass put there, and place_glyphs adds the pen rather than assigning it.
+//
+// Only non-marks are considered. Marks are placed by position_marks from the font's anchors,
+// and a shift from here would move an anchored mark twice; an unanchored mark keeps today's
+// answer rather than a new one. No rule at all leaves the glyph alone, which is the common
+// case: most fonts carry no single positioning under the features a line applies.
+pub fn single_positions(mut glyphs []shape.Glyph, em_px f64, script string, features []string,
+	vertical bool) {
+	for mut g in glyphs {
+		if g.is_mark {
+			continue
+		}
+		f := g.font or { continue }
+		v := f.single_adjustment(g.gid, script, features, vertical) or { continue }
+		scale := em_px / f64(f.face.units_per_em)
+		if vertical {
+			if v.has_y_advance() {
+				g.advance += f64(v.y_advance) * scale
+			}
+		} else {
+			if v.has_x_advance() {
+				g.advance += f64(v.x_advance) * scale
+			}
+		}
+		// y is positive upwards in the font and downwards on the line, as in
+		// kern_pairs, so it is flipped here rather than at the callers.
+		if v.format & 0x0001 != 0 {
+			g.x += f64(v.x_placement) * scale
+		}
+		if v.format & 0x0002 != 0 {
+			g.y -= f64(v.y_placement) * scale
+		}
+	}
+}
+
 // place_glyphs positions the glyphs on the line in visual order.
 //
 // Rule L2 of the bidirectional algorithm gave a permutation of the input characters, not of
@@ -488,7 +532,11 @@ pub fn place_glyphs(placed []shape.Glyph, bidi shape.BidiResult, origin []int) [
 		indices := by_cluster[orig] or { continue }
 		for i in indices {
 			mut g := placed[i]
-			g.x = x
+			// The pen accumulates rather than assigns, because a glyph may already
+			// carry its single positioning shift from the pass before this one.
+			// Every glyph enters with x holding only that shift (marks enter zero,
+			// since the pass skips them), so adding keeps both.
+			g.x += x
 			out << g
 			x += g.advance
 		}
@@ -543,11 +591,19 @@ pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin
 			// Marks keep the column's left edge until anchors place them: they
 			// have no advance box to center, and centering one would move the
 			// mark the anchor math then measures from.
+			//
+			// The shift the pass before this one left in x and y is saved first,
+			// because the assignments below would otherwise discard it: the pen
+			// and the centering accumulate onto it, the way the horizontal pass
+			// accumulates onto x. Marks enter zero, since that pass skips them,
+			// so saving changes nothing for them.
+			sx := g.x
+			sy := g.y
 			g.x = 0
 			g.y = y
 			if !g.is_mark {
 				if f := g.font {
-					g.x = (width - f.glyph_advance(g.gid, em_px)) / 2.0
+					g.x = sx + (width - f.glyph_advance(g.gid, em_px)) / 2.0
 					// The vertical origin hangs the glyph below the pen, the
 					// way the horizontal origin sits left of the ink: HarfBuzz
 					// reports the same negative y offset for every glyph of a
@@ -555,7 +611,9 @@ pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin
 					// no vertical metrics leaves y at the pen, the way it
 					// keeps the horizontal advance — the fallback is unshifted.
 					if f.has_vertical_metrics() {
-						g.y = y - f.vertical_origin_y(g.gid, em_px)
+						g.y = y + sy - f.vertical_origin_y(g.gid, em_px)
+					} else {
+						g.y = y + sy
 					}
 				}
 			}

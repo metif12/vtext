@@ -324,6 +324,13 @@ Every line gets `ccmp`, the four Arabic joining features, `rlig`, `calt`,
 composition, its letter shapes or its ligatures is not the text that was
 asked for. Anything else is a presentation choice and stays with the caller.
 
+Single positioning (GPOS type 1) folds the kerning feature's per-glyph
+adjustments into advances and placements after substitution; mark features
+stay with the anchor pass, which owns marks, so a mark is never shifted
+twice. Cursive attachment is read and not applied: no available font both
+carries a rule and shapes letters the way it describes, and HarfBuzz agrees
+with the unwired answer on the one font that reaches its own rule.
+
 The joining features are `isol`, `init`, `medi` and `fina`, and each is applied to the letters in its own
 shape — the ones that join forward, the ones that join both ways, and so on. That masking is not an
 optimisation. Each rule is written against the *base* letters, so applying `init` to a whole run would turn
