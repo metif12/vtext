@@ -735,9 +735,20 @@ fonts file under (v2-first, the Bengali precedent), fusing the reordered
 trio into the kinzi mark through lookup 52. There is no stack
 ligature: LA's cmap glyph was the stack all along. Mingala is HB-exact
 in gids, order, advances and offsets with honest per-input clusters
-where HarfBuzz merges AA. Open: blwf/blws caller-asked until a
-subjoined-only word proves their order, the dangling-virama dotted
-circle, the mark-cluster merge, GPOS marks beyond anchors.
+where HarfBuzz merges AA. Open: blwf caller-asked until a medial-dot
+word proves its order, the dangling-virama dotted circle, the
+mark-cluster merge, GPOS marks beyond anchors.
+
+**9.2-engine Myanmar blws stacks — landed 2026-11-17.** The second
+half of the Myanmar defaults: `blws` subjoins a VIRAMA-led stack
+behind its base (DA/VIRAMA/DHA to DA plus dha.sub), proven default-on
+the same way — `-blws` unfolds it while -abvs, -blwf and -ccmp change
+nothing. It runs after `abvs` because HarfBuzz orders it there: with
+abvs off, blws subjoins the surviving virama, and with abvs on the
+kinzi consumes it first — swapping the two breaks mingala, which is
+the order's break-fix. The stack word is HB-exact in gids, order,
+advance and offsets with honest per-input clusters. blwf stays
+caller-asked: its medial-dot rules fire on no corpus word.
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Two wave gaps closed in
@@ -808,7 +819,7 @@ owns the queue.
 | 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
-| 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi landed; Khmer pres-group + Myanmar blwf/blws open; `nko ` tag fold landed | open |
+| 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi + blws landed; Khmer pres-group + Myanmar blwf open; `nko ` tag fold landed | open |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
 

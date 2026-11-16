@@ -26,11 +26,12 @@ import vtext.layout
 //   - Khmer runs its coeng fusions (pref, blwf, pstf): COENG+RO fuses to
 //     the preposed 0xdc, COENG+TA to the subscript ligature and COENG+KHO
 //     to its post-base one, while pres/abvs/blws/psts/abvf wait for a
-//     word that exercises them. Myanmar runs its kinzi fusion (abvs):
-//     the reorder machine preposes GA ahead of the NGA/ASAT/VIRAMA trio
-//     and lookup 52 fuses the trio into the kinzi mark; the blwf medial
-//     dots and the blws subjoined forms stay caller-asked, and a dangling
-//     virama's dotted circle belongs to a stacking slice.
+//     word that exercises them. Myanmar runs its kinzi and subjoined
+//     fusions (abvs, blws): the reorder machine preposes GA ahead of the
+//     NGA/ASAT/VIRAMA trio and lookup 52 fuses the trio into the kinzi
+//     mark, while blws subjoins a virama-led stack behind the base; the
+//     blwf medial dots stay caller-asked, and a dangling virama's dotted
+//     circle belongs to a stacking slice.
 //
 // Tibetan is explicitly out of scope for this wave: stacking composition needs
 // a stacking machine the engine does not have yet.
@@ -332,6 +333,29 @@ fn test_seasian_shape_myanmar() {
 	aa := seasian_at(line.glyphs, 6) or { panic('myanmar AA drew nothing') }
 	assert aa.gid == 0x170, 'myanmar cluster 6 is AA 0x170, got ${aa.gid:x}'
 	assert aa.advance > 14.55 && aa.advance < 14.57, 'AA advances 455 design units, got ${aa.advance}'
+}
+
+fn test_seasian_shape_myanmar_blws() {
+	// HarfBuzz fuses DA + VIRAMA + DHA into [DA, dha.sub] with advances
+	// [640, 0], the subjoined mark at (-2, -24) off the DA: toggling
+	// blws off unfolds the stack back to virama (0x17c) and DHA (0x17)
+	// while -abvs, -blwf and -ccmp change nothing on it, so the stack
+	// is the blws default's work. The engine draws the same two gids in
+	// the same order with the same advance and offsets under honest
+	// per-input clusters against HarfBuzz's merged pair.
+	my := seasian_font('NotoSansMyanmar-Variable.ttf') or { return }
+	line := seasian_line(my, 'ဒ္ဓ')
+	assert line.glyphs.len == 2, 'myanmar DA VIRAMA DHA draws two glyphs, got ${line.glyphs.len}'
+	assert line.width > 0, 'a Myanmar stack has positive width'
+	da := seasian_at(line.glyphs, 0) or { panic('myanmar DA drew nothing') }
+	assert da.gid == 0x16, 'myanmar cluster 0 is DA 0x16, got ${da.gid:x}'
+	assert da.advance > 20.47 && da.advance < 20.49, 'DA advances 640 design units, got ${da.advance}'
+	sub := seasian_at(line.glyphs, 1) or { panic('myanmar DHA sub drew nothing') }
+	assert sub.gid == 0x104, 'myanmar DHA sub is 0x104, got ${sub.gid:x}'
+	assert sub.is_mark, 'the subjoined DHA is a mark, not a letter'
+	assert sub.advance == 0, 'the subjoined DHA shares its base advance'
+	assert sub.x > 20.41 && sub.x < 20.43, 'the subjoined DHA sits 2 design units before the pen, got x=${sub.x}'
+	assert sub.y > 0.71 && sub.y < 0.83, 'the subjoined DHA rides 24 design units up, got y=${sub.y}'
 }
 
 fn test_seasian_draw_bases() {

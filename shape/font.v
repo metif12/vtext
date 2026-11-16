@@ -216,12 +216,15 @@ fn is_khmer_shaping_script(script string) bool {
 // whose kinzi stays unfolded is not the text. abvs is a HarfBuzz
 // default-on feature proven by toggling it off under uharfbuzz: -abvs
 // unfolds the kinzi trio NGA/ASAT/VIRAMA (lookup 52 fuses it to the
-// kinzi mark) and the asat beside it. blwf and blws stay caller-asked:
-// neither fires on the corpus word (blwf's medial-dot rules and blws's
-// subjoined forms are shadowed once the kinzi consumes the virama),
-// so the order they need is unproven.
+// kinzi mark) and the asat beside it. blws is default-on the same way:
+// -blws unfolds a VIRAMA+DHA stack back to virama and DHA while -abvs,
+// -blwf and -ccmp change nothing on it. abvs runs first because
+// HarfBuzz orders it there: with abvs off, blws subjoins the surviving
+// virama, and with abvs on the kinzi consumes it first. blwf stays
+// caller-asked: its medial-dot rules fire on no corpus word, so the
+// order they need is unproven.
 fn myanmar_default_features() []string {
-	return ['abvs']
+	return ['abvs', 'blws']
 }
 
 // is_myanmar_shaping_script reports whether a run resolves under the
