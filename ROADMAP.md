@@ -653,10 +653,40 @@ run-medial E draws the cmap glyph). Only the run-initial matra changes;
 every other form assignment is untouched, so Arabic/Syriac/NKo masking is
 exactly as it was.
 kta, nta, sta, ndda, ke, hindi and nomoste are now HB-exact in gids,
-advances, offsets and clusters — kri and stra stay open (rakar assembly
-and multi-conjunct chains: kri draws its halant bare, stra its second
-halant and an unfused 0x107 for HB's 0x108), as do pref, pstf/blwf/vatu
-and the mark-cluster merge.
+advances, offsets and clusters.
+
+**9.3e Rakar, dist kern and the v2 tag — landed 2026-11-16 (third cut).**
+kri assembles through blwf (now defaulted between cjct and pres, feeding
+pres the same way cjct products do) and widens its base through dist:
+kta-style chaining gave [0x9a, 0x15a, 0x140, 0x40] at hmtx advances while
+HarfBuzz reports 862 for the base. Three engine fixes close the 200-unit
+gap. (1) The sibling script order is v2-first: Noto files dist lookups 0
+and 1 under `beng` but the chaining contextual kern only under `bng2`,
+so a v1-first order never saw it — HarfBuzz resolves the v2 model. (2)
+SinglePos format 2 with valueCount equal to the coverage size reads
+per-glyph values in coverage order (Noto writes the dist singles that
+way); valueCount 1 keeps the single value plus the old exception path,
+anything else stays refused. (3) A chaining single that carries only an
+advance adjusts the pen without moving the glyph: the record application
+reads those advances beside placements, the way the single-position
+reader already did. A base on at least one side of a kerned pair now
+takes part (two marks still have nowhere to go). stra fuses fully too
+(0xfd, 0x108, 0x149, 0x11a). kri and stra are now HB-exact in gids,
+advances and offsets; their tails keep honest per-input clusters where
+HarfBuzz merges onto the base. Open: pref, pstf/vatu, the mark-cluster
+merge, Khmer coeng with its chaining override, GPOS marks beyond anchors.
+
+**9.3e Fallout repairs — landed 2026-11-16 (fourth cut).** The slice's own
+fallout, each pinned. (1) The advance-only chaining single over-applied:
+Andalus carries placement *and* advance in one single (-120/-120), and the
+context kern answered the sum. The fallback now skips the rule that placed,
+so Andalus keeps the -120 the pin holds while kri's advance-only record
+still widens the base. (2) Segoe UI's lookup 18 — an extension-wrapped
+SinglePos format 2 with fifteen YPlacement values for fifteen glyphs —
+reads now, so the inspect count moves 44→45 singles with no trailing 9.
+The unread-extension branch keeps a synthetic-bytes witness (no corpus font
+exercises it anymore), and the per-glyph format-2 shape gains one too.
+Difftest unmoved, 0 new and 0 stale.
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Two wave gaps closed in

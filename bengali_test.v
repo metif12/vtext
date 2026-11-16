@@ -414,9 +414,40 @@ fn test_bengali_conjunct_assembly() {
 	assert ndda.glyphs.len == 1, 'ndda fuses to one glyph, got ${bengali_dump(ndda)}'
 	assert ndda.glyphs[0].gid == 0x96 && ndda.glyphs[0].cluster == 0, 'ndda is gid 96 on cluster 0'
 	assert ndda.glyphs[0].advance > 24.19 && ndda.glyphs[0].advance < 24.32, 'ndda advances 758 design units'
-	// kri and stra stay open: rakar assembly and multi-conjunct chains
-	// need machinery past nested ligatures (kri draws its halant bare,
-	// stra its second halant bare), recorded rather than hidden.
+	// kri assembles the rakar through blwf and widens its base through
+	// dist: KA 0x9a advances 862 (662 hmtx plus the 200-unit dist chaining
+	// single), the 0x15a rakar sits 200 design units off the pen, 0x140 at
+	// -370 and 0x40 at -367, all HB-exact. The two below-marks keep their
+	// own inputs where HarfBuzz merges them onto the base cluster, the
+	// known post-base convention.
+	kri := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x09B0), rune(0x09C3)]))
+	assert kri.glyphs.len == 4, 'kri draws four glyphs, got ${bengali_dump(kri)}'
+	assert kri.glyphs[0].gid == 0x9a && kri.glyphs[0].cluster == 0, 'kri opens with the rakar base, got ${bengali_dump(kri)}'
+	assert kri.glyphs[0].advance > 27.52 && kri.glyphs[0].advance < 27.65, 'the base advances 862 design units'
+	assert kri.glyphs[1].gid == 0x15a && kri.glyphs[1].cluster == 0, 'the rakar keeps cluster 0'
+	assert kri.glyphs[1].advance == 0.0 && kri.glyphs[1].is_mark, 'the rakar advances nothing'
+	assert kri.glyphs[1].x > 21.12 && kri.glyphs[1].x < 21.24, 'the rakar sits 200 design units off the pen, got x=${kri.glyphs[1].x}'
+	assert kri.glyphs[2].gid == 0x140 && kri.glyphs[2].cluster == 1, 'the vocalic head keeps its own input (HarfBuzz reports 0), got ${bengali_dump(kri)}'
+	assert kri.glyphs[2].x > 15.68 && kri.glyphs[2].x < 15.81, 'the head sits 370 design units off the pen, got x=${kri.glyphs[2].x}'
+	assert kri.glyphs[3].gid == 0x40 && kri.glyphs[3].cluster == 3, 'the vocalic tail keeps its own input (HarfBuzz reports 0), got ${bengali_dump(kri)}'
+	assert kri.glyphs[3].x > 15.78 && kri.glyphs[3].x < 15.9, 'the tail sits 367 design units off the pen, got x=${kri.glyphs[3].x}'
+	// stra fuses both conjuncts: the blwf rakar feeds the second fusion,
+	// and HarfBuzz agrees glyph for glyph — 0xfd at 623, 0x108 at 260, the
+	// 0x149 flag at -541 and 0x11a at (-595, -134). The 0x11a keeps its own
+	// input where HarfBuzz merges it onto cluster 2, the known post-base
+	// convention; everything else is exact.
+	stra := bengali_line(f, bengali_word([rune(0x09B8), rune(0x09CD), rune(0x099F), rune(0x09CD),
+		rune(0x09B0)]))
+	assert stra.glyphs.len == 4, 'stra fuses to four glyphs, got ${bengali_dump(stra)}'
+	assert stra.glyphs[0].gid == 0xfd && stra.glyphs[0].cluster == 0, 'stra opens with the ssa conjunct, got ${bengali_dump(stra)}'
+	assert stra.glyphs[0].advance > 19.87 && stra.glyphs[0].advance < 20.0, 'the conjunct advances 623 design units'
+	assert stra.glyphs[1].gid == 0x108 && stra.glyphs[1].cluster == 2, 'the tra keeps cluster 2'
+	assert stra.glyphs[1].advance > 8.26 && stra.glyphs[1].advance < 8.39, 'the tra advances 260 design units'
+	assert stra.glyphs[2].gid == 0x149 && stra.glyphs[2].cluster == 2, 'the flag keeps cluster 2'
+	assert stra.glyphs[2].advance == 0.0 && stra.glyphs[2].is_mark, 'the flag advances nothing'
+	assert stra.glyphs[2].x > 10.88 && stra.glyphs[2].x < 11.0, 'the flag sits 541 design units off the pen, got x=${stra.glyphs[2].x}'
+	assert stra.glyphs[3].gid == 0x11a && stra.glyphs[3].cluster == 3, 'the rakar keeps its own input (HarfBuzz reports 2), got ${bengali_dump(stra)}'
+	assert stra.glyphs[3].advance == 0.0, 'the rakar advances nothing'
 }
 
 fn test_bengali_draw_base() {

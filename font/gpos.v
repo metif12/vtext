@@ -1400,11 +1400,13 @@ pub fn (g &Gpos) apply_pos_records(records []ContextRecord, m ChainMatchPosition
 		}
 		// A single positioning is the common case and is asked first, because a rule that moves
 		// a glyph is what the font meant even when the same lookup also carries pair rules.
-		for rule in g.lookups[target].singles {
+		mut placed_at := -1
+		for si, rule in g.lookups[target].singles {
 			if a := rule.offset_for(named) {
 				x += a.x
 				y += a.y
 				found = true
+				placed_at = si
 				break
 			}
 			if named != other {
@@ -1412,7 +1414,37 @@ pub fn (g &Gpos) apply_pos_records(records []ContextRecord, m ChainMatchPosition
 					x += a.x
 					y += a.y
 					found = true
+					placed_at = si
 					break
+				}
+			}
+		}
+		// A single positioning that carries only an advance adjusts the pen without
+		// moving the glyph: Bengali kri widens its base by 200 through a dist
+		// single nested in a chaining rule, and placement_of reports that
+		// record as no rule at all. The fallback skips the rule that placed,
+		// so a value carrying both (Andalus moves glyph 3 by -120 and also
+		// narrows it by 120) still answers the placement alone, which is the
+		// number the context-kern pin holds. Advances accumulate beside
+		// placements across records, never inside one rule twice.
+		for si, rule in g.lookups[target].singles {
+			if si == placed_at {
+				continue
+			}
+			if v := rule.value_for(named) {
+				if v.format & 0x0004 != 0 {
+					x += v.x_advance
+					found = true
+					break
+				}
+			}
+			if named != other {
+				if v := rule.value_for(other) {
+					if v.format & 0x0004 != 0 {
+						x += v.x_advance
+						found = true
+						break
+					}
 				}
 			}
 		}
@@ -2457,7 +2489,9 @@ pub fn placement_of(v PairValue) ?Offset2 {
 // the pair tables beside it do have a count and the two sit next to each other in the same table.
 //
 // Format 2 has one value for the whole coverage, a count of it, and then a run of exceptions to the end
-// of the subtable. The count is read and must be 1; reading format 2 as format 1 takes that count as
+// of the subtable — unless the count equals the coverage size, which is per-glyph values in coverage
+// order with no exceptions (Noto's dist singles, Segoe UI's extension-wrapped one). The count is read
+// and must be 1 or the coverage size; reading any other format 2 as format 1 takes that count as
 // the number of per-glyph values, walks `glyphs` values out of a table that has one, and then reads the
 // exception list's coverage indices as though they were records.
 //
@@ -2512,13 +2546,40 @@ pub fn parse_single_position(r &Reader, resolved ResolvedSubtable) ?SinglePos {
 		return none
 	}
 	value_count := int(r.u16_at(at + 6))
+	step := pair_value_size(value_format)
+	// A count equal to the coverage size is per-glyph values in coverage
+	// order, the way Noto writes format 2 (Bengali dist lookup 10 carries
+	// twelve values for twelve glyphs and no exceptions) and Segoe UI its
+	// extension-wrapped format 2 (fifteen YPlacement values for fifteen
+	// glyphs). The values land
+	// in the same per-index list format 1 uses, so the lookup path below
+	// serves both without knowing which format wrote them.
+	if value_count == glyphs {
+		if value_count <= 0 {
+			return none
+		}
+		mut values := []PairValue{cap: glyphs, len: 0}
+		mut p := at + 8
+		for _ in 0 .. glyphs {
+			if !r.has(p, step) {
+				return none
+			}
+			values << read_pair_value(r, p, value_format)
+			p += step
+		}
+		return SinglePos{
+			ranges: ranges
+			format: value_format
+			values: values
+		}
+	}
 	if value_count != 1 {
-		// The specification says one. A count of anything else is a table this reader does not
+		// The specification says one, apart from the per-glyph shape above.
+		// A count of anything else is a table this reader does not
 		// understand, and guessing how many values follow would be guessing where the exceptions
 		// start.
 		return none
 	}
-	step := pair_value_size(value_format)
 	base := read_pair_value(r, at + 8, value_format)
 
 	mut p := at + 8 + step

@@ -360,21 +360,24 @@ fn test_lookup_type_counts_says_what_the_engine_will_not_read() {
 	segoe := inspect_font('segoeui.ttf') or { return }
 
 	// Every lookup is unwrapped before anything counts it, so a font that wraps its rules does not hide them:
-	// Segoe UI's LookupList is 137 type 9 records and what is inside them is 44 single, 4 pair, 36 mark to
-	// base, 1 mark to ligature, 12 mark to mark, 39 chaining contextual, and one that stayed a 9.
+	// Segoe UI's LookupList is 137 type 9 records and what is inside them is 45 single, 4 pair, 36 mark to
+	// base, 1 mark to ligature, 12 mark to mark and 39 chaining contextual, with nothing left as a 9.
 	//
-	// The trailing 9 is the point of the whole exercise. It is a lookup whose extension wrapped something
-	// this engine does not read, so nothing inside it was recognised, and it keeps its declared kind
-	// rather than being renamed to something inferred. A count that reported 9 for all 137 would be true of
-	// the file and useless; a count that reported nothing for the one would hide a gap.
+	// The 45th single is the point of the whole exercise. It used to be the trailing 9: an extension
+	// wrapping a SinglePos format 2 the reader refused, so nothing inside it was recognised and it kept
+	// its declared kind. Format 2 with a count equal to the coverage size reads now — fifteen
+	// YPlacement values for fifteen glyphs — so every one of the 137 extensions unwraps to a known
+	// kind. A count that reported 9 for all 137 would be true of the file and useless; the extension
+	// that wraps a type this engine does not read is still possible, and the synthetic bytes in
+	// gpos_singlepos2_test.v keep that branch honest now that no corpus font exercises it.
 	gpos := segoe.lookup_type_counts('GPOS')
-	assert gpos[1] == 44, 'expected 44 single positioning lookups, got ${gpos[1]}'
+	assert gpos[1] == 45, 'expected 45 single positioning lookups, got ${gpos[1]}'
 	assert gpos[2] == 4, 'expected 4 pair positioning lookups, got ${gpos[2]}'
 	assert gpos[4] == 36, 'expected 36 mark to base lookups, got ${gpos[4]}'
 	assert gpos[5] == 1, 'expected 1 mark to ligature lookup, got ${gpos[5]}'
 	assert gpos[6] == 12, 'expected 12 mark to mark lookups, got ${gpos[6]}'
 	assert gpos[8] == 39, 'expected 39 chaining contextual lookups, got ${gpos[8]}'
-	assert gpos[9] == 1, 'and 1 extension whose contents this engine does not read, got ${gpos[9]}'
+	assert gpos[9] == 0, 'and no extension left unread, got ${gpos[9]}'
 	mut gpos_total := 0
 	for _, n in gpos {
 		gpos_total += n

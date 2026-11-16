@@ -173,16 +173,20 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // because a line missing them is not the text.
 // indic_default_features are the Indic shaping features that run without
 // being asked, in specification order, for the same reason the joining
-// features do. Reph positioning (rphf, pref), post-base forms (pstf),
-// below-base forms (blwf) and vatu stay caller-asked: the first needs the
-// reordering machine, the rest are unproven against HarfBuzz.
+// features do. Reph positioning (rphf, pref), post-base forms (pstf) and
+// vatu stay caller-asked: the first needs the reordering machine, the rest
+// are unproven against HarfBuzz.
 fn indic_default_features() []string {
 	// cjct sits before the matra-positioning group rather than after it,
 	// which is where the specification lists it: Noto's pres rules consume
 	// cjct products (the kta split 0xbe to [0xbe, 0x14a] through lookup 66),
 	// and a pres that runs first never sees them. HarfBuzz produces the
-	// split, so the engine follows the font, not the list order.
-	return ['nukt', 'akhn', 'rphf', 'half', 'cjct', 'pres', 'abvs', 'blws', 'psts']
+	// split, so the engine follows the font, not the list order. blwf rides
+	// between them for the same reason: the rakar it fuses feeds pres (kri
+	// [KA, hal, RA] through lookup 32 to [0x19, 0x117], then pres to
+	// [0x9a, 0x15a, 0x140]), and a pres-first order leaves the unfused hal
+	// HarfBuzz never drew.
+	return ['nukt', 'akhn', 'rphf', 'half', 'cjct', 'blwf', 'pres', 'abvs', 'blws', 'psts']
 }
 
 // is_indic_shaping_script reports whether a run resolves under an Indic

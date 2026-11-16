@@ -1443,20 +1443,22 @@ pub fn ot_script_tag(tag string) string {
 // with their faces, the way the scripts themselves do.
 fn ot_script_tags_in_order(script string) []string {
 	want := ot_script_tag(script)
+	// The v2 tag goes first: HarfBuzz resolves the v2 shaping model, and a
+	// font can split a feature across the two records — Noto Bengali files
+	// dist lookups 0 and 1 under `beng` but the chaining contextual kern
+	// (kri +200) only under `bng2`, so a v1-first order never sees it.
+	// A v1-only face still answers under its own tag when v2 misses.
 	if want == 'bengali' {
-		return ['beng', 'bng2']
+		return ['bng2', 'beng']
 	}
 	sibling := match want {
-		'deva' { 'dev2' }
-		'dev2' { 'deva' }
-		'beng' { 'bng2' }
-		'bng2' { 'beng' }
-		else { '' }
+		'deva' { ['dev2', 'deva'] }
+		'dev2' { ['dev2', 'deva'] }
+		'beng' { ['bng2', 'beng'] }
+		'bng2' { ['bng2', 'beng'] }
+		else { [want] }
 	}
-	if sibling == '' {
-		return [want]
-	}
-	return [want, sibling]
+	return sibling
 }
 
 // feature_tag_for is the GSUB feature tag that carries a joining shape.

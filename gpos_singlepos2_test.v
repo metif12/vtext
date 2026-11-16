@@ -10,9 +10,10 @@ import vtext.font
 // 2 as format 1 takes its valueCount as the number of per-glyph values and then reads the exception
 // list's indices as records.
 //
-// No font on this machine uses format 2, so the subtables here are built as bytes. That is not a
-// shortcut, it is the only way to test a format nothing here has: the alternative is a parser that is
-// correct on the specification and never executed.
+// Segoe UI carries format 2 wrapped in an extension (fifteen YPlacement values for fifteen glyphs,
+// lookup 18) and Noto Bengali carries it bare (its dist singles), so the subtables here are built
+// as bytes beside the real ones. Building them is still the only way to test the refusal shapes:
+// no font here writes a count the reader does not know.
 
 import os
 
@@ -173,6 +174,65 @@ fn test_single_pos_format_2_leaves_an_uncovered_glyph_alone() {
 	}) or { panic('a format 2 single positioning did not parse') }
 	assert rule.offset_for(9) == none, 'glyph 9 is not covered'
 	assert rule.offset_for(14) == none, 'and neither is glyph 14'
+}
+
+// A count equal to the coverage size is per-glyph values in coverage order, not a shared value with
+// exceptions: the Noto dist singles are written this way, and misreading them as shared-plus-
+// exceptions is what kept kri's base narrow. Each covered glyph takes the value at its own index,
+// which is the same list format 1 serves.
+fn test_single_pos_format_2_reads_per_glyph_values_when_the_count_matches() {
+	// Three glyphs, three xPlacement values, no exceptions.
+	r := font.new_reader(bytes_of([
+		i16(2),
+		i16(14), // posFormat, coverage offset: fourteen bytes in
+		i16(1), // valueFormat: xPlacement only
+		i16(3), // valueCount, equal to the coverage size
+		i16(100),
+		i16(200),
+		i16(300), // one value per covered glyph
+		i16(1),
+		i16(3),
+		i16(10),
+		i16(11),
+		i16(12), // coverage format 1: glyphs 10, 11, 12
+	]))
+	rule := font.parse_single_position(r, font.ResolvedSubtable{
+		kind: font.gpos_lookup_single_position
+		at:   0
+	}) or { panic('a per-glyph format 2 single positioning did not parse') }
+	assert rule.base == none, 'per-glyph values have no shared value'
+	assert rule.values.len == 3, 'three glyphs take three values, got ${rule.values.len}'
+	wants := [100, 200, 300]
+	for i in 0 .. 3 {
+		gid := u16(10 + i)
+		off := rule.offset_for(gid) or { panic('no value for glyph ${gid}') }
+		assert off.x == wants[i], 'glyph ${gid} got ${off.x}, want ${wants[i]}'
+	}
+}
+
+// An extension that wraps a lookup type this engine does not read keeps its declared kind: the
+// lookup holds rules of a kind the engine cannot name, and saying 9 is more useful than guessing.
+// Segoe UI used to be the corpus witness — its last extension wrapped a format 2 single the reader
+// refused — but that format reads now, so the witness here is built as bytes: type 10 exists in no
+// specification this engine implements.
+fn test_single_pos_extension_wrapping_an_unknown_type_keeps_kind_9() {
+	r := font.new_reader(bytes_of([
+		i16(1), // one lookup
+		i16(4), // lookup offset
+		i16(9), // lookup type: extension
+		i16(0), // flag
+		i16(1), // one subtable
+		i16(8), // subtable offset, eight bytes past the lookup start
+		i16(1), // posFormat
+		i16(10), // extensionLookupType: no such positioning
+		i16(0),
+		i16(0), // extensionOffset: no bytes follow
+		i16(0),
+		i16(0), // extensionLength
+	]))
+	lookups := font.parse_gpos_lookups(r, 0)
+	assert lookups.len == 1, 'one lookup in, one lookup out, got ${lookups.len}'
+	assert lookups[0].kind == 9, 'an unread extension stays a 9, got ${lookups[0].kind}'
 }
 
 // valueCount must be 1. Anything else means the reader does not know where the exceptions begin, and

@@ -816,7 +816,12 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang strin
 	for i in 0 .. glyphs.len - 1 {
 		a := glyphs[i]
 		b := glyphs[i + 1]
-		if a.is_mark || b.is_mark {
+		// Marks take part in contextual kerning: a chaining rule that widens
+		// a base before its mark (Bengali kri +200 through dist) kerns the
+		// pair, and skipping it leaves the base narrow. A pair of two marks
+		// still has nowhere to go — neither advances — so only a base on at
+		// least one side applies.
+		if a.is_mark && b.is_mark {
 			continue
 		}
 		fa := a.font or { continue }

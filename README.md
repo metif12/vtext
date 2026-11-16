@@ -730,7 +730,9 @@ count of the values, because the coverage already says how many there are.
 
 **A SinglePos format 2 exception is a coverage index, not a glyph id.** The exception list runs to the
 end of the subtable; the scan is bounded by the extension's length where there is one, and always by
-the coverage.
+the coverage. A count equal to the coverage size is the other shape: per-glyph values in coverage
+order with no exceptions at all, the way Noto writes its dist singles and Segoe UI its extension-wrapped
+ones. Anything else is refused rather than guessed at.
 
 **A rule with a backtrack is about one glyph with a condition.** Its pattern names the glyph being
 placed and reaches back to what makes it different. A reader that insists the pattern covers both
