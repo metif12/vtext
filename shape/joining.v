@@ -266,32 +266,41 @@ pub fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun)
 			i++
 			continue
 		}
-		// A transparent character with no combining class is an invisible format
-		// character such as ZWSP. It belongs to the letter it follows and is not
-		// drawn at all, so it gets no glyph.
-		if p.combining_class_of(cps[i]) != 0 {
-			// A mark takes its base's script rather than reporting Inherited: the font
-			// chain resolves per-script sets by it, and a mark answering Zinh falls
-			// through to the general font. The base is the glyph just pushed — a
-			// previous mark of the same stack when they pile up, which already
-			// carries the base's script, or the letter itself. A leading mark has
-			// no base, so it keeps its own tag and resolves the way it always did.
-			mut script := p.script_tag_of(cps[i])
-			if out.glyphs.len > 0 {
-				script = out.glyphs[out.glyphs.len - 1].script
-			}
-			out.glyphs << ShapedGlyph{
-				cps:       [cps[i]]
-				base:      [cps[i]]
-				form:      .isolated
-				script:    script
-				start:     i
-				end:       i + 1
-				is_mark:   true
-				selectors: selectors.clone()
-			}
-			selectors = []rune{}
+		// A transparent invisible format character such as ZWSP belongs to
+		// the letter it follows and is not drawn at all, so it gets no
+		// glyph. The test is the Format general category, not a zero
+		// combining class: Indic vowel signs like U+09C1 are transparent
+		// with class zero and must still draw, and gating on the class
+		// ate every one of them (the ku matra vanished before this fix).
+		// The one casualty is U+1E94B, a spacing mark that now rides as a
+		// mark with no advance; it is recorded rather than fixed, because
+		// telling it apart needs a general-category table this pass does
+		// not carry.
+		if ucd.is_format_char(ucd.format_ranges(), cps[i]) {
+			i++
+			continue
 		}
+		// A mark takes its base's script rather than reporting Inherited: the font
+		// chain resolves per-script sets by it, and a mark answering Zinh falls
+		// through to the general font. The base is the glyph just pushed — a
+		// previous mark of the same stack when they pile up, which already
+		// carries the base's script, or the letter itself. A leading mark has
+		// no base, so it keeps its own tag and resolves the way it always did.
+		mut script := p.script_tag_of(cps[i])
+		if out.glyphs.len > 0 {
+			script = out.glyphs[out.glyphs.len - 1].script
+		}
+		out.glyphs << ShapedGlyph{
+			cps:       [cps[i]]
+			base:      [cps[i]]
+			form:      .isolated
+			script:    script
+			start:     i
+			end:       i + 1
+			is_mark:   true
+			selectors: selectors.clone()
+		}
+		selectors = []rune{}
 		i++
 	}
 	// Any selector left over belonged to the last letter, which is this loop's own glyph. A run that

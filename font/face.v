@@ -131,6 +131,14 @@ pub fn new_face(data []u8) !&Face {
 	face.gdef = new_gdef(sfnt.table_data(tag_gdef))
 	face.gsub = new_gsub(sfnt.table_data(tag_gsub), face.gdef)
 	face.gpos = new_gpos(sfnt.table_data(tag_gpos))
+	// The mark filtering sets live in GDEF but gate GPOS lookups, so the
+	// face carries them across: a gated mark lookup in a font with no sets
+	// matches nothing, which the gate reads as absent membership.
+	if gdef := face.gdef {
+		if mut gpos := face.gpos {
+			gpos.mark_sets = gdef.mark_sets.clone()
+		}
+	}
 	face.units_per_em_f = if face.units_per_em > 0 {
 		f64(face.units_per_em)
 	} else {

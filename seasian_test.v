@@ -122,62 +122,88 @@ fn seasian_line_in(f &shape.Font, text string, script string, lang string) layou
 
 fn test_seasian_shape_thai() {
 	// HarfBuzz shapes six glyphs in order with no substitution (cmap gids
-	// equal shaped gids) and zero advance on the two above-marks. The engine
-	// draws the four bases with the same gids, clusters and advances, and
-	// drops the two GDEF marks (0x2d and 0x5e, hmtx advance 0): ccc=0 marks
-	// draw nothing, which the engine slice owns.
+	// equal shaped gids) and zero advance on the two above-marks, the first
+	// offset +10 design units off the pen and the second unshifted. The
+	// engine draws all six with the same gids, advances and offsets: the
+	// ccc=0 marks used to be dropped by the class gate, and the Cf gate lets
+	// them attach. The above-marks merge onto their bases in HarfBuzz
+	// clusters [0, 1, 1, 3, 4, 4]; the engine reports honest per-input
+	// clusters [0, 1, 2, 3, 4, 5], the known post-base convention.
 	th := seasian_font('NotoSansThai-Variable.ttf') or { return }
 	line := seasian_line(th, 'สวัสดี')
-	assert line.glyphs.len == 4, 'thai hello draws four bases, got ${line.glyphs.len}'
+	assert line.glyphs.len == 6, 'thai hello draws six glyphs, got ${line.glyphs.len}'
 	assert line.width > 0, 'a Thai word has positive width'
-	want := [u16(0x6e), 0x86, 0x6e, 0x0c]
-	clusters := [0, 1, 3, 4]
+	want := [u16(0x6e), 0x86, 0x2d, 0x6e, 0x0c, 0x5e]
+	clusters := [0, 1, 2, 3, 4, 5]
 	for i in 0 .. clusters.len {
 		g := seasian_at(line.glyphs, clusters[i]) or {
 			panic('thai input ${clusters[i]} drew nothing')
 		}
 		assert g.gid == want[i], 'thai cluster ${clusters[i]} is ${want[i]:x}, got ${g.gid:x}'
-		assert g.advance > 0, 'a Thai base moves the pen'
 		assert g.gid != 0, 'no .notdef in a covered Thai line'
 	}
-	for dropped in [2, 5] {
-		assert seasian_at(line.glyphs, dropped) == none, 'thai mark at input ${dropped} draws nothing today'
-	}
+	assert line.glyphs[0].advance > 18.24 && line.glyphs[0].advance < 18.37, 'SA advances 572 design units'
+	assert line.glyphs[1].advance > 15.68 && line.glyphs[1].advance < 15.81, 'WO advances 492 design units'
+	assert line.glyphs[4].advance > 19.65 && line.glyphs[4].advance < 19.78, 'DO advances 616 design units'
+	han := seasian_at(line.glyphs, 2) or { panic('thai mark drew nothing') }
+	assert han.is_mark && han.advance == 0, 'MAI HAN AKAT is a mark advancing nothing'
+	assert han.x > 34.31 && han.x < 34.43, 'MAI HAN AKAT sits 10 design units off the pen, got x=${han.x}'
+	sara := seasian_at(line.glyphs, 5) or { panic('thai SARA II drew nothing') }
+	assert sara.is_mark && sara.advance == 0, 'SARA II is a mark advancing nothing'
+	assert sara.x > 72.0 && sara.x < 72.12, 'SARA II sits at the pen, got x=${sara.x}'
+	assert sara.y == 0.0, 'SARA II rides the baseline'
 }
 
 fn test_seasian_shape_lao() {
 	// HarfBuzz shapes seven glyphs in order with no substitution and zero
-	// advance on the final SARA II. The engine draws the first six with the
-	// same gids, clusters and advances, and drops the GDEF mark (0x45, hmtx
-	// advance 0): ccc=0 marks draw nothing, which the engine slice owns.
+	// advance on the final SARA II, offset -582 design units off the pen by
+	// the font's own anchor, merged onto the base cluster 5. The engine
+	// draws all seven with the same gids, advances and offsets under the
+	// honest per-input cluster 6, the known convention: the ccc=0 mark used
+	// to be dropped by the class gate, and the Cf gate lets it attach. The
+	// Lao script tag ('lao ', padded) is what resolves the GPOS anchors;
+	// the bare 'lao' finds no script and leaves the mark at the pen.
 	la := seasian_font('NotoSansLao-Variable.ttf') or { return }
 	line := seasian_line(la, 'ສະບາຍດີ')
-	assert line.glyphs.len == 6, 'lao hello draws six letters, got ${line.glyphs.len}'
+	assert line.glyphs.len == 7, 'lao hello draws seven glyphs, got ${line.glyphs.len}'
 	assert line.width > 0, 'a Lao word has positive width'
-	want := [u16(0x2d), 0x3b, 0x1f, 0x3c, 0x18, 0x19]
+	want := [u16(0x2d), 0x3b, 0x1f, 0x3c, 0x18, 0x19, 0x45]
 	for i in 0 .. want.len {
 		g := seasian_at(line.glyphs, i) or { panic('lao input ${i} drew nothing') }
 		assert g.gid == want[i], 'lao cluster ${i} is ${want[i]:x}, got ${g.gid:x}'
-		assert g.advance > 0, 'a Lao letter moves the pen'
 		assert g.gid != 0, 'no .notdef in a covered Lao line'
 	}
-	assert seasian_at(line.glyphs, 6) == none, 'lao SARA II draws nothing today'
+	sara := seasian_at(line.glyphs, 6) or { panic('lao SARA II drew nothing') }
+	assert sara.is_mark && sara.advance == 0, 'SARA II is a mark advancing nothing'
+	assert sara.x > 83.56 && sara.x < 83.68, 'SARA II sits 582 design units off the pen, got x=${sara.x}'
+	assert sara.y == 0.0, 'SARA II rides the baseline'
 }
 
 fn test_seasian_shape_khmer() {
 	// HarfBuzz shapes five glyphs: the two SA bases plus SRA U, then the
-	// COENG+TA subscript fusion 0xcc and SRA II, all three merged onto cluster
-	// 2 with zero advance. The engine applies no coeng fusion: it draws the
-	// cmap glyphs SA, SA, COENG (0x9f, a GDEF mark with hmtx advance 0) and TA
-	// (0x41), and drops the two ccc=0 vowel signs. Both gaps belong to the
-	// engine slice.
+	// COENG+TA subscript fusion 0xcc and SRA II, all three merged onto
+	// cluster 2 with small offsets. The engine applies no coeng fusion: it
+	// draws the cmap glyphs SA, SRA U (0x77), SA, COENG (0x9f, a GDEF mark
+	// with hmtx advance 0), TA (0x41) and SRA II (0x6d) under honest
+	// per-input clusters, with the font's mark-to-base anchors. The ccc=0
+	// vowels used to be dropped by the class gate, and the Cf gate lets
+	// them attach. SRA U lands HB-exact; SRA II is the one placement that
+	// diverges: the engine takes the first abvm mark-to-base rule (+615 off
+	// TA) while HarfBuzz's -32 comes out of the full abvm chain past it,
+	// so the chaining override belongs to the GPOS open work with the
+	// fusion and the cluster merges.
 	kh := seasian_font('NotoSansKhmer-Variable.ttf') or { return }
 	line := seasian_line(kh, 'សួស្តី')
-	assert line.glyphs.len == 4, 'khmer hello draws four glyphs, got ${line.glyphs.len}'
+	assert line.glyphs.len == 6, 'khmer hello draws six glyphs, got ${line.glyphs.len}'
 	assert line.width > 0, 'a Khmer word has positive width'
 	sa0 := seasian_at(line.glyphs, 0) or { panic('khmer SA drew nothing') }
 	assert sa0.gid == 0x53, 'khmer cluster 0 is SA 0x53, got ${sa0.gid:x}'
 	assert sa0.advance > 0, 'the first SA moves the pen'
+	u := seasian_at(line.glyphs, 1) or { panic('khmer SRA U drew nothing') }
+	assert u.gid == 0x77, 'khmer cluster 1 is SRA U 0x77, got ${u.gid:x}'
+	assert u.is_mark && u.advance == 0, 'SRA U is a mark advancing nothing'
+	assert u.x > 29.44 && u.x < 29.56, 'SRA U sits 6 design units off the pen, got x=${u.x}'
+	assert u.y > 0.77 && u.y < 0.89, 'SRA U rides 26 design units up, got y=${u.y}'
 	sa2 := seasian_at(line.glyphs, 2) or { panic('khmer second SA drew nothing') }
 	assert sa2.gid == 0x53, 'khmer cluster 2 is SA 0x53, got ${sa2.gid:x}'
 	assert sa2.advance > 0, 'the second SA moves the pen'
@@ -188,9 +214,10 @@ fn test_seasian_shape_khmer() {
 	ta := seasian_at(line.glyphs, 4) or { panic('khmer TA drew nothing') }
 	assert ta.gid == 0x41, 'khmer TA is the cmap glyph 0x41, got ${ta.gid:x}'
 	assert ta.advance > 0, 'the unfused TA moves the pen'
-	for dropped in [1, 5] {
-		assert seasian_at(line.glyphs, dropped) == none, 'khmer vowel at input ${dropped} draws nothing today'
-	}
+	ii := seasian_at(line.glyphs, 5) or { panic('khmer SRA II drew nothing') }
+	assert ii.gid == 0x6d, 'khmer cluster 5 is SRA II 0x6d, got ${ii.gid:x}'
+	assert ii.is_mark && ii.advance == 0, 'SRA II is a mark advancing nothing'
+	assert ii.x > 79.0 && ii.x < 79.14, 'SRA II takes the first abvm rule off TA, got x=${ii.x}'
 }
 
 fn test_seasian_shape_myanmar() {

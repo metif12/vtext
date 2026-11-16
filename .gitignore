@@ -99,6 +99,7 @@ ucd/*
 # InCB rows carry the conjunct Linker/Extend/Consonant roles.
 !ucd/PropList.txt
 !ucd/ucd_whitespace.v
+!ucd/ucd_format.v
 !ucd/DerivedCoreProperties.txt
 
 # IndicSyllabicCategory.txt and IndicPositionalCategory.txt are the UCD Indic

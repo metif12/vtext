@@ -1267,11 +1267,27 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		// cluster. U+0622 splits to U+0627 plus U+0653, both cluster 47, and without this the madda
 		// stacks on whatever earlier mark the font will attach it to, hundreds of pixels from its
 		// alef. A mark whose own cluster has a letter base skips stacking.
+		// A mark stacks only on a mark of its own syllable: the nearest letter
+		// base at or before the target must be the mark's own base. Without
+		// this the Thai SARA II (on ด) stacks on MAI HAN AKAT (on ว) through
+		// a rule the font wrote for two marks on one base, landing mid-word
+		// where HarfBuzz leaves it at the pen. A shadda carrying a fatha
+		// passes: both answer the beh. A mark whose own cluster has a letter
+		// base skips stacking as before.
 		mut stacked_at := -1
 		mut stacked_best := 0
-		if g.cluster !in bases {
+		if base_index >= 0 && g.cluster !in bases {
 			for k, c in line.glyphs {
 				if k == i || !c.is_mark || c.cluster == g.cluster || c.cluster >= g.cluster {
+					continue
+				}
+				mut target_base := -1
+				for cluster, _ in bases {
+					if cluster <= c.cluster && cluster > target_base {
+						target_base = cluster
+					}
+				}
+				if target_base != best {
 					continue
 				}
 				if stacked_at < 0 || c.cluster > stacked_best {

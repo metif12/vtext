@@ -372,17 +372,44 @@ fn test_indic_shape_wired_order() {
 }
 
 fn test_indic_shape_current_gaps() {
-	// HarfBuzz shapes NAMASTE with the STA conjunct gid 256 and the E matra
-	// gid 40; the engine draws the fused STA 256 and drops the E matra,
-	// which has joining type Transparent and combining class zero.
+	// HarfBuzz shapes NAMASTE as NA 0x4b at 555, MA 0x50 at 598, fused STA
+	// 0x100 at 389, the E pres variant 0x47 at 570 and its tail 0x28
+	// advancing nothing, clusters [0, 1, 2, 4, 4]. The engine draws the
+	// same five gids with the same advances: the E matra used to be
+	// dropped by the class gate, and the Cf gate lets it attach. The tail
+	// reports cluster 5 where HarfBuzz reports 4 — the same post-base
+	// cluster convention the hindi UU pin records — while the order, gids
+	// and advances agree.
 	f := indic_font('NotoSansDevanagari-Variable.ttf') or { return }
 	namaste := indic_line(f, indic_word([rune(0x0928), rune(0x092E), rune(0x0938), rune(0x094D),
 		rune(0x0924), rune(0x0947)]))
-	assert namaste.glyphs.len == 4, 'namaste draws four pieces, got ${indic_dump(namaste)}'
-	assert indic_at(namaste.glyphs, 5) == none, 'the E matra draws nothing today'
-	sta := indic_at(namaste.glyphs, 2) or { panic('namaste STA drew nothing') }
-	assert sta.gid == 256, 'fused STA is gid 256, got ${indic_dump(namaste)}'
-	assert sta.advance > 12.39 && sta.advance < 12.51, 'STA advances 389 design units'
+	assert namaste.glyphs.len == 5, 'namaste draws five pieces, got ${indic_dump(namaste)}'
+	assert namaste.glyphs[0].gid == 0x4b && namaste.glyphs[0].cluster == 0, 'NA opens on cluster 0, got ${indic_dump(namaste)}'
+	assert namaste.glyphs[1].gid == 0x50 && namaste.glyphs[1].cluster == 1, 'MA keeps cluster 1'
+	assert namaste.glyphs[2].gid == 0x100 && namaste.glyphs[2].cluster == 2, 'fused STA keeps cluster 2'
+	assert namaste.glyphs[2].advance > 12.39 && namaste.glyphs[2].advance < 12.51, 'STA advances 389 design units'
+	assert namaste.glyphs[3].gid == 0x47 && namaste.glyphs[3].cluster == 4, 'the E pres variant lands on cluster 4'
+	assert namaste.glyphs[3].advance > 18.18 && namaste.glyphs[3].advance < 18.3, 'the E variant advances 570 design units'
+	assert namaste.glyphs[4].gid == 0x28 && namaste.glyphs[4].cluster == 5, 'the E tail reports its own input, got ${indic_dump(namaste)}'
+	assert namaste.glyphs[4].advance == 0.0, 'the tail advances nothing'
+	// Zero-class marks above the base attach too: candrabindu U+0901 and
+	// anusvara U+0902 are transparent with class zero, and HarfBuzz draws
+	// KA 0x38 at 768 with the mark advancing nothing, both on cluster 0,
+	// offset -208 and -221 design units off the pen by the font's own
+	// anchors. The engine agrees to the pixel at 32 px: marks at 17.92 and
+	// 17.50 under the honest per-input cluster, the known convention.
+	candra := indic_line(f, indic_word([rune(0x0915), rune(0x0901)]))
+	assert candra.glyphs.len == 2, 'candrabindu draws two glyphs, got ${indic_dump(candra)}'
+	assert candra.glyphs[0].gid == 0x38 && candra.glyphs[0].cluster == 0, 'KA opens on cluster 0'
+	assert candra.glyphs[1].gid == 0x65 && candra.glyphs[1].cluster == 1, 'candrabindu keeps its own input (HarfBuzz reports 0), got ${indic_dump(candra)}'
+	assert candra.glyphs[1].advance == 0.0 && candra.glyphs[1].is_mark, 'candrabindu is a mark advancing nothing'
+	assert candra.glyphs[1].x > 17.87 && candra.glyphs[1].x < 17.97, 'candrabindu sits 208 design units off the pen, got x=${candra.glyphs[1].x}'
+	anusvara := indic_line(f, indic_word([rune(0x0915), rune(0x0902)]))
+	assert anusvara.glyphs.len == 2, 'anusvara draws two glyphs, got ${indic_dump(anusvara)}'
+	assert anusvara.glyphs[0].gid == 0x38 && anusvara.glyphs[0].cluster == 0, 'KA opens on cluster 0'
+	assert anusvara.glyphs[1].gid == 0x64 && anusvara.glyphs[1].cluster == 1, 'anusvara keeps its own input (HarfBuzz reports 0), got ${indic_dump(anusvara)}'
+	assert anusvara.glyphs[1].advance == 0.0 && anusvara.glyphs[1].is_mark, 'anusvara is a mark advancing nothing'
+	assert anusvara.glyphs[1].x > 17.45 && anusvara.glyphs[1].x < 17.55, 'anusvara sits 221 design units off the pen, got x=${anusvara.glyphs[1].x}'
 	// HarfBuzz shapes KARMA with a reph over MA: KA gid 56 at 768 on
 	// cluster 0, MA gid 80 at 598 on cluster 1, reph gid 0x1fa advancing
 	// nothing on cluster 1. The machine moves the syllable-initial RA+hal

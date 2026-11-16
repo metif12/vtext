@@ -15,20 +15,10 @@ import vtext.layout
 // on every platform with no skips: no host font, no platform directory.
 //
 // Where the engine diverges from HarfBuzz, the assert pins the current
-// behaviour and the comment names the gap for the engine slice that owns it:
-//   - Thaana vowel signs (IBIFILI, EBEFILI) are transparent marks with
-//     combining class zero, so the joining pass emits no glyph for them at
-//     all: a ccc=0 mark is swallowed even though the font classes it as a
-//     GDEF mark with zero advance and HarfBuzz draws it with a GPOS mark
-//     offset. The consonants draw as their cmap glyphs with the hmtx
-//     advances. This is the same ccc=0 gap the Southeast Asian wave pins.
-//   - NKo joining never runs under auto-detect: the run resolves under the
-//     Unicode script tag 'Nkoo', which lowercases to 'nkoo', while the font
-//     files its NKo rules under the OpenType tag 'nko ' (trailing space), so
-//     the script lookup misses and no joining lookup applies. Naming the
-//     font's own table draws exactly HarfBuzz's fused glyphs, which proves
-//     the forms are right and only the tag fold is wrong. The fold belongs
-//     to the engine slice.
+// behaviour and the comment names the gap for the engine slice that owns it.
+// Two such gaps closed in 9.3e: Thaana fili and the NKo tag fold now draw
+// beside HarfBuzz, pinned below; the Khmer coeng fusion and the Yi tag (no
+// corpus word exercises it yet) stay open.
 //   - Tibetan stacking composition and Indic conjunct fusion stay follow-ups:
 //     neither this wave's faces nor its asserts go there.
 //
@@ -179,28 +169,37 @@ fn test_longtail_shape_thaana() {
 	// IBIFILI) as six glyphs: the three consonant bases (dhaalu 0x0d at
 	// 517, vaavu 0x0a at 424, haa 0x02 at 312) each paired with its fili
 	// mark (ibifili 0x63, ebefil 0x67) at zero advance with a GPOS mark
-	// offset. The engine draws the three cmap bases with the same gids,
-	// clusters and advances, and drops the two ccc=0 fili: ccc=0 marks draw
-	// nothing, which the engine slice owns.
+	// offset, the marks merged onto their bases clusters. The engine draws
+	// the same six gids with the same advances and offsets under honest
+	// per-input clusters, the known post-base convention: the fili are
+	// ccc=0 marks the class gate used to swallow, and the Cf gate lets
+	// them attach. At 32 px the marks sit
+	// at -2.62, +14.78 and +24.70 past bases at 0, 9.98 and 23.55 — HB's
+	// -82, +150 and +36 design units, y exact too.
 	th := longtail_font('NotoSansThaana-Variable.ttf') or { return }
 	dhivehi := longtail_word([rune(0x078B), rune(0x07A8), rune(0x0788), rune(0x07AC), rune(0x0780),
 		rune(0x07A8)])
 	line := longtail_line(th, dhivehi)
-	assert line.glyphs.len == 3, 'dhivehi draws three bases, got ${longtail_dump(line)}'
+	assert line.glyphs.len == 6, 'dhivehi draws three bases and three fili, got ${longtail_dump(line)}'
 	assert line.width > 0, 'a Thaana word has positive width'
-	want := [u16(0x0d), 0x0a, 0x02]
-	clusters := [0, 2, 4]
+	want := [u16(0x63), 0x02, 0x67, 0x0a, 0x63, 0x0d]
+	clusters := [5, 4, 3, 2, 1, 0]
 	for i in 0 .. clusters.len {
 		g := longtail_at(line.glyphs, clusters[i]) or {
 			panic('thaana input ${clusters[i]} drew nothing: ${longtail_dump(line)}')
 		}
 		assert g.gid == want[i], 'thaana cluster ${clusters[i]} is ${want[i]:x}, got ${g.gid:x}: ${longtail_dump(line)}'
-		assert g.advance > 0, 'a Thaana base moves the pen'
 		assert g.gid != 0, 'no .notdef in a covered Thaana line'
 	}
-	for dropped in [1, 3, 5] {
-		assert longtail_at(line.glyphs, dropped) == none, 'thaana fili at input ${dropped} draws nothing today: ${longtail_dump(line)}'
-	}
+	fili5 := longtail_at(line.glyphs, 5) or { panic('thaana fili drew nothing') }
+	assert fili5.is_mark && fili5.advance == 0, 'ibifili is a mark advancing nothing'
+	assert fili5.x > -2.68 && fili5.x < -2.56, 'ibifili sits 82 design units off its base, got x=${fili5.x}'
+	fili3 := longtail_at(line.glyphs, 3) or { panic('thaana ebefil drew nothing') }
+	assert fili3.is_mark && fili3.advance == 0, 'ebefili is a mark advancing nothing'
+	assert fili3.x > 14.72 && fili3.x < 14.84, 'ebefili sits 150 design units off its base, got x=${fili3.x}'
+	fili1 := longtail_at(line.glyphs, 1) or { panic('thaana second ibifili drew nothing') }
+	assert fili1.is_mark && fili1.advance == 0, 'the second ibifili is a mark advancing nothing'
+	assert fili1.x > 24.64 && fili1.x < 24.76, 'ibifili sits 36 design units off its base, got x=${fili1.x}'
 }
 
 fn test_longtail_shape_nko() {
@@ -208,29 +207,25 @@ fn test_longtail_shape_nko() {
 	// fina 0x52 at 551, KA medi 0x80 at 544, N init 0x5d at 685. NKo letters
 	// are dual joining (UCD joining type D), so the joining pass assigns
 	// the same initial/medial/final forms the font's lookups are masked on;
-	// but the run resolves under the Unicode script tag 'Nkoo', which
+	// the run used to resolve under the Unicode script tag 'Nkoo', which
 	// lowercases to 'nkoo', while the font files its NKo rules under the
-	// OpenType tag 'nko ' (trailing space). The script lookup misses, no
-	// joining lookup runs, and the engine draws the three unfolded cmap
-	// glyphs (0x1a at 685, 0x26 at 544, 0x17 at 551) under their own
-	// clusters. The tag fold belongs to the engine slice.
-	//
-	// Naming the font's own table proves the forms are right and only the
-	// tag is wrong: under an explicit 'nko ' script the same line draws
-	// exactly HarfBuzz's three fused glyphs. That override line is the
-	// joining-form check beside HarfBuzz.
+	// OpenType tag 'nko ' (trailing space) — so the script lookup missed,
+	// no joining lookup ran, and the engine drew the three unfolded cmap
+	// glyphs. The tag fold is fixed: the default line now draws exactly
+	// HarfBuzz's three fused glyphs, and the explicit 'nko ' override draws
+	// the same three, proving the fold rather than the override.
 	nk := longtail_font('NotoSansNKo-Regular.ttf') or { return }
 	nko := longtail_word([rune(0x07D2), rune(0x07DE), rune(0x07CF)])
 	line := longtail_line(nk, nko)
-	assert line.glyphs.len == 3, 'the NKo word draws three letters, got ${longtail_dump(line)}'
+	assert line.glyphs.len == 3, 'the NKo word draws three fused letters, got ${longtail_dump(line)}'
 	assert line.width > 0, 'an NKo word has positive width'
-	want := [u16(0x1a), 0x26, 0x17]
+	want := [u16(0x5d), 0x80, 0x52]
 	for i in 0 .. want.len {
 		g := longtail_at(line.glyphs, i) or {
 			panic('nko input ${i} drew nothing: ${longtail_dump(line)}')
 		}
 		assert g.gid == want[i], 'nko cluster ${i} is ${want[i]:x}, got ${g.gid:x}: ${longtail_dump(line)}'
-		assert g.advance > 0, 'an NKo letter moves the pen'
+		assert g.advance > 0, 'a fused NKo letter moves the pen'
 		assert g.gid != 0, 'no .notdef in a covered NKo line'
 	}
 	fused := longtail_line_in(nk, nko, 'nko ', '')

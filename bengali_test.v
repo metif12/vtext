@@ -335,6 +335,28 @@ fn test_bengali_shape_repha() {
 	assert rkma.glyphs[2].gid == 0x84 && rkma.glyphs[2].cluster == 0, 'the reph closes on cluster 0'
 }
 
+fn test_bengali_zero_class_marks_attach() {
+	// Bengali U+09C1 is a combining mark with combining class zero and
+	// transparent joining: the old class gate read it as an invisible
+	// format character and the ku matra vanished. HarfBuzz draws KA gid
+	// 0x19 at 807 and the U matra gid 0x3e advancing nothing, both on
+	// cluster 0, the matra offset -393 design units off the pen by the
+	// font's own mark anchor. The engine draws the same gids with the same
+	// advances and the same anchor — at 32 px a mark at 13.25 past a 25.82
+	// advance — under the honest per-input cluster: the matra keeps cluster
+	// 1 where HarfBuzz reports the base cluster 0, the known post-base
+	// cluster convention this slice does not change.
+	f := bengali_font() or { return }
+	ku := bengali_line(f, bengali_word([rune(0x0995), rune(0x09C1)]))
+	assert ku.glyphs.len == 2, 'ku draws two glyphs, got ${bengali_dump(ku)}'
+	assert ku.glyphs[0].gid == 0x19 && ku.glyphs[0].cluster == 0, 'KA opens on cluster 0, got ${bengali_dump(ku)}'
+	assert ku.glyphs[0].advance > 25.76 && ku.glyphs[0].advance < 25.9, 'KA advances 807 design units'
+	assert ku.glyphs[1].gid == 0x3e && ku.glyphs[1].cluster == 1, 'the U matra keeps its own input (HarfBuzz reports the base cluster 0), got ${bengali_dump(ku)}'
+	assert ku.glyphs[1].advance == 0.0, 'the matra advances nothing'
+	assert ku.glyphs[1].is_mark, 'the matra rides as a mark'
+	assert ku.glyphs[1].x > 13.2 && ku.glyphs[1].x < 13.3, 'the matra sits 393 design units off the pen, got x=${ku.glyphs[1].x}'
+}
+
 fn test_bengali_draw_base() {
 	// One rasterised base consonant: a face that shapes but never inks is a
 	// face the test cannot see.

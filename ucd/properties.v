@@ -396,6 +396,23 @@ pub fn is_white_space(ranges []CodeRange, cp rune) bool {
 	return lookup_range(ranges, u32(cp), 0) == 1
 }
 
+// format_ranges decodes the generated Format (Cf) table, read from
+// UnicodeData.txt by tools/gen_format.v.
+//
+// Decoded by the caller the way quote_ranges is and for the same reason: 21
+// ranges, read by the joining pass alone, so paying one small decode per
+// call beats carrying the table on every Properties.
+pub fn format_ranges() []CodeRange {
+	return parse_ranges(format_ranges_data)
+}
+
+// is_format_char reports whether cp carries the Format (Cf) general
+// category: the invisible controls (ZWSP, ZWNJ, SHY, the bidi marks) that
+// shaping drops rather than draws.
+pub fn is_format_char(ranges []CodeRange, cp rune) bool {
+	return lookup_range(ranges, u32(cp), 0) == 1
+}
+
 // SaMark is which of the two resolutions LB1 gives a complex-context character.
 //
 // LineBreak.txt has one class, SA, for a Thai letter and for the sign that sits above it, and the

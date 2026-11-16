@@ -718,12 +718,28 @@ pub mut:
 	// mark_feature_lookups are the lookups of the mark feature for the Arabic script, which is
 	// where a font puts mark-to-base rules for Arabic letters.
 	mark_feature_lookups []u16
+	// mark_sets are the GDEF mark filtering sets, carried so a gated lookup
+	// can test membership: a lookup whose flag names USE_MARK_FILTERING_SET
+	// applies only to marks in its set. Copied from the face's GDEF at load;
+	// a font with no sets answers no membership, so a gated lookup in it
+	// matches nothing rather than everything.
+	mark_sets [][]CoverageRange
 }
 
 // GposLookup is one positioning lookup, holding the rules of the kinds this milestone applies.
 pub struct GposLookup {
 pub mut:
 	kind u16
+	// flag is the lookup's flag field: mark attachment class high, ignore
+	// glyph classes and USE_MARK_FILTERING_SET (0x0010) low. Only the
+	// filtering-set bit is honored, and only on the mark rules below: a
+	// lookup gated to a set the mark is not in is skipped. The ignore bits
+	// and the attachment class stay open, recorded on mark_offset_on.
+	flag u16
+	// mark_filtering_set is the GDEF mark glyph set index, meaningful only
+	// when flag names USE_MARK_FILTERING_SET. A font whose GDEF carries no
+	// sets answers no membership, so a gated lookup in it matches nothing.
+	mark_filtering_set u16
 	// mark_bases are mark-to-base rules, where the second glyph is a letter.
 	mark_bases []MarkToBase
 	// mark_marks are mark-to-mark rules, which have exactly the shape of a mark-to-base rule and
@@ -792,7 +808,12 @@ pub fn new_gpos(raw []u8) ?&Gpos {
 	//
 	// The order is abvm, blwm, mark then mkmk, and it matters only in that a rule found first wins.
 	// A font does not put the same mark under two of them, so the order is not load bearing; it is
-	// written this way because those are the features a mark can be under.
+	// written this way because those are the features a mark can be under. Within one
+	// feature the first matching lookup wins, which is an approximation with a known
+	// counterexample: Khmer SRA II matches an abvm mark-to-base rule (+615 off TA)
+	// before an abvm chaining rule that HarfBuzz applies after it (-32), so the
+	// engine places it at +615 while HarfBuzz reports -32. Composing a chain
+	// adjustment over an absolute mark placement belongs to the GPOS open work.
 	for feat in ['abvm', 'blwm', 'mark', 'mkmk'] {
 		g.mark_feature_lookups << g.lookups_for('arab', feat)
 	}
@@ -959,12 +980,21 @@ pub fn (g &Gpos) mark_offset_in(mark_gid u16, base_gid u16, base_is_mark bool, s
 // mark_offset_on answers one mark pair from an explicit lookup list, which is what the
 // two public forms share: the arab list collected at parse time, and the per-script
 // list collected per run.
+//
+// A lookup gated by USE_MARK_FILTERING_SET applies only to marks in its GDEF
+// set: the Thai SARA II stacks on MAI HAN AKAT through a rule whose set does
+// not contain it, and matching it anyway puts the vowel on the wrong letter.
+// The ignore-class bits and the mark attachment class are still open: only
+// the filtering-set bit is honored, and only here on the mark rules.
 pub fn (g &Gpos) mark_offset_on(mark_gid u16, base_gid u16, base_is_mark bool, lookups []u16) ?Offset2 {
 	for li in lookups {
 		if li >= g.lookups.len {
 			continue
 		}
 		lookup := g.lookups[li]
+		if lookup.flag & 0x0010 != 0 && !gpos_mark_in_set(g.mark_sets, lookup.mark_filtering_set, mark_gid) {
+			continue
+		}
 		if base_is_mark {
 			for rule in lookup.mark_marks {
 				if off := rule.offset_for(mark_gid, base_gid) {
@@ -992,6 +1022,20 @@ pub fn (g &Gpos) mark_offset_on(mark_gid u16, base_gid u16, base_is_mark bool, l
 		}
 	}
 	return none
+}
+
+// gpos_mark_in_set reports whether a mark belongs to a filtering set: a set
+// index past the GDEF sets, or a font with none, answers no. No membership
+// means the gated lookup does not apply, which degrades to the letter below
+// rather than to a wrong stack.
+fn gpos_mark_in_set(sets [][]CoverageRange, set_index u16, mark_gid u16) bool {
+	if int(set_index) >= sets.len {
+		return false
+	}
+	if _ := coverage_index(sets[set_index], mark_gid) {
+		return true
+	}
+	return false
 }
 
 // cursive_anchors returns where a glyph's joining stroke enters and leaves, in design units.
@@ -1942,6 +1986,16 @@ pub fn parse_gpos_lookups(r &Reader, off int) []GposLookup {
 		// wrapper.
 		header_kind := lookup.kind
 		subtable_count := int(r.u16_at(at + 4))
+		lookup.flag = r.u16_at(at + 2)
+		// The mark filtering set trails the subtable offsets, and only when
+		// the flag asks for it: reading it unconditionally lands in the next
+		// lookup's header on fonts that never set the bit.
+		if lookup.flag & 0x0010 != 0 {
+			set_at := at + 6 + subtable_count * 2
+			if r.has(set_at, 2) {
+				lookup.mark_filtering_set = r.u16_at(set_at)
+			}
+		}
 		for j in 0 .. subtable_count {
 			resolved := resolve_gpos_subtable(r, header_kind, at + int(r.u16_at(at + 6 + j * 2)))
 			if resolved.kind == gpos_lookup_mark_to_base {

@@ -1405,7 +1405,16 @@ pub fn ot_script_tag(tag string) string {
 	if lower == 'hira' {
 		return 'kana'
 	}
-	return lower
+	// Three OpenType tags pad with a space where the engine's UCD-derived
+	// spelling has a letter: Laoo/Nkoo/Yiii are 'lao '/'nko '/'yi ' in the
+	// fonts. Without the pad a Lao run resolves no script and silently
+	// draws unshaped: cmap gids with no features and marks at the pen.
+	return match lower {
+		'laoo' { 'lao ' }
+		'nkoo' { 'nko ' }
+		'yiii' { 'yi ' }
+		else { lower }
+	}
 }
 
 // ot_script_tags_in_order answers the OpenType tags one script name can
