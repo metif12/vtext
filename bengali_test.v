@@ -20,22 +20,20 @@ import vtext.shape
 // behaviour and the comment names the gap for the engine slice that owns
 // it — the same gaps indic_test.v pins for Devanagari, now shown to hold
 // across scripts:
-//   - pre-base matras draw first with the cmap spacing glyph: the joining
-//     hook feeds the reordered run into shaping and merges the syllable's
-//     clusters onto its base (both on cluster 0, like HarfBuzz). Bengali
-//     needs no pres variant; the remaining fusion gap below is conjuncts,
-//     not matras.
-//   - no conjunct fusion by default, and no single named feature fuses
-//     through the existing substitution path either (akhn, cjct, blwf all
-//     tried): the engine draws the cmap pieces where HarfBuzz draws one
-//     fused glyph. Devanagari akhn fuses through the same path; Bengali
-//     needs the conjunct feature machinery (pstf/half/pres/vatu) the wiring
-//     follow-up owns.
+//   - pre-base matras draw first on the syllable base: the joining hook
+//     feeds the reordered run into shaping and merges the clusters, and the
+//     Indic defaults fuse what needs no reordering. Bengali needs no pres
+//     variant: the cmap matra is what HarfBuzz draws too.
+//   - KSSA fuses by default through the bng2 akhn rule, which resolves now
+//     that the tag fallback names the v2 script. What stays open is the
+//     Bengali conjunct assembly chain: the below-base split fires but its
+//     pstf/blwf/cjct reassembly and mark positioning do not, so hindi and
+//     nomoste draw the pieces where HarfBuzz draws fused, positioned forms.
 //   - GPOS mark advances and offsets are the font layer: the halant reports
 //     its own hmtx advance of zero, not HarfBuzz mark offsets.
 //
-// Repha placement, split-matra halves and the joining hook that feeds
-// reordered runs into GSUB stay follow-ups with the wiring.
+// Repha placement and movement, split-matra halves, pstf/blwf/vatu and the
+// Bengali assembly chain stay follow-ups: the 9.3d slice.
 
 fn bengali_font_path() string {
 	return 'testdata/fonts/NotoSansBengali-Variable.ttf'
@@ -258,35 +256,48 @@ fn test_bengali_shape_wired_order() {
 	assert ki.glyphs[1].gid == 0x19, 'KA draws second, got ${bengali_dump(ki)}'
 	assert ki.glyphs[1].cluster == 0, 'KA keeps the syllable base, got ${bengali_dump(ki)}'
 	assert ki.glyphs[1].advance > 25.76 && ki.glyphs[1].advance < 25.88, 'KA advances 807 design units'
-	// The pre-base E-kar merges the same way: nomoste's ste syllable moves
-	// the E-kar first and reports cluster 2 for all four glyphs, where
-	// HarfBuzz draws three (its pstf fusion stays a wiring follow-up).
+}
+
+fn test_bengali_shape_current_gaps() {
+	// HarfBuzz shapes KSSA as one glyph: gid 0x87 (fontTools
+	// uni099509CD09B7) at advance 859 on cluster 0. The tag fallback lets
+	// the bng2 akhn rule resolve, so the engine draws the fused glyph by
+	// default too — and naming akhn changes nothing, which the dedup below
+	// pins.
+	f := bengali_font() or { return }
+	kssa := bengali_word([rune(0x0995), rune(0x09CD), rune(0x09B7)])
+	plain := bengali_line(f, kssa)
+	assert plain.glyphs.len == 1, 'kssa fuses to one glyph by default, got ${bengali_dump(plain)}'
+	assert plain.glyphs[0].gid == 0x87, 'fused kssa is gid 87, got ${bengali_dump(plain)}'
+	assert plain.glyphs[0].cluster == 0, 'the fusion keeps the first cluster'
+	assert plain.glyphs[0].advance > 27.43 && plain.glyphs[0].advance < 27.55, 'fused kssa advances 859 design units'
+	for feat in [['akhn'], ['cjct'], ['blwf']] {
+		again := bengali_line_feat(f, kssa, feat)
+		assert bengali_dump(again) == bengali_dump(plain), 'asked ${feat[0]} repeats the default'
+	}
+	// HarfBuzz shapes hindi's NDA region as the headline piece 0x15d at
+	// advance 299 with a float mark, and nomoste's ste region as fc plus a
+	// blws mark. The engine performs the first half of the Bengali
+	// conjunct assembly (the below-base split) but not the second
+	// (pstf/blwf/cjct reassembly and mark positioning), so the pieces draw
+	// unfused. That chain is the 9.3d slice; what is pinned here is that
+	// the split happens and nothing else moves: the order, the other gids
+	// and every advance match HarfBuzz.
+	hindi := bengali_line(f, bengali_word([rune(0x09B9), rune(0x09BF), rune(0x09A8), rune(0x09CD),
+		rune(0x09A6), rune(0x09C0)]))
+	assert hindi.glyphs.len == 7, 'hindi draws seven pieces, got ${bengali_dump(hindi)}'
+	assert hindi.glyphs[0].gid == 0x16a && hindi.glyphs[0].cluster == 0, 'hindi opens with the I matra on cluster 0'
+	assert hindi.glyphs[1].gid == 0x38 && hindi.glyphs[1].cluster == 0, 'HA follows on cluster 0'
+	assert hindi.glyphs[2].gid == 0x140 && hindi.glyphs[3].gid == 0x15b, 'the ndi split draws arm and headline, got ${bengali_dump(hindi)}'
+	assert hindi.glyphs[4].gid == 0x46, 'the halant stays a mark'
+	assert hindi.glyphs[5].gid == 0x2a && hindi.glyphs[5].cluster == 4, 'DA keeps cluster 4, got ${bengali_dump(hindi)}'
+	assert hindi.glyphs[6].gid == 0x3d, 'UU closes the syllable'
 	nomoste := bengali_line(f, bengali_word([rune(0x09A8), rune(0x09AE), rune(0x09B8), rune(0x09CD),
 		rune(0x09A4), rune(0x09C7)]))
 	assert nomoste.glyphs.len == 6, 'nomoste draws six pieces, got ${bengali_dump(nomoste)}'
 	assert nomoste.glyphs[2].gid == 0x42, 'the E-kar draws first in its syllable, got ${bengali_dump(nomoste)}'
 	for i in 2 .. 6 {
 		assert nomoste.glyphs[i].cluster == 2, 'ste reports cluster 2, glyph ${i} reports ${nomoste.glyphs[i].cluster}'
-	}
-}
-
-fn test_bengali_shape_current_gaps() {
-	// HarfBuzz shapes KSSA as one glyph: gid 0x87 (fontTools
-	// uni099509CD09B7) at advance 859 on cluster 0. The engine draws three
-	// cmap pieces by default, and no single named feature fuses them
-	// through the existing substitution path (akhn, cjct and blwf all
-	// tried): Bengali fusion needs the conjunct machinery the wiring owns.
-	f := bengali_font() or { return }
-	kssa := bengali_word([rune(0x0995), rune(0x09CD), rune(0x09B7)])
-	plain := bengali_line(f, kssa)
-	assert plain.glyphs.len == 3, 'kssa draws three pieces by default, got ${bengali_dump(plain)}'
-	assert plain.glyphs[0].gid == 0x19, 'ka is the cmap gid 19, got ${bengali_dump(plain)}'
-	assert plain.glyphs[1].gid == 0x46, 'halant is the cmap gid 46, got ${bengali_dump(plain)}'
-	assert plain.glyphs[1].advance == 0.0, 'the halant advances nothing'
-	assert plain.glyphs[2].gid == 0x36, 'ssa is the cmap gid 36, got ${bengali_dump(plain)}'
-	for feat in [['akhn'], ['cjct'], ['blwf']] {
-		fused := bengali_line_feat(f, kssa, feat)
-		assert fused.glyphs.len == 3, '${feat[0]} does not fuse kssa yet, got ${bengali_dump(fused)}'
 	}
 }
 

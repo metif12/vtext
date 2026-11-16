@@ -548,13 +548,13 @@ glyphs, `akhn blwf cjct half pres pstf rphf vatu` under `bng2`), pinned by
 tables were needed — the same 813 syllabic and 651 positional ranges answer
 Bengali, which is the proof. Segmentation, Left-matra reorder and conjunct
 spans behave per-script identically (karma/hindi/stra shapes recur with
-Bengali codepoints); shaping agrees exactly where no reorder or fusion is
-needed (raam gids 0x33/0x3b/0x31, advances 596/266/612) and pins the same
-gaps where it is (ki logical-order clusters; kssa three cmap pieces vs
-HarfBuzz one fused 0x87, with akhn/cjct/blwf each tried and pinned
-unfused). Slices left: UCD tables (done), Devanagari (done), Bengali
-(done); the joining hook landed 2026-11-16 (below). Remaining: rphf, half
-forms, pres, pstf/vatu, GPOS marks, with Arabic staying green.
+Bengali codepoints); shaping agrees exactly where no reordering or assembly
+is owed (raam gids 0x33/0x3b/0x31, advances 596/266/612; kssa fuses to 0x87
+at exactly 859 through the bng2 akhn rule). Slices left: UCD tables (done),
+Devanagari (done), Bengali (done); the joining hook landed 2026-11-16
+(9.3b), the conjunct defaults landed 2026-11-16 (9.3c). Remaining: reph
+movement, pstf/blwf/vatu, the Bengali assembly chain, GPOS marks, with
+Arabic staying green.
 
 **9.3b The joining hook — landed 2026-11-16.** `layout/layout.v` feeds the
 machine into shaping: `indic_visual` reorders each run with
@@ -569,6 +569,26 @@ matra for gid 0x221 = HarfBuzz's 545; Bengali ste merges four glyphs onto
 cluster 2) with a hook-level neutered break-fix (identity reorder fails the
 new pins with the exact pre-hook signature) and machine-level mapped pins
 (map [1, 0] for ki, identity elsewhere).
+
+**9.3c Conjunct defaults, tag fallback, dist — landed 2026-11-16.** Three
+fixes behind one behaviour change: the engine applies the in-place Indic
+features by default (nukt, akhn, half, pres, abvs, blws, psts, cjct — named
+asking repeats them by construction, since double application is not
+idempotent). Devanagari agrees with HarfBuzz where no reordering is owed
+(kssa fuses to 90, ki draws the 545 pres variant, hindi's NDA fuses to 0xf5
+with the dist kern folding to exactly 309, STA fuses to 256) and Bengali
+kssa fuses to 0x87 at exactly 859. What the slice found on the way: (1) a
+coverage-index bug in parse_ligature_subst compared the set index against
+the range count, keeping 8 of lookup 114's 42 sets and silently dropping
+every range-covered ligature past the eighth range — every script's
+fusions, not just Indic; (2) the script resolver lowercased UCD names, so
+Bengali runs never resolved a GSUB script (bng2-only face): v1/v2 sibling
+tags now fall back in both resolvers, deva-first where deva exists;
+(3) Indic pair adjustments live under GPOS dist, which the kern path now
+reads beside kern (only six corpus faces carry dist; every other script
+reads what it always did). Open: reph movement (rphf/pref), pstf/blwf/vatu,
+the Bengali blwf/pstf/cjct assembly chain with mark positioning, GPOS
+marks, post-base cluster convention (UU on 5 vs HarfBuzz 4).
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Gaps documented
@@ -627,7 +647,7 @@ owns the queue.
 
 | Slice | Item | State |
 | --- | --- | --- |
-| 7.6 / 9.3 | Indic machine + Devanagari acceptance + Bengali generality + joining hook | landed (both scripts wired; rphf/half/pres/pstf/GPOS open) |
+| 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults | landed (both scripts HB-default; reph/assembly/GPOS open as 9.3d) |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |

@@ -171,6 +171,25 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // A `-tag` entry turns a default-on feature back off (`-calt` draws `=>` as two plain glyphs),
 // and `+tag` is the same as naming the tag; the required features above are not toggleable,
 // because a line missing them is not the text.
+// indic_default_features are the Indic shaping features that run without
+// being asked, in specification order, for the same reason the joining
+// features do. Reph positioning (rphf, pref), post-base forms (pstf),
+// below-base forms (blwf) and vatu stay caller-asked: the first needs the
+// reordering machine, the rest are unproven against HarfBuzz.
+fn indic_default_features() []string {
+	return ['nukt', 'akhn', 'half', 'pres', 'abvs', 'blws', 'psts', 'cjct']
+}
+
+// is_indic_shaping_script reports whether a run resolves under an Indic
+// shaping script: the Devanagari and Bengali faces this engine carries, in
+// either the UCD spelling the run arrives with or the OpenType one the
+// caller overrides with. New scripts arrive with their faces, the way the
+// sibling script tags do.
+fn is_indic_shaping_script(script string) bool {
+	tag := font.ot_script_tag(script)
+	return tag in ['deva', 'dev2', 'beng', 'bng2', 'bengali']
+}
+
 pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, em_px f64,
 	extra []string, vertical bool) []Glyph {
 	g := f.face.gsub or { return glyphs }
@@ -212,6 +231,20 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 		font.JoiningForm.final] {
 		out = g.substitute_forms(g.lookups_for_lang(script, lang, font.feature_tag_for(form)), out, form)
 	}
+	// The Indic shaping features run next, in the specification's order, for
+	// the same reason the joining features do: a line whose conjuncts stay
+	// unfused is not the text. The set is the in-place half: nukta forms,
+	// akhn ligatures, half forms, post-base and pre-base variants,
+	// above/below-base forms and conjuncts. Reph positioning (rphf, pref)
+	// is not in it: moving the reph is the syllable machine's job and a
+	// lookup applied without the move would draw it in situ. Vatu stays
+	// caller-asked until a face proves what it fuses. Like the joining
+	// features these are not toggleable; a `-tag` for one names nothing.
+	if is_indic_shaping_script(script) {
+		for feature in indic_default_features() {
+			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
+		}
+	}
 	for feature in ['rlig'] {
 		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
@@ -241,6 +274,12 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 			}
 			if tag == 'calt' || tag == 'liga' || tag == 'clig' {
 				enabled[tag] = true
+			} else if is_indic_shaping_script(script) && tag in indic_default_features() {
+				// Already on above: applying a fusing feature twice is not
+				// idempotent in every font (a Bengali below-base piece fuses
+				// again), so naming a default is a no-op rather than a
+				// second run.
+				continue
 			} else {
 				mut seen := false
 				for prev in asked {

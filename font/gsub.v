@@ -1408,6 +1408,32 @@ pub fn ot_script_tag(tag string) string {
 	return lower
 }
 
+// ot_script_tags_in_order answers the OpenType tags one script name can
+// mean, most likely first. UCD names arrive in full ('Deva', 'Bengali');
+// OpenType files them under four-letter tags, and Indic v2 layouts live
+// under sibling tags the v1 spelling does not name ('bng2' beside 'beng',
+// 'dev2' beside 'deva'). The engine tries each tag the font actually
+// carries, so a bng2-only face answers Bengali runs while a deva/dev2 face
+// keeps answering under the tag it always did. New sibling pairs arrive
+// with their faces, the way the scripts themselves do.
+fn ot_script_tags_in_order(script string) []string {
+	want := ot_script_tag(script)
+	if want == 'bengali' {
+		return ['beng', 'bng2']
+	}
+	sibling := match want {
+		'deva' { 'dev2' }
+		'dev2' { 'deva' }
+		'beng' { 'bng2' }
+		'bng2' { 'beng' }
+		else { '' }
+	}
+	if sibling == '' {
+		return [want]
+	}
+	return [want, sibling]
+}
+
 // feature_tag_for is the GSUB feature tag that carries a joining shape.
 pub fn feature_tag_for(form JoiningForm) string {
 	return match form {
@@ -1443,26 +1469,47 @@ pub fn (g &Gsub) lookups_for(script string, feature string) []u16 {
 // language control existed. A language the font does not tag falls back to
 // the default the way HarfBuzz falls back, rather than to nothing.
 pub fn (g &Gsub) lookups_for_lang(script string, lang string, feature string) []u16 {
-	s := g.script(script) or { return []u16{} }
-	if lang != '' {
-		want := ot_lang_tag(lang)
-		for l in s.langs {
-			if ot_lang_tag(l.tag) == want {
-				for f in l.features {
-					if f.tag == feature {
-						return f.lookups
-					}
-				}
-				return []u16{}
-			}
-		}
-	}
-	for f in s.features {
-		if f.tag == feature {
-			return f.lookups
+	for tag in ot_script_tags_in_order(script) {
+		if out := g.lookups_in_script(tag, lang, feature) {
+			return out
 		}
 	}
 	return []u16{}
+}
+
+// lookups_in_script is one tag of lookups_for_lang: the tagged language
+// system when the font names it, the default language system otherwise. An
+// empty language is the default, which is what every line shaped before the
+// language control existed. A language the font does not tag falls back to
+// the default the way HarfBuzz falls back, rather than to nothing.
+//
+// A language the font tags but that names no rule for the feature answers
+// nothing: the language system was found, so there is no wider net to cast.
+fn (g &Gsub) lookups_in_script(tag string, lang string, feature string) ?[]u16 {
+	for s in g.scripts {
+		if s.tag != tag {
+			continue
+		}
+		if lang != '' {
+			want := ot_lang_tag(lang)
+			for l in s.langs {
+				if ot_lang_tag(l.tag) == want {
+					for f in l.features {
+						if f.tag == feature {
+							return f.lookups
+						}
+					}
+					return []u16{}
+				}
+			}
+		}
+		for f in s.features {
+			if f.tag == feature {
+				return f.lookups
+			}
+		}
+	}
+	return none
 }
 
 // ot_lang_tag is the OpenType language tag for a caller's language: uppercased
@@ -2391,11 +2438,12 @@ pub fn parse_ligature_subst(r &Reader, at int) []LigatureSet {
 	set_count := int(r.u16_at(at + 4))
 	for si in 0 .. set_count {
 		// A set offset is from the start of the subtable, and the set belongs to the glyph at
-		// the matching coverage index.
+		// the matching coverage index. The index counts glyphs, not ranges: a format-2
+		// coverage packs many glyphs per range, and stopping at the range count would drop
+		// every set past it (lookup 114 of Noto Sans Devanagari keeps 8 of its 42 sets
+		// that way, losing the NA half-form). Past the coverage total the index reads 0,
+		// which matches nothing real.
 		set_at := at + int(r.u16_at(at + 6 + si * 2))
-		if si >= ranges.len {
-			break
-		}
 		first := coverage_glyph_at(ranges, si)
 		mut set := LigatureSet{ first: first }
 		lig_count := int(r.u16_at(set_at))

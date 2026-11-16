@@ -875,11 +875,23 @@ pub fn (g &Gpos) lookups_for(script string, feature string) []u16 {
 // lookups_for_lang is lookups_for under a language: the tagged language
 // system when the font names it, the default language system otherwise. An
 // empty language is the default, which is what every line shaped before the
-// language control existed.
+// language control existed. Sibling script tags are tried in order, the way
+// the GSUB resolver does, so Indic v2 layouts answer under either spelling.
 pub fn (g &Gpos) lookups_for_lang(script string, lang string, feature string) []u16 {
-	want := ot_script_tag(script)
+	for tag in ot_script_tags_in_order(script) {
+		if out := g.lookups_in_script(tag, lang, feature) {
+			return out
+		}
+	}
+	return []u16{}
+}
+
+// lookups_in_script is one tag of lookups_for_lang. A language the font
+// tags but that names no rule for the feature answers nothing: the language
+// system was found, so there is no wider net to cast.
+fn (g &Gpos) lookups_in_script(tag string, lang string, feature string) ?[]u16 {
 	for s in g.scripts {
-		if s.tag != want {
+		if s.tag != tag {
 			continue
 		}
 		if lang != '' {
@@ -901,7 +913,7 @@ pub fn (g &Gpos) lookups_for_lang(script string, lang string, feature string) []
 			}
 		}
 	}
-	return []u16{}
+	return none
 }
 
 // covers_mark reports whether any mark-to-base rule covers this glyph, which is how a caller
@@ -1078,7 +1090,17 @@ pub fn (g &Gpos) has_mark_to_ligature() bool {
 // another, and a single list would apply the wrong one to both. The Arabic set is collected eagerly
 // because that is the script this library shapes.
 pub fn (g &Gpos) kerning_for(script string, lang string) []u16 {
-	return g.lookups_for_lang(script, lang, 'kern')
+	mut out := g.lookups_for_lang(script, lang, 'kern')
+	// Indic pair adjustments live under dist rather than kern: the Noto
+	// Indic faces kern their half-forms there, and HarfBuzz applies it by
+	// default. Only the six corpus faces with a dist table can answer, so
+	// every other script reads exactly what it always did.
+	for li in g.lookups_for_lang(script, lang, 'dist') {
+		if li !in out {
+			out << li
+		}
+	}
+	return out
 }
 
 // kern_offset returns how far to move left_gid when right_gid follows it, in design units.

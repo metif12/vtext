@@ -135,42 +135,51 @@ fn test_mkm_fonts_that_can_stack_report_it() {
 
 // test_mkm_a_mark_above_a_shadda_is_higher checks the stacking itself.
 //
-// Two marks on one letter, with the second written after the first, is what stacking means. The
-// check is that they are in different places: a mark-to-mark lookup exists precisely to move the
-// upper one off the lower one, and an engine without it puts both against the letter at the same
-// height.
+// Tahoma fuses the shadda+fatha pair into one mark ligature (gid 0x349)
+// before positioning it: HarfBuzz shapes beh+shadda+fatha as [0x349,
+// 0x38f], both on cluster 0, the mark at offset (119, 163). A ligature the
+// coverage fix used to drop now resolves, so the engine draws the same two
+// glyphs — with honest clusters (the mark reports input 2, the letter 0)
+// and the same design-unit offset. The check is that the fused mark sits
+// above the letter rather than at its origin: a mark-to-mark lookup exists
+// precisely to move it there, and an engine without it would leave the mark
+// at the letter's pen.
 fn test_mkm_a_mark_above_a_shadda_is_higher() {
 	f := mkm_font('tahoma.ttf') or { return }
-	// beh, shadda, fatha. The fatha belongs on the shadda.
+	// beh, shadda, fatha. The fatha belongs on the shadda, and the font
+	// draws the pair as one mark.
 	ctx := shape.new_context()
 	stacked := layout.layout_paragraph(ctx, runes(mkm_beh, mkm_shadda, mkm_fatha), .rtl,
 		shape.new_font_set_of(f), 64.0)
-	assert stacked.glyphs.len == 3, 'three characters give three glyphs, got ${stacked.glyphs.len}'
-	// The line is right to left and the marks come before the letter, so the shadda is the one drawn
-	// first among the two marks and the fatha the second. Which of the two has the greater cluster
-	// says which is which, rather than trusting the order.
-	mut shadda_g := stacked.glyphs[0]
-	mut fatha_g := stacked.glyphs[1]
+	assert stacked.glyphs.len == 2, 'beh plus a fused mark pair is two glyphs, got ${stacked.glyphs.len}'
+	mut mark := stacked.glyphs[0]
+	mut letter := stacked.glyphs[1]
 	for g in stacked.glyphs {
-		if g.cluster == 1 {
-			shadda_g = g
-		}
-		if g.cluster == 2 {
-			fatha_g = g
+		if g.is_mark {
+			mark = g
+		} else {
+			letter = g
 		}
 	}
-	assert fatha_g.cluster > shadda_g.cluster, 'the fatha is the later character'
-	// In a line whose y grows upwards, higher means a smaller y. A fatha is above a shadda.
-	assert fatha_g.y < shadda_g.y, 'a fatha should sit above a shadda, but fatha y=${fatha_g.y} and shadda y=${shadda_g.y}'
-	// And they are not at the same height, which is the whole claim.
-	assert fatha_g.y != shadda_g.y
+	assert mark.gid == 0x349, 'the fused mark is gid 349, got ${mark.gid:x}'
+	assert mark.cluster == 2, 'the fused mark reports the fatha, got cluster ${mark.cluster}'
+	assert letter.gid == 0x38f && letter.cluster == 0, 'the beh keeps cluster 0'
+	assert letter.advance > 51.6 && letter.advance < 51.72, 'beh advances 807 design units'
+	// In a line whose y grows upwards, higher means a smaller y. The fused
+	// mark sits above the letter: design (119, 163), at 64 px about
+	// (7.62, -10.43).
+	assert mark.y < letter.y, 'a fused mark should sit above the letter, but mark y=${mark.y} and letter y=${letter.y}'
+	assert mark.y > -10.55 && mark.y < -10.35, 'the fused mark rides 163 design units up, got y=${mark.y}'
+	assert mark.x > 7.55 && mark.x < 7.7, 'the fused mark rides 119 design units right, got x=${mark.x}'
 }
 
 // test_mkm_different_marks_land_differently checks that the second mark's class is being read.
 //
-// A fatha and a damma on the same shadda are drawn at different heights, and the font separates
-// them by class. An engine that used one anchor for both would put them in the same place, which is
-// the fault that survives a mark-to-mark lookup being present but its classes being ignored.
+// A fatha and a damma on the same shadda fuse to different mark ligatures
+// (0x349 and 0x34a) and land at different heights (163 and 295 design
+// units). An engine that used one anchor for both would put them in the
+// same place, which is the fault that survives a mark-to-mark lookup being
+// present but its classes being ignored.
 fn test_mkm_different_marks_land_differently() {
 	f := mkm_font('tahoma.ttf') or { return }
 	ctx := shape.new_context()
@@ -185,8 +194,8 @@ fn test_mkm_different_marks_land_differently() {
 	with_damma << mkm_shadda
 	with_damma << mkm_damma
 	b := layout.layout_paragraph(ctx2, with_damma, .rtl, shape.new_font_set_of(f), 64.0)
-	assert a.glyphs.len == 3 && b.glyphs.len == 3
-	// The first mark is the shadda in both, and the second is the one that differs.
+	assert a.glyphs.len == 2 && b.glyphs.len == 2, 'both pairs fuse, got ${a.glyphs.len} and ${b.glyphs.len}'
+	// The first glyph is the fused mark in both, and the second is the one that differs.
 	mut a_second := a.glyphs[0]
 	mut b_second := b.glyphs[0]
 	for g in a.glyphs {
@@ -199,14 +208,17 @@ fn test_mkm_different_marks_land_differently() {
 			b_second = g
 		}
 	}
+	assert a_second.gid == 0x349 && b_second.gid == 0x34a, 'fatha fuses to 349 and damma to 34a, got ${a_second.gid:x} and ${b_second.gid:x}'
 	assert a_second.y != b_second.y, 'a fatha and a damma are both at y=${a_second.y}, so the class is ignored'
 }
 
 // test_mkm_the_upper_mark_moves_relative_to_the_letter checks that stacking is not a coincidence.
 //
-// The lower mark's position should be the same whether or not another mark is stacked on it, and
-// the upper mark's should be different. If both moved together the engine would be repositioning
-// something other than the upper mark, which would look right and be wrong.
+// The fused mark sits where the shadda-plus-fatha ligature is anchored,
+// higher than the lone shadda sits on the same letter: the upper mark's
+// height comes from the mark-to-mark rule, not from the letter. If both
+// moved together the engine would be repositioning something other than the
+// upper mark, which would look right and be wrong.
 fn test_mkm_the_upper_mark_moves_relative_to_the_letter() {
 	f := mkm_font('tahoma.ttf') or { return }
 	ctx := shape.new_context()
@@ -220,30 +232,37 @@ fn test_mkm_the_upper_mark_moves_relative_to_the_letter() {
 	shadda_only << mkm_beh
 	shadda_only << mkm_shadda
 	b := layout.layout_paragraph(ctx2, shadda_only, .rtl, shape.new_font_set_of(f), 64.0)
-	assert a.glyphs.len == 3 && b.glyphs.len == 2
-	// The shadda is the mark with cluster one in both lines.
-	mut a_shadda := a.glyphs[0]
+	assert a.glyphs.len == 2 && b.glyphs.len == 2
+	// The beh is the non-mark glyph in both lines, and it never moves: the
+	// pen stays at the letter while the marks stack above it.
+	mut a_beh := a.glyphs[0]
 	for g in a.glyphs {
-		if g.cluster == 1 {
-			a_shadda = g
+		if !g.is_mark {
+			a_beh = g
 		}
 	}
-	mut b_shadda := b.glyphs[0]
+	mut b_beh := b.glyphs[0]
 	for g in b.glyphs {
-		if g.cluster == 1 {
-			b_shadda = g
+		if !g.is_mark {
+			b_beh = g
 		}
 	}
-	// Adding a mark on top of the shadda does not move the shadda itself.
-	assert a_shadda.y == b_shadda.y, 'the shadda moved from ${b_shadda.y} to ${a_shadda.y} when a mark was stacked on it'
-	// And the mark that was added is somewhere else, which is what the mark-to-mark rule did.
-	mut a_fatha := a.glyphs[0]
+	assert a_beh.x == b_beh.x && a_beh.y == b_beh.y, 'the beh moved from (${b_beh.x}, ${b_beh.y}) to (${a_beh.x}, ${a_beh.y}) when a mark was stacked on it'
+	// And the fused mark sits higher than the lone shadda, which is what
+	// the mark-to-mark rule did.
+	mut a_mark := a.glyphs[0]
 	for g in a.glyphs {
-		if g.cluster == 2 {
-			a_fatha = g
+		if g.is_mark {
+			a_mark = g
 		}
 	}
-	assert a_fatha.y != b_shadda.y, 'the stacked mark landed on the shadda at ${a_fatha.y}'
+	mut b_mark := b.glyphs[0]
+	for g in b.glyphs {
+		if g.is_mark {
+			b_mark = g
+		}
+	}
+	assert a_mark.y != b_mark.y, 'the fused mark landed on the lone shadda at ${a_mark.y}'
 }
 
 // test_mkm_a_lone_mark_is_unaffected checks that stacking did not take the single mark case away.
