@@ -3,6 +3,7 @@ module vtext
 import os
 import vtext.font
 import vtext.shape
+import vtext.subset
 
 // Tests for the MATH slice: the MATH table behind an opt-in pass,
 // pinned against HarfBuzz (uharfbuzz 0.56.2) and fontTools (4.66.1) on the
@@ -139,10 +140,11 @@ fn test_math_italics_correction_sign_and_scale() {
 fn test_math_top_accent_attachment() {
 	// Pinned on covered glyphs: A, x and u1D453 carry table values on both
 	// faces. Stretchy operators such as the parenthesis and the n-ary
-	// summation are NOT covered — HarfBuzz answers those from a fallback
-	// over the glyph extents, which this reader deliberately does not
-	// replicate: uncovered means zero here, and the fallback is follow-up
-	// work for the wiring slice, not for the table reader.
+	// summation are NOT covered — HarfBuzz answers those with half the
+	// glyph's horizontal advance (MathTopAccentAttachment's get_value in
+	// hb-ot-math-table.hh synthesizes h_advance / 2 for anything the
+	// coverage misses), which top_accent_with_fallback replicates and this
+	// raw table read deliberately does not: uncovered means zero here.
 	stix := math_pass_for('STIXTwoMath-Regular.ttf', true)
 	f := math_face('STIXTwoMath-Regular.ttf')
 	assert stix.top_accent_attachment(f.glyph_index(rune(0x0041))) == 360
@@ -270,5 +272,94 @@ fn test_math_rejects_garbage() {
 	bytes := math_table_data('STIXTwoMath-Regular.ttf')
 	if _ := font.parse_math_table(bytes[..64]) {
 		assert false, 'a truncated MATH table must not parse'
+	}
+}
+
+fn test_math_face_wiring() {
+	// The Face half: has_math names the table, math_pass builds the pass
+	// over the font's own bytes and units, and a font without MATH answers
+	// none to both.
+	stix := math_face('STIXTwoMath-Regular.ttf')
+	assert stix.has_math(), 'STIX carries MATH'
+	lf := math_face('LatinModernMath-Regular.otf')
+	assert lf.has_math(), 'Latin Modern carries MATH'
+	amiri := math_face('Amiri-Regular.ttf')
+	assert !amiri.has_math(), 'Amiri carries no MATH'
+	sp := stix.math_pass(true) or { panic('STIX math_pass must parse') }
+	assert sp.units(.axis_height) == 258, 'the face pass reads the same table, got ${sp.units(.axis_height)}'
+	assert sp.units_per_em == 1000, 'the face pass carries the face upm'
+	lp := lf.math_pass(true) or { panic('LM math_pass must parse') }
+	assert lp.units(.axis_height) == 250, 'the LM face pass reads the same table'
+	if _ := amiri.math_pass(true) {
+		assert false, 'a font without MATH must answer none'
+	}
+	// A disabled face pass is still a pass, but an unstretched one.
+	dp := stix.math_pass(false) or { panic('STIX math_pass must parse') }
+	assert !dp.enabled, 'disabled stays disabled'
+	assert dp.variants(stix.glyph_index(rune(0x0028)), true).len == 0, 'disabled selects nothing'
+}
+
+fn test_math_top_accent_fallback_matches_harfbuzz() {
+	// Every number below was read off HarfBuzz (uharfbuzz, scale 1000):
+	// uncovered glyphs answer half their horizontal advance, covered ones
+	// the table value. The advances come from the faces themselves, so the
+	// only hardcoded numbers are HarfBuzz's answers.
+	stix := math_face('STIXTwoMath-Regular.ttf')
+	sp := stix.math_pass(true) or { panic('STIX math_pass must parse') }
+	paren := stix.glyph_index(rune(0x0028))
+	nsum := stix.glyph_index(rune(0x2211))
+	assert stix.face.glyph_advance_units(paren) == 357, 'STIX paren advance'
+	assert stix.face.glyph_advance_units(nsum) == 936, 'STIX nsum advance'
+	assert sp.top_accent_with_fallback(paren, 357) == 178, 'STIX paren falls back to half advance'
+	assert sp.top_accent_with_fallback(nsum, 936) == 468, 'STIX nsum falls back to half advance'
+	// A covered glyph answers its table value whatever advance arrives:
+	// the table arm, not the fallback, decides.
+	a := stix.glyph_index(rune(0x0041))
+	assert sp.top_accent_with_fallback(a, 9999) == 360, 'covered A answers the table'
+	assert sp.top_accent_with_fallback(a, 718) == 360, 'covered A answers the table at its own advance too'
+	lm := math_face('LatinModernMath-Regular.otf')
+	lp := lm.math_pass(true) or { panic('LM math_pass must parse') }
+	lparen := lm.glyph_index(rune(0x0028))
+	lnsum := lm.glyph_index(rune(0x2211))
+	assert lm.face.glyph_advance_units(lparen) == 389, 'LM paren advance'
+	assert lm.face.glyph_advance_units(lnsum) == 1056, 'LM nsum advance'
+	assert lp.top_accent_with_fallback(lparen, 389) == 194, 'LM paren falls back to half advance'
+	assert lp.top_accent_with_fallback(lnsum, 1056) == 528, 'LM nsum falls back to half advance'
+	la := lm.glyph_index(rune(0x0041))
+	assert lp.top_accent_with_fallback(la, 9999) == 375, 'covered LM A answers the table'
+	// Disabled answers zero everywhere, covered or not.
+	ds := stix.math_pass(false) or { panic('STIX math_pass must parse') }
+	assert ds.top_accent_with_fallback(paren, 357) == 0, 'disabled falls back to nothing'
+	assert ds.top_accent_with_fallback(a, 718) == 0, 'disabled ignores the table too'
+}
+
+fn test_math_subset_keeps_stretch_glyphs() {
+	// Seeding only the STIX parenthesis must still keep its stretch
+	// machinery: the 13 variants and the 3 assembly parts. The MATH table
+	// itself rides along verbatim, so resolution works either way — what
+	// the closure protects is the outlines, and rasterizing a variant from
+	// the subset against the original proves they survived.
+	data := math_face_path('STIXTwoMath-Regular.ttf') or { panic('STIX is not in testdata/fonts') }
+	raw := os.read_bytes(data) or { panic('${data} is not readable: ${err}') }
+	original := shape.load_font_bytes(raw) or { panic(err) }
+	paren := original.glyph_index(rune(0x0028))
+	sub := subset.subset_font(original, [paren]) or { panic(err) }
+	assert sub.closure.from_math > 0, 'the MATH closure kept stretch glyphs'
+	for gid in [u16(1301), 1312, 4862, 4861] {
+		assert sub.keep[gid], 'variant/part ${gid} is kept, closure kept ${sub.closure.from_math}'
+	}
+	full := math_table_data('STIXTwoMath-Regular.ttf')
+	assert sub.sizes['MATH'] == full.len, 'MATH rides along whole, got ${sub.sizes['MATH']} vs ${full.len}'
+	reread := shape.load_font_bytes(sub.bytes) or { panic('subset does not load: ${err}') }
+	rp := reread.math_pass(true) or { panic('subset MATH must parse') }
+	assert rp.variants(paren, true).len == 13, 'variants resolve after subsetting'
+	assert rp.select_variant(paren, 2000, true) == 1305, 'variant selection resolves after subsetting'
+	assembly := rp.assembly(paren, true) or { panic('subset paren assembly must resolve') }
+	assert assembly.parts.len == 3, 'assembly parts resolve after subsetting'
+	for gid in [u16(1301), 4861] {
+		a := original.rasterize(gid, 32.0, 0, 0)
+		b := reread.rasterize(gid, 32.0, 0, 0)
+		assert !a.is_empty(), 'variant ${gid} inks in the original'
+		assert a.coverage == b.coverage, 'variant ${gid} keeps its ink after subsetting'
 	}
 }

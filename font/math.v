@@ -379,6 +379,35 @@ pub fn (t &MathTable) is_extended_shape(gid u16) bool {
 	return true
 }
 
+// covers_top_accent reports whether the font names a top accent attachment
+// for gid. A covered zero is a named zero; an uncovered glyph falls back to
+// half its advance, which is why the two need telling apart.
+pub fn (t &MathTable) covers_top_accent(gid u16) bool {
+	_ = coverage_index(t.accents_cover, gid) or { return false }
+	return true
+}
+
+// stretch_glyphs_for lists every glyph the stretch constructions covering
+// gid name: variant glyphs and assembly parts, both directions. Empty when
+// the font stretches gid no way. The subset closure keeps these: the table
+// is copied verbatim, so a variant resolves either way, but without its
+// outline it draws nothing.
+pub fn (t &MathTable) stretch_glyphs_for(gid u16) []u16 {
+	mut out := []u16{}
+	for vertical in [true, false] {
+		constr := t.construction_for(gid, vertical) or { continue }
+		for v in constr.variants {
+			out << v.glyph
+		}
+		if assembly_ := constr.assembly {
+			for p in assembly_.parts {
+				out << p.glyph
+			}
+		}
+	}
+	return out
+}
+
 // construction_for returns the stretch construction for a glyph in one
 // direction, or none when the font gives it neither variants nor assembly.
 fn (t &MathTable) construction_for(gid u16, vertical bool) ?MathConstruction {

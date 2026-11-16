@@ -77,12 +77,48 @@ pub fn (p &MathPass) italics_px(gid u16, em_px f64) f64 {
 }
 
 // top_accent_attachment returns where a top accent centres over the glyph,
-// measured from the glyph origin in design units.
+// measured from the glyph origin in design units. Zero means the font names
+// none in its table — not that HarfBuzz answers zero. The reference
+// synthesizes half the glyph's advance for anything uncovered (see
+// top_accent_with_fallback and the Face convenience beside it); this stays
+// the raw table read so a caller can tell named from synthesized.
 pub fn (p &MathPass) top_accent_attachment(gid u16) int {
 	if !p.enabled {
 		return 0
 	}
 	return p.table.top_accent_attachment(gid)
+}
+
+// top_accent_with_fallback answers the HarfBuzz value for a top accent:
+// the table entry when gid is covered, else half of advance_units, the
+// glyph's horizontal advance in design units. That fallback is the
+// reference's documented and implemented rule — MathTopAccentAttachment's
+// get_value in hb-ot-math-table.hh answers h_advance / 2 for anything the
+// coverage misses, including fonts with no MATH table at all — and integer
+// division truncates the way it does. A disabled pass answers zero for
+// everything. advance_units comes from the caller, usually
+// face.glyph_advance_units, because this pass never maps glyphs itself.
+pub fn (p &MathPass) top_accent_with_fallback(gid u16, advance_units int) int {
+	if !p.enabled {
+		return 0
+	}
+	if p.table.covers_top_accent(gid) {
+		return p.table.top_accent_attachment(gid)
+	}
+	return advance_units / 2
+}
+
+// has_math reports whether the font carries a MATH table: the Face half of
+// the wiring, the way has_gsub reports substitution.
+pub fn (f &Font) has_math() bool {
+	return f.face.sfnt.has(font.tag_math)
+}
+
+// math_pass builds the opt-in MATH pass over this font's own MATH table and
+// units per em: the Face half of the wiring, so a caller never parses the
+// directory itself. None when the font carries no usable MATH table.
+pub fn (f &Font) math_pass(enabled bool) ?MathPass {
+	return new_math_pass(f.face.sfnt.table_data(font.tag_math), f.units_per_em(), enabled)
 }
 
 // is_extended_shape reports whether the glyph may be drawn larger by

@@ -465,7 +465,21 @@ geometry is the library's.
 pinned against HarfBuzz on STIX Two Math (OFL) and Latin Modern Math (GFL —
 its OFL backup carries no MATH table and was rejected). Two spec traps
 caught by measuring: 52 records not 54, inline construction records.
-Follow-ups: Face/subset wiring; extent-derived top-accent fallback.
+Wiring landed 2026-11-16: `Font.has_math` / `Font.math_pass` build the pass
+over the font's own table and upm (none when the font carries no usable
+MATH); `MathPass.top_accent_with_fallback` answers the HarfBuzz value —
+table entry when covered, else half the horizontal advance in design units
+(MathTopAccentAttachment's get_value in hb-ot-math-table.hh synthesizes
+h_advance / 2 for anything uncovered, which corrects the old "glyph
+extents" comment; integer division truncates the way the reference does).
+The subset closure keeps every variant and part glyph the kept bases'
+constructions name (`close_over_math`, counted as from_math; ids are
+preserved so the verbatim-copied table stays valid, and the kept outlines
+are what the closure protects). Pinned by math_test.v beside HarfBuzz
+(fallback 178/468 STIX, 194/528 LM; covered arms ignore the advance;
+disabled is zero; subset keeps 1301/1312/4862/4861 with MATH whole and
+variant ink identical) with two runtime break-fix controls (neutered
+fallback, neutered closure loop — both fail).
 
 **8.8 Matching, sorting, coverage, instances — landed 2026-11-15.**
 `system_fonts_sorted` answers the ranked `FcFontSort` list (path + matched
@@ -586,7 +600,7 @@ owns the queue.
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
 | 8.6 | Stroking | open |
-| 8.7 | Face/subset MATH wiring; top-accent fallback | open |
+| 8.7 | Face/subset MATH wiring; top-accent fallback | landed (half-advance fallback, MATH closure) |
 | 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |

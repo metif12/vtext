@@ -125,7 +125,7 @@ Each item names the slice that owns it in `ROADMAP.md`.
 
 - Indic shaping (7.6 machine landed with Devanagari acceptance; 9.3 Bengali generality landed — same tables, no new rows; joining hook open) and Khmer (corpus landed, coeng fusion open).
 - Hinting and color (7.7), synthetic styles and LCD landed at bitmap level (8.5; outline-level embolden and FIR LCD stay follow-ups), stroking (8.6); MATH constants
-  and variants read beside HarfBuzz (8.7 landed), Face wiring stays follow-up.
+  and variants read beside HarfBuzz (8.7 landed with Face/subset wiring and the half-advance top-accent fallback).
 - Variable instancing at chosen coordinates landed (7.10), FreeType parity.
 - Core Text and DirectWrite providers (7.8).
 - CFF subsetting (7.9 reader landed; a read is not a rebuild).

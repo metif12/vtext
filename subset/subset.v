@@ -35,6 +35,7 @@ module subset
 // unwritten, so a CFF font has no outlines this can rebuild and build_font
 // errors on a table set with no glyf.
 
+import vtext.font
 import vtext.shape
 
 // ---------------------------------------------------------------- bytes
@@ -120,6 +121,7 @@ pub struct Closure {
 pub mut:
 	from_composites int
 	from_ligatures  int
+	from_math       int
 }
 
 // ---------------------------------------------------------------- the glyph set
@@ -204,6 +206,7 @@ pub fn subset_font(f &shape.Font, seed []u16) !Subset {
 		a := count_true(keep)
 		close_over_glyf(mut keep, data, glyf, loca, head, mut closure)
 		close_over_gsub(mut keep, data, gsub, mut closure)
+		close_over_math(mut keep, data, spans['MATH'] or { Span{} }, mut closure)
 		passes++
 		if count_true(keep) == a {
 			break
@@ -295,6 +298,31 @@ fn close_over_glyf(mut keep []bool, d []u8, glyf Span, loca Span, head Span, mut
 			}
 			if flags & 0x0020 == 0 {
 				break // no MORE_COMPONENTS
+			}
+		}
+	}
+}
+
+// close_over_math keeps the glyphs a kept stretch base names: variant
+// glyphs and assembly parts for every kept base the MATH constructions
+// cover. The table itself is copied verbatim by the rebuild, so a variant
+// resolves either way — but without its outline it draws nothing, which is
+// what keeping the glyphs prevents. A missing or unreadable MATH table
+// keeps nothing: there is no stretch information to honor.
+fn close_over_math(mut keep []bool, d []u8, math Span, mut out Closure) {
+	if math.length <= 8 {
+		return
+	}
+	raw := d[math.offset..imin(math.offset + math.length, d.len)]
+	table := font.parse_math_table(raw) or { return }
+	for gid in 0 .. keep.len {
+		if !keep[gid] {
+			continue
+		}
+		for g in table.stretch_glyphs_for(u16(gid)) {
+			if int(g) < keep.len && !keep[g] {
+				keep[g] = true
+				out.from_math++
 			}
 		}
 	}
