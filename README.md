@@ -123,7 +123,7 @@ base on its own still draws as text; only the pair draws as emoji.
 
 Each item names the slice that owns it in `ROADMAP.md`.
 
-- Indic and Khmer shaping (7.6 first cut landed 2026-11-16: tables, face, unwired machine; joining hook open, with the Phase 9.3 machine behind it).
+- Indic shaping (7.6 machine landed with Devanagari acceptance; 9.3 Bengali generality landed — same tables, no new rows; joining hook open) and Khmer (corpus landed, coeng fusion open).
 - Hinting and color (7.7), synthetic styles and LCD landed at bitmap level (8.5; outline-level embolden and FIR LCD stay follow-ups), stroking (8.6); MATH constants
   and variants read beside HarfBuzz (8.7 landed), Face wiring stays follow-up.
 - Variable instancing at chosen coordinates landed (7.10), FreeType parity.
@@ -135,8 +135,8 @@ Each item names the slice that owns it in `ROADMAP.md`.
 - Word/sentence/grapheme breaks with log attrs and caret runs landed (8.2: tables, engines, 853-floor, `logattr_test.v`); Pango
   wrap modes, ellipsize and tabs landed (8.4), C spelling stays follow-up.
 - The remaining scripts (Phase 9): CJK breaking pinned (9.1 landed), SE Asian
-  corpus landed with engine gaps documented (9.2), the Indic machine (9.3, in
-  progress with 7.6), and the long tail (9.4 corpus landed, emoji survey open).
+  corpus landed with engine gaps documented (9.2), the Indic machine (9.3,
+  Devanagari + Bengali landed, joining hook open), and the long tail (9.4 corpus landed, emoji survey open).
 
 ## Refused by design
 

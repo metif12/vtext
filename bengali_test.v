@@ -1,0 +1,303 @@
+module vtext
+
+import vtext.layout
+import vtext.shape
+
+// Tests for the second Indic script: Bengali proves the syllable machine in
+// shape/indic.v is script-agnostic. No new tables were needed — the same
+// 813 syllabic and 651 positional ranges that answer Devanagari answer
+// Bengali, because the UCD categories are per-codepoint, not per-script.
+// Every gid, advance and cluster below was read off HarfBuzz (uharfbuzz,
+// scale 1000 = font units, this face is upm 1000) and fontTools before it
+// was written here; agreement with a second reader is the evidence. Input
+// clusters double as pins: a cluster is an input position, so the glyph
+// reporting cluster 2 names no engine output of its own.
+//
+// The face ships in testdata/fonts with its OFL text, so it loads on every
+// platform with no skips: no host font, no platform directory.
+//
+// Where the engine diverges from HarfBuzz, the assert pins the current
+// behaviour and the comment names the gap for the engine slice that owns
+// it — the same gaps indic_test.v pins for Devanagari, now shown to hold
+// across scripts:
+//   - pre-base matras never move: the engine draws KA I in logical order
+//     with the cmap spacing matra, where HarfBuzz draws the matra first.
+//     Reordering is the machine in shape/indic.v; feeding its answer into
+//     layout is the wiring follow-up, so this pins the logical order it
+//     feeds today.
+//   - no conjunct fusion by default, and no single named feature fuses
+//     through the existing substitution path either (akhn, cjct, blwf all
+//     tried): the engine draws the cmap pieces where HarfBuzz draws one
+//     fused glyph. Devanagari akhn fuses through the same path; Bengali
+//     needs the conjunct feature machinery (pstf/half/pres/vatu) the wiring
+//     follow-up owns.
+//   - GPOS mark advances and offsets are the font layer: the halant reports
+//     its own hmtx advance of zero, not HarfBuzz mark offsets.
+//
+// Repha placement, split-matra halves and the joining hook that feeds
+// reordered runs into GSUB stay follow-ups with the wiring.
+
+fn bengali_font_path() string {
+	return 'testdata/fonts/NotoSansBengali-Variable.ttf'
+}
+
+fn bengali_font() ?&shape.Font {
+	p := bengali_font_path()
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+// bengali_at returns the glyph that came from the input character at that
+// index, or none when the character drew nothing.
+fn bengali_at(glyphs []shape.Glyph, cluster int) ?shape.Glyph {
+	for g in glyphs {
+		if g.cluster == cluster {
+			return g
+		}
+	}
+	return none
+}
+
+// bengali_dump renders a line as gid:cluster:advance cells so a failing pin
+// shows the whole engine answer in the message.
+fn bengali_dump(line layout.Line) string {
+	mut parts := []string{cap: line.glyphs.len}
+	for g in line.glyphs {
+		parts << '${g.gid:x}:${g.cluster}:${g.advance:.2f}'
+	}
+	return '[' + parts.join(' ') + ']'
+}
+
+// bengali_word builds a test word from codepoints, keeping this file ASCII.
+fn bengali_word(cps []rune) []rune {
+	return cps.clone()
+}
+
+// bengali_bounds renders syllables as start,end cells for one-line pins.
+fn bengali_bounds(syllables []shape.IndicSyllable) string {
+	mut parts := []string{cap: syllables.len}
+	for s in syllables {
+		parts << '${s.start},${s.end}'
+	}
+	return parts.join('|')
+}
+
+// bengali_hex renders codepoints as hex for one-line reorder pins.
+fn bengali_hex(cps []rune) string {
+	mut parts := []string{cap: cps.len}
+	for cp in cps {
+		parts << '${u32(cp):04X}'
+	}
+	return parts.join(' ')
+}
+
+// bengali_spans renders conjuncts as start,end cells for one-line pins.
+fn bengali_spans(conjuncts []shape.IndicConjunct) string {
+	mut parts := []string{cap: conjuncts.len}
+	for c in conjuncts {
+		parts << '${c.start},${c.end}'
+	}
+	return parts.join('|')
+}
+
+fn test_bengali_font_loads() {
+	f := bengali_font() or { panic('NotoSansBengali-Variable.ttf is not in testdata/fonts') }
+	assert f.num_glyphs() == 730, 'the face has 730 glyphs, got ${f.num_glyphs()}'
+	assert f.units_per_em() == 1000, 'the face is upm 1000'
+}
+
+fn test_bengali_font_covers_bengali() {
+	// fontTools cmap: the face covers Latin plus Bengali, and none of the
+	// other waves scripts.
+	bn := bengali_font() or { return }
+	assert bn.has_glyph(rune(0x41)), 'Bengali covers Latin'
+	assert bn.has_glyph(rune(0x0985)), 'Bengali covers independent A'
+	assert bn.has_glyph(rune(0x0995)), 'Bengali covers KA'
+	assert bn.has_glyph(rune(0x09B8)), 'Bengali covers SA'
+	assert bn.has_glyph(rune(0x09BF)), 'Bengali covers the I matra'
+	assert bn.has_glyph(rune(0x09CD)), 'Bengali covers the halant'
+	assert !bn.has_glyph(rune(0x0915)), 'Bengali covers no Devanagari'
+	assert !bn.has_glyph(rune(0x0E01)), 'Bengali covers no Thai'
+	assert !bn.has_glyph(rune(0x0628)), 'Bengali covers no Arabic'
+	assert !bn.has_glyph(rune(0x1780)), 'Bengali covers no Khmer'
+}
+
+fn test_bengali_tables_need_no_new_rows() {
+	// The generality proof at the table level: the counts the Devanagari
+	// slice pins are unchanged, and the same ranges already answer Bengali
+	// codepoints. A script-specific table would fail here.
+	assert shape.indic_syllabic_ranges().len == 813, '813 syllabic ranges, no Bengali addition'
+	assert shape.indic_positional_ranges().len == 651, '651 positional ranges, no Bengali addition'
+	syll_ranges := shape.indic_syllabic_ranges()
+	pos_ranges := shape.indic_positional_ranges()
+	assert shape.indic_syllabic_of(syll_ranges, rune(0x0995)) == shape.IndicSyllabic.consonant
+	assert shape.indic_syllabic_of(syll_ranges, rune(0x0985)) == shape.IndicSyllabic.vowel_independent
+	assert shape.indic_syllabic_of(syll_ranges, rune(0x09BF)) == shape.IndicSyllabic.vowel_dependent
+	assert shape.indic_syllabic_of(syll_ranges, rune(0x09CD)) == shape.IndicSyllabic.virama
+	assert shape.indic_syllabic_of(syll_ranges, rune(0x09BE)) == shape.IndicSyllabic.vowel_dependent
+	assert shape.indic_positional_of(pos_ranges, rune(0x09BF)) == shape.IndicPositional.left
+	assert shape.indic_positional_of(pos_ranges, rune(0x09BE)) == shape.IndicPositional.right
+	assert shape.indic_positional_of(pos_ranges, rune(0x09CD)) == shape.IndicPositional.bottom
+	assert shape.indic_positional_of(pos_ranges, rune(0x0995)) == shape.IndicPositional.not_applicable
+}
+
+fn test_bengali_segments() {
+	// HarfBuzz clusters agree on every boundary below: karma clusters
+	// 0,1,1 and hindi clusters 0,0,2,4,4 are the same cuts the machine
+	// makes, which is the independent reader for the segmentation.
+	assert bengali_bounds(shape.segment_indic_syllables(bengali_word([rune(0x09A8), rune(0x09AE),
+		rune(0x09B8), rune(0x09CD), rune(0x09A4), rune(0x09C7)]))) == '0,1|1,2|2,6', 'nomoste is no plus mo plus ste'
+	assert bengali_bounds(shape.segment_indic_syllables(bengali_word([rune(0x0995), rune(0x09BF)]))) == '0,2', 'ki is one syllable'
+	assert bengali_bounds(shape.segment_indic_syllables(bengali_word([rune(0x09B8), rune(0x09CD),
+		rune(0x099F), rune(0x09CD), rune(0x09B0)]))) == '0,5', 'stra is one syllable'
+	assert bengali_bounds(shape.segment_indic_syllables(bengali_word([rune(0x0995), rune(0x09B0),
+		rune(0x09CD), rune(0x09AE)]))) == '0,1|1,4', 'korma is ko plus rma'
+	assert bengali_bounds(shape.segment_indic_syllables(bengali_word([rune(0x09B9), rune(0x09BF),
+		rune(0x09A8), rune(0x09CD), rune(0x09A6), rune(0x09C0)]))) == '0,2|2,6', 'hindi is hi plus ndi'
+	assert bengali_bounds(shape.segment_indic_syllables(bengali_word([rune(0x09B0), rune(0x09BE),
+		rune(0x09AE)]))) == '0,2|2,3', 'raam is raa plus ma'
+	assert bengali_bounds(shape.segment_indic_syllables(bengali_word([rune(0x0995), rune(0x09CD),
+		rune(0x09B7)]))) == '0,3', 'kssa is one syllable'
+	assert shape.segment_indic_syllables([]rune{}).len == 0, 'empty input is no syllables'
+}
+
+fn test_bengali_reorders() {
+	// The pre-base I matra moves before its consonant; every other word
+	// passes through unchanged, so the reorder is the identity where the
+	// text is already in visual order.
+	assert bengali_hex(shape.reorder_indic(bengali_word([rune(0x0995), rune(0x09BF)]))) == '09BF 0995', 'ki reorders matra first'
+	assert bengali_hex(shape.reorder_indic(bengali_word([rune(0x09B9), rune(0x09BF), rune(0x09A8),
+		rune(0x09CD), rune(0x09A6), rune(0x09C0)]))) == '09BF 09B9 09A8 09CD 09A6 09C0', 'hindi moves only the first syllable matra'
+	assert bengali_hex(shape.reorder_indic(bengali_word([rune(0x09A8), rune(0x09AE), rune(0x09B8),
+		rune(0x09CD), rune(0x09A4), rune(0x09C7)]))) == '09A8 09AE 09C7 09B8 09CD 09A4', 'nomoste moves the pre-base e-kar'
+	assert bengali_hex(shape.reorder_indic(bengali_word([rune(0x09B0), rune(0x09BE), rune(0x09AE)]))) == '09B0 09BE 09AE', 'raam has no pre-base matra'
+	assert shape.reorder_indic([]rune{}).len == 0, 'empty input reorders to empty'
+	assert bengali_hex(shape.reorder_indic_syllable(bengali_word([rune(0x0995), rune(0x09BF)]))) == '09BF 0995', 'one syllable moves its matra'
+	assert bengali_hex(shape.reorder_indic_syllable(bengali_word([rune(0x09B8), rune(0x09CD),
+		rune(0x099F)]))) == '09B8 09CD 099F', 'a conjunct without a matra is unchanged'
+}
+
+fn test_bengali_reorder_matches_harfbuzz() {
+	// HarfBuzz visual order for ki is the matra glyph first, then the base:
+	// gid 0x3c (fontTools uni09BF) at advance 266, then gid 0x19
+	// (fontTools uni0995, KA) at advance 807, both on cluster 0. The
+	// reordered run is the same codepoint order the glyphs draw in, which
+	// is the evidence the reorder is visual order.
+	ki := bengali_word([rune(0x0995), rune(0x09BF)])
+	assert shape.reorder_indic(ki) == bengali_word([rune(0x09BF), rune(0x0995)]), 'reordered ki is matra then base'
+	hindi := bengali_word([rune(0x09B9), rune(0x09BF), rune(0x09A8), rune(0x09CD), rune(0x09A6),
+		rune(0x09C0)])
+	first := shape.segment_indic_syllables(hindi)[0]
+	assert shape.reorder_indic_syllable(hindi[first.start..first.end]) == bengali_word([
+		rune(0x09BF),
+		rune(0x09B9),
+	]), 'reordered hi is matra then base'
+}
+
+fn test_bengali_conjuncts() {
+	assert bengali_spans(shape.find_indic_conjuncts(bengali_word([rune(0x09B8), rune(0x09CD),
+		rune(0x099F), rune(0x09CD), rune(0x09B0)]))) == '0,5', 'stra is one conjunct'
+	assert bengali_spans(shape.find_indic_conjuncts(bengali_word([rune(0x0995), rune(0x09CD),
+		rune(0x09B7)]))) == '0,3', 'kssa is one conjunct'
+	assert bengali_spans(shape.find_indic_conjuncts(bengali_word([rune(0x09A8), rune(0x09AE),
+		rune(0x09B8), rune(0x09CD), rune(0x09A4), rune(0x09C7)]))) == '2,5', 'nomoste fuses sa hal ta'
+	assert bengali_spans(shape.find_indic_conjuncts(bengali_word([rune(0x0995), rune(0x09B0),
+		rune(0x09CD), rune(0x09AE)]))) == '1,4', 'korma fuses ra hal ma'
+	assert bengali_spans(shape.find_indic_conjuncts(bengali_word([rune(0x09B9), rune(0x09BF),
+		rune(0x09A8), rune(0x09CD), rune(0x09A6)]))) == '2,5', 'hindi fuses na hal da'
+	assert shape.find_indic_conjuncts(bengali_word([rune(0x0995), rune(0x09BF)])).len == 0, 'ki has no conjunct'
+	assert shape.find_indic_conjuncts(bengali_word([rune(0x09B0), rune(0x09BE), rune(0x09AE)])).len == 0, 'raam has no conjunct'
+	assert shape.find_indic_conjuncts(bengali_word([rune(0x09CD)])).len == 0, 'a lone halant is no conjunct'
+	assert shape.find_indic_conjuncts([]rune{}).len == 0, 'empty input has no conjuncts'
+}
+
+fn bengali_line(f &shape.Font, text []rune) layout.Line {
+	return bengali_line_feat(f, text, [])
+}
+
+// bengali_line_feat lays one line out asking the caller features. The default
+// is no asked features, which is what the gap pins below run under.
+fn bengali_line_feat(f &shape.Font, text []rune, features []string) layout.Line {
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(f)
+	mut opts := layout.LayoutOptions{}
+	opts.features = features.clone()
+	return layout.layout_paragraph_with(ctx, text, .auto, fs, 32.0, &opts)
+}
+
+fn test_bengali_shape_raam_matches_harfbuzz() {
+	// HarfBuzz shapes RA AA MA as three glyphs in order with no substitution
+	// (cmap gids equal shaped gids): RA gid 0x33 at advance 596, AA matra
+	// gid 0x3b at advance 266, MA gid 0x31 at advance 612. The engine draws
+	// the same three gids under their own clusters with the same advances:
+	// no reorder and no fusion is needed, so this word agrees exactly.
+	f := bengali_font() or { return }
+	line := bengali_line(f, bengali_word([rune(0x09B0), rune(0x09BE), rune(0x09AE)]))
+	assert line.glyphs.len == 3, 'raam draws three letters, got ${bengali_dump(line)}'
+	want := [u16(0x33), 0x3b, 0x31]
+	advances := [19.072, 8.512, 19.584]
+	for i in 0 .. want.len {
+		g := bengali_at(line.glyphs, i) or { panic('raam input ${i} drew nothing: ${bengali_dump(line)}') }
+		assert g.gid == want[i], 'raam cluster ${i} is ${want[i]:x}, got ${g.gid:x}: ${bengali_dump(line)}'
+		assert g.advance > advances[i] - 0.06 && g.advance < advances[i] + 0.06, 'raam cluster ${i} advances ${advances[i]}'
+		assert g.gid != 0, 'no .notdef in a covered raam line'
+	}
+}
+
+fn test_bengali_shape_current_gaps() {
+	// HarfBuzz shapes KI as the matra gid 0x3c before KA gid 0x19, both on
+	// cluster 0; the engine draws KA then the cmap matra in logical order
+	// under clusters 0 and 1. Gids and advances agree exactly (266 and 807
+	// design units); only the order and clusters differ, which is the
+	// unwired-reorder gap.
+	f := bengali_font() or { return }
+	ki := bengali_line(f, bengali_word([rune(0x0995), rune(0x09BF)]))
+	assert ki.glyphs.len == 2, 'ki draws two glyphs, got ${bengali_dump(ki)}'
+	ka := bengali_at(ki.glyphs, 0) or { panic('ki KA drew nothing') }
+	assert ka.gid == 0x19, 'KA is the cmap gid 19, got ${bengali_dump(ki)}'
+	assert ka.advance > 25.76 && ka.advance < 25.88, 'KA advances 807 design units'
+	matra := bengali_at(ki.glyphs, 1) or { panic('ki matra drew nothing') }
+	assert matra.gid == 0x3c, 'the I matra is the cmap gid 3c, got ${bengali_dump(ki)}'
+	assert matra.advance > 8.45 && matra.advance < 8.57, 'the I matra advances 266 design units'
+	// HarfBuzz shapes KSSA as one glyph: gid 0x87 (fontTools
+	// uni099509CD09B7) at advance 859 on cluster 0. The engine draws three
+	// cmap pieces by default, and no single named feature fuses them
+	// through the existing substitution path (akhn, cjct and blwf all
+	// tried): Bengali fusion needs the conjunct machinery the wiring owns.
+	kssa := bengali_word([rune(0x0995), rune(0x09CD), rune(0x09B7)])
+	plain := bengali_line(f, kssa)
+	assert plain.glyphs.len == 3, 'kssa draws three pieces by default, got ${bengali_dump(plain)}'
+	assert plain.glyphs[0].gid == 0x19, 'ka is the cmap gid 19, got ${bengali_dump(plain)}'
+	assert plain.glyphs[1].gid == 0x46, 'halant is the cmap gid 46, got ${bengali_dump(plain)}'
+	assert plain.glyphs[1].advance == 0.0, 'the halant advances nothing'
+	assert plain.glyphs[2].gid == 0x36, 'ssa is the cmap gid 36, got ${bengali_dump(plain)}'
+	for feat in [['akhn'], ['cjct'], ['blwf']] {
+		fused := bengali_line_feat(f, kssa, feat)
+		assert fused.glyphs.len == 3, '${feat[0]} does not fuse kssa yet, got ${bengali_dump(fused)}'
+	}
+}
+
+fn test_bengali_draw_base() {
+	// One rasterised base consonant: a face that shapes but never inks is a
+	// face the test cannot see.
+	f := bengali_font() or { return }
+	ka := f.rasterize(f.glyph_index(rune(0x0995)), 32.0, 0, 0)
+	assert !ka.is_empty(), 'KA rasterises'
+}
+
+fn test_bengali_pins_are_live() {
+	// Break-fix controls: the table counts in
+	// test_bengali_tables_need_no_new_rows fail when a category row is
+	// dropped; these fail when the machine is neutered. If shaping ever
+	// drifts, the pins above fail; if these fail, the pins stopped
+	// discriminating.
+	ki := bengali_word([rune(0x0995), rune(0x09BF)])
+	assert shape.reorder_indic(ki) != ki, 'reordering changes ki: a neutered reorder must fail'
+	stra := bengali_word([rune(0x09B8), rune(0x09CD), rune(0x099F), rune(0x09CD), rune(0x09B0)])
+	assert shape.segment_indic_syllables(stra).len == 1, 'stra stays one syllable: a dropped Bengali Virama row must fail'
+	kssa := bengali_word([rune(0x0995), rune(0x09CD), rune(0x09B7)])
+	assert shape.find_indic_conjuncts(kssa).len == 1, 'kssa stays one conjunct'
+	f := bengali_font() or { return }
+	line := bengali_line(f, bengali_word([rune(0x09B0), rune(0x09BE), rune(0x09AE)]))
+	assert line.glyphs[0].gid == 0x33, 'the raam pin still holds'
+	assert line.glyphs[0].gid != 0x34, 'off-by-one gid must not match: the pin is exact'
+}

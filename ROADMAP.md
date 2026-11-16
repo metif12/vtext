@@ -486,7 +486,7 @@ proves it, **absent** = the mechanism does not exist.
 | Hangul (precomposed) | untested | cmap suffices, no face, no test |
 | Kana | partial | vertical rules in `vertical_test`; horizontal unpinned |
 | Tibetan | absent | stacking needs its own machine |
-| Indic (Devanagari et al.) | syllable machine first cut | tables + Devanagari face + machine (unwired), HB-pinned |
+| Indic (Devanagari, Bengali) | syllable machine, two-script pinned | tables + two faces + machine (unwired), HB-pinned both |
 | Mongolian/Phags-pa vertical | absent | no vertical-columns path |
 | Simple alphabets (Georgian, Armenian, Ethiopic, …) | untested | cmap should answer; nothing proves it |
 | Emoji | unassessed | `emoji-data.txt` ships; color formats + ZWJ unsurveyed |
@@ -505,12 +505,21 @@ nothing; no Khmer coeng fusion or Myanmar kinzi/stacks. Tibetan stacks
 arrive as their own slice with a stacking font, or the slice says why they
 cannot.
 
-**9.3 The Indic machine — open (7.6 is its acceptance).** Slices: UCD Indic
-tables generated like the rest; a committed Devanagari face; the syllable
-machine with matra reordering; conjunct features
-(`rphf`/`pref`/`blwf`/`pstf`/`vatu`/`cjct`); HarfBuzz pins; then Bengali to
-prove generality. Each slice carries break-fix; Arabic stays green — the
-ratchet, not a wish.
+**9.3 The Indic machine — Bengali generality landed 2026-11-16 (joining hook
+open).** The Devanagari acceptance above stands; this slice proves the
+machine is script-agnostic: committed OFL NotoSansBengali-Variable (730
+glyphs, `akhn blwf cjct half pres pstf rphf vatu` under `bng2`), pinned by
+`bengali_test.v` beside HarfBuzz with a neutered-reorder break-fix. No new
+tables were needed — the same 813 syllabic and 651 positional ranges answer
+Bengali, which is the proof. Segmentation, Left-matra reorder and conjunct
+spans behave per-script identically (karma/hindi/stra shapes recur with
+Bengali codepoints); shaping agrees exactly where no reorder or fusion is
+needed (raam gids 0x33/0x3b/0x31, advances 596/266/612) and pins the same
+gaps where it is (ki logical-order clusters; kssa three cmap pieces vs
+HarfBuzz one fused 0x87, with akhn/cjct/blwf each tried and pinned
+unfused). Slices left: UCD tables (done), Devanagari (done), Bengali
+(done); the joining hook that feeds reordered runs into GSUB (rphf, half
+forms, pres, pstf/vatu, GPOS marks) with Arabic staying green.
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Gaps documented
@@ -546,6 +555,7 @@ Naskh, Nastaliq and SC faces.
 | `NotoSansSyriac-Variable.ttf` | 171,996 | Syriac | OFL |
 | `NotoSansThaana-Variable.ttf` | 114,724 | Thaana | OFL |
 | `NotoSansNKo-Regular.ttf` | 79,696 | NKo | OFL |
+| `NotoSansBengali-Variable.ttf` | 463,668 | Bengali | OFL |
 | `SourceSans3-Regular.otf` (CFF) | 334,924 | Latin | OFL |
 | `STIXTwoMath-Regular.ttf` | 1,517,976 | Math | OFL |
 | `LatinModernMath-Regular.otf` (CFF) | 733,736 | Math | GFL (LPPL instance; OFL backup carries no MATH table — rejected) |
@@ -557,7 +567,7 @@ owns the queue.
 
 | Slice | Item | State |
 | --- | --- | --- |
-| 7.6 / 9.3 | Indic machine + Devanagari acceptance | first cut landed (unwired); joining hook + Bengali open |
+| 7.6 / 9.3 | Indic machine + Devanagari acceptance + Bengali generality | landed (both scripts, unwired); joining hook open |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
@@ -571,7 +581,7 @@ owns the queue.
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
 | 9.2-engine | ccc=0 mark drawing; Khmer coeng; Myanmar kinzi/stacks; `nko ` tag fold | open |
 | 9.4-rest | More simple alphabets; emoji survey | open |
-| 9.3 | Bengali generality proof (after Devanagari) | open |
+| 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx`, Graphite, WOFF2/brotli, the full TrueType bytecode interpreter,
