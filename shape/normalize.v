@@ -199,7 +199,7 @@ pub fn (n &Normalizer) nfd_mapped(cps []rune) ([]rune, []int) {
 	for i in 0 .. cps.len {
 		before := out.len
 		n.append_decomposed(cps[i], 0, mut out)
-		for k in before .. out.len {
+		for _ in before .. out.len {
 			source << i
 		}
 	}

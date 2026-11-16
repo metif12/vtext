@@ -186,6 +186,18 @@ jobs:
           TMPDIR: ${{ runner.temp }}/difftest
           VJOBS: '1'
 
+      # The rival A/B harness runs where its rival imports live: uharfbuzz and
+      # Pillow are already pinned above, so this step exercises the driver,
+      # the rival half and the hit-beats-miss self-check end to end. Only the
+      # exit code gates: ratios on a loaded runner are findings, not verdicts,
+      # and the README table is re-measured per release on a quiet box.
+      - name: v run tools/rival_bench.v
+        shell: bash
+        run: v run tools/rival_bench.v
+        env:
+          TMPDIR: ${{ runner.temp }}/rivalbench
+          VJOBS: '1'
+
   clib:
     # The C ABI: the shared library builds, its headers ship, and the smoke
     # test that exercises it end to end passes on every platform. The DLL, .so

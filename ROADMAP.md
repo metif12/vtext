@@ -346,16 +346,26 @@ fix found by measuring against the FT 2.13.2 source), behind additive
 of every simple glyph × four coords at 142,848/142,848 exact across four
 variable faces. Follow-ups: composites, HVAR/MVAR/cvar, raster wiring.
 
-**7.11 Cache and the rival number — cache landed 2026-11-15.** `shape/cache.v`:
+**7.11 Cache and the rival number — landed 2026-11-15/16.** `shape/cache.v`:
 `CacheKey` (font id, gid, size bits, subpixel x/y) with `==` and canonical
 `str` (V maps take no struct keys; every field is in the encoding, two
 tests fail if size or subpixel drops out), caller-owned `Cache` with
 `get_or_rasterize`, `clear`, `len`, hit/miss counts. Font id is the caller's
 assignment (nothing on `Font` is stable across calls); one id names one
 (file, face). No eviction — the caller clears. Miss 19.1 us, hit 1.2 us
-(Amiri `A`, 32 px). Pinned by `cache_test.v` with break-fix over all four
-key dimensions. **Second half (rival A/B harness) open**: README numbers
-become vtext-vs-rival on the same box, re-measured per release.
+(Amiri `A`, 32 px, first-touch method). Pinned by `cache_test.v` with
+break-fix over all four key dimensions. **Second half (rival A/B harness)
+landed 2026-11-16**: `tools/rival_bench.v` drives the V half and parses the
+`tools/rival_bench.py` rival half (uharfbuzz shaping, Pillow rasterization —
+the CI reference stack, nothing more) into one table with per-op ratios and
+a hit-beats-miss refusal as its liveness control. README carries the
+measured table with box, flags, versions and date, re-measured per release.
+The harness degrades the ratchet way: no interpreter or rival import prints
+the vtext half with the reason. Recorded on Win11 x64 with `v -cc gcc`:
+shape latin-1024 1672x (layout+shape vs hb shape), arabic-1024 552x, raster
+miss 0.69x, raster hit 0.03x. `-prod` recording waits on a tree-wide
+-prod-clean slice (pre-existing strict-check errors, e.g. the documented
+`infx` cast); the `normalize.v` unused-variable one fell along the way.
 
 **Platform ratchet.** No host-skips on any runner: every OS leg is covered
 on its own OS and answers none elsewhere. A skip that prints why stays a
@@ -621,7 +631,7 @@ owns the queue.
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
-| 7.11-2H | Rival A/B harness | open |
+| 7.11-2H | Rival A/B harness | landed (README table, re-measured per release) |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
 | 8.6 | Stroking | open |

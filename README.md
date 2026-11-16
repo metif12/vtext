@@ -276,6 +276,35 @@ answer. `--text` draws the run a string shapes into and tabulates it, and that t
 saying which substitution replaced it, which is otherwise only answerable by printing glyph ids and
 counting them by hand.
 
+`tools/rival_bench.v` with `tools/rival_bench.py` is the rival A/B harness: the same workload timed
+on vtext and on the stack it replaces, on the same box, in one table. The V half times line layout
+at 16 px for 1024-character Latin and Arabic paragraphs plus Amiri 'A' rasterized at 32 px cold
+(sustained miss over A–T) and through the caller-owned cache; the Python half times uharfbuzz
+shaping and Pillow rasterization of the same inputs. Best of five batches of twenty on both sides.
+What each side does differs and the table says so: vtext lays the line out (bidi, joining,
+GSUB/GPOS, measurement) where HarfBuzz only shapes, and Pillow renders with its own bundled
+FreeType at default flags where vtext fills unhinted. Throughput is the comparison; correctness is
+proven elsewhere, per part.
+
+```sh
+v -cc gcc run tools/rival_bench.v
+```
+
+Measured 2026-11-16 on Win11 x64 (16 CPU) with `v -cc gcc`, uharfbuzz 0.56.2, Pillow 12.3.0 —
+re-measured per release, same tool, same flags:
+
+| op | vtext | rival | vtext/rival |
+| --- | --- | --- | --- |
+| shape latin-1024 (layout+shape vs hb shape) | 44.8 ms/paragraph | 26.8 us/paragraph | 1672x |
+| shape arabic-1024 (layout+shape vs hb shape) | 141.4 ms/paragraph | 256.4 us/paragraph | 552x |
+| raster Amiri A–T 32 px miss (vs Pillow) | 17.0 us/op | 24.8 us/op | 0.69x |
+| raster Amiri A 32 px hit (vs Pillow) | 625 ns/op | 24.8 us/op | 0.03x |
+
+The raster side is ahead; the shape side is the finding, not a failure to hide: paragraph layout
+does bidi, joining, substitution, positioning and measurement where the rival shapes one run, and
+the harness is what an optimization lands against. The miss number supersedes the old 19.1 us
+first-touch figure with a sustained method; the hit still answers from the caller's cache.
+
 ### Features
 
 Every line gets `ccmp`, the four Arabic joining features, `rlig`, `calt`,
