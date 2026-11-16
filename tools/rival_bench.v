@@ -18,17 +18,18 @@ module main
 //
 // The harness degrades the platform-ratchet way: no interpreter or no
 // rival import prints the vtext half with the reason instead of a table
-// with holes. The README A/B numbers come from a run of this tool and are
+// with holes. The perf.md numbers come from a run of this tool and are
 // re-measured per release; the method is the pin, the absolutes are the
-// box's.
+// box's. The CI gate reads its baselines out of perf.md, so a table edit
+// keeps the marker comments around it intact.
 //
 // Usage: v -prod -cc gcc run tools/rival_bench.v (from the module root)
 // The optimizing C compiler matters: a tcc build measures the compiler's
 // checks, not the engine, and the published ratio would blame the wrong
 // one. The tree is -prod-clean since the IN enum member landed (UCD IN
 // was missing from LineBreakClass and one subset loop carried an unused
-// value); the README numbers below name the flags they were measured
-// with, and -cc gcc without -prod still works but measures -O0 codegen.
+// value); the perf.md table names the flags it was measured with, and
+// -cc gcc without -prod still works but measures -O0 codegen.
 
 import os
 import time

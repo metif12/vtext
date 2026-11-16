@@ -359,8 +359,9 @@ break-fix over all four key dimensions. **Second half (rival A/B harness)
 landed 2026-11-16**: `tools/rival_bench.v` drives the V half and parses the
 `tools/rival_bench.py` rival half (uharfbuzz shaping, Pillow rasterization —
 the CI reference stack, nothing more) into one table with per-op ratios and
-a hit-beats-miss refusal as its liveness control. README carries the
-measured table with box, flags, versions and date, re-measured per release.
+a hit-beats-miss refusal as its liveness control. perf.md carries the
+measured table with box, flags, versions and date, re-measured per release,
+and the `perf` CI job gates the ratios on every commit.
 The harness degrades the ratchet way: no interpreter or rival import prints
 the vtext half with the reason. Recorded on Win11 x64 with `v -cc gcc`:
 shape latin-1024 1672x (layout+shape vs hb shape), arabic-1024 552x, raster

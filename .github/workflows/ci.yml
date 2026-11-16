@@ -190,13 +190,63 @@ jobs:
       # Pillow are already pinned above, so this step exercises the driver,
       # the rival half and the hit-beats-miss self-check end to end. Only the
       # exit code gates: ratios on a loaded runner are findings, not verdicts,
-      # and the README table is re-measured per release on a quiet box.
+      # and the perf.md table is re-measured per release on a quiet box. The
+      # per-commit ratio gate lives in the perf job below.
       - name: v run tools/rival_bench.v
         shell: bash
         run: v run tools/rival_bench.v
         env:
           TMPDIR: ${{ runner.temp }}/rivalbench
           VJOBS: '1'
+
+  perf:
+    name: perf A/B gate (ubuntu 24.04)
+    # Pinned to 24.04, not latest: the gate compares ratios against the
+    # perf.md baselines, and the rival stack measures differently across
+    # system stacks. Same pinned-runner rationale as the difftest job.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install V
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/vsrc"
+          git clone --depth 1 https://github.com/vlang/v "$src"
+          make -C "$src" -j2
+          echo "$src" >> "$GITHUB_PATH"
+
+      # Pinned to the versions perf.md was recorded against; an unpinned
+      # install drifts with every release and the gate then measures the
+      # reference moving, not the engine.
+      - name: pip install the pinned rival stack
+        shell: bash
+        run: |
+          python3 -m pip install --quiet uharfbuzz==0.56.2 pillow==12.3.0
+          python3 -m pip freeze | grep -Ei 'harfbuzz|pillow'
+
+      # -prod is the point: the gate locks in the -prod-clean tree, and the
+      # ratios only mean anything under optimized codegen. pipefail carries
+      # a bench refusal into the step's exit code; the gate script compares
+      # the printed ratios against perf.md (3x headroom, improvements never
+      # fail) and fails loud on a missing row.
+      - name: run the A/B harness and gate the ratios
+        shell: bash
+        run: |
+          set -euo pipefail
+          v -prod -cc gcc run tools/rival_bench.v | tee rival-bench.txt
+          python3 tools/perf_check.py perf.md rival-bench.txt
+        env:
+          TMPDIR: ${{ runner.temp }}/rivalbench
+          VJOBS: '1'
+
+      - name: Upload the bench output
+        uses: actions/upload-artifact@v4
+        with:
+          name: rival-bench-output
+          path: rival-bench.txt
 
   clib:
     # The C ABI: the shared library builds, its headers ship, and the smoke
