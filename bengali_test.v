@@ -20,11 +20,11 @@ import vtext.shape
 // behaviour and the comment names the gap for the engine slice that owns
 // it — the same gaps indic_test.v pins for Devanagari, now shown to hold
 // across scripts:
-//   - pre-base matras never move: the engine draws KA I in logical order
-//     with the cmap spacing matra, where HarfBuzz draws the matra first.
-//     Reordering is the machine in shape/indic.v; feeding its answer into
-//     layout is the wiring follow-up, so this pins the logical order it
-//     feeds today.
+//   - pre-base matras draw first with the cmap spacing glyph: the joining
+//     hook feeds the reordered run into shaping and merges the syllable's
+//     clusters onto its base (both on cluster 0, like HarfBuzz). Bengali
+//     needs no pres variant; the remaining fusion gap below is conjuncts,
+//     not matras.
 //   - no conjunct fusion by default, and no single named feature fuses
 //     through the existing substitution path either (akhn, cjct, blwf all
 //     tried): the engine draws the cmap pieces where HarfBuzz draws one
@@ -243,26 +243,40 @@ fn test_bengali_shape_raam_matches_harfbuzz() {
 	}
 }
 
-fn test_bengali_shape_current_gaps() {
-	// HarfBuzz shapes KI as the matra gid 0x3c before KA gid 0x19, both on
-	// cluster 0; the engine draws KA then the cmap matra in logical order
-	// under clusters 0 and 1. Gids and advances agree exactly (266 and 807
-	// design units); only the order and clusters differ, which is the
-	// unwired-reorder gap.
+fn test_bengali_shape_wired_order() {
+	// The joining hook feeds the reordered run into shaping: HarfBuzz shapes
+	// KI as the matra gid 0x3c before KA gid 0x19, both on cluster 0, and
+	// the engine now draws the same order with the same clusters and the
+	// same advances (266 and 807 design units). Bengali needs no pres
+	// variant: the cmap matra is what HarfBuzz draws too.
 	f := bengali_font() or { return }
 	ki := bengali_line(f, bengali_word([rune(0x0995), rune(0x09BF)]))
 	assert ki.glyphs.len == 2, 'ki draws two glyphs, got ${bengali_dump(ki)}'
-	ka := bengali_at(ki.glyphs, 0) or { panic('ki KA drew nothing') }
-	assert ka.gid == 0x19, 'KA is the cmap gid 19, got ${bengali_dump(ki)}'
-	assert ka.advance > 25.76 && ka.advance < 25.88, 'KA advances 807 design units'
-	matra := bengali_at(ki.glyphs, 1) or { panic('ki matra drew nothing') }
-	assert matra.gid == 0x3c, 'the I matra is the cmap gid 3c, got ${bengali_dump(ki)}'
-	assert matra.advance > 8.45 && matra.advance < 8.57, 'the I matra advances 266 design units'
+	assert ki.glyphs[0].gid == 0x3c, 'the I matra draws first, got ${bengali_dump(ki)}'
+	assert ki.glyphs[0].cluster == 0, 'the matra reports the syllable base, got ${bengali_dump(ki)}'
+	assert ki.glyphs[0].advance > 8.45 && ki.glyphs[0].advance < 8.57, 'the I matra advances 266 design units'
+	assert ki.glyphs[1].gid == 0x19, 'KA draws second, got ${bengali_dump(ki)}'
+	assert ki.glyphs[1].cluster == 0, 'KA keeps the syllable base, got ${bengali_dump(ki)}'
+	assert ki.glyphs[1].advance > 25.76 && ki.glyphs[1].advance < 25.88, 'KA advances 807 design units'
+	// The pre-base E-kar merges the same way: nomoste's ste syllable moves
+	// the E-kar first and reports cluster 2 for all four glyphs, where
+	// HarfBuzz draws three (its pstf fusion stays a wiring follow-up).
+	nomoste := bengali_line(f, bengali_word([rune(0x09A8), rune(0x09AE), rune(0x09B8), rune(0x09CD),
+		rune(0x09A4), rune(0x09C7)]))
+	assert nomoste.glyphs.len == 6, 'nomoste draws six pieces, got ${bengali_dump(nomoste)}'
+	assert nomoste.glyphs[2].gid == 0x42, 'the E-kar draws first in its syllable, got ${bengali_dump(nomoste)}'
+	for i in 2 .. 6 {
+		assert nomoste.glyphs[i].cluster == 2, 'ste reports cluster 2, glyph ${i} reports ${nomoste.glyphs[i].cluster}'
+	}
+}
+
+fn test_bengali_shape_current_gaps() {
 	// HarfBuzz shapes KSSA as one glyph: gid 0x87 (fontTools
 	// uni099509CD09B7) at advance 859 on cluster 0. The engine draws three
 	// cmap pieces by default, and no single named feature fuses them
 	// through the existing substitution path (akhn, cjct and blwf all
 	// tried): Bengali fusion needs the conjunct machinery the wiring owns.
+	f := bengali_font() or { return }
 	kssa := bengali_word([rune(0x0995), rune(0x09CD), rune(0x09B7)])
 	plain := bengali_line(f, kssa)
 	assert plain.glyphs.len == 3, 'kssa draws three pieces by default, got ${bengali_dump(plain)}'

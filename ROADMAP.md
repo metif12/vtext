@@ -543,8 +543,22 @@ needed (raam gids 0x33/0x3b/0x31, advances 596/266/612) and pins the same
 gaps where it is (ki logical-order clusters; kssa three cmap pieces vs
 HarfBuzz one fused 0x87, with akhn/cjct/blwf each tried and pinned
 unfused). Slices left: UCD tables (done), Devanagari (done), Bengali
-(done); the joining hook that feeds reordered runs into GSUB (rphf, half
-forms, pres, pstf/vatu, GPOS marks) with Arabic staying green.
+(done); the joining hook landed 2026-11-16 (below). Remaining: rphf, half
+forms, pres, pstf/vatu, GPOS marks, with Arabic staying green.
+
+**9.3b The joining hook — landed 2026-11-16.** `layout/layout.v` feeds the
+machine into shaping: `indic_visual` reorders each run with
+`reorder_indic_mapped` before `shape_arabic`, recomposes the `sub_idx`
+cluster map through the permutation (through a copy — in-place would reuse
+overwritten slots), and merges each reordered syllable's clusters onto its
+base, because the placing pass groups by cluster along bidi visual order
+and honest per-character clusters would un-draw the reorder. Both glyphs on
+cluster 0 matches HarfBuzz. Pinned by updated `indic_test.v`/`bengali_test.v`
+(ki draws matra-first on cluster 0 both scripts; Devanagari pres swaps the
+matra for gid 0x221 = HarfBuzz's 545; Bengali ste merges four glyphs onto
+cluster 2) with a hook-level neutered break-fix (identity reorder fails the
+new pins with the exact pre-hook signature) and machine-level mapped pins
+(map [1, 0] for ki, identity elsewhere).
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Gaps documented
@@ -603,7 +617,7 @@ owns the queue.
 
 | Slice | Item | State |
 | --- | --- | --- |
-| 7.6 / 9.3 | Indic machine + Devanagari acceptance + Bengali generality | landed (both scripts, unwired); joining hook open |
+| 7.6 / 9.3 | Indic machine + Devanagari acceptance + Bengali generality + joining hook | landed (both scripts wired; rphf/half/pres/pstf/GPOS open) |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |

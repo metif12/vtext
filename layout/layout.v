@@ -161,6 +161,44 @@ pub mut:
 	tab_stops []f64
 }
 
+// indic_visual reorders a shaping run into visual order for the Indic
+// syllable machine: a pre-base matra sits after its consonant in the text
+// but draws before it, so the run is what GSUB sees. sub_idx maps each
+// shaped position back to the decomposed text, and the reorder permutes
+// positions — so the map is recomposed through the permutation and the
+// cluster reads below keep naming the caller's indices. Outside Indic runs
+// the reorder is the identity and the map is untouched.
+//
+// A reordered syllable also merges its clusters onto its base: the placing
+// pass draws glyphs grouped by cluster along bidi visual order, so honest
+// per-character clusters would un-draw the reorder (the matra belongs to a
+// later cluster than the base it precedes). Every glyph of the syllable
+// reporting the base's index draws visual order and matches HarfBuzz, which
+// reports the whole reordered syllable on its first cluster.
+fn indic_visual(sub []rune, mut sub_idx []int) []rune {
+	reordered, perm := shape.reorder_indic_mapped(sub)
+	if reordered.len != sub.len || reordered.len != sub_idx.len {
+		return sub
+	}
+	// The permutation reads old positions while writing new ones, so the
+	// map is recomposed through a copy: reading sub_idx in place would
+	// reuse slots this same loop already overwrote.
+	old := sub_idx.clone()
+	for k in 0 .. sub_idx.len {
+		sub_idx[k] = old[perm[k]]
+	}
+	for s in shape.segment_indic_syllables(sub) {
+		syl := sub[s.start..s.end]
+		if shape.reorder_indic_syllable(syl) != syl {
+			base := old[s.start]
+			for k in s.start .. s.end {
+				sub_idx[k] = base
+			}
+		}
+	}
+	return reordered
+}
+
 // layout_paragraph runs normalization, the bidirectional algorithm and Arabic joining over
 // cps, maps the result to glyphs through fs, and positions the glyphs on one line at em_px.
 //
@@ -220,7 +258,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 			sub << decomposed[i]
 			sub_idx << i
 		}
-		shaped := ctx.shaper.shape_arabic(ctx.properties, sub)
+		shaped := ctx.shaper.shape_arabic(ctx.properties, indic_visual(sub, mut sub_idx))
 		mut run := []shape.Glyph{}
 		// The script of the run, which is what the font resolves its features
 		// under. It is the first script that names one rather than the first

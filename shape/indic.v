@@ -5,11 +5,11 @@ import vtext.ucd
 // The Indic syllable machine: segmentation, matra reordering and conjunct
 // hooks for Devanagari and its relatives.
 //
-// This is a standalone pass over codepoint arrays, not a hook in the
-// joining or layout pipeline: it takes what it needs as arguments and
-// answers new arrays, so wiring it into shaping is a follow-up that changes
-// no existing file. Khmer and Bengali generality is a noted follow-up too:
-// the categories are script-agnostic, but every pin below is Devanagari.
+// This is a standalone pass over codepoint arrays: it takes what it needs
+// as arguments and answers new arrays. The layout joining hook
+// (indic_visual in layout/layout.v) feeds reorder_indic_mapped into shaping
+// and merges reordered syllables' clusters; Khmer generality is a noted
+// follow-up.
 //
 // The model is the orthographic syllable behind the Unicode Indic shaping
 // guidance. A syllable opens on a consonant or an independent vowel and
@@ -264,6 +264,92 @@ pub fn reorder_indic(cps []rune) []rune {
 		out << reorder_indic_syllable(cps[s.start..s.end])
 	}
 	return out
+}
+
+// reorder_indic_mapped reorders every syllable of a run like reorder_indic
+// and also answers the permutation it applied: map_[new] is the index in the
+// input that the codepoint at new came from. The layout pass shapes the
+// reordered run but reports clusters in the caller's order, so it needs
+// both; a caller that only draws needs reorder_indic. An unchanged syllable
+// maps to itself, so the map is the identity wherever the text was already
+// in visual order.
+pub fn reorder_indic_mapped(cps []rune) ([]rune, []int) {
+	if cps.len == 0 {
+		return []rune{}, []int{}
+	}
+	mut out := []rune{cap: cps.len}
+	mut map_ := []int{cap: cps.len}
+	for s in segment_indic_syllables(cps) {
+		reordered, m := reorder_indic_syllable_mapped(cps[s.start..s.end])
+		for k, cp in reordered {
+			out << cp
+			map_ << s.start + m[k]
+		}
+	}
+	return out, map_
+}
+
+// reorder_indic_syllable_mapped moves a pre-base matra before the first
+// consonant of its syllable like reorder_indic_syllable, with the same
+// permutation map. An unchanged syllable maps to itself.
+fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
+	if syl.len < 2 {
+		mut ids := []int{cap: syl.len}
+		for i in 0 .. syl.len {
+			ids << i
+		}
+		return syl.clone(), ids
+	}
+	syl_ranges := indic_syllabic_ranges()
+	pos_ranges := indic_positional_ranges()
+	mut matra := -1
+	for i, cp in syl {
+		if indic_syllabic_of(syl_ranges, cp) == .vowel_dependent {
+			p := indic_positional_of(pos_ranges, cp)
+			if p == .left || p == .visual_order_left {
+				matra = i
+				break
+			}
+		}
+	}
+	if matra <= 0 {
+		mut ids := []int{cap: syl.len}
+		for i in 0 .. syl.len {
+			ids << i
+		}
+		return syl.clone(), ids
+	}
+	mut anchor := -1
+	for i in 0 .. matra {
+		if is_indic_consonant_like(indic_syllabic_of(syl_ranges, syl[i])) {
+			anchor = i
+			break
+		}
+	}
+	if anchor < 0 {
+		mut ids := []int{cap: syl.len}
+		for i in 0 .. syl.len {
+			ids << i
+		}
+		return syl.clone(), ids
+	}
+	mut out := []rune{cap: syl.len}
+	mut map_ := []int{cap: syl.len}
+	for i in 0 .. anchor {
+		out << syl[i]
+		map_ << i
+	}
+	out << syl[matra]
+	map_ << matra
+	for i in anchor .. matra {
+		out << syl[i]
+		map_ << i
+	}
+	for i in matra + 1 .. syl.len {
+		out << syl[i]
+		map_ << i
+	}
+	return out, map_
 }
 
 // IndicConjunct is a consonant, halant, consonant run: a half-open span of

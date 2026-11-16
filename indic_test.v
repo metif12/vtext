@@ -20,10 +20,11 @@ import vtext.ucd
 // Where the engine diverges from HarfBuzz, the assert pins the current
 // behaviour and the comment names the gap for the engine slice that owns
 // it:
-//   - pre-base matras never move: the engine draws KA I in logical order
-//     with the cmap spacing matra, where HarfBuzz draws the pres variant
-//     before the base. Reordering is the machine in shape/indic.v; feeding
-//     its answer into layout is the wiring follow-up.
+//   - pre-base matras draw first with the cmap spacing glyph: the joining
+//     hook feeds the reordered run into shaping and merges the syllable's
+//     clusters onto its base (both on cluster 0, like HarfBuzz), but the
+//     pres variant stays opt-in — naming pres swaps the matra for the
+//     variant HarfBuzz draws by default.
 //   - combining matras with joining type Transparent (E, U and friends)
 //     draw nothing at all: the joining pass emits no glyph for a
 //     transparent character with combining class zero, the same gap the
@@ -31,15 +32,15 @@ import vtext.ucd
 //     as spacing cmap glyphs with full advance instead.
 //   - no conjunct fusion by default: the engine draws the cmap pieces where
 //     HarfBuzz draws one fused glyph. Naming akhn fuses KSSA through the
-//     existing substitution path, which is the smoke of this slice; rphf,
-//     half forms and pres stay follow-ups with the wiring.
+//     existing substitution path with no new wiring: the reordered run
+//     already matches what the lookup consumes.
 //   - GPOS mark advances and offsets are the font layer: the halant reports
 //     its own hmtx advance of zero and whatever offset the mark pass
 //     attached, not HarfBuzz mark offsets.
 //
-// Khmer and Bengali generality, repha placement, split-matra halves and the
-// joining hook that feeds reordered runs into GSUB are noted follow-ups:
-// Devanagari acceptance is this slice.
+// Khmer generality, repha placement, split-matra halves and the conjunct
+// features the hook now feeds (rphf, half forms, pres, pstf/vatu) stay
+// follow-ups: Devanagari acceptance is this slice.
 
 fn indic_font_path(name string) ?string {
 	mut dirs := []string{}
@@ -235,6 +236,21 @@ fn test_indic_reorder_matches_harfbuzz() {
 	]), 'reordered hi is matra then base'
 }
 
+fn test_indic_reorder_mapped_names_sources() {
+	// The layout hook shapes the reordered run but reports the caller's
+	// clusters: the map answers which input index each reordered codepoint
+	// came from. ki moves, so the matra names input 1 first; raam and the
+	// empty run map to themselves.
+	ro, m := shape.reorder_indic_mapped(indic_word([rune(0x0915), rune(0x093F)]))
+	assert indic_hex(ro) == '093F 0915', 'mapped reorder still moves the matra'
+	assert m == [1, 0], 'the map names the sources, got ${m}'
+	plain, pm := shape.reorder_indic_mapped(indic_word([rune(0x0930), rune(0x093E), rune(0x092E)]))
+	assert indic_hex(plain) == '0930 093E 092E', 'raam needs no reorder'
+	assert pm == [0, 1, 2], 'the identity maps to itself, got ${pm}'
+	empty_ro, empty_m := shape.reorder_indic_mapped([]rune{})
+	assert empty_ro.len == 0 && empty_m.len == 0, 'empty maps to empty'
+}
+
 fn test_indic_conjuncts_devanagari() {
 	assert indic_spans(shape.find_indic_conjuncts(indic_word([rune(0x0938), rune(0x094D), rune(0x0924),
 		rune(0x094D), rune(0x0930)]))) == '0,5', 'stra is one conjunct'
@@ -310,37 +326,53 @@ fn test_indic_shape_raam_matches_harfbuzz() {
 	}
 }
 
-fn test_indic_shape_current_gaps() {
-	// HarfBuzz shapes KI as the matra variant gid 545 before KA gid 56; the
-	// engine draws KA then the cmap spacing matra gid 32 in logical order.
-	// The reorder above is visual order; feeding it into layout is the
-	// wiring follow-up, so this pins the logical order it feeds today.
+fn test_indic_shape_wired_order() {
+	// The joining hook feeds the reordered run into shaping: HarfBuzz shapes
+	// KI as the matra first and the base second, both on cluster 0, and the
+	// engine now draws the same order with the same clusters — the cmap
+	// spacing matra gid 32, then KA gid 56. The pres VARIANT stays opt-in:
+	// naming pres swaps the matra for gid 0x221, which is HarfBuzz's 545 at
+	// the same 259-unit advance.
 	f := indic_font('NotoSansDevanagari-Variable.ttf') or { return }
 	ki := indic_line(f, indic_word([rune(0x0915), rune(0x093F)]))
 	assert ki.glyphs.len == 2, 'ki draws two glyphs, got ${indic_dump(ki)}'
-	ka := indic_at(ki.glyphs, 0) or { panic('ki KA drew nothing') }
-	assert ka.gid == 56, 'KA is the cmap gid 56, got ${indic_dump(ki)}'
-	assert ka.advance > 24.5 && ka.advance < 24.7, 'KA advances 768 design units'
-	matra := indic_at(ki.glyphs, 1) or { panic('ki matra drew nothing') }
-	assert matra.gid == 32, 'the I matra is the cmap gid 32, got ${indic_dump(ki)}'
-	assert matra.advance > 8.2 && matra.advance < 8.4, 'the spacing matra advances 259 design units'
+	assert ki.glyphs[0].gid == 32, 'the I matra draws first, got ${indic_dump(ki)}'
+	assert ki.glyphs[0].cluster == 0, 'the matra reports the syllable base, got ${indic_dump(ki)}'
+	assert ki.glyphs[0].advance > 8.2 && ki.glyphs[0].advance < 8.4, 'the spacing matra advances 259 design units'
+	assert ki.glyphs[1].gid == 56, 'KA draws second, got ${indic_dump(ki)}'
+	assert ki.glyphs[1].cluster == 0, 'KA keeps the syllable base, got ${indic_dump(ki)}'
+	assert ki.glyphs[1].advance > 24.5 && ki.glyphs[1].advance < 24.7, 'KA advances 768 design units'
+	fused := indic_line_feat(f, indic_word([rune(0x0915), rune(0x093F)]), ['pres'])
+	assert fused.glyphs.len == 2, 'pres keeps two glyphs, got ${indic_dump(fused)}'
+	assert fused.glyphs[0].gid == 0x221, 'pres swaps the matra for 0x221, got ${indic_dump(fused)}'
+	assert fused.glyphs[0].cluster == 0, 'the pres matra reports the syllable base'
+	assert fused.glyphs[0].advance > 8.2 && fused.glyphs[0].advance < 8.4, 'the pres matra advances 259 design units'
+	assert fused.glyphs[1].gid == 56, 'KA still draws second under pres'
+	// HarfBuzz shapes HINDI with the I matra first and the NDA conjunct,
+	// the first syllable on cluster 0; the engine draws the matra first on
+	// cluster 0 with the cmap spacing glyph, then HA, and the ndi syllable
+	// untouched with its own clusters. No fusion either way.
+	hindi := indic_line(f, indic_word([rune(0x0939), rune(0x093F), rune(0x0928), rune(0x094D),
+		rune(0x0926), rune(0x0940)]))
+	assert hindi.glyphs.len == 6, 'hindi draws six pieces, got ${indic_dump(hindi)}'
+	assert hindi.glyphs[0].gid == 32 && hindi.glyphs[0].cluster == 0, 'hindi opens with the I matra on cluster 0, got ${indic_dump(hindi)}'
+	assert hindi.glyphs[1].gid == 88 && hindi.glyphs[1].cluster == 0, 'HA follows on cluster 0, got ${indic_dump(hindi)}'
+	assert hindi.glyphs[1].advance > 16.9 && hindi.glyphs[1].advance < 17.1, 'HA advances 531 design units'
+	na := indic_at(hindi.glyphs, 2) or { panic('hindi NA drew nothing') }
+	assert na.gid == 75, 'unfused NA is the cmap gid 75, got ${indic_dump(hindi)}'
+}
+
+fn test_indic_shape_current_gaps() {
 	// HarfBuzz shapes NAMASTE with the STA conjunct gid 256 and the E matra
 	// gid 40; the engine draws the cmap SA gid 87 and drops the E matra,
 	// which has joining type Transparent and combining class zero.
+	f := indic_font('NotoSansDevanagari-Variable.ttf') or { return }
 	namaste := indic_line(f, indic_word([rune(0x0928), rune(0x092E), rune(0x0938), rune(0x094D),
 		rune(0x0924), rune(0x0947)]))
 	assert namaste.glyphs.len == 5, 'namaste draws five pieces, got ${indic_dump(namaste)}'
 	assert indic_at(namaste.glyphs, 5) == none, 'the E matra draws nothing today'
 	sa := indic_at(namaste.glyphs, 2) or { panic('namaste SA drew nothing') }
 	assert sa.gid == 87, 'unfused SA is the cmap gid 87, got ${indic_dump(namaste)}'
-	// HarfBuzz shapes HINDI with the I matra first and the NDA conjunct;
-	// the engine draws six cmap pieces in logical order, the two Mc matras
-	// as spacing glyphs, and no fusion.
-	hindi := indic_line(f, indic_word([rune(0x0939), rune(0x093F), rune(0x0928), rune(0x094D),
-		rune(0x0926), rune(0x0940)]))
-	assert hindi.glyphs.len == 6, 'hindi draws six pieces, got ${indic_dump(hindi)}'
-	ha := indic_at(hindi.glyphs, 0) or { panic('hindi HA drew nothing') }
-	assert ha.gid == 88 && hindi.glyphs[1].gid == 32, 'hindi opens HA then spacing I, got ${indic_dump(hindi)}'
 }
 
 fn test_indic_draw_base() {
@@ -358,9 +390,15 @@ fn test_indic_pins_are_live() {
 	// the pins stopped discriminating.
 	ki := indic_word([rune(0x0915), rune(0x093F)])
 	assert shape.reorder_indic(ki) != ki, 'reordering changes ki: a neutered reorder must fail'
+	// The hook half: a wired ki draws the matra first on the base cluster.
+	// A neutered hook (identity reorder) draws KA first on cluster 0, so
+	// this fails the same way the order pin above does.
+	f := indic_font('NotoSansDevanagari-Variable.ttf') or { return }
+	wired := indic_line(f, ki)
+	assert wired.glyphs.len == 2, 'the hook control needs a shaped ki'
+	assert wired.glyphs[0].gid == 32 && wired.glyphs[0].cluster == 0, 'the hook draws the matra first on cluster 0: a neutered hook must fail'
 	stra := indic_word([rune(0x0938), rune(0x094D), rune(0x0924), rune(0x094D), rune(0x0930)])
 	assert shape.segment_indic_syllables(stra).len == 1, 'stra stays one syllable: a dropped Virama row must fail'
-	f := indic_font('NotoSansDevanagari-Variable.ttf') or { return }
 	kssa := indic_word([rune(0x0915), rune(0x094D), rune(0x0937)])
 	fused := indic_line_feat(f, kssa, ['akhn'])
 	assert fused.glyphs[0].gid == 90, 'the akhn pin still holds'
