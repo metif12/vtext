@@ -513,8 +513,8 @@ proves it, **absent** = the mechanism does not exist.
 | Tibetan | absent | stacking needs its own machine |
 | Indic (Devanagari, Bengali) | syllable machine, two-script pinned | tables + two faces + machine (unwired), HB-pinned both |
 | Mongolian/Phags-pa vertical | absent | no vertical-columns path |
-| Simple alphabets (Georgian, Armenian, Ethiopic, …) | untested | cmap should answer; nothing proves it |
-| Emoji | unassessed | `emoji-data.txt` ships; color formats + ZWJ unsurveyed |
+| Simple alphabets (Georgian, Armenian, Ethiopic) | pinned | corpus + HB-exact cmap smoke (`simple_test.v`) |
+| Emoji | surveyed (mono) | no color tables in corpus; FiraCode smiley cmap-pinned; color engines → 7.7 |
 
 **9.1 CJK line breaking — landed 2026-11-15 as pins.** ID/CJ/NS/OP/CL were
 already complete in the 19,346 tail: 0 fail on 1,753 ID cases and 0 on
@@ -550,9 +550,17 @@ forms, pres, pstf/vatu, GPOS marks) with Arabic staying green.
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Gaps documented
 in-test: ccc=0 marks (Thaana fili, same gap as wave 3), `ot_script_tag`
 missing space-padded tags (`nko ` vs `Nkoo` — forms prove right under
-override, only the fold is wrong). Remaining: one smoke line each for the
-other simple alphabets; the emoji survey (cmap monochrome ships, color
-formats refuse with the reason).
+override, only the fold is wrong). Simple alphabets landed 2026-11-16:
+Georgian, Armenian and Ethiopic variable faces (554/436/925 glyphs, upm
+1000, well under the wave ceiling) with hello-word smoke beside HarfBuzz
+(`simple_test.v`: gamarjoba/barev/selam exact gid and advance agreement,
+rasterize smoke, off-by-one break-fix). These scripts need no machinery —
+cmap glyph plus hmtx advance, in order — and the pins prove it. The emoji
+survey closes 9.4 with them: no committed face carries a colour table
+(COLR/CPAL/CBDT/CBLC/sbix/SVG scanned on all four survey faces, not
+assumed), and the monochrome smiley U+263A FiraCode covers shapes from its
+cmap beside HarfBuzz (gid 0x625, advance 600) and rasterizes. Colour
+engines stay 7.7.
 
 Wave rule for the whole phase: every new script arrives as a committed OFL
 font plus HarfBuzz-measured pins. A shaping-affecting script also extends
@@ -580,6 +588,9 @@ Naskh, Nastaliq and SC faces.
 | `NotoSansSyriac-Variable.ttf` | 171,996 | Syriac | OFL |
 | `NotoSansThaana-Variable.ttf` | 114,724 | Thaana | OFL |
 | `NotoSansNKo-Regular.ttf` | 79,696 | NKo | OFL |
+| `NotoSansGeorgian-Variable.ttf` | 231,988 | Georgian | OFL |
+| `NotoSansArmenian-Variable.ttf` | 221,936 | Armenian | OFL |
+| `NotoSansEthiopic-Variable.ttf` | 1,143,168 | Ethiopic | OFL |
 | `NotoSansBengali-Variable.ttf` | 463,668 | Bengali | OFL |
 | `SourceSans3-Regular.otf` (CFF) | 334,924 | Latin | OFL |
 | `STIXTwoMath-Regular.ttf` | 1,517,976 | Math | OFL |
@@ -605,7 +616,7 @@ owns the queue.
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
 | 9.2-engine | ccc=0 mark drawing; Khmer coeng; Myanmar kinzi/stacks; `nko ` tag fold | open |
-| 9.4-rest | More simple alphabets; emoji survey | open |
+| 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT

@@ -136,7 +136,7 @@ Each item names the slice that owns it in `ROADMAP.md`.
   wrap modes, ellipsize and tabs landed (8.4, C spelling included).
 - The remaining scripts (Phase 9): CJK breaking pinned (9.1 landed), SE Asian
   corpus landed with engine gaps documented (9.2), the Indic machine (9.3,
-  Devanagari + Bengali landed, joining hook open), and the long tail (9.4 corpus landed, emoji survey open).
+  Devanagari + Bengali landed, joining hook open), and the long tail (9.4 corpus landed with the simple alphabets and the monochrome emoji survey; colour stays 7.7).
 
 ## Refused by design
 
