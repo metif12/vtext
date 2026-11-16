@@ -429,8 +429,19 @@ behavior; char holds marks and CR/LF; word_char splits overlong words);
 line comes back whole; vertical: whole); additive `tab_stops` expanding
 after placing, horizontal only. Hyphenation is word-mode only by decision.
 Pinned by `ellipsize_wrap_test.v` with fontTools-measured pins and two
-break-fix controls (char arm, ellipsis append). Follow-up:
-C-side spelling for the two new fields (`COptions` untouched, no ABI break).
+break-fix controls (char arm, ellipsis append). C-side spelling landed
+2026-11-16: `wrap_mode` (0 word, 1 char, 2 word_char, else word) and
+`tab_stops` (pointer plus count, copied) appended to `COptions` after
+`align_width` in `capi.v` and to `vtext_options_t` in `vtext.h` — existing
+offsets never move, so old callers keep reading their own fields. Pinned
+by `coptions_test.v` (mapping, copy semantics, null/empty/negative stops,
+engine equivalence for tabs and wrap modes) with a swapped-arm break-fix.
+`examples/c-api/smoke.c` pins the same two fields through the real C
+boundary the way the vertical flag does: char mode splits "Hello" at 20px
+while word mode lets it overflow whole, and a 40/80 stop array puts b at
+40.0 — a drifted trailing field would wrap as word mode or ignore the
+stops. The pre-existing smoke run (zeroed struct) still passes unchanged,
+which is the no-ABI-break half of the proof.
 
 **8.5 Synthetic styles and LCD — landed 2026-11-15 at bitmap level.**
 `raster/synth.v`: embolden (max-filter dilation, FT `em/24` default) then
@@ -573,7 +584,7 @@ owns the queue.
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
 | 7.11-2H | Rival A/B harness | open |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
-| 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | open (no ABI break) |
+| 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
 | 8.6 | Stroking | open |
 | 8.7 | Face/subset MATH wiring; top-accent fallback | open |
 | 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |

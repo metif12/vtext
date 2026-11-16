@@ -98,6 +98,56 @@ int main(int argc, char **argv) {
 		vtext_line_free(vline);
 	}
 
+	/* The 8.4 fields through the C struct: wrap_mode arrives as laid out —
+	 * a drifted trailing field would wrap as word mode. Char mode splits
+	 * the single word "Hello" at 20px; word mode lets it overflow whole. */
+	vtext_options_t wopts;
+	memset(&wopts, 0, sizeof(wopts));
+	wopts.wrap_mode = 1;
+	err[0] = 0;
+	vtext_wrap_t *wwrap = vtext_wrap_with(ctx, vtext_str, (int)strlen(vtext_str),
+		VTEXT_LTR, fs, 32.0, 20.0, &wopts, err, sizeof(err));
+	CHECK(wwrap != 0, "char-mode wrap laid out");
+	if (wwrap) {
+		int wlines = vtext_wrap_line_count(wwrap);
+		printf("char-mode lines at 20px: %d\n", wlines);
+		CHECK(wlines > 1, "char mode splits inside the word");
+		vtext_wrap_free(wwrap);
+	}
+	vtext_options_t wopts0;
+	memset(&wopts0, 0, sizeof(wopts0));
+	err[0] = 0;
+	vtext_wrap_t *wwrap0 = vtext_wrap_with(ctx, vtext_str, (int)strlen(vtext_str),
+		VTEXT_LTR, fs, 32.0, 20.0, &wopts0, err, sizeof(err));
+	CHECK(wwrap0 != 0, "word-mode wrap laid out");
+	if (wwrap0) {
+		CHECK(vtext_wrap_line_count(wwrap0) == 1, "word mode lets it overflow whole");
+		vtext_wrap_free(wwrap0);
+	}
+
+	/* Tab stops through the C struct: the stops array arrives as laid out,
+	 * and b starts at the 40 stop. A drifted pointer or count would leave
+	 * the tab at its font advance. */
+	double stops[2] = {40.0, 80.0};
+	vtext_options_t topts;
+	memset(&topts, 0, sizeof(topts));
+	topts.tab_stops = stops;
+	topts.num_tab_stops = 2;
+	err[0] = 0;
+	vtext_line_t *tline = vtext_layout_with(ctx, "a\tb", 3,
+		VTEXT_LTR, fs, 32.0, &topts, err, sizeof(err));
+	CHECK(tline != 0, "tab-stop line laid out");
+	if (tline) {
+		CHECK(vtext_line_glyph_count(tline) == 3, "tab-stop glyph count");
+		vtext_glyph_t tg, tb;
+		CHECK(vtext_line_glyph(tline, 1, &tg), "tab glyph readable");
+		CHECK(vtext_line_glyph(tline, 2, &tb), "b glyph readable");
+		printf("tab advance: %.2f b at %.2f width %.2f\n", tg.advance, tb.x,
+			vtext_line_width(tline));
+		CHECK(tb.x > 39.99 && tb.x < 40.01, "b starts at the stop");
+		vtext_line_free(tline);
+	}
+
 	/* Wrap at a narrow width: more than one line, covering the whole text. */
 	err[0] = 0;
 	vtext_wrap_t *w = vtext_wrap(ctx, text, (int)strlen(text), VTEXT_AUTO, fs, 32.0, 100.0,

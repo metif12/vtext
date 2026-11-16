@@ -133,7 +133,7 @@ Each item names the slice that owns it in `ROADMAP.md`.
   that reaches its own glyphs is vestigial (four one-sided anchors, no adjacent
   exit-plus-entry pair), and it rewires the day a shaped line grows a pair.
 - Word/sentence/grapheme breaks with log attrs and caret runs landed (8.2: tables, engines, 853-floor, `logattr_test.v`); Pango
-  wrap modes, ellipsize and tabs landed (8.4), C spelling stays follow-up.
+  wrap modes, ellipsize and tabs landed (8.4, C spelling included).
 - The remaining scripts (Phase 9): CJK breaking pinned (9.1 landed), SE Asian
   corpus landed with engine gaps documented (9.2), the Indic machine (9.3,
   Devanagari + Bengali landed, joining hook open), and the long tail (9.4 corpus landed, emoji survey open).

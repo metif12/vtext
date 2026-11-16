@@ -111,6 +111,16 @@ fn c_options(opts &COptions) layout.LayoutOptions {
 			else { out.align = .left }
 		}
 		out.align_width = opts.align_width
+		match opts.wrap_mode {
+			1 { out.wrap_mode = .char }
+			2 { out.wrap_mode = .word_char }
+			else { out.wrap_mode = .word }
+		}
+		if opts.tab_stops != nil && opts.num_tab_stops > 0 {
+			for i in 0 .. opts.num_tab_stops {
+				out.tab_stops << opts.tab_stops[i]
+			}
+		}
 		if opts.script != nil && opts.script[0] != 0 {
 			out.script = tos_clone(opts.script)
 		}
@@ -184,7 +194,12 @@ fn free_line_box(p &layout.Line) {
 // script and language are the OpenType tags the run resolves its features
 // under, each null or empty for the default, spelt the way the font spells
 // them ('arab', 'URD'). align is 0 left, 1 center, 2 right, 3 justify, matching
-// the LayoutOptions order; anything else is left.
+// the LayoutOptions order; anything else is left. wrap_mode is 0 word, 1 char,
+// 2 word_char, matching the WrapMode order; anything else is word. tab_stops
+// points at num_tab_stops doubles (null or non-positive count means none);
+// the values are copied, so the caller keeps its array. New fields are
+// appended at the end, so the offsets of every field above never move: a
+// caller built against the old struct still reads its own fields.
 pub struct COptions {
 pub mut:
 	features       &u8
@@ -196,6 +211,9 @@ pub mut:
 	language       &u8
 	align          i32
 	align_width    f64
+	wrap_mode      i32
+	tab_stops      &f64
+	num_tab_stops  i32
 }
 
 // CBreaks is what a break query hands back: two parallel arrays of len ints,

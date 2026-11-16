@@ -43,7 +43,12 @@ typedef struct vtext_bitmap vtext_bitmap_t;
  * NULL or empty for the default, spelt the way the font spells them
  * ('arab', 'URD'). align is 0 left, 1 center, 2 right, 3 justify; anything
  * else is left. align_width is the target width align resolves against for
- * a single line (wrapped lines use the wrap width); 0 is the line's own. */
+ * a single line (wrapped lines use the wrap width); 0 is the line's own.
+ * wrap_mode is 0 word, 1 char, 2 word_char; anything else is word.
+ * tab_stops points at num_tab_stops doubles (NULL or a non-positive count
+ * means none); the values are copied, so the caller keeps its array.
+ * New fields are appended at the end, so the offsets of every field above
+ * never move. */
 typedef struct {
 	const char *features;
 	double line_height;
@@ -54,6 +59,9 @@ typedef struct {
 	const char *language;
 	int align;
 	double align_width;
+	int wrap_mode;
+	const double *tab_stops;
+	int num_tab_stops;
 } vtext_options_t;
 
 /* One drawable glyph: the gid to rasterize, the pen movement, the position
