@@ -1448,10 +1448,11 @@ pub fn ot_script_tag(tag string) string {
 // mean, most likely first. UCD names arrive in full ('Deva', 'Bengali');
 // OpenType files them under four-letter tags, and Indic v2 layouts live
 // under sibling tags the v1 spelling does not name ('bng2' beside 'beng',
-// 'dev2' beside 'deva'). The engine tries each tag the font actually
-// carries, so a bng2-only face answers Bengali runs while a deva/dev2 face
-// keeps answering under the tag it always did. New sibling pairs arrive
-// with their faces, the way the scripts themselves do.
+// 'dev2' beside 'deva', 'mym2' beside 'mymr'). The engine tries each tag
+// the font actually carries, so a bng2-only face answers Bengali runs
+// while a deva/dev2 face keeps answering under the tag it always did.
+// New sibling pairs arrive with their faces, the way the scripts
+// themselves do.
 fn ot_script_tags_in_order(script string) []string {
 	want := ot_script_tag(script)
 	// The v2 tag goes first: HarfBuzz resolves the v2 shaping model, and a
@@ -1467,6 +1468,8 @@ fn ot_script_tags_in_order(script string) []string {
 		'dev2' { ['dev2', 'deva'] }
 		'beng' { ['bng2', 'beng'] }
 		'bng2' { ['bng2', 'beng'] }
+		'mymr' { ['mym2', 'mymr'] }
+		'mym2' { ['mym2', 'mymr'] }
 		else { [want] }
 	}
 	return sibling

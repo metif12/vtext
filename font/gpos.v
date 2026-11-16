@@ -809,11 +809,13 @@ pub fn new_gpos(raw []u8) ?&Gpos {
 	// The order is abvm, blwm, mark then mkmk, and it matters only in that a rule found first wins.
 	// A font does not put the same mark under two of them, so the order is not load bearing; it is
 	// written this way because those are the features a mark can be under. Within one
-	// feature the first matching lookup wins, which is an approximation with a known
-	// counterexample: Khmer SRA II matches an abvm mark-to-base rule (+615 off TA)
-	// before an abvm chaining rule that HarfBuzz applies after it (-32), so the
-	// engine places it at +615 while HarfBuzz reports -32. Composing a chain
-	// adjustment over an absolute mark placement belongs to the GPOS open work.
+	// feature the first matching lookup wins. That is an approximation: a
+	// font can stack a chaining rule past an absolute one, and composing a
+	// chain adjustment over an absolute mark placement belongs to the GPOS
+	// open work. The Khmer SRA II that used to witness it (+615 off TA
+	// under first-wins against HarfBuzz's -32 from the chain) now resolves
+	// HB-exact — the coeng fusion removed TA and the first match agrees —
+	// so the approximation stands without a pinned witness.
 	for feat in ['abvm', 'blwm', 'mark', 'mkmk'] {
 		g.mark_feature_lookups << g.lookups_for('arab', feat)
 	}

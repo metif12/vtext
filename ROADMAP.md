@@ -541,12 +541,14 @@ conjoining-Jamo composition (needs a Korean face), vertical CJK
 punctuation.
 
 **9.2 Southeast Asian clusters — corpus landed 2026-11-15, Khmer coeng
-fusions landed 2026-11-16.** Wave 3
+fusions and pref reorder landed 2026-11-16/17, Myanmar kinzi landed
+2026-11-17.** Wave 3
 (NotoSansThai/Lao/Khmer/Myanmar variable faces, HB pins in
-`seasian_test.v`). Engine gaps documented in-file: ccc=0 spacing marks draw
-nothing; Myanmar kinzi/stacks unformed. Tibetan stacks
-arrive as their own slice with a stacking font, or the slice says why they
-cannot.
+`seasian_test.v`). The ccc=0 spacing marks attach (Thai/Lao/Khmer
+HB-exact); the Khmer pres-group and the Myanmar blwf/blws stay
+caller-asked. Tibetan stacks arrive as their own slice with a stacking
+font, or the slice says why they cannot. A dangling Myanmar virama's
+dotted circle belongs there too.
 
 **9.3 The Indic machine — Bengali generality landed 2026-11-16 (joining hook
 open).** The Devanagari acceptance above stands; this slice proves the
@@ -718,8 +720,24 @@ for a moved matra. (2) `pref` joins the Khmer defaults ahead of `blwf`,
 claiming the preposed pair through lookup 12 before the chains see it.
 The pair, the pair-plus-vowel, the two-pair cluster and the
 syllable-tail words are all HB-exact in gids, order, advances, offsets
-and clusters. Open: the pres/abvs/blws/psts/abvf group, the
+and clusters. Open: the Khmer pres/abvs/blws/psts/abvf group, the
 mark-cluster merge, GPOS marks beyond anchors.
+
+**9.2-engine Myanmar kinzi — landed 2026-11-17.** Two halves draw
+mingala the way HarfBuzz does. (1) The reorder machine preposes the
+consonant after a [C, ASAT, VIRAMA] trio ahead of it — C is NGA or RA
+(KA with the same tail draws in place, and a vowel after the virama
+draws after it) — the way the Khmer pair preposes, and the layout pass
+merges the reordered syllable onto the base. HarfBuzz reorders with
+GSUB off, so the move is the shaper's work. (2) `abvs` joins the
+Myanmar defaults under its own gate with the `mym2` sibling the v2
+fonts file under (v2-first, the Bengali precedent), fusing the reordered
+trio into the kinzi mark through lookup 52. There is no stack
+ligature: LA's cmap glyph was the stack all along. Mingala is HB-exact
+in gids, order, advances and offsets with honest per-input clusters
+where HarfBuzz merges AA. Open: blwf/blws caller-asked until a
+subjoined-only word proves their order, the dangling-virama dotted
+circle, the mark-cluster merge, GPOS marks beyond anchors.
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Two wave gaps closed in
@@ -790,7 +808,7 @@ owns the queue.
 | 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
-| 9.2-engine | ccc=0 mark drawing; Khmer coeng fusions + pref reorder landed; pres-group + Myanmar kinzi/stacks open; `nko ` tag fold landed | open |
+| 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi landed; Khmer pres-group + Myanmar blwf/blws open; `nko ` tag fold landed | open |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
 

@@ -17,16 +17,20 @@ import vtext.layout
 // Where the engine diverges from HarfBuzz, the assert pins the current
 // behaviour and the comment names the gap for the engine slice that owns it:
 //   - spacing marks with combining class zero (Thai MAI HAN-AKAT and SARA II,
-//     Lao SARA II, Khmer SRA U and SRA II) draw no glyph at all. The joining
-//     pass only emits glyphs for transparent characters with a nonzero
-//     combining class, so a ccc=0 mark is swallowed even though the font
-//     classes it as a GDEF mark with zero advance.
+//     Lao SARA II, Khmer SRA U and SRA II) used to draw no glyph at all:
+//     the joining pass only emitted glyphs for transparent characters with
+//     a nonzero combining class, so a ccc=0 mark was swallowed even though
+//     the font classes it as a GDEF mark with zero advance. The Cf gate
+//     lets them attach now, and the Thai, Lao and Khmer pins hold their
+//     HB-exact offsets.
 //   - Khmer runs its coeng fusions (pref, blwf, pstf): COENG+RO fuses to
 //     the preposed 0xdc, COENG+TA to the subscript ligature and COENG+KHO
 //     to its post-base one, while pres/abvs/blws/psts/abvf wait for a
-//     word that exercises them. Myanmar never forms the kinzi or the
-//     stacks, so the engine draws the cmap glyphs where HarfBuzz draws
-//     one fused glyph and merges the clusters.
+//     word that exercises them. Myanmar runs its kinzi fusion (abvs):
+//     the reorder machine preposes GA ahead of the NGA/ASAT/VIRAMA trio
+//     and lookup 52 fuses the trio into the kinzi mark; the blwf medial
+//     dots and the blws subjoined forms stay caller-asked, and a dangling
+//     virama's dotted circle belongs to a stacking slice.
 //
 // Tibetan is explicitly out of scope for this wave: stacking composition needs
 // a stacking machine the engine does not have yet.
@@ -291,38 +295,43 @@ fn test_seasian_shape_khmer_pref() {
 }
 
 fn test_seasian_shape_myanmar() {
-	// HarfBuzz shapes five glyphs: MA, the NGA kinzi (0x06 with the asat mark
-	// 0xbd), and the VIRAMA+GA stack on LA (0x20) with SRA AA (0x170), the
-	// followers merged onto clusters 1 and 5. The engine applies no Myanmar
-	// GSUB: it draws all seven cmap glyphs under their own clusters. Every
-	// gid below is the fontTools cmap answer and every advance the hmtx one;
-	// the fusion and the cluster merges belong to the engine slice.
+	// HarfBuzz shapes five glyphs with advances [676, 668, 0, 1126, 455]:
+	// MA, GA with the kinzi mark (0xbd), LA (0x20) and AA (0x170), the
+	// followers merged onto clusters 1 and 5. Toggling abvs off unfolds
+	// the trio back to NGA (0x08), asat (0x17d) and virama (0x17c), so
+	// the fusion is the abvs default's work (lookup 52). There is no
+	// stack ligature: the reorder machine preposes GA ahead of the
+	// NGA/ASAT/VIRAMA trio the way HarfBuzz does with GSUB off, the
+	// lookup fuses the reordered trio into the kinzi mark, and LA's cmap
+	// glyph 0x20 was the stack all along. The engine draws the same five
+	// gids in the same order with the same advances; the kinzi sits 4
+	// design units before the pen off the font's mark anchor. AA keeps
+	// its honest input cluster against HarfBuzz's merge, the recorded
+	// per-input convention.
 	my := seasian_font('NotoSansMyanmar-Variable.ttf') or { return }
 	line := seasian_line(my, 'မင်္ဂလာ')
-	assert line.glyphs.len == 7, 'myanmar mingala draws seven cmap glyphs, got ${line.glyphs.len}'
+	assert line.glyphs.len == 5, 'myanmar mingala draws five glyphs, got ${line.glyphs.len}'
 	assert line.width > 0, 'a Myanmar word has positive width'
 	ma := seasian_at(line.glyphs, 0) or { panic('myanmar MA drew nothing') }
 	assert ma.gid == 0x1d, 'myanmar cluster 0 is MA 0x1d, got ${ma.gid:x}'
-	assert ma.advance > 0, 'MA moves the pen'
-	nga := seasian_at(line.glyphs, 1) or { panic('myanmar NGA drew nothing') }
-	assert nga.gid == 0x08, 'myanmar NGA is the cmap glyph 0x08, got ${nga.gid:x}'
-	assert nga.advance > 0, 'the unfolded NGA moves the pen'
-	asat := seasian_at(line.glyphs, 2) or { panic('myanmar asat drew nothing') }
-	assert asat.gid == 0x17d, 'myanmar asat is the cmap glyph 0x17d, got ${asat.gid:x}'
-	assert asat.is_mark, 'asat is a mark, not a letter'
-	assert asat.advance == 0, 'asat shares its base advance'
-	virama := seasian_at(line.glyphs, 3) or { panic('myanmar virama drew nothing') }
-	assert virama.is_mark, 'virama is a mark, not a letter'
-	assert virama.advance == 0, 'virama shares its base advance'
-	ga := seasian_at(line.glyphs, 4) or { panic('myanmar GA drew nothing') }
-	assert ga.gid == 0x06, 'myanmar GA is the cmap glyph 0x06, got ${ga.gid:x}'
-	assert ga.advance > 0, 'the unstacked GA moves the pen'
+	assert ma.advance > 21.63 && ma.advance < 21.64, 'MA advances 676 design units, got ${ma.advance}'
+	// GA and the kinzi merged onto cluster 1, so these read by index:
+	// the first match would answer GA twice.
+	assert line.glyphs[1].gid == 0x06, 'myanmar preposed GA is 0x06, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[1].cluster == 1, 'the preposed GA merges onto the trio cluster'
+	assert line.glyphs[1].advance > 21.37 && line.glyphs[1].advance < 21.39, 'GA advances 668 design units, got ${line.glyphs[1].advance}'
+	assert line.glyphs[2].gid == 0xbd, 'myanmar kinzi is 0xbd, got ${line.glyphs[2].gid:x}'
+	assert line.glyphs[2].cluster == 1, 'the kinzi merges onto the trio cluster'
+	assert line.glyphs[2].is_mark, 'kinzi is a mark, not a letter'
+	assert line.glyphs[2].advance == 0, 'kinzi shares its base advance'
+	assert line.glyphs[2].x > 42.87 && line.glyphs[2].x < 42.89, 'kinzi sits 4 design units before the pen, got x=${line.glyphs[2].x}'
+	assert line.glyphs[2].y == 0.0, 'kinzi rides the baseline, got y=${line.glyphs[2].y}'
 	la := seasian_at(line.glyphs, 5) or { panic('myanmar LA drew nothing') }
 	assert la.gid == 0x20, 'myanmar cluster 5 is LA 0x20, got ${la.gid:x}'
-	assert la.advance > 0, 'LA moves the pen'
+	assert la.advance > 36.03 && la.advance < 36.05, 'LA advances 1126 design units, got ${la.advance}'
 	aa := seasian_at(line.glyphs, 6) or { panic('myanmar AA drew nothing') }
-	assert aa.gid == 0x170, 'myanmar AA is the cmap glyph 0x170, got ${aa.gid:x}'
-	assert aa.advance > 0, 'AA moves the pen'
+	assert aa.gid == 0x170, 'myanmar cluster 6 is AA 0x170, got ${aa.gid:x}'
+	assert aa.advance > 14.55 && aa.advance < 14.57, 'AA advances 455 design units, got ${aa.advance}'
 }
 
 fn test_seasian_draw_bases() {
