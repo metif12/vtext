@@ -629,11 +629,34 @@ keeps the Arabic shadda+fatha stack. (3) The Lao/NKo/Yi OT tags pad with a
 space ('lao '), which the resolver never produced, so Lao runs drew
 unshaped; the tags map now and Lao SARA II lands HB-exact at -582. The one
 casualty is U+1E94B, a spacing mark riding as a mark with no advance,
-recorded in-code. Still open in 9.3e: pref, pstf/blwf/vatu, the Bengali
-conjunct assembly chain (kta/nta/sta/stra need type-6 contextual half/cjct,
-currently unfused), ke's pres-variant divergence ([0x42] vs HB [0x18e]),
-Khmer coeng fusion with its cluster merge and the chaining override on SRA
-II (+615 first-match vs HB -32), GPOS marks beyond anchors.
+recorded in-code. The arabic-marks difftest entry for the Amiri SUKUN
+improves from (674, 201) to (116, 0) vs HB (68, 0): the cross-syllable
+stack is gone; the residual anchor/chain gap is GPOS open work. Still open
+after the first cut: pref, pstf/blwf/vatu, the Bengali conjunct assembly
+chain, ke's pres-variant divergence ([0x42] vs HB [0x18e]), Khmer coeng
+fusion with its cluster merge and the chaining override on SRA II (+615
+first-match vs HB -32), GPOS marks beyond anchors.
+
+**9.3e Conjunct assembly — landed 2026-11-16 (second cut).** Three engine
+fixes compose the Bengali conjunct chain. (1) A nested chaining record
+reads the run from its own position onward, not a single glyph: `one_at`
+starved every multi-glyph nested match, so cjct's ligature rules never
+fired and kta/nta/sta drew unfused. The tail is spec-correct for singles
+too (they only read their own glyph), and the half lookups ride the same
+path. (2) cjct runs before the matra-positioning group, not after it as
+the specification lists: Noto's pres rules split cjct products (kta 0xbe
+to [0xbe, 0x14a] through lookup 66), and HarfBuzz produces the split, so
+the engine follows the font. (3) A run-initial pre-base matra takes the
+initial joining form: the font files ke's E allograph under `init`
+(lookup 57) and HarfBuzz applies it there and nowhere else (nomoste's
+run-medial E draws the cmap glyph). Only the run-initial matra changes;
+every other form assignment is untouched, so Arabic/Syriac/NKo masking is
+exactly as it was.
+kta, nta, sta, ndda, ke, hindi and nomoste are now HB-exact in gids,
+advances, offsets and clusters — kri and stra stay open (rakar assembly
+and multi-conjunct chains: kri draws its halant bare, stra its second
+halant and an unfused 0x107 for HB's 0x108), as do pref, pstf/blwf/vatu
+and the mark-cluster merge.
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Two wave gaps closed in

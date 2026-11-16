@@ -952,6 +952,12 @@ pub fn (g &Gsub) apply_ligature(lookup Lookup, items []Ligatable, eff []int, at 
 // it stands: every edit made so far was at a higher index, and changing the length of a
 // list after an index does not move that index. Both chaining and plain contexts share
 // it, because a matched pattern is a matched pattern whichever table named it.
+//
+// A nested lookup reads the run from its own position onward, not a single
+// glyph: a chaining record that nests a ligature (Bengali cjct fusing
+// consonant, halant, consonant through lookup 56) has to see the components
+// that follow, and a one-glyph window starves every multi-glyph match while
+// changing nothing for the single substitutions the window was written for.
 pub fn (g &Gsub) apply_records(records []ChainRecord, m ChainMatch, items []Ligatable,
 	eff []int, depth int) ?Substitution {
 	mut work := items
@@ -964,7 +970,17 @@ pub fn (g &Gsub) apply_records(records []ChainRecord, m ChainMatch, items []Liga
 		if pos < 0 || pos >= work.len {
 			continue
 		}
-		if sub := g.apply_at(record.lookup, work, one_at(pos), 0, depth + 1) {
+		mut start := eff.len
+		for k, e in eff {
+			if e == pos {
+				start = k
+				break
+			}
+		}
+		if start >= eff.len {
+			continue
+		}
+		if sub := g.apply_at(record.lookup, work, eff[start..], 0, depth + 1) {
 			for e in sub.edits {
 				edits << e
 			}

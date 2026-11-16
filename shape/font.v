@@ -177,7 +177,12 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // below-base forms (blwf) and vatu stay caller-asked: the first needs the
 // reordering machine, the rest are unproven against HarfBuzz.
 fn indic_default_features() []string {
-	return ['nukt', 'akhn', 'rphf', 'half', 'pres', 'abvs', 'blws', 'psts', 'cjct']
+	// cjct sits before the matra-positioning group rather than after it,
+	// which is where the specification lists it: Noto's pres rules consume
+	// cjct products (the kta split 0xbe to [0xbe, 0x14a] through lookup 66),
+	// and a pres that runs first never sees them. HarfBuzz produces the
+	// split, so the engine follows the font, not the list order.
+	return ['nukt', 'akhn', 'rphf', 'half', 'cjct', 'pres', 'abvs', 'blws', 'psts']
 }
 
 // is_indic_shaping_script reports whether a run resolves under an Indic

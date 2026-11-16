@@ -275,28 +275,39 @@ fn test_bengali_shape_current_gaps() {
 		again := bengali_line_feat(f, kssa, feat)
 		assert bengali_dump(again) == bengali_dump(plain), 'asked ${feat[0]} repeats the default'
 	}
-	// HarfBuzz shapes hindi's NDA region as the headline piece 0x15d at
-	// advance 299 with a float mark, and nomoste's ste region as fc plus a
-	// blws mark. The engine performs the first half of the Bengali
-	// conjunct assembly (the below-base split) but not the second
-	// (pstf/blwf/cjct reassembly and mark positioning), so the pieces draw
-	// unfused. That chain is the 9.3d slice; what is pinned here is that
-	// the split happens and nothing else moves: the order, the other gids
-	// and every advance match HarfBuzz.
+	// HarfBuzz shapes hindi's NDA region as the conjunct 0x15d at advance
+	// 299, DA 0x2a at 553, the blws mark 0x144 at (-827, -24) and UU 0x3d
+	// at 266: the conjunct assembly fuses na, hal, da (cjct through nested
+	// ligatures, cjct before the matra-positioning group so pres sees its
+	// product) and the UU tail reports its own input where HarfBuzz merges
+	// it onto the base cluster. Six glyphs, every gid, advance, offset and
+	// cluster HB-exact but the tail.
 	hindi := bengali_line(f, bengali_word([rune(0x09B9), rune(0x09BF), rune(0x09A8), rune(0x09CD),
 		rune(0x09A6), rune(0x09C0)]))
-	assert hindi.glyphs.len == 7, 'hindi draws seven pieces, got ${bengali_dump(hindi)}'
+	assert hindi.glyphs.len == 6, 'hindi draws six pieces, got ${bengali_dump(hindi)}'
 	assert hindi.glyphs[0].gid == 0x16a && hindi.glyphs[0].cluster == 0, 'hindi opens with the I matra on cluster 0'
 	assert hindi.glyphs[1].gid == 0x38 && hindi.glyphs[1].cluster == 0, 'HA follows on cluster 0'
-	assert hindi.glyphs[2].gid == 0x140 && hindi.glyphs[3].gid == 0x15b, 'the ndi split draws arm and headline, got ${bengali_dump(hindi)}'
-	assert hindi.glyphs[4].gid == 0x46, 'the halant stays a mark'
-	assert hindi.glyphs[5].gid == 0x2a && hindi.glyphs[5].cluster == 4, 'DA keeps cluster 4, got ${bengali_dump(hindi)}'
-	assert hindi.glyphs[6].gid == 0x3d, 'UU closes the syllable'
+	assert hindi.glyphs[2].gid == 0x15d && hindi.glyphs[2].cluster == 2, 'the NDA conjunct keeps cluster 2, got ${bengali_dump(hindi)}'
+	assert hindi.glyphs[2].advance > 9.51 && hindi.glyphs[2].advance < 9.63, 'the conjunct advances 299 design units'
+	assert hindi.glyphs[3].gid == 0x2a && hindi.glyphs[3].cluster == 4, 'DA keeps cluster 4, got ${bengali_dump(hindi)}'
+	assert hindi.glyphs[3].advance > 17.64 && hindi.glyphs[3].advance < 17.76, 'DA advances 553 design units'
+	assert hindi.glyphs[4].gid == 0x144 && hindi.glyphs[4].cluster == 4, 'the mark keeps cluster 4'
+	assert hindi.glyphs[4].advance == 0.0 && hindi.glyphs[4].is_mark, 'the mark advances nothing'
+	assert hindi.glyphs[4].x > 26.34 && hindi.glyphs[4].x < 26.46, 'the mark sits 827 design units off the pen, got x=${hindi.glyphs[4].x}'
+	assert hindi.glyphs[4].y > 0.71 && hindi.glyphs[4].y < 0.83, 'the mark rides 24 design units up, got y=${hindi.glyphs[4].y}'
+	assert hindi.glyphs[5].gid == 0x3d, 'UU closes the syllable'
 	nomoste := bengali_line(f, bengali_word([rune(0x09A8), rune(0x09AE), rune(0x09B8), rune(0x09CD),
 		rune(0x09A4), rune(0x09C7)]))
-	assert nomoste.glyphs.len == 6, 'nomoste draws six pieces, got ${bengali_dump(nomoste)}'
-	assert nomoste.glyphs[2].gid == 0x42, 'the E-kar draws first in its syllable, got ${bengali_dump(nomoste)}'
-	for i in 2 .. 6 {
+	assert nomoste.glyphs.len == 5, 'nomoste draws five pieces, got ${bengali_dump(nomoste)}'
+	assert nomoste.glyphs[0].gid == 0x2c && nomoste.glyphs[0].cluster == 0, 'NA opens, got ${bengali_dump(nomoste)}'
+	assert nomoste.glyphs[1].gid == 0x31 && nomoste.glyphs[1].cluster == 1, 'MA keeps cluster 1'
+	// The E-kar is pre-base but run-medial, so it keeps the isolated form
+	// and draws the cmap glyph 0x42: only a run-initial pre-base matra
+	// takes `init`. HarfBuzz agrees glyph for glyph.
+	assert nomoste.glyphs[2].gid == 0x42 && nomoste.glyphs[2].cluster == 2, 'the E-kar draws first in its syllable as the cmap glyph, got ${bengali_dump(nomoste)}'
+	assert nomoste.glyphs[3].gid == 0xfc && nomoste.glyphs[3].cluster == 2, 'the sta conjunct keeps cluster 2'
+	assert nomoste.glyphs[4].gid == 0x12f && nomoste.glyphs[4].cluster == 2, 'the flag keeps cluster 2'
+	for i in 2 .. 5 {
 		assert nomoste.glyphs[i].cluster == 2, 'ste reports cluster 2, glyph ${i} reports ${nomoste.glyphs[i].cluster}'
 	}
 }
@@ -355,6 +366,57 @@ fn test_bengali_zero_class_marks_attach() {
 	assert ku.glyphs[1].advance == 0.0, 'the matra advances nothing'
 	assert ku.glyphs[1].is_mark, 'the matra rides as a mark'
 	assert ku.glyphs[1].x > 13.2 && ku.glyphs[1].x < 13.3, 'the matra sits 393 design units off the pen, got x=${ku.glyphs[1].x}'
+}
+
+fn test_bengali_conjunct_assembly() {
+	// The conjunct assembly chain is cjct fusing consonant, halant,
+	// consonant through nested ligatures, then the matra-positioning group
+	// splitting the product: kta fuses to the noflag conjunct 0xbe at 727
+	// and pres splits off the TA flag 0x14a at zero advance, offset -654
+	// design units off the pen. HarfBuzz agrees glyph for glyph, advance
+	// for advance, cluster for cluster — all on cluster 0.
+	f := bengali_font() or { return }
+	kta := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x099F)]))
+	assert kta.glyphs.len == 2, 'kta fuses to two glyphs, got ${bengali_dump(kta)}'
+	assert kta.glyphs[0].gid == 0xbe && kta.glyphs[0].cluster == 0, 'kta opens with the conjunct, got ${bengali_dump(kta)}'
+	assert kta.glyphs[0].advance > 23.2 && kta.glyphs[0].advance < 23.33, 'the conjunct advances 727 design units'
+	assert kta.glyphs[1].gid == 0x14a && kta.glyphs[1].cluster == 0, 'the TA flag closes on cluster 0, got ${bengali_dump(kta)}'
+	assert kta.glyphs[1].advance == 0.0 && kta.glyphs[1].is_mark, 'the flag advances nothing'
+	assert kta.glyphs[1].x > 2.28 && kta.glyphs[1].x < 2.4, 'the flag sits 654 design units off the pen, got x=${kta.glyphs[1].x}'
+	// nta and sta fuse the same way, with the TA flag on cluster 2 and a
+	// 52-unit lift: nta draws 0xe7 at 756 with the flag at (-769, +52),
+	// sta draws 0xfc at 782 with the flag at (-781, +52), both HB-exact.
+	nta := bengali_line(f, bengali_word([rune(0x09A8), rune(0x09CD), rune(0x09A4)]))
+	assert nta.glyphs.len == 2, 'nta fuses to two glyphs, got ${bengali_dump(nta)}'
+	assert nta.glyphs[0].gid == 0xe7 && nta.glyphs[0].cluster == 0, 'nta opens with the conjunct, got ${bengali_dump(nta)}'
+	assert nta.glyphs[0].advance > 24.13 && nta.glyphs[0].advance < 24.26, 'nta advances 756 design units'
+	assert nta.glyphs[1].gid == 0x12f && nta.glyphs[1].cluster == 2, 'the nta flag keeps cluster 2, got ${bengali_dump(nta)}'
+	assert nta.glyphs[1].x > -0.48 && nta.glyphs[1].x < -0.36, 'the nta flag sits 769 design units off the pen, got x=${nta.glyphs[1].x}'
+	assert nta.glyphs[1].y < -1.6 && nta.glyphs[1].y > -1.73, 'the nta flag rides 52 design units up, got y=${nta.glyphs[1].y}'
+	sta := bengali_line(f, bengali_word([rune(0x09B8), rune(0x09CD), rune(0x09A4)]))
+	assert sta.glyphs.len == 2, 'sta fuses to two glyphs, got ${bengali_dump(sta)}'
+	assert sta.glyphs[0].gid == 0xfc && sta.glyphs[0].cluster == 0, 'sta opens with the conjunct, got ${bengali_dump(sta)}'
+	assert sta.glyphs[0].advance > 24.96 && sta.glyphs[0].advance < 25.09, 'sta advances 782 design units'
+	assert sta.glyphs[1].gid == 0x12f && sta.glyphs[1].cluster == 2, 'the sta flag keeps cluster 2, got ${bengali_dump(sta)}'
+	assert sta.glyphs[1].x > -0.03 && sta.glyphs[1].x < 0.09, 'the sta flag sits 781 design units off the pen, got x=${sta.glyphs[1].x}'
+	// ke draws the pre-base E through the `init` joining feature: the font
+	// files E to uni09C7.init (lookup 57) and HarfBuzz applies it, so the
+	// engine applies joining features unmasked outside the joining scripts.
+	// 0x18e advances 361 on cluster 0 beside KA at 807, all HB-exact.
+	ke := bengali_line(f, bengali_word([rune(0x0995), rune(0x09C7)]))
+	assert ke.glyphs.len == 2, 'ke draws two glyphs, got ${bengali_dump(ke)}'
+	assert ke.glyphs[0].gid == 0x18e && ke.glyphs[0].cluster == 0, 'ke opens with the init matra, got ${bengali_dump(ke)}'
+	assert ke.glyphs[0].advance > 11.49 && ke.glyphs[0].advance < 11.62, 'the matra advances 361 design units'
+	assert ke.glyphs[1].gid == 0x19 && ke.glyphs[1].cluster == 0, 'KA keeps cluster 0'
+	// ndda fuses all three through akhn with no matra fallout: one glyph
+	// 0x96 at 758, HB-exact.
+	ndda := bengali_line(f, bengali_word([rune(0x09A3), rune(0x09CD), rune(0x09A1)]))
+	assert ndda.glyphs.len == 1, 'ndda fuses to one glyph, got ${bengali_dump(ndda)}'
+	assert ndda.glyphs[0].gid == 0x96 && ndda.glyphs[0].cluster == 0, 'ndda is gid 96 on cluster 0'
+	assert ndda.glyphs[0].advance > 24.19 && ndda.glyphs[0].advance < 24.32, 'ndda advances 758 design units'
+	// kri and stra stay open: rakar assembly and multi-conjunct chains
+	// need machinery past nested ligatures (kri draws its halant bare,
+	// stra its second halant bare), recorded rather than hidden.
 }
 
 fn test_bengali_draw_base() {

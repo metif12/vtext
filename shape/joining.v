@@ -205,10 +205,23 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 		// letter took this branch and every mark after one was silently dropped, which for a script
 		// that stacks its vowels means the text drew without them.
 		if !jt.takes_a_shape() {
+			mut form := font.JoiningForm.isolated
+			// A pre-base matra leading its run takes the initial form: the
+			// reorder put it first because it draws before its base, and
+			// fonts file its pre-base allograph under `init` (Bengali E to
+			// uni09C7.init through lookup 57, which HarfBuzz applies). A
+			// matra anywhere else keeps the isolated form, which is why
+			// nomoste's E draws the cmap glyph while ke's does not. The
+			// first glyph pushed is the test rather than index zero, so a
+			// leading control that drew nothing does not promote the matra
+			// behind it.
+			if out.glyphs.len == 0 && is_indic_pre_base_matra(cp) {
+				form = font.JoiningForm.initial
+			}
 			out.glyphs << ShapedGlyph{
 				cps:     [cp]
 				base:    [cp]
-				form:    .isolated
+				form:    form
 				script:  p.script_tag_of(cp)
 				start:   i
 				end:     i + 1
@@ -235,6 +248,19 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 		i = attach_marks(p, cps, i + 1, mut out_ref)
 	}
 	return out
+}
+
+// is_indic_pre_base_matra reports whether a codepoint is a dependent vowel
+// that draws before its base: the Left and Visual_Order_Left positional
+// kinds, which are the ones the syllable machine moves. A run-initial one
+// takes the initial joining form, because the font files its pre-base
+// allograph under `init` and HarfBuzz applies it there and nowhere else.
+fn is_indic_pre_base_matra(cp rune) bool {
+	if indic_syllabic_of(indic_syllabic_ranges(), cp) != .vowel_dependent {
+		return false
+	}
+	p := indic_positional_of(indic_positional_ranges(), cp)
+	return p == .left || p == .visual_order_left
 }
 
 // attach_marks appends the combining marks that follow position from as glyphs of their own
