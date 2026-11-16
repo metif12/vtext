@@ -850,7 +850,7 @@ pub fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth in
 				Edit{
 					start:    pos
 					consumed: 1
-					glyphs:   g.ligatables([sub], items[pos])
+					glyphs:   g.ligatables([sub], items[pos], false)
 				},
 			]
 		}
@@ -862,7 +862,7 @@ pub fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth in
 				Edit{
 					start:    pos
 					consumed: 1
-					glyphs:   g.ligatables(seq, items[pos])
+					glyphs:   g.ligatables(seq, items[pos], false)
 				},
 			]
 		}
@@ -879,7 +879,7 @@ pub fn (g &Gsub) apply_at(li u16, items []Ligatable, eff []int, at int, depth in
 				Edit{
 					start:    pos
 					consumed: 1
-					glyphs:   g.ligatables([alt], items[pos])
+					glyphs:   g.ligatables([alt], items[pos], false)
 				},
 			]
 		}
@@ -941,7 +941,7 @@ pub fn (g &Gsub) apply_ligature(lookup Lookup, items []Ligatable, eff []int, at 
 			Edit{
 				start:    pos
 				consumed: m.consumed
-				glyphs:   g.ligatables([m.glyph], items[pos])
+				glyphs:   g.ligatables([m.glyph], items[pos], true)
 			},
 		]
 	}
@@ -1334,12 +1334,23 @@ pub fn one_at(pos int) []int {
 // what says those are marks. Without the flag they draw at the pen unplaced, which is how
 // Nastaliq rendered its dots. A font with no GDEF answers from the input alone, which is what
 // this did before.
-pub fn (g &Gsub) ligatables(seq []u16, from Ligatable) []Ligatable {
+//
+// A fusion is a new glyph, so the font classifies it: a ligature whose
+// inputs are marks is still a mark only when the font says its product
+// is one. Khmer's COENG is a mark, and every coeng fusion would otherwise
+// ride as one — but the pstf and pref products are GDEF bases with a real
+// advance (COENG+KHO is 0xba at 294 units, COENG+RO is 0xdc at 287), and
+// HarfBuzz advances them as bases. Only the blwf products are GDEF marks.
+// The flag is per call rather than per table because only the ligature
+// path fuses: singles, multiples and alternates keep the old rule, where
+// a mark input composing through ccmp stays a mark even when the font
+// never classified the product.
+pub fn (g &Gsub) ligatables(seq []u16, from Ligatable, is_fusion bool) []Ligatable {
 	mut out := []Ligatable{cap: seq.len}
 	for gid in seq {
 		mut is_mark := from.is_mark
-		if !is_mark {
-			if gd := g.gdef {
+		if gd := g.gdef {
+			if is_fusion || !is_mark {
 				is_mark = gd.is_mark(gid)
 			}
 		}

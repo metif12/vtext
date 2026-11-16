@@ -21,9 +21,12 @@ import vtext.layout
 //     pass only emits glyphs for transparent characters with a nonzero
 //     combining class, so a ccc=0 mark is swallowed even though the font
 //     classes it as a GDEF mark with zero advance.
-//   - no Southeast Asian GSUB runs: Khmer COENG+TA never fuses to the
-//     subscript ligature, and Myanmar never forms the kinzi or the stacks, so
-//     the engine draws the cmap glyphs where HarfBuzz draws one fused glyph
+//   - Khmer runs its coeng fusions (blwf, pstf): COENG+TA fuses to the
+//     subscript ligature and COENG+KHO to its post-base one, while pref
+//     needs the reordering machine (HarfBuzz draws COENG+RO ahead of its
+//     base) and pres/abvs/blws/psts/abvf wait for a word that exercises
+//     them. Myanmar never forms the kinzi or the stacks, so the engine
+//     draws the cmap glyphs where HarfBuzz draws one fused glyph
 //     and merges the clusters.
 //
 // Tibetan is explicitly out of scope for this wave: stacking composition needs
@@ -180,21 +183,19 @@ fn test_seasian_shape_lao() {
 }
 
 fn test_seasian_shape_khmer() {
-	// HarfBuzz shapes five glyphs: the two SA bases plus SRA U, then the
-	// COENG+TA subscript fusion 0xcc and SRA II, all three merged onto
-	// cluster 2 with small offsets. The engine applies no coeng fusion: it
-	// draws the cmap glyphs SA, SRA U (0x77), SA, COENG (0x9f, a GDEF mark
-	// with hmtx advance 0), TA (0x41) and SRA II (0x6d) under honest
-	// per-input clusters, with the font's mark-to-base anchors. The ccc=0
-	// vowels used to be dropped by the class gate, and the Cf gate lets
-	// them attach. SRA U lands HB-exact; SRA II is the one placement that
-	// diverges: the engine takes the first abvm mark-to-base rule (+615 off
-	// TA) while HarfBuzz's -32 comes out of the full abvm chain past it,
-	// so the chaining override belongs to the GPOS open work with the
-	// fusion and the cluster merges.
+	// HarfBuzz shapes five glyphs under clusters [0, 0, 2, 2, 2]: the two
+	// SA bases plus SRA U, then the COENG+TA subscript fusion 0xcc and
+	// SRA II, with advances [928, 0, 928, 0, 0] and the fused mark at
+	// (+14, -26) and SRA II at (-32, -29) off the cluster-2 pen. Toggling
+	// blwf off unfolds COENG+TA back to 0x9f and 0x41, so the fusion is
+	// the blwf default's work (lookup 14). The engine draws the same five
+	// gids in the same order under honest per-input clusters, and every
+	// offset matches: the fused mark takes the font's mark-to-base anchor
+	// and SRA II resolves against the fused subscript at HarfBuzz's
+	// answer. The cluster merges stay the known per-input convention.
 	kh := seasian_font('NotoSansKhmer-Variable.ttf') or { return }
 	line := seasian_line(kh, 'សួស្តី')
-	assert line.glyphs.len == 6, 'khmer hello draws six glyphs, got ${line.glyphs.len}'
+	assert line.glyphs.len == 5, 'khmer hello draws five glyphs, got ${line.glyphs.len}'
 	assert line.width > 0, 'a Khmer word has positive width'
 	sa0 := seasian_at(line.glyphs, 0) or { panic('khmer SA drew nothing') }
 	assert sa0.gid == 0x53, 'khmer cluster 0 is SA 0x53, got ${sa0.gid:x}'
@@ -207,17 +208,40 @@ fn test_seasian_shape_khmer() {
 	sa2 := seasian_at(line.glyphs, 2) or { panic('khmer second SA drew nothing') }
 	assert sa2.gid == 0x53, 'khmer cluster 2 is SA 0x53, got ${sa2.gid:x}'
 	assert sa2.advance > 0, 'the second SA moves the pen'
-	coeng := seasian_at(line.glyphs, 3) or { panic('khmer COENG drew nothing') }
-	assert coeng.gid == 0x9f, 'khmer COENG is the cmap glyph 0x9f, got ${coeng.gid:x}'
-	assert coeng.is_mark, 'COENG is a mark, not a letter'
-	assert coeng.advance == 0, 'the coeng subscript adds no advance'
-	ta := seasian_at(line.glyphs, 4) or { panic('khmer TA drew nothing') }
-	assert ta.gid == 0x41, 'khmer TA is the cmap glyph 0x41, got ${ta.gid:x}'
-	assert ta.advance > 0, 'the unfused TA moves the pen'
+	fused := seasian_at(line.glyphs, 3) or { panic('khmer COENG+TA drew nothing') }
+	assert fused.gid == 0xcc, 'khmer COENG+TA fuses to 0xcc, got ${fused.gid:x}'
+	assert fused.is_mark, 'the fused subscript is a mark, not a letter'
+	assert fused.advance == 0, 'the fused subscript adds no advance'
+	assert fused.x > 59.78 && fused.x < 59.90, 'the fused subscript sits 14 design units off the pen, got x=${fused.x}'
+	assert fused.y > 0.77 && fused.y < 0.89, 'the fused subscript rides 26 design units up, got y=${fused.y}'
 	ii := seasian_at(line.glyphs, 5) or { panic('khmer SRA II drew nothing') }
 	assert ii.gid == 0x6d, 'khmer cluster 5 is SRA II 0x6d, got ${ii.gid:x}'
 	assert ii.is_mark && ii.advance == 0, 'SRA II is a mark advancing nothing'
-	assert ii.x > 79.0 && ii.x < 79.14, 'SRA II takes the first abvm rule off TA, got x=${ii.x}'
+	assert ii.x > 58.31 && ii.x < 58.43, 'SRA II sits 32 design units before the pen, got x=${ii.x}'
+	assert ii.y > 0.87 && ii.y < 0.99, 'SRA II rides 29 design units up, got y=${ii.y}'
+}
+
+fn test_seasian_shape_khmer_pstf() {
+	// HarfBuzz fuses SA + COENG + KHO into [SA, 0xba] under one cluster
+	// with advances [928, 294]: toggling pstf off unfolds COENG+KHO back
+	// to 0x9f and 0x34, so the fusion is the pstf default's work
+	// (lookup 19). The fusion is a GDEF base, not a mark, so it advances
+	// the pen the way HarfBuzz does — the ligature-class fix is what
+	// keeps the 294-unit advance instead of zeroing it with the COENG
+	// input's mark flag. The engine reports honest per-input clusters
+	// against HarfBuzz's merged pair.
+	kh := seasian_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := seasian_line(kh, 'ស\u17d2\u1783')
+	assert line.glyphs.len == 2, 'khmer SA COENG KHO draws two glyphs, got ${line.glyphs.len}'
+	assert line.width > 0, 'a Khmer syllable has positive width'
+	sa := seasian_at(line.glyphs, 0) or { panic('khmer SA drew nothing') }
+	assert sa.gid == 0x53, 'khmer cluster 0 is SA 0x53, got ${sa.gid:x}'
+	assert sa.advance > 0, 'the SA moves the pen'
+	fused := seasian_at(line.glyphs, 1) or { panic('khmer COENG+KHO drew nothing') }
+	assert fused.gid == 0xba, 'khmer COENG+KHO fuses to 0xba, got ${fused.gid:x}'
+	assert !fused.is_mark, 'the post-base fusion is a base, not a mark'
+	assert fused.advance > 9.40 && fused.advance < 9.42, 'the post-base fusion advances 294 design units, got ${fused.advance}'
+	assert fused.x > 29.69 && fused.x < 29.71, 'the post-base fusion sits at the pen, got x=${fused.x}'
 }
 
 fn test_seasian_shape_myanmar() {

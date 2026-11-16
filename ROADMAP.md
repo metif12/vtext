@@ -31,8 +31,9 @@ work. Dated entries use the landing date; anything undated is open.
 
 The engine is done for Arabic, Persian and Urdu, for Latin/Cyrillic/Greek,
 and for the layout math around them. Hebrew, Syriac, Thaana and NKo are
-HarfBuzz-pinned; Thai, Lao, Khmer and Myanmar carry corpus pins with two
-documented engine gaps; CJK line breaking is conformance-pinned.
+HarfBuzz-pinned; Thai, Lao, Khmer and Myanmar carry corpus pins, Khmer's
+coeng fusions now shaping HB-exact with the reordering and pres-group
+work documented as open; CJK line breaking is conformance-pinned.
 
 | Part | State | Evidence |
 | --- | --- | --- |
@@ -522,7 +523,7 @@ proves it, **absent** = the mechanism does not exist.
 | Arabic, Persian, Urdu | full | joining/GSUB/GPOS suites, `arabic-*`/`persian-*`/`nastaliq-*`, locl pins |
 | Hebrew | pinned | `extra_fonts_test`: coverage, niqqud zero-advance, smoke. Placement not HB-pinned, no difftest case |
 | CJK Han | smoke + breaks pinned | `extra_fonts_test` (2-glyph line, rasterise); 9.1 pins |
-| Thai, Lao, Khmer, Myanmar | pinned (corpus; engine gaps open) | `seasian_test.v`, HB-measured (Thai 6E/86/2D/6E/0C/5E, Lao, Khmer coeng mark, Myanmar kinzi order) |
+| Thai, Lao, Khmer, Myanmar | pinned (corpus; Khmer fusions landed, rest open) | `seasian_test.v`, HB-measured (Thai 6E/86/2D/6E/0C/5E, Lao, Khmer coeng fusions blwf 0xcc / pstf 0xba, Myanmar kinzi order) |
 | Syriac, Thaana, NKo | pinned | `longtail_test.v`: Syriac init/medi/rlig + lone-SHIN joining acceptance |
 | Hangul (precomposed) | untested | cmap suffices, no face, no test |
 | Kana | partial | vertical rules in `vertical_test`; horizontal unpinned |
@@ -539,10 +540,11 @@ already complete in the 19,346 tail: 0 fail on 1,753 ID cases and 0 on
 conjoining-Jamo composition (needs a Korean face), vertical CJK
 punctuation.
 
-**9.2 Southeast Asian clusters — corpus landed 2026-11-15.** Wave 3
+**9.2 Southeast Asian clusters — corpus landed 2026-11-15, Khmer coeng
+fusions landed 2026-11-16.** Wave 3
 (NotoSansThai/Lao/Khmer/Myanmar variable faces, HB pins in
 `seasian_test.v`). Engine gaps documented in-file: ccc=0 spacing marks draw
-nothing; no Khmer coeng fusion or Myanmar kinzi/stacks. Tibetan stacks
+nothing; Myanmar kinzi/stacks unformed. Tibetan stacks
 arrive as their own slice with a stacking font, or the slice says why they
 cannot.
 
@@ -674,7 +676,8 @@ takes part (two marks still have nowhere to go). stra fuses fully too
 (0xfd, 0x108, 0x149, 0x11a). kri and stra are now HB-exact in gids,
 advances and offsets; their tails keep honest per-input clusters where
 HarfBuzz merges onto the base. Open: pref, pstf/vatu, the mark-cluster
-merge, Khmer coeng with its chaining override, GPOS marks beyond anchors.
+merge, Khmer pref reorder with its cluster merge, the Khmer
+pres/abvs/blws/psts/abvf group, GPOS marks beyond anchors.
 
 **9.3e Fallout repairs — landed 2026-11-16 (fourth cut).** The slice's own
 fallout, each pinned. (1) The advance-only chaining single over-applied:
@@ -687,6 +690,25 @@ reads now, so the inspect count moves 44→45 singles with no trailing 9.
 The unread-extension branch keeps a synthetic-bytes witness (no corpus font
 exercises it anymore), and the per-glyph format-2 shape gains one too.
 Difftest unmoved, 0 new and 0 stale.
+
+**9.2-engine Khmer coeng fusions — landed 2026-11-16.** Two engine fixes
+draw the hello word the way HarfBuzz does. (1) Khmer runs `blwf` and
+`pstf` by default under their own script gate: both are HarfBuzz
+default-on (toggling either off unfolds its consonants) and both are
+disjoint plain ligatures, so no order is owed between them. COENG+TA
+fuses to the 0xcc subscript and COENG+KHO to the 0xba post-base form.
+(2) A fusion is a new glyph, so the font classifies it: `ligatables`
+used to inherit the inputs' mark flag, which kept every coeng fusion a
+mark with no advance, but the pstf and pref products are GDEF bases
+with a real advance (0xba at 294 units, 0xdc at 287) that HarfBuzz
+advances as bases. Only the ligature path changes; singles, multiples
+and alternates keep the old rule, so Arabic ccmp compositions are
+untouched. The hello word is now HB-exact in gids, advances and
+offsets (fused mark at +14/-26, SRA II at -32/-29); the pstf word is
+HB-exact with honest per-input clusters where HarfBuzz merges. Open:
+pref (HarfBuzz draws COENG+RO ahead of its base, which needs the
+reordering machine), the pres/abvs/blws/psts/abvf group, the
+mark-cluster merge, GPOS marks beyond anchors.
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Two wave gaps closed in
@@ -757,7 +779,7 @@ owns the queue.
 | 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
-| 9.2-engine | ccc=0 mark drawing; Khmer coeng; Myanmar kinzi/stacks; `nko ` tag fold | open |
+| 9.2-engine | ccc=0 mark drawing; Khmer coeng fusions landed, pref reorder + pres-group + Myanmar kinzi/stacks open; `nko ` tag fold landed | open |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
 

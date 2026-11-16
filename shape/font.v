@@ -189,6 +189,30 @@ fn indic_default_features() []string {
 	return ['nukt', 'akhn', 'rphf', 'half', 'cjct', 'blwf', 'pres', 'abvs', 'blws', 'psts']
 }
 
+// khmer_default_features are the Khmer shaping features that run without
+// being asked, for the same reason the Indic ones do: a line whose coeng
+// subscripts stay unfused is not the text. Each is a HarfBuzz default-on
+// feature proven by toggling it off under uharfbuzz: -blwf unfolds
+// COENG+TA (0xcc) and -pstf unfolds COENG+KHO (0xba), while -pref, -pres,
+// -abvs, -blws, -psts and -abvf change nothing on the same words. blwf and
+// pstf are disjoint plain ligatures (COENG plus complementary consonant
+// sets), so their relative order is free and both are gid- and
+// order-exact against HarfBuzz. pref stays caller-asked: HarfBuzz moves
+// the COENG+RO fusion ahead of its base, which needs the reordering
+// machine, and drawing it fused in place would bless the wrong order.
+// pres, abvs, blws, psts and abvf stay caller-asked until a word that
+// exercises them proves the order they need.
+fn khmer_default_features() []string {
+	return ['blwf', 'pstf']
+}
+
+// is_khmer_shaping_script reports whether a run resolves under the Khmer
+// shaping script, in either the UCD spelling the run arrives with or the
+// OpenType one the caller overrides with.
+fn is_khmer_shaping_script(script string) bool {
+	return font.ot_script_tag(script) == 'khmr'
+}
+
 // is_indic_shaping_script reports whether a run resolves under an Indic
 // shaping script: the Devanagari and Bengali faces this engine carries, in
 // either the UCD spelling the run arrives with or the OpenType one the
@@ -246,10 +270,16 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 	// akhn ligatures, reph forms (whose move the machine above performs),
 	// half forms, pre-base, above-base and below-base variants, post-base
 	// forms and conjuncts. Pref, pstf, blwf and vatu stay caller-asked
-	// until proven against HarfBuzz. Like the joining
+	// until proven against HarfBuzz. The Khmer coeng fusions run under
+	// their own gate below: blwf and pstf are proven HarfBuzz-default-on
+	// and exact, while pref needs the reordering machine. Like the joining
 	// features these are not toggleable; a `-tag` for one names nothing.
 	if is_indic_shaping_script(script) {
 		for feature in indic_default_features() {
+			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
+		}
+	} else if is_khmer_shaping_script(script) {
+		for feature in khmer_default_features() {
 			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 		}
 	}
@@ -287,6 +317,9 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 				// idempotent in every font (a Bengali below-base piece fuses
 				// again), so naming a default is a no-op rather than a
 				// second run.
+				continue
+			} else if is_khmer_shaping_script(script) && tag in khmer_default_features() {
+				// Same no-op for the Khmer coeng fusions.
 				continue
 			} else {
 				mut seen := false
