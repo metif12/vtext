@@ -465,8 +465,14 @@ roughly doubles the ink (2.0–2.4×) where outline-level FT lifts 1.55–1.75×
 and LCD lacks FT's one-column FIR spill. Follow-ups: outline-level
 embolden, true FIR LCD (needs ⅓-px shifts; the API quantizes to quarters).
 
-**8.6 Stroking — open.** `FT_Stroker` parity (joins, caps, miter limits)
-flattened through the curve path, pixel-compared. Effects are the caller's;
+**8.6 Stroking — outline reader landed 2026-11-16 (8.6a), stroker open.**
+`Face.glyph_outline` answers every glyph's points, curve flags, contour
+ends and header box with composites flattened and transforms applied,
+fontTools-pinned (FiraCode A/Aacute/mirror/nested, Amiri rotation+scale,
+empty space, CFF and out-of-range refusals). The stroker itself —
+`FT_Stroker` parity for joins, caps and miter limits flattened through the
+curve path, pixel-compared — is still open and needs `raster/`, serialized
+after 7.7 like the rest of the raster work. Effects are the caller's;
 geometry is the library's.
 
 **8.7 MATH — reader landed 2026-11-15.** Opt-in `shape/math.v` pass
@@ -665,7 +671,7 @@ owns the queue.
 | 7.11-2H | Rival A/B harness | landed (README table, re-measured per release) |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
-| 8.6 | Stroking | open |
+| 8.6 | Stroking | open (8.6a outline reader landed; stroker needs `raster/`) |
 | 8.7 | Face/subset MATH wiring; top-accent fallback | landed (half-advance fallback, MATH closure) |
 | 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |

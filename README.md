@@ -124,7 +124,7 @@ base on its own still draws as text; only the pair draws as emoji.
 Each item names the slice that owns it in `ROADMAP.md`.
 
 - Indic shaping (7.6 machine landed with Devanagari acceptance; 9.3 Bengali generality landed — same tables, no new rows; joining hook 9.3b with pres smoke; conjunct defaults 9.3c with HB-default agreement and a fixed ligature-coverage bug; repha movement 9.3d HB-exact) and Khmer (corpus landed, coeng fusion open).
-- Hinting and color (7.7), synthetic styles and LCD landed at bitmap level (8.5; outline-level embolden and FIR LCD stay follow-ups), stroking (8.6); MATH constants
+- Hinting and color (7.7), synthetic styles and LCD landed at bitmap level (8.5; outline-level embolden and FIR LCD stay follow-ups), stroking (8.6; outline reader landed, stroker open); MATH constants
   and variants read beside HarfBuzz (8.7 landed with Face/subset wiring and the half-advance top-accent fallback).
 - Variable instancing at chosen coordinates landed (7.10), FreeType parity.
 - Core Text and DirectWrite providers (7.8).
