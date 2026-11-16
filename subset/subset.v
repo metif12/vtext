@@ -471,7 +471,7 @@ fn close_ligature(mut keep []bool, d []u8, at int, mut out Closure) {
 	}
 	cov := coverage_glyphs(d, at + be16(d, at + 2))
 	sets := be16(d, at + 4)
-	for i, src in cov {
+	for i in 0 .. cov.len {
 		if i >= sets {
 			break
 		}

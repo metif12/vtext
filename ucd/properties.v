@@ -200,6 +200,7 @@ pub enum LineBreakClass {
 	zw   = 35 // ZW space
 	zwj  = 36 // ZWJ
 	b2   = 37 // break opportunity before and after
+	infx = 38 // inseparable numeric infix: U+2026 ONE DOT LEADER and the ellipsis, which LB22 holds to
 	wj   = 39 // WJ
 	eb   = 40 // emoji base
 	cj   = 41 // conditional Japanese starter
@@ -221,12 +222,13 @@ pub enum LineBreakClass {
 // wrong one: a line may not begin with either, and a caller asking which class a character is gets
 // a different answer for a comma than for an ellipsis.
 //
-// The cast is unsafe for the same reason `line_break_of`'s own is, and for the same short while:
-// the ordinal comes from a generated table that `test_value_tables_match_the_enums` holds in step,
-// and 38 is inside it by construction rather than by hope.
+// It is a real enum member rather than a cast because the generated name table already holds slot
+// 38 by construction (`test_value_tables_match_the_enums` pins the reach), and -prod rejects
+// out-of-range casts of constant ordinals: the old `unsafe { LineBreakClass(38) }` spelled the
+// same value but stopped compiling under optimization.
 //
 // Public: the line breaking rules live outside this module and compare against it.
-pub const infx = unsafe { LineBreakClass(38) }
+pub const infx = LineBreakClass.infx
 
 // str returns the UCD name of the class, e.g. 'AL'.
 pub fn (c LineBreakClass) str() string {

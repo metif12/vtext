@@ -364,9 +364,12 @@ measured table with box, flags, versions and date, re-measured per release.
 The harness degrades the ratchet way: no interpreter or rival import prints
 the vtext half with the reason. Recorded on Win11 x64 with `v -cc gcc`:
 shape latin-1024 1672x (layout+shape vs hb shape), arabic-1024 552x, raster
-miss 0.69x, raster hit 0.03x. `-prod` recording waits on a tree-wide
--prod-clean slice (pre-existing strict-check errors, e.g. the documented
-`infx` cast); the `normalize.v` unused-variable one fell along the way.
+miss 0.69x, raster hit 0.03x. Recorded 2026-11-17 with `v -prod -cc gcc`:
+shape latin-1024 399x, arabic-1024 57x, raster miss 0.27x, raster hit
+0.00x — the tree is -prod-clean as of that run (UCD IN is a real
+`LineBreakClass` member now, one subset loop dropped an unused value).
+The full -prod test suite additionally needs `-fno-lto` on this gcc,
+whose LTO rejects V's heap exports at link time.
 
 **Platform ratchet.** No host-skips on any runner: every OS leg is covered
 on its own OS and answers none elsewhere. A skip that prints why stays a

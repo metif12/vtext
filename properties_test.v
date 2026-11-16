@@ -253,6 +253,8 @@ fn test_value_tables_match_the_enums() {
 	assert p.grapheme_names[int(ucd.GraphemeClass.zwj)] == 'ZWJ'
 	assert p.grapheme_names[int(ucd.GraphemeClass.extend)] == 'Extend'
 	assert int(ucd.LineBreakClass.em) < p.linebreak_names.len
+	assert int(ucd.LineBreakClass.infx) < p.linebreak_names.len
+	assert p.linebreak_names[int(ucd.LineBreakClass.infx)] == 'IN'
 	assert p.linebreak_names[int(ucd.LineBreakClass.al)] == 'AL'
 	assert p.linebreak_names[int(ucd.LineBreakClass.zwj)] == 'ZWJ'
 	assert p.linebreak_names[int(ucd.LineBreakClass.b2)] == 'B2'

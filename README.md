@@ -300,10 +300,23 @@ re-measured per release, same tool, same flags:
 | raster Amiri A–T 32 px miss (vs Pillow) | 17.0 us/op | 24.8 us/op | 0.69x |
 | raster Amiri A 32 px hit (vs Pillow) | 625 ns/op | 24.8 us/op | 0.03x |
 
+Measured 2026-11-17 on Win11 x64 (16 CPU) with `v -prod -cc gcc`, uharfbuzz 0.56.2, Pillow 12.3.0 —
+same tool, same flags; the tree is -prod-clean as of this run (UCD IN is a real `LineBreakClass`
+member now, and one subset loop dropped an unused value):
+
+| op | vtext | rival | vtext/rival |
+| --- | --- | --- | --- |
+| shape latin-1024 (layout+shape vs hb shape) | 10.5 ms/paragraph | 26.2 us/paragraph | 399x |
+| shape arabic-1024 (layout+shape vs hb shape) | 14.3 ms/paragraph | 250.1 us/paragraph | 57x |
+| raster Amiri A–T 32 px miss (vs Pillow) | 6.4 us/op | 23.6 us/op | 0.27x |
+| raster Amiri A 32 px hit (vs Pillow) | 80 ns/op | 23.6 us/op | 0.00x |
+
 The raster side is ahead; the shape side is the finding, not a failure to hide: paragraph layout
 does bidi, joining, substitution, positioning and measurement where the rival shapes one run, and
 the harness is what an optimization lands against. The miss number supersedes the old 19.1 us
 first-touch figure with a sustained method; the hit still answers from the caller's cache.
+The -prod table is the honest measure now (optimized codegen on the vtext side, same rivals);
+the -cc gcc table stays as the pre-clean baseline.
 
 ### Features
 

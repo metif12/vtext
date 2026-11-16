@@ -22,13 +22,13 @@ module main
 // re-measured per release; the method is the pin, the absolutes are the
 // box's.
 //
-// Usage: v -cc gcc run tools/rival_bench.v (from the module root)
+// Usage: v -prod -cc gcc run tools/rival_bench.v (from the module root)
 // The optimizing C compiler matters: a tcc build measures the compiler's
 // checks, not the engine, and the published ratio would blame the wrong
-// one. -prod would be stricter still, but the tree is not -prod-clean yet
-// (pre-existing strict-check errors, e.g. the documented infx cast in
-// ucd/properties.v); making it clean is its own slice, and the table below
-// names the flags it was measured with.
+// one. The tree is -prod-clean since the IN enum member landed (UCD IN
+// was missing from LineBreakClass and one subset loop carried an unused
+// value); the README numbers below name the flags they were measured
+// with, and -cc gcc without -prod still works but measures -O0 codegen.
 
 import os
 import time
