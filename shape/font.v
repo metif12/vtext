@@ -177,7 +177,7 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // below-base forms (blwf) and vatu stay caller-asked: the first needs the
 // reordering machine, the rest are unproven against HarfBuzz.
 fn indic_default_features() []string {
-	return ['nukt', 'akhn', 'half', 'pres', 'abvs', 'blws', 'psts', 'cjct']
+	return ['nukt', 'akhn', 'rphf', 'half', 'pres', 'abvs', 'blws', 'psts', 'cjct']
 }
 
 // is_indic_shaping_script reports whether a run resolves under an Indic
@@ -234,11 +234,10 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 	// The Indic shaping features run next, in the specification's order, for
 	// the same reason the joining features do: a line whose conjuncts stay
 	// unfused is not the text. The set is the in-place half: nukta forms,
-	// akhn ligatures, half forms, post-base and pre-base variants,
-	// above/below-base forms and conjuncts. Reph positioning (rphf, pref)
-	// is not in it: moving the reph is the syllable machine's job and a
-	// lookup applied without the move would draw it in situ. Vatu stays
-	// caller-asked until a face proves what it fuses. Like the joining
+	// akhn ligatures, reph forms (whose move the machine above performs),
+	// half forms, pre-base, above-base and below-base variants, post-base
+	// forms and conjuncts. Pref, pstf, blwf and vatu stay caller-asked
+	// until proven against HarfBuzz. Like the joining
 	// features these are not toggleable; a `-tag` for one names nothing.
 	if is_indic_shaping_script(script) {
 		for feature in indic_default_features() {

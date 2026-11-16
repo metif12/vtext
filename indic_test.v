@@ -31,17 +31,16 @@ import vtext.ucd
 //     as spacing cmap glyphs with full advance instead.
 //   - conjuncts fuse where the font fuses them without reordering: akhn
 //     fuses KSSA, half fuses NDA and the STA conjunct, pres swaps the
-//     matra — all by default, like HarfBuzz. Reph positioning (rphf, pref)
-//     stays open: moving the reph is the syllable machine's job and naming
-//     the feature without the move would draw it in situ.
+//     matra, rphf fuses the moved reph — all by default, like HarfBuzz.
+//     Pref positioning stays open: it needs a different move from repha.
 //   - GPOS mark advances and offsets are the font layer: the halant reports
 //     its own hmtx advance of zero and whatever offset the mark pass
 //     attached, not HarfBuzz mark offsets.
 //
-// Khmer generality, repha positioning and movement, split-matra halves,
-// post-base and below-base assembly (pstf, blwf, vatu), the Bengali
-// conjunct chain and GPOS mark positioning stay follow-ups: Devanagari
-// acceptance is this slice.
+// Khmer generality, split-matra halves, post-base and below-base assembly
+// (pref, pstf, blwf, vatu), the Bengali conjunct chain and GPOS mark
+// positioning stay follow-ups: Devanagari repha included, acceptance is
+// this slice.
 
 fn indic_font_path(name string) ?string {
 	mut dirs := []string{}
@@ -250,6 +249,12 @@ fn test_indic_reorder_mapped_names_sources() {
 	assert pm == [0, 1, 2], 'the identity maps to itself, got ${pm}'
 	empty_ro, empty_m := shape.reorder_indic_mapped([]rune{})
 	assert empty_ro.len == 0 && empty_m.len == 0, 'empty maps to empty'
+	// Repha moves after the base: karma's second syllable reorders to
+	// MA, RA, halant, and the map names the sources.
+	rkarma, rmap := shape.reorder_indic_mapped(indic_word([rune(0x0915), rune(0x0930), rune(0x094D),
+		rune(0x092E)]))
+	assert indic_hex(rkarma) == '0915 092E 0930 094D', 'karma moves its repha last, got ${indic_hex(rkarma)}'
+	assert rmap == [0, 3, 1, 2], 'the map names the sources, got ${rmap}'
 }
 
 fn test_indic_conjuncts_devanagari() {
@@ -378,18 +383,38 @@ fn test_indic_shape_current_gaps() {
 	sta := indic_at(namaste.glyphs, 2) or { panic('namaste STA drew nothing') }
 	assert sta.gid == 256, 'fused STA is gid 256, got ${indic_dump(namaste)}'
 	assert sta.advance > 12.39 && sta.advance < 12.51, 'STA advances 389 design units'
-	// HarfBuzz shapes KARMA with a reph mark over MA: KA gid 56 at 768 on
-	// cluster 0, MA gid 80 at 598 on cluster 2, reph gid 506 advancing
-	// nothing on cluster 1. The engine draws the pieces in order with no
-	// reph: moving the reph is the syllable machine's job and naming rphf
-	// without the move would draw it in situ, so rphf stays caller-asked
-	// and unfused by default.
+	// HarfBuzz shapes KARMA with a reph over MA: KA gid 56 at 768 on
+	// cluster 0, MA gid 80 at 598 on cluster 1, reph gid 0x1fa advancing
+	// nothing on cluster 1. The machine moves the syllable-initial RA+hal
+	// after MA, the cluster merge reports the whole second syllable on
+	// cluster 1, and the default rphf lookup fuses it there.
 	karma := indic_line(f, indic_word([rune(0x0915), rune(0x0930), rune(0x094D), rune(0x092E)]))
-	assert karma.glyphs.len == 4, 'karma draws four pieces, got ${indic_dump(karma)}'
-	assert karma.glyphs[0].gid == 56 && karma.glyphs[0].cluster == 0, 'KA opens, got ${indic_dump(karma)}'
-	assert karma.glyphs[1].gid == 0x52 && karma.glyphs[1].cluster == 1, 'RA keeps its shape, got ${indic_dump(karma)}'
-	assert karma.glyphs[2].gid == 103, 'the halant stays a mark, got ${indic_dump(karma)}'
-	assert karma.glyphs[3].gid == 80 && karma.glyphs[3].cluster == 3, 'MA closes, got ${indic_dump(karma)}'
+	assert karma.glyphs.len == 3, 'karma fuses to three glyphs, got ${indic_dump(karma)}'
+	assert karma.glyphs[0].gid == 56 && karma.glyphs[0].cluster == 0, 'KA opens on cluster 0, got ${indic_dump(karma)}'
+	assert karma.glyphs[1].gid == 80 && karma.glyphs[1].cluster == 1, 'MA keeps cluster 1, got ${indic_dump(karma)}'
+	assert karma.glyphs[1].advance > 19.08 && karma.glyphs[1].advance < 19.2, 'MA advances 598 design units'
+	assert karma.glyphs[2].gid == 0x1fa && karma.glyphs[2].cluster == 1, 'the reph lands on cluster 1, got ${indic_dump(karma)}'
+	assert karma.glyphs[2].advance == 0.0, 'the reph advances nothing'
+}
+
+fn test_indic_shape_repha_with_matras() {
+	// Repha interacts with matras at the syllable edges HarfBuzz reports:
+	// rki draws the pres matra, then KA, then the reph variant 0x311 (all
+	// on cluster 0); rkma draws KA, the AA matra, then the reph 0x1fa (all
+	// on cluster 0). Both orders come out of the machine's end-move plus
+	// the default rphf lookup — no per-word features asked.
+	f := indic_font('NotoSansDevanagari-Variable.ttf') or { return }
+	rki := indic_line(f, indic_word([rune(0x0930), rune(0x094D), rune(0x0915), rune(0x093F)]))
+	assert rki.glyphs.len == 3, 'rki draws three glyphs, got ${indic_dump(rki)}'
+	assert rki.glyphs[0].gid == 0x24e && rki.glyphs[0].cluster == 0, 'rki opens with the pres matra, got ${indic_dump(rki)}'
+	assert rki.glyphs[1].gid == 0x38 && rki.glyphs[1].cluster == 0, 'KA follows on cluster 0'
+	assert rki.glyphs[2].gid == 0x311 && rki.glyphs[2].cluster == 0, 'the reph variant closes on cluster 0'
+	assert rki.glyphs[2].advance == 0.0, 'the reph advances nothing'
+	rkma := indic_line(f, indic_word([rune(0x0930), rune(0x094D), rune(0x0915), rune(0x093E)]))
+	assert rkma.glyphs.len == 3, 'rkma draws three glyphs, got ${indic_dump(rkma)}'
+	assert rkma.glyphs[0].gid == 0x38 && rkma.glyphs[0].cluster == 0, 'rkma opens with KA, got ${indic_dump(rkma)}'
+	assert rkma.glyphs[1].gid == 0x1f && rkma.glyphs[1].cluster == 0, 'the AA matra keeps cluster 0'
+	assert rkma.glyphs[2].gid == 0x1fa && rkma.glyphs[2].cluster == 0, 'the reph closes on cluster 0'
 }
 
 fn test_indic_draw_base() {

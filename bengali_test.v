@@ -301,6 +301,40 @@ fn test_bengali_shape_current_gaps() {
 	}
 }
 
+fn test_bengali_shape_repha() {
+	// Repha moves after the base and fuses by default, like Devanagari:
+	// HarfBuzz shapes karma as KA gid 0x19 at 807 on cluster 0, MA gid 0x31
+	// at 612 on cluster 1, reph gid 0x84 advancing nothing on cluster 1.
+	f := bengali_font() or { return }
+	karma := bengali_line(f, bengali_word([rune(0x0995), rune(0x09B0), rune(0x09CD), rune(0x09AE)]))
+	assert karma.glyphs.len == 3, 'karma fuses to three glyphs, got ${bengali_dump(karma)}'
+	assert karma.glyphs[0].gid == 0x19 && karma.glyphs[0].cluster == 0, 'KA opens on cluster 0, got ${bengali_dump(karma)}'
+	assert karma.glyphs[1].gid == 0x31 && karma.glyphs[1].cluster == 1, 'MA keeps cluster 1, got ${bengali_dump(karma)}'
+	assert karma.glyphs[1].advance > 19.52 && karma.glyphs[1].advance < 19.64, 'MA advances 612 design units'
+	assert karma.glyphs[2].gid == 0x84 && karma.glyphs[2].cluster == 1, 'the reph lands on cluster 1, got ${bengali_dump(karma)}'
+	assert karma.glyphs[2].advance == 0.0, 'the reph advances nothing'
+	// Rki with a matra matches HarfBuzz glyph for glyph, including the
+	// zero-width space the font's rphf chain emits (gid 5): matra, reph,
+	// base, mark.
+	rki := bengali_line(f, bengali_word([rune(0x09B0), rune(0x09CD), rune(0x0995), rune(0x09BF)]))
+	assert rki.glyphs.len == 4, 'rki draws four glyphs, got ${bengali_dump(rki)}'
+	assert rki.glyphs[0].gid == 0x3c && rki.glyphs[0].cluster == 0, 'rki opens with the matra, got ${bengali_dump(rki)}'
+	assert rki.glyphs[1].gid == 0x84 && rki.glyphs[1].cluster == 0, 'the reph follows on cluster 0'
+	assert rki.glyphs[2].gid == 0x19 && rki.glyphs[2].cluster == 0, 'KA keeps cluster 0'
+	assert rki.glyphs[3].gid == 0x5 && rki.glyphs[3].cluster == 0, 'the chain emits the zero-width space, got ${bengali_dump(rki)}'
+	// Rkma with a post-base matra is the one reph order that diverges:
+	// HarfBuzz puts the reph before the AA matra ([KA, reph, AA], all on
+	// cluster 0) while this engine appends it after ([KA, AA, reph]). The
+	// gids and advances agree; only the order differs, and it is recorded
+	// here rather than hidden. Bengali repha placement with post-base
+	// matras stays 9.3d.
+	rkma := bengali_line(f, bengali_word([rune(0x09B0), rune(0x09CD), rune(0x0995), rune(0x09BE)]))
+	assert rkma.glyphs.len == 3, 'rkma draws three glyphs, got ${bengali_dump(rkma)}'
+	assert rkma.glyphs[0].gid == 0x19 && rkma.glyphs[0].cluster == 0, 'rkma opens with KA, got ${bengali_dump(rkma)}'
+	assert rkma.glyphs[1].gid == 0x3b && rkma.glyphs[1].cluster == 0, 'the AA matra keeps cluster 0'
+	assert rkma.glyphs[2].gid == 0x84 && rkma.glyphs[2].cluster == 0, 'the reph closes on cluster 0'
+}
+
 fn test_bengali_draw_base() {
 	// One rasterised base consonant: a face that shapes but never inks is a
 	// face the test cannot see.

@@ -590,6 +590,17 @@ reads what it always did). Open: reph movement (rphf/pref), pstf/blwf/vatu,
 the Bengali blwf/pstf/cjct assembly chain with mark positioning, GPOS
 marks, post-base cluster convention (UU on 5 vs HarfBuzz 4).
 
+**9.3d Repha movement — landed 2026-11-16.** The machine moves a
+syllable-initial RA+halant to the syllable end (after matras), merges the
+touched syllable onto its base, and the default rphf lookup fuses it there:
+karma draws [KA, MA, reph] in both scripts, rki draws [matra, KA, reph] in
+Devanagari (0x311) and [matra, reph, KA, ZWSP] in Bengali, rkma draws [KA,
+AA, reph] in Devanagari — every gid, advance, cluster and offset HarfBuzz
+reports. The one divergence is Bengali rkma with a post-base matra:
+HarfBuzz puts the reph before the AA ([KA, reph, AA]) while this engine
+appends it after, pinned as-is. Pref, pstf/blwf/vatu, the Bengali
+conjunct assembly chain and GPOS marks stay open.
+
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
 NKo; `longtail_test.v`, break-fix on the SHIN pin). Gaps documented
 in-test: ccc=0 marks (Thaana fili, same gap as wave 3), `ot_script_tag`
@@ -647,7 +658,7 @@ owns the queue.
 
 | Slice | Item | State |
 | --- | --- | --- |
-| 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults | landed (both scripts HB-default; reph/assembly/GPOS open as 9.3d) |
+| 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults + repha | landed (HB-default incl. reph; assembly/GPOS open as 9.3e) |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
 | 7.8 | Core Text + DirectWrite providers | open (OS-gated) |

@@ -23,9 +23,6 @@ import vtext.ucd
 // substitution pass that owns the font tables.
 //
 // What this pass deliberately does not do, each with its reason:
-//   - repha stays in place: a syllable opening on RA halant consonant keeps
-//     logical order, and HarfBuzz repha placement needs the font reph mark
-//     which only the substitution pass can name.
 //   - split matras (Left_And_Right, Top_And_Bottom and friends) are one
 //     codepoint drawn in two places; splitting them needs glyph halves only
 //     the font tables can name.
@@ -152,6 +149,15 @@ fn is_indic_halant(c IndicSyllabic) bool {
 	return c == .virama || c == .pure_killer || c == .invisible_stacker
 }
 
+// is_repha_ra reports whether a codepoint is the RA that forms a reph:
+// RA plus halant at the start of a syllable. The Indic syllabic property
+// does not single these out for Devanagari and Bengali (both are plain
+// Consonant there), so the machine names them per script; a new script
+// adds its RA here with its face.
+fn is_repha_ra(cp rune) bool {
+	return cp == rune(0x0930) || cp == rune(0x09B0)
+}
+
 // IndicSyllable is one orthographic syllable: a half-open span of input
 // indices, so syllables tile the run with no gaps and no overlap.
 pub struct IndicSyllable {
@@ -214,47 +220,18 @@ fn opens_indic_syllable(ranges []ucd.CodeRange, cps []rune, i int, c IndicSyllab
 // the text, so visual order is the consonant run with the matra first. A
 // syllable with no pre-base matra, or one where no consonant precedes the
 // matra, comes back unchanged: the reorder never invents an anchor.
+// reorder_indic_syllable moves a pre-base matra before the first consonant
+// of its syllable and a syllable-initial reph to the end. It answers what
+// reorder_indic_syllable_mapped answers without the map.
 pub fn reorder_indic_syllable(syl []rune) []rune {
-	if syl.len < 2 {
-		return syl.clone()
-	}
-	syl_ranges := indic_syllabic_ranges()
-	pos_ranges := indic_positional_ranges()
-	mut matra := -1
-	for i, cp in syl {
-		if indic_syllabic_of(syl_ranges, cp) == .vowel_dependent {
-			p := indic_positional_of(pos_ranges, cp)
-			if p == .left || p == .visual_order_left {
-				matra = i
-				break
-			}
-		}
-	}
-	if matra <= 0 {
-		return syl.clone()
-	}
-	mut anchor := -1
-	for i in 0 .. matra {
-		if is_indic_consonant_like(indic_syllabic_of(syl_ranges, syl[i])) {
-			anchor = i
-			break
-		}
-	}
-	if anchor < 0 {
-		return syl.clone()
-	}
-	mut out := []rune{cap: syl.len}
-	out << syl[..anchor]
-	out << syl[matra]
-	out << syl[anchor..matra]
-	out << syl[matra + 1..]
-	return out
+	reordered, _ := reorder_indic_syllable_mapped(syl)
+	return reordered
 }
 
 // reorder_indic reorders every syllable of a run, tiling the run the way the
-// segmenter cut it. Syllables without a pre-base matra pass through
-// unchanged, so the reorder is the identity everywhere the text is already
-// in visual order.
+// segmenter cut it. Syllables without a pre-base matra or a syllable-initial
+// reph pass through unchanged, so the reorder is the identity everywhere the
+// text is already in visual order.
 pub fn reorder_indic(cps []rune) []rune {
 	if cps.len == 0 {
 		return []rune{}
@@ -290,8 +267,11 @@ pub fn reorder_indic_mapped(cps []rune) ([]rune, []int) {
 }
 
 // reorder_indic_syllable_mapped moves a pre-base matra before the first
-// consonant of its syllable like reorder_indic_syllable, with the same
-// permutation map. An unchanged syllable maps to itself.
+// consonant of its syllable and a syllable-initial reph to the end, with
+// the permutation map. An unchanged syllable maps to itself. The repha
+// half is the syllable machine's job the joining hook feeds on: RA plus a
+// bare halant opens the syllable, and the pair draws after everything else
+// in it (matras included), which is the context the rphf lookup consumes.
 fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
 	if syl.len < 2 {
 		mut ids := []int{cap: syl.len}
@@ -302,50 +282,56 @@ fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
 	}
 	syl_ranges := indic_syllabic_ranges()
 	pos_ranges := indic_positional_ranges()
+	// A repha is RA plus a directly following halant-like joiner. A join
+	// control or nukta between them means no repha: an explicit halant
+	// shows as itself, and a ZWJ-forced form is not the default reph.
+	mut repha := 0
+	if is_repha_ra(syl[0]) && is_indic_halant(indic_syllabic_of(syl_ranges, syl[1])) {
+		repha = 2
+	}
 	mut matra := -1
-	for i, cp in syl {
-		if indic_syllabic_of(syl_ranges, cp) == .vowel_dependent {
-			p := indic_positional_of(pos_ranges, cp)
+	for i in repha .. syl.len {
+		if indic_syllabic_of(syl_ranges, syl[i]) == .vowel_dependent {
+			p := indic_positional_of(pos_ranges, syl[i])
 			if p == .left || p == .visual_order_left {
 				matra = i
 				break
 			}
 		}
 	}
-	if matra <= 0 {
-		mut ids := []int{cap: syl.len}
-		for i in 0 .. syl.len {
-			ids << i
-		}
-		return syl.clone(), ids
-	}
 	mut anchor := -1
-	for i in 0 .. matra {
-		if is_indic_consonant_like(indic_syllabic_of(syl_ranges, syl[i])) {
-			anchor = i
-			break
+	if matra > 0 {
+		for i in repha .. matra {
+			if is_indic_consonant_like(indic_syllabic_of(syl_ranges, syl[i])) {
+				anchor = i
+				break
+			}
 		}
-	}
-	if anchor < 0 {
-		mut ids := []int{cap: syl.len}
-		for i in 0 .. syl.len {
-			ids << i
-		}
-		return syl.clone(), ids
 	}
 	mut out := []rune{cap: syl.len}
 	mut map_ := []int{cap: syl.len}
-	for i in 0 .. anchor {
-		out << syl[i]
-		map_ << i
+	if anchor >= 0 {
+		for i in repha .. anchor {
+			out << syl[i]
+			map_ << i
+		}
+		out << syl[matra]
+		map_ << matra
+		for i in anchor .. matra {
+			out << syl[i]
+			map_ << i
+		}
+		for i in matra + 1 .. syl.len {
+			out << syl[i]
+			map_ << i
+		}
+	} else {
+		for i in repha .. syl.len {
+			out << syl[i]
+			map_ << i
+		}
 	}
-	out << syl[matra]
-	map_ << matra
-	for i in anchor .. matra {
-		out << syl[i]
-		map_ << i
-	}
-	for i in matra + 1 .. syl.len {
+	for i in 0 .. repha {
 		out << syl[i]
 		map_ << i
 	}
