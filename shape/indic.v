@@ -331,6 +331,49 @@ fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
 			map_ << i
 		}
 	}
+	// A Khmer COENG+RO pair draws before its syllable's base consonant:
+	// HarfBuzz preposes the pair with or without the pref fusion behind
+	// it (the fusion then claims the pair through lookup 12), the way a
+	// reph moves for the Indic scripts. The codepoints gate the rule: no
+	// Devanagari or Bengali syllable contains U+17D2 or U+179A, so every
+	// Indic syllable passes through exactly as before. Only directly
+	// adjacent pairs move; a join control between them is unevidenced,
+	// and each pair keeps its order when several prepose at once.
+	if out.len > 1 {
+		mut at := -1
+		for i in 0 .. out.len - 1 {
+			if out[i] == rune(0x17D2) && out[i + 1] == rune(0x179A) {
+				at = i
+				break
+			}
+		}
+		if at >= 0 {
+			mut front := []rune{cap: out.len}
+			mut front_map := []int{cap: out.len}
+			mut rest := []rune{cap: out.len}
+			mut rest_map := []int{cap: out.len}
+			mut i := 0
+			for i < out.len {
+				if out[i] == rune(0x17D2) && i + 1 < out.len && out[i + 1] == rune(0x179A) {
+					front << out[i]
+					front << out[i + 1]
+					front_map << map_[i]
+					front_map << map_[i + 1]
+					i += 2
+				} else {
+					rest << out[i]
+					rest_map << map_[i]
+					i++
+				}
+			}
+			out = []rune{cap: front.len + rest.len}
+			out << front
+			out << rest
+			map_ = []int{cap: front_map.len + rest_map.len}
+			map_ << front_map
+			map_ << rest_map
+		}
+	}
 	for i in 0 .. repha {
 		out << syl[i]
 		map_ << i

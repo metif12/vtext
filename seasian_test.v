@@ -21,13 +21,12 @@ import vtext.layout
 //     pass only emits glyphs for transparent characters with a nonzero
 //     combining class, so a ccc=0 mark is swallowed even though the font
 //     classes it as a GDEF mark with zero advance.
-//   - Khmer runs its coeng fusions (blwf, pstf): COENG+TA fuses to the
-//     subscript ligature and COENG+KHO to its post-base one, while pref
-//     needs the reordering machine (HarfBuzz draws COENG+RO ahead of its
-//     base) and pres/abvs/blws/psts/abvf wait for a word that exercises
-//     them. Myanmar never forms the kinzi or the stacks, so the engine
-//     draws the cmap glyphs where HarfBuzz draws one fused glyph
-//     and merges the clusters.
+//   - Khmer runs its coeng fusions (pref, blwf, pstf): COENG+RO fuses to
+//     the preposed 0xdc, COENG+TA to the subscript ligature and COENG+KHO
+//     to its post-base one, while pres/abvs/blws/psts/abvf wait for a
+//     word that exercises them. Myanmar never forms the kinzi or the
+//     stacks, so the engine draws the cmap glyphs where HarfBuzz draws
+//     one fused glyph and merges the clusters.
 //
 // Tibetan is explicitly out of scope for this wave: stacking composition needs
 // a stacking machine the engine does not have yet.
@@ -242,6 +241,53 @@ fn test_seasian_shape_khmer_pstf() {
 	assert !fused.is_mark, 'the post-base fusion is a base, not a mark'
 	assert fused.advance > 9.40 && fused.advance < 9.42, 'the post-base fusion advances 294 design units, got ${fused.advance}'
 	assert fused.x > 29.69 && fused.x < 29.71, 'the post-base fusion sits at the pen, got x=${fused.x}'
+}
+
+fn test_seasian_shape_khmer_pref() {
+	// HarfBuzz shapes SA + COENG + RO as the preposed pair [0xdc, SA]
+	// under one cluster with advances [287, 928]: toggling pref off
+	// unfolds the pair to COENG (0x9f) and RO (0x4e) but leaves it ahead
+	// of the base, so the reorder is the shaper's work and the fusion is
+	// the pref default's (lookup 12). The reorder machine moves each
+	// adjacent COENG+RO pair to its syllable front, and the layout pass
+	// merges the reordered syllable onto the base the way it does for a
+	// moved matra. A following SRA II resolves against the fused pair
+	// at HarfBuzz's (-32, -29), and a coeng TA pair in the same cluster
+	// still fuses in place behind the base.
+	kh := seasian_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := seasian_line(kh, 'ស\u17d2\u179a')
+	assert line.glyphs.len == 2, 'khmer SA COENG RO draws two glyphs, got ${line.glyphs.len}'
+	assert line.width > 0, 'a Khmer syllable has positive width'
+	// Both glyphs merged onto cluster 0, so these read by index: the
+	// first match would answer the fusion twice.
+	assert line.glyphs[0].gid == 0xdc, 'khmer COENG+RO fuses to 0xdc, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the preposed fusion merges onto the base cluster'
+	assert !line.glyphs[0].is_mark, 'the preposed fusion is a base, not a mark'
+	assert line.glyphs[0].advance > 9.18 && line.glyphs[0].advance < 9.20, 'the preposed fusion advances 287 design units, got ${line.glyphs[0].advance}'
+	assert line.glyphs[0].x > -0.01 && line.glyphs[0].x < 0.01, 'the preposed fusion opens the line, got x=${line.glyphs[0].x}'
+	assert line.glyphs[1].gid == 0x53, 'khmer cluster 0 is SA 0x53, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[1].cluster == 0, 'the SA keeps the base cluster'
+	assert line.glyphs[1].advance > 0, 'the SA moves the pen'
+	vowel := seasian_line(kh, 'ស\u17d2\u179a\u17b8')
+	assert vowel.glyphs.len == 3, 'khmer SA COENG RO II draws three glyphs, got ${vowel.glyphs.len}'
+	// The vowel merged onto cluster 0 with the rest of its syllable, so
+	// this reads by index too.
+	assert vowel.glyphs[2].gid == 0x6d, 'khmer SRA II is 0x6d, got ${vowel.glyphs[2].gid:x}'
+	assert vowel.glyphs[2].cluster == 0, 'SRA II merges onto the base cluster'
+	assert vowel.glyphs[2].is_mark && vowel.glyphs[2].advance == 0, 'SRA II is a mark advancing nothing'
+	assert vowel.glyphs[2].x > 37.85 && vowel.glyphs[2].x < 37.87, 'SRA II sits 32 design units before the pen, got x=${vowel.glyphs[2].x}'
+	assert vowel.glyphs[2].y > 0.87 && vowel.glyphs[2].y < 0.99, 'SRA II rides 29 design units up, got y=${vowel.glyphs[2].y}'
+	stack := seasian_line(kh, 'ស\u17d2\u178f\u17d2\u179a')
+	assert stack.glyphs.len == 3, 'khmer SA COENG TA COENG RO draws three glyphs, got ${stack.glyphs.len}'
+	assert stack.glyphs[0].gid == 0xdc, 'the RO pair preposes past the TA pair, got ${stack.glyphs[0].gid:x}'
+	assert stack.glyphs[1].gid == 0x53, 'the SA stays behind the preposed pair, got ${stack.glyphs[1].gid:x}'
+	assert stack.glyphs[2].gid == 0xcc, 'the TA pair fuses in place behind the base, got ${stack.glyphs[2].gid:x}'
+	tail := seasian_line(kh, 'ស\u17d2\u179a\u178f')
+	assert tail.glyphs.len == 3, 'khmer SA COENG RO TA draws three glyphs, got ${tail.glyphs.len}'
+	assert tail.glyphs[0].gid == 0xdc && tail.glyphs[1].gid == 0x53, 'the RO pair preposes within its own syllable'
+	ta := seasian_at(tail.glyphs, 3) or { panic('khmer TA drew nothing') }
+	assert ta.gid == 0x41, 'khmer cluster 3 is TA 0x41, got ${ta.gid:x}'
+	assert ta.advance > 0, 'the following syllable keeps its own cluster and advance'
 }
 
 fn test_seasian_shape_myanmar() {

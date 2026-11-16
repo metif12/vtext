@@ -676,8 +676,7 @@ takes part (two marks still have nowhere to go). stra fuses fully too
 (0xfd, 0x108, 0x149, 0x11a). kri and stra are now HB-exact in gids,
 advances and offsets; their tails keep honest per-input clusters where
 HarfBuzz merges onto the base. Open: pref, pstf/vatu, the mark-cluster
-merge, Khmer pref reorder with its cluster merge, the Khmer
-pres/abvs/blws/psts/abvf group, GPOS marks beyond anchors.
+merge, the Khmer pres/abvs/blws/psts/abvf group, GPOS marks beyond anchors.
 
 **9.3e Fallout repairs — landed 2026-11-16 (fourth cut).** The slice's own
 fallout, each pinned. (1) The advance-only chaining single over-applied:
@@ -705,9 +704,21 @@ advances as bases. Only the ligature path changes; singles, multiples
 and alternates keep the old rule, so Arabic ccmp compositions are
 untouched. The hello word is now HB-exact in gids, advances and
 offsets (fused mark at +14/-26, SRA II at -32/-29); the pstf word is
-HB-exact with honest per-input clusters where HarfBuzz merges. Open:
-pref (HarfBuzz draws COENG+RO ahead of its base, which needs the
-reordering machine), the pres/abvs/blws/psts/abvf group, the
+HB-exact with honest per-input clusters where HarfBuzz merges.
+
+**9.2-engine Khmer pref reorder — landed 2026-11-17.** Two halves draw
+SA + COENG + RO the way HarfBuzz does. (1) The reorder machine preposes
+each adjacent COENG+RO pair to its syllable front, the way a reph moves
+for the Indic scripts: HarfBuzz reorders with or without the fusion
+(`-pref` unfolds the pair but leaves it ahead of the base), so the move
+is the shaper's work, not the font's. The codepoints gate the rule —
+no Devanagari or Bengali syllable contains U+17D2 or U+179A — and the
+layout pass merges the reordered syllable onto the base the way it does
+for a moved matra. (2) `pref` joins the Khmer defaults ahead of `blwf`,
+claiming the preposed pair through lookup 12 before the chains see it.
+The pair, the pair-plus-vowel, the two-pair cluster and the
+syllable-tail words are all HB-exact in gids, order, advances, offsets
+and clusters. Open: the pres/abvs/blws/psts/abvf group, the
 mark-cluster merge, GPOS marks beyond anchors.
 
 **9.4 The long tail — corpus landed 2026-11-15.** Wave 4 (Syriac, Thaana,
@@ -779,7 +790,7 @@ owns the queue.
 | 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
-| 9.2-engine | ccc=0 mark drawing; Khmer coeng fusions landed, pref reorder + pres-group + Myanmar kinzi/stacks open; `nko ` tag fold landed | open |
+| 9.2-engine | ccc=0 mark drawing; Khmer coeng fusions + pref reorder landed; pres-group + Myanmar kinzi/stacks open; `nko ` tag fold landed | open |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
 

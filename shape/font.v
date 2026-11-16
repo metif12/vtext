@@ -192,18 +192,16 @@ fn indic_default_features() []string {
 // khmer_default_features are the Khmer shaping features that run without
 // being asked, for the same reason the Indic ones do: a line whose coeng
 // subscripts stay unfused is not the text. Each is a HarfBuzz default-on
-// feature proven by toggling it off under uharfbuzz: -blwf unfolds
-// COENG+TA (0xcc) and -pstf unfolds COENG+KHO (0xba), while -pref, -pres,
-// -abvs, -blws, -psts and -abvf change nothing on the same words. blwf and
-// pstf are disjoint plain ligatures (COENG plus complementary consonant
-// sets), so their relative order is free and both are gid- and
-// order-exact against HarfBuzz. pref stays caller-asked: HarfBuzz moves
-// the COENG+RO fusion ahead of its base, which needs the reordering
-// machine, and drawing it fused in place would bless the wrong order.
-// pres, abvs, blws, psts and abvf stay caller-asked until a word that
-// exercises them proves the order they need.
+// feature proven by toggling it off under uharfbuzz: -pref unfolds
+// COENG+RO (0xdc), -blwf unfolds COENG+TA (0xcc) and -pstf unfolds
+// COENG+KHO (0xba), while -pres, -abvs, -blws, -psts and -abvf change
+// nothing on the same words. pref runs first so it claims the preposed
+// pair (the reorder machine draws COENG+RO ahead of the base) before the
+// blwf chains see it; blwf and pstf are disjoint plain ligatures, so no
+// order is owed between them. pres, abvs, blws, psts and abvf stay
+// caller-asked until a word that exercises them proves the order they need.
 fn khmer_default_features() []string {
-	return ['blwf', 'pstf']
+	return ['pref', 'blwf', 'pstf']
 }
 
 // is_khmer_shaping_script reports whether a run resolves under the Khmer
