@@ -26,11 +26,11 @@ import vtext.layout
 //     when asked, because blwf must run before the ccmp split of DOT BELOW
 //     to spacing+dummymark and the current order runs it last. blwf stays
 //     caller-asked until that order is proven.
-//   - Khmer SA+COENG+KA+U: HarfBuzz puts U at (-22,-296); this engine puts
-//     it at the anchor-plus-stack answer (-22,-270 in design, y 8.64 px at
-//     32 px). The residual 26 design units are a chaining SinglePos over
-//     the anchor that apply_mark_chain does not yet claim; the pin records
-//     the current answer with the residual named.
+//   - Khmer SA+COENG+KA+U drew U at the anchor-plus-stack answer (-22,-270
+//     design, y 8.64 px at 32 px) against HarfBuzz (-22,-296): closed
+//     2026-11-17, pinned HB-exact below (U rides the mark-to-mark stack on
+//     the fused subscript; neutering blwf out of the Khmer defaults
+//     unfolds the subscript and fails the 0xb7 pin).
 
 fn rem_font_path(name string) ?string {
 	mut dirs := []string{}
@@ -180,6 +180,35 @@ fn test_remainder_khmer_blws() {
 	assert line.glyphs[2].is_mark && line.glyphs[2].advance == 0, '.b is a mark advancing nothing'
 	assert line.glyphs[2].x > 33.59 && line.glyphs[2].x < 33.61, '.b sits 127 design units off the pen, got x=${line.glyphs[2].x}'
 	assert line.glyphs[2].y > 0.82 && line.glyphs[2].y < 0.85, '.b rides 26 design units up, got y=${line.glyphs[2].y}'
+}
+
+// Khmer subscript-U chain: KA + COENG + KA + U draws U through stacking
+// on the fused subscript. HarfBuzz: [KA 0x31, coeng.sub 0xb7, U 0x73]
+// advances [636, 0, 0] with the subscript at (-2,-26) and U at (-22,-296).
+// The old anchor-plus-stack residual (-270) is closed: U rides the
+// mark-to-mark stack, not a chaining SinglePos (neutering the mark chain
+// leaves this word untouched and fails the Thai dist pin instead).
+// Neutering blwf out of the Khmer defaults unfolds the subscript and
+// fails the 0xb7 pin, which is the break-fix. Honest per-input clusters
+// [0,1,3] against HarfBuzz merged [0,0,0], the recorded per-input
+// convention.
+fn test_remainder_khmer_subscript_u_chain() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17D2), rune(0x1780), rune(0x17BB)])
+	assert line.glyphs.len == 3, 'KA COENG KA U draws three glyphs, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0x31, 'KA is 0x31, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the base keeps the input cluster'
+	assert line.glyphs[0].advance > 20.34 && line.glyphs[0].advance < 20.37, 'KA advances 636 design units, got ${line.glyphs[0].advance}'
+	sub := rem_at(line.glyphs, 1) or { panic('subscript drew nothing') }
+	assert sub.gid == 0xb7, 'COENG+KA fuses to 0xb7, got ${sub.gid:x}'
+	assert sub.is_mark && sub.advance == 0, 'the subscript is a mark advancing nothing'
+	assert sub.x > 20.27 && sub.x < 20.30, 'subscript sits 2 design units before the pen, got x=${sub.x}'
+	assert sub.y > 0.82 && sub.y < 0.85, 'subscript rides 26 design units up, got y=${sub.y}'
+	u := rem_at(line.glyphs, 3) or { panic('U drew nothing') }
+	assert u.gid == 0x73, 'U is 0x73, got ${u.gid:x}'
+	assert u.is_mark && u.advance == 0, 'U is a mark advancing nothing'
+	assert u.x > 19.63 && u.x < 19.67, 'U sits 22 design units before the pen, got x=${u.x}'
+	assert u.y > 9.46 && u.y < 9.49, 'U drops 296 design units via the chain, got y=${u.y}'
 }
 
 // Khmer psts: SA + SRA AU 17C4 draws the ligature through psts.
