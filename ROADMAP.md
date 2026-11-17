@@ -195,6 +195,11 @@ Rules that cost real debugging, kept:
   10x13 vs stb 12x14 on one dal gid, outlines agreeing) — the one ink entry
   with its reason. Pango's full-line Cairo renders of folded code ligatures
   rasterize past the pixel bound (maxdiff 224–255): recorded, not tuned.
+- Pango full-line pixel renders drift with the runner's Pango/Cairo stack,
+  not with this engine: 2026-11-17 the arabic-marks pixel entry moved
+  30.6/2815 → 30.1/2797 at the same maxdiff 255 with the same 34 shaping
+  diffs, measured identically on consecutive runs, so the baseline follows
+  the measured renderer rather than the code.
 
 ## Phase 5: every script — done, holes moved to Phase 9
 

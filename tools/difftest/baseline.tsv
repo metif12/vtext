@@ -103,7 +103,7 @@ naskh-joining	ink	U+0645 px: maxdiff 255 meandiff 43.3 over16 111/286 13x22vs13x
 arabic-hello	pango	pixel arabic-hello: maxdiff 243 meandiff 16.1 over16 306/2028
 arabic-two-words	pango	pixel arabic-two-words: maxdiff 255 meandiff 15.2 over16 551/4018
 arabic-marks	pango	line 0: vtext 245.3px vs pango 220.0px
-arabic-marks	pango	pixel arabic-marks: maxdiff 255 meandiff 30.6 over16 2815/15252
+arabic-marks	pango	pixel arabic-marks: maxdiff 255 meandiff 30.1 over16 2797/15252
 arabic-allah	pango	pixel arabic-allah: maxdiff 255 meandiff 80.6 over16 468/980
 arabic-zwnj	pango	line 0: vtext 88.1px vs pango 81.0px
 arabic-zwnj	pango	pixel arabic-zwnj: maxdiff 255 meandiff 26.9 over16 741/3825
