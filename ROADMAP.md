@@ -391,11 +391,14 @@ assignment (nothing on `Font` is stable across calls); one id names one
 (Amiri `A`, 32 px, first-touch method). Pinned by `cache_test.v` with
 break-fix over all four key dimensions. **Second half (rival A/B harness)
 landed 2026-11-16**: `tools/rival_bench.v` drives the V half and parses the
-`tools/rival_bench.py` rival half (uharfbuzz shaping, Pillow rasterization —
-the CI reference stack, nothing more) into one table with per-op ratios and
+`tools/rival_bench.py` rival half (uharfbuzz shaping, Pillow rasterization,
+Pango layout, fc-match discovery, fontTools loading — the CI reference
+stack, nothing more) into one table with per-op ratios and
 a hit-beats-miss refusal as its liveness control. perf.md carries the
-measured table with box, flags, versions and date, re-measured per release,
-and the `perf` CI job gates the ratios on every commit.
+measured table with box, flags, versions and date, re-measured by the
+manual `perf-record` workflow (which commits with `[skip ci]`), and the
+`perf` CI job gates the ratios on every commit. The matrix covers every
+script the corpus carries plus marks, digits and mixed-bidi char types.
 The harness degrades the ratchet way: no interpreter or rival import prints
 the vtext half with the reason. Recorded on Win11 x64 with `v -cc gcc`:
 shape latin-1024 1672x (layout+shape vs hb shape), arabic-1024 552x, raster

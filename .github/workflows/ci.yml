@@ -218,14 +218,37 @@ jobs:
           make -C "$src" -j2
           echo "$src" >> "$GITHUB_PATH"
 
+      # The Pango leg needs its system libraries, like the difftest job:
+      # without them the pango rival rows skip aloud and the layout ops
+      # have no rival half to gate against.
+      - name: System libraries for the Pango leg
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libpango-1.0-0 libcairo2 fontconfig
+
       # Pinned to the versions perf.md was recorded against; an unpinned
       # install drifts with every release and the gate then measures the
       # reference moving, not the engine.
       - name: pip install the pinned rival stack
         shell: bash
         run: |
-          python3 -m pip install --quiet uharfbuzz==0.56.2 pillow==12.3.0
-          python3 -m pip freeze | grep -Ei 'harfbuzz|pillow'
+          python3 -m pip install --quiet \
+            uharfbuzz==0.56.2 fonttools==4.66.1 pillow==12.3.0 \
+            pangocffi==0.14.1 pangocairocffi==0.7.1 cairocffi==1.7.1
+          python3 -m pip freeze | grep -Ei 'harfbuzz|fonttools|pillow|pango|cairo'
+
+      # The shaping, layout and discovery rivals resolve families through
+      # fontconfig, which knows nothing about testdata/fonts. Without this
+      # step Pango silently substitutes a fallback font and fc-match answers
+      # a different file — a bench measuring the absence of fonts.
+      - name: Register the corpus fonts with fontconfig
+        shell: bash
+        run: |
+          mkdir -p ~/.fonts
+          cp testdata/fonts/*.ttf ~/.fonts/
+          fc-cache -f ~/.fonts
+          fc-list | grep -Ei 'Amiri|Noto Sans' || (echo 'corpus fonts missing from fontconfig'; exit 1)
 
       # -prod is the point: the gate locks in the -prod-clean tree, and the
       # ratios only mean anything under optimized codegen. pipefail carries

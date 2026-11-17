@@ -170,7 +170,7 @@ $if linux {
 		mut res := 0
 		// A nil charset vector: the per-font charsets stay inside fontconfig,
 		// and the coverage questions below ask the matched patterns instead.
-		set_addr := usize(C.FcFontSort(config, pat, 0, unsafe { nil }, &res))
+		set_addr := u64(C.FcFontSort(config, pat, 0, unsafe { nil }, &res))
 		if set_addr == 0 || res != fc_result_match {
 			return none
 		}
@@ -189,10 +189,10 @@ $if linux {
 			n = limit
 		}
 		mut out := []SystemFont{cap: n}
-		fonts_at := unsafe { *&usize(set_addr + 8) }
-		stride := usize(sizeof(voidptr))
+		fonts_at := unsafe { *&u64(set_addr + 8) }
+		stride := u64(sizeof(voidptr))
 		for i in 0 .. n {
-			m := unsafe { *&voidptr(fonts_at + usize(i) * stride) }
+			m := unsafe { *&voidptr(fonts_at + u64(i) * stride) }
 			if isnil(m) {
 				continue
 			}

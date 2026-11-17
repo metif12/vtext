@@ -1,0 +1,86 @@
+name: perf-record
+
+# CI-generated baselines: a manual run re-measures the A/B table on the
+# pinned ubuntu-24.04 stack and commits the new numbers to perf.md with
+# [skip ci]. Nothing here runs on push, so no run can commit-loop; the
+# per-push gate in ci.yml keeps enforcing the committed table.
+on:
+  workflow_dispatch:
+
+jobs:
+  record:
+    name: re-measure perf baselines (ubuntu 24.04)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install V
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="$RUNNER_TEMP/vsrc"
+          git clone --depth 1 https://github.com/vlang/v "$src"
+          make -C "$src" -j2
+          echo "$src" >> "$GITHUB_PATH"
+
+      - name: System libraries for the Pango leg
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libpango-1.0-0 libcairo2 fontconfig
+
+      - name: pip install the pinned rival stack
+        shell: bash
+        run: |
+          python3 -m pip install --quiet \
+            uharfbuzz==0.56.2 fonttools==4.66.1 pillow==12.3.0 \
+            pangocffi==0.14.1 pangocairocffi==0.7.1 cairocffi==1.7.1
+          python3 -m pip freeze | grep -Ei 'harfbuzz|fonttools|pillow|pango|cairo'
+
+      - name: Register the corpus fonts with fontconfig
+        shell: bash
+        run: |
+          mkdir -p ~/.fonts
+          cp testdata/fonts/*.ttf ~/.fonts/
+          fc-cache -f ~/.fonts
+          fc-list | grep -Ei 'Amiri|Noto Sans' || (echo 'corpus fonts missing from fontconfig'; exit 1)
+
+      # Record first, then gate the fresh numbers: the gate validates the
+      # rewritten file parses and every committed row is present, so a broken
+      # recorder fails here instead of landing a broken table.
+      - name: run the A/B harness, record, and gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          v -prod -cc gcc run tools/rival_bench.v | tee rival-bench.txt
+          python3 tools/perf_record.py perf.md rival-bench.txt
+          python3 tools/perf_check.py perf.md rival-bench.txt
+        env:
+          TMPDIR: ${{ runner.temp }}/rivalbench
+          VJOBS: '1'
+
+      - name: Commit the re-measured baselines
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'vtext-perf-bot'
+          git config user.email 'vtext-perf-bot@users.noreply.github.com'
+          git add perf.md
+          if git diff --cached --quiet; then
+            echo 'no baseline change; nothing to commit'
+          else
+            git commit -m 'perf: re-measure baselines [skip ci]'
+            git push
+          fi
+
+      - name: Upload the bench output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rival-bench-output-record
+          path: |
+            rival-bench.txt
+            perf.md

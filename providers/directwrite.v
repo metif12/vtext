@@ -122,8 +122,8 @@ $if windows {
 	// dw_vslot reads one vtable entry off a COM object: the object starts
 	// with its vtable pointer, and each slot is one pointer wide.
 	fn dw_vslot(obj voidptr, idx int) voidptr {
-		vt := unsafe { *&voidptr(usize(obj)) }
-		return unsafe { *&voidptr(usize(vt) + usize(idx) * usize(sizeof(voidptr))) }
+		vt := unsafe { *&voidptr(u64(obj)) }
+		return unsafe { *&voidptr(u64(vt) + u64(idx) * u64(sizeof(voidptr))) }
 	}
 
 	// dw_release drops one COM reference, silently when there is nothing to
