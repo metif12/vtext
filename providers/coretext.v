@@ -24,8 +24,7 @@ $if macos {
 	fn C.CFRelease(voidptr)
 	fn C.CTFontDescriptorCreateWithNameAndSize(voidptr, f64) voidptr
 	fn C.CTFontCreateWithFontDescriptor(voidptr, f64, voidptr) voidptr
-	fn C.CTFontCopyGraphicsFont(voidptr, voidptr) voidptr
-	fn C.CGFontCopyURL(voidptr) voidptr
+	fn C.CTFontCopyAttribute(voidptr, voidptr) voidptr
 	fn C.CFURLGetFileSystemRepresentation(voidptr, bool, &u8, i64) bool
 	fn C.CTFontCopyFamilyName(voidptr) voidptr
 	fn C.CFStringGetCString(voidptr, &u8, i64, u32) bool
@@ -37,10 +36,10 @@ $if macos {
 	// in a font it never asked for. Anything unusable on the way there
 	// answers none.
 	//
-	// The URL comes off the graphics font (CTFontCopyGraphicsFont plus
-	// CGFontCopyURL) and the name off CTFontCopyFamilyName, so no
-	// attribute-key constant crosses the C boundary: this file declares only
-	// the calls above.
+	// The URL comes off CTFontCopyAttribute with kCTFontURLAttribute and the
+	// name off CTFontCopyFamilyName; the attribute key is CoreText's own
+	// constant, declared in CTFont.h, so no graphics-font round trip is
+	// needed (and none of the calls here need a CGFont at all).
 	pub fn coretext_font(family string) ?SystemFont {
 		if family == '' {
 			return none
@@ -64,14 +63,7 @@ $if macos {
 		defer {
 			C.CFRelease(font)
 		}
-		cgfont := C.CTFontCopyGraphicsFont(font, unsafe { nil })
-		if cgfont == unsafe { nil } {
-			return none
-		}
-		defer {
-			C.CFRelease(cgfont)
-		}
-		url := C.CGFontCopyURL(cgfont)
+		url := C.CTFontCopyAttribute(font, C.kCTFontURLAttribute)
 		if url == unsafe { nil } {
 			return none
 		}
