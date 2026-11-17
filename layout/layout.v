@@ -809,6 +809,30 @@ pub fn apply_vertical_advances(mut glyphs []shape.Glyph, em_px f64) {
 // A mark between two letters is left to the lookups' own flags, which this does not
 // second-guess, and a fallback seam has no single table to ask.
 //
+// KernChainMemo holds one run's chaining kern adjustments per font: the
+// full run is walked once, not once per pair, the way ChainMemo holds the
+// mark chains (see position_marks).
+struct KernChainMemo {
+	font_ptr voidptr
+	script   string
+	lang     string
+	pairs    []font.KernChainPair
+}
+
+// kern_chain_for answers the run's chaining kern adjustments for one font,
+// evaluating once and memoizing for the rest of the line.
+fn kern_chain_for(mut memo []KernChainMemo, f &shape.Font, gpos &font.Gpos, gids []u16, script string, lang string) []font.KernChainPair {
+	key := voidptr(f)
+	for m in memo {
+		if m.font_ptr == key && m.script == script && m.lang == lang {
+			return m.pairs
+		}
+	}
+	pairs := gpos.kern_chain_offsets(gids, script, lang, f.face.gdef)
+	memo << KernChainMemo{ font_ptr: key, script: script, lang: lang, pairs: pairs }
+	return pairs
+}
+
 // The kern folds into the advance of the visually first glyph of the pair — the first
 // logical glyph going left to right, the second going right to left — which is where
 // HarfBuzz reports it: AV tightens A's advance, and e-f in an RTL run tightens f's.
@@ -820,6 +844,10 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang strin
 	for g in glyphs {
 		gids << g.gid
 	}
+	// The chaining kern lookups are evaluated once per font for the whole
+	// run (see kern_chain_offsets): per pair they would walk the run again
+	// for every pair, which is quadratic in the line length.
+	mut chain_memo := []KernChainMemo{}
 	for i in 0 .. glyphs.len - 1 {
 		a := glyphs[i]
 		b := glyphs[i + 1]
@@ -836,16 +864,33 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang strin
 		if fa != fb {
 			continue
 		}
-		off := fa.context_placement(gids, i, i + 1, script, lang) or { continue }
+		gpos := fa.face.gpos or { continue }
+		mut x := 0
+		mut y := 0
+		mut found := false
+		if k := gpos.kern_offset(gids[i], gids[i + 1], script, lang) {
+			x += k.x
+			y += k.y
+			found = true
+		}
+		chain := kern_chain_for(mut chain_memo, fa, gpos, gids, script, lang)
+		if i < chain.len && chain[i].found {
+			x += chain[i].x
+			y += chain[i].y
+			found = true
+		}
+		if !found {
+			continue
+		}
 		scale := em_px / f64(fa.face.units_per_em)
 		// y is positive upwards in the font and downwards on the line, as in
 		// position_marks, so it is flipped here rather than at the callers.
 		if rtl {
-			glyphs[i + 1].advance += f64(off.x) * scale
-			glyphs[i + 1].y -= f64(off.y) * scale
+			glyphs[i + 1].advance += f64(x) * scale
+			glyphs[i + 1].y -= f64(y) * scale
 		} else {
-			glyphs[i].advance += f64(off.x) * scale
-			glyphs[i].y -= f64(off.y) * scale
+			glyphs[i].advance += f64(x) * scale
+			glyphs[i].y -= f64(y) * scale
 		}
 	}
 }
@@ -1223,6 +1268,11 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 	for g in line.glyphs {
 		gids << g.gid
 	}
+	// The chaining lookups for one font evaluated once, not once per mark:
+	// apply_contextual walks the whole run, so running it for every mark is
+	// quadratic in the mark count. Marks usually share one or two fonts, so
+	// the memo holds that many entries and the perf gate pins the shape.
+	mut chain_memo := []ChainMemo{}
 
 	// The marks are placed from the first cluster onwards, which is the order a stack has to be
 	// built in. A mark on another mark is measured from where the mark under it ended up, so the
@@ -1361,7 +1411,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 				stack_scale := em_px / f64(stack_font.face.units_per_em)
 				line.glyphs[i].x = target.x + f64(off.x) * stack_scale
 				line.glyphs[i].y = target.y - f64(off.y) * stack_scale
-				apply_mark_chain(mut line, i, gids, stack_font, em_px, script, lang)
+				apply_mark_chain(mut line, i, gids, stack_font, em_px, script, lang, mut chain_memo)
 				stacked = true
 				break
 			}
@@ -1395,7 +1445,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		} else {
 			line.glyphs[i].y = -f64(anchor.y) * scale
 		}
-		apply_mark_chain(mut line, i, gids, f, em_px, script, lang)
+		apply_mark_chain(mut line, i, gids, f, em_px, script, lang, mut chain_memo)
 	}
 }
 
@@ -1412,11 +1462,32 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 // a lone mark and is skipped. PairPos kerns fold into advances elsewhere
 // and have no meaning for a zero-advance mark. A mark with no chain rule
 // answers none, which is every line laid out before this pass.
-fn mark_chain_offset(gpos &font.Gpos, mark_gid u16, at int, gids []u16, script string, lang string, gdef ?&font.Gdef) ?font.Offset2 {
-	if at < 0 || at >= gids.len {
-		return none
+// ChainMemo holds one chaining evaluation for one font in one line: the
+// full run matched once, then filtered per mark. See position_marks.
+struct ChainMemo {
+	font_ptr voidptr
+	script   string
+	lang     string
+	apps     []font.ChainApplication
+}
+
+// chain_apps_for answers the chaining applications for this font, script
+// and language, evaluating once and memoizing. Every mark in a run shares
+// the same glyph ids, so recomputing per mark repeats the whole run walk
+// once per mark; the memo keeps the first answer for the rest of the line.
+fn chain_apps_for(mut memo []ChainMemo, f &shape.Font, gpos &font.Gpos, gids []u16, script string, lang string) []font.ChainApplication {
+	key := voidptr(f)
+	for m in memo {
+		if m.font_ptr == key && m.script == script && m.lang == lang {
+			return m.apps
+		}
 	}
-	apps := gpos.apply_contextual(gids, script, lang, gdef)
+	apps := gpos.apply_contextual(gids, script, lang, f.face.gdef)
+	memo << ChainMemo{ font_ptr: key, script: script, lang: lang, apps: apps }
+	return apps
+}
+
+fn mark_chain_offset(gpos &font.Gpos, mark_gid u16, at int, apps []font.ChainApplication) ?font.Offset2 {
 	mut x := 0
 	mut y := 0
 	mut found := false
@@ -1445,13 +1516,14 @@ fn mark_chain_offset(gpos &font.Gpos, mark_gid u16, at int, gids []u16, script s
 // apply_mark_chain composes a chaining SinglePos adjustment over a mark's
 // anchor placement: it adds the mark_chain_offset answer onto the placed
 // mark, or does nothing when the run's chains name no SinglePos for it.
-fn apply_mark_chain(mut line Line, at int, gids []u16, f &shape.Font, em_px f64, script string, lang string) {
+fn apply_mark_chain(mut line Line, at int, gids []u16, f &shape.Font, em_px f64, script string, lang string, mut memo []ChainMemo) {
 	if at < 0 || at >= line.glyphs.len {
 		return
 	}
 	gpos := f.face.gpos or { return }
+	apps := chain_apps_for(mut memo, f, gpos, gids, script, lang)
 	mark_gid := line.glyphs[at].gid
-	off := mark_chain_offset(gpos, mark_gid, at, gids, script, lang, f.face.gdef) or { return }
+	off := mark_chain_offset(gpos, mark_gid, at, apps) or { return }
 	scale := em_px / f64(f.face.units_per_em)
 	line.glyphs[at].x += f64(off.x) * scale
 	line.glyphs[at].y += -f64(off.y) * scale

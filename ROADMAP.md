@@ -111,7 +111,10 @@ the decisions, because they bind later work:
   fixed by a once-computed bound; rasterization was never the cost (3.9 us
   per glyph). Consequence: nothing else on this roadmap is a performance
   item, and optimizations land with before/after on the same harness or not
-  at all.
+  at all. 2026-11-17: chaining evaluation hoisted from per-pair/per-mark to
+  once per font per line (`kern_chain_offsets`, chain memo); same-box -prod
+  arabic-1024 went 51 ms back to 8.1 ms with identical shaping, and the A/B
+  table reads 20.67x against the 57x baseline.
 - **Device and variation offsets** — zero Device tables in 2,450,058 value
   records over 379 faces; 9,432 VariationIndex, all in two variable fonts,
   resolving to zero at the default instance. Readers pinned; no plumbing.

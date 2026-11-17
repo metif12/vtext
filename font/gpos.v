@@ -1598,6 +1598,93 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, 
 	return Offset2{ x: x, y: y }
 }
 
+// KernChainPair is one adjacent pair's chaining adjustment: the SinglePos
+// placements the run's chaining kern lookups ask for, summed the way
+// context_offset sums them for one pair. found tells a real zero from no
+// rule at all, the same distinction context_offset's none carries.
+pub struct KernChainPair {
+pub mut:
+	x     int
+	y     int
+	found bool
+}
+
+// kern_chain_offsets answers every adjacent pair's chaining adjustment in
+// one run walk, which is what kern_pairs distributes to the advances.
+//
+// context_offset asks the same question one pair at a time and walks the
+// whole run for each, which is quadratic in the run length: a
+// thousand-pair line evaluates a thousand full runs. The matches do not
+// depend on the pair — only the span filter and the record application
+// do — so one walk collects every match and each match pays out to the
+// pairs its span covers, with the same spans_run rule and the same
+// apply_pos_records call context_offset would have made for that pair:
+// spans_run over (p, p+1) holds exactly for p in [lo-1, hi].
+pub fn (g &Gpos) kern_chain_offsets(gids []u16, script string, lang string, gdef ?&Gdef) []KernChainPair {
+	mut out := []KernChainPair{cap: gids.len}
+	if gids.len < 2 {
+		return out
+	}
+	for _ in 0 .. gids.len - 1 {
+		out << KernChainPair{}
+	}
+	for li in g.kerning_for(script, lang) {
+		if li >= g.lookups.len {
+			continue
+		}
+		lookup := g.lookups[li]
+		eff := g.chain_eff(gids, lookup.flag, lookup.mark_filtering_set, gdef)
+		if eff.len == 0 {
+			continue
+		}
+		for c in lookup.chains {
+			for at in 0 .. eff.len {
+				m := match_chain_position(c, gids, eff, at)
+				if m.start < 0 {
+					continue
+				}
+				lo, hi := span_of(eff, at, c.backtrack.len, c.input.len, c.lookahead.len, m)
+				g.kern_chain_pay(mut out, gids, c.records, m, lo, hi)
+			}
+		}
+		for cc in lookup.chain_classes {
+			for at in 0 .. eff.len {
+				m, rule := g.match_chain_class_at(cc, gids, eff, at) or { continue }
+				lo, hi := span_of(eff, at, rule.backtrack.len, rule.input.len + 1, rule.lookahead.len, m)
+				g.kern_chain_pay(mut out, gids, rule.records, m, lo, hi)
+			}
+		}
+		for cg in lookup.chain_glyphs {
+			for at in 0 .. eff.len {
+				m, rule := g.match_chain_glyph_at(cg, gids, eff, at) or { continue }
+				lo, hi := span_of(eff, at, rule.backtrack.len, rule.input.len + 1, rule.lookahead.len, m)
+				g.kern_chain_pay(mut out, gids, rule.records, m, lo, hi)
+			}
+		}
+	}
+	return out
+}
+
+// kern_chain_pay adds one matched pattern's records to every adjacent pair
+// the match's span covers: the pairs context_offset would claim it for.
+fn (g &Gpos) kern_chain_pay(mut out []KernChainPair, gids []u16, records []ContextRecord, m ChainMatchPositions, lo int, hi int) {
+	mut first := lo - 1
+	if first < 0 {
+		first = 0
+	}
+	mut last := hi
+	if last > gids.len - 2 {
+		last = gids.len - 2
+	}
+	for p := first; p <= last; p++ {
+		if a := g.apply_pos_records(records, m, gids, p, p + 1, gids[p], gids[p + 1]) {
+			out[p].x += a.x
+			out[p].y += a.y
+			out[p].found = true
+		}
+	}
+}
+
 // spans_run reports whether a matched pattern is about the pair the caller
 // named, from the run indices of its first and last covered glyph. It is
 // the effective-sequence form of spans_span below: where a gated lookup
