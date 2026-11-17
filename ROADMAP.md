@@ -774,6 +774,103 @@ Wave rule for the whole phase: every new script arrives as a committed OFL
 font plus HarfBuzz-measured pins. A shaping-affecting script also extends
 the difftest corpus, pango legs verified on CI.
 
+## Phase 10: vlib fontstash / stb_truetype replacement
+
+vtext becomes the font/text implementation vlib uses, behind split flags,
+with zero behaviour change when the flags are off: `gg` via
+`-d use_vtext_gg`, `gg.canvas` CPU text via `-d use_vtext_canvas`, sources
+in `vlib` (`vlib/vtext/...`), one flag per surface so either surface can
+move first. Default builds keep `vlib/fontstash` +
+`thirdparty/fontstash/{fontstash.h,stb_truetype.h}` +
+`thirdparty/sokol/util/sokol_fontstash.h` + system freetype/fontconfig +
+`vlib/os/font` + `vlib/sokol/sfons` + `vlib/x/ttf` untouched.
+
+The atlas boundary does not move: Phase 1 settled against a hidden atlas
+and for a caller-owned cache (`shape/cache.v`, `shape/CacheKey`), and that
+holds here. `gg` keeps owning its atlas texture and dirty-rect upload
+(`pending_upload`/`flush`); `canvas` keeps owning its `Strike` cache
+budgets; vtext answers box-for-gid plus fill-this-buffer (`box_only` /
+`render_into` on `font.Face`, `raster.GlyphBitmap`) and the caller packs,
+uploads and evicts. No new thirdparty: the only C stays the stb header vlib
+already vendors (`font/stbtt.c.v` with `STBTT_STATIC`), isolated per the
+`vlib/fontstash/README.md` bridge pattern so `gg` + `vtext` no longer
+collide on `STB_TRUETYPE_IMPLEMENTATION`.
+
+**10.1 fontstash state / measure / draw parity — open.** `vlib/fontstash`
+exposes `create/delete`, `add_font_mem`, `get_font_by_name`,
+`add_fallback_font`, `push/pop/clear_state`,
+`set_size/color/spacing/blur/align/font`, `draw_text`, `text_bounds`,
+`line_bounds`, `vert_metrics`, `text_iter_init/next` + `FONSquad`,
+`get_atlas_size/expand/reset_atlas`, `get_texture_data/validate_texture`,
+`draw_debug`, `set_error_callback` (`ATLAS_FULL`/`SCRATCH_FULL`/
+`STATES_OVERFLOW`/`UNDERFLOW`), `FONS_ZERO_TOPLEFT/BOTTOMLEFT` and
+`FONSalign`, plus the skyline packer, exponential blur, UTF-8 DFA and the
+per-base fallback list. Provide `fontstash_compat` over `FontSet` +
+`LayoutOptions` + caller cache: state maps to options (size, spacing via
+letter/word spacing, align, font id), fallback via `FontSet` chain,
+`text_bounds`/`line_bounds`/`vert_metrics` via `measure_paragraph` +
+`vmetrics`, iterator via laid-out glyphs in visual order, atlas calls via
+the caller's atlas (thin forwarding, no hidden atlas), blur as a
+post-process behind the same opt-in spelling or refused with its reason if
+`gg` never exercises it. Pinned by `gg` text/atlas tests; break-fix neuters
+state/align/fallback in turn.
+
+**10.2 stb packing / baking parity — open.** `stb_truetype.h` pack/bake
+surface used through fontstash: `BakeFontBitmap`, `GetBakedQuad`,
+`PackBegin/End`, `PackFontRange/Ranges`, `GetPackedQuad`,
+`PackSetOversampling/SkipMissing`, `GatherRects/PackRects/RenderIntoRects`,
+`GetScaledFontVMetrics` (outline path already covered by 8.6a
+`glyph_outline`). Provide thin packing over `box_only`/`render_into` +
+caller cache, oversampling via em scaling. Pinned by bake/pack round-trip
+tests; break-fix drops oversampling/packing.
+
+**10.3 gg GPU path — open (`-d use_vtext_gg`).** `FT` + `FonsRenderTarget`
+(`atlas_img/smp`, `pending_upload`/`flush`), `draw_text2`/`draw_text_def`,
+`set_text_cfg` (family/bold/mono/italic incl. the mono size-2 rule, scale,
+align|vertical, color), `text_width/height/size`,
+`text_atlas_pending_upload`, `fonts_map`, file/memory font loading incl.
+`os.font.get_path_variant`, macOS `native_rendering` bypass. Map to
+`layout_paragraph`/`wrap_paragraph` + `shape.Cache.get_or_rasterize`;
+synthetic bold/italic ride 8.5 bitmap synth until outline-level lands.
+Pinned by `gg` text tests with2207 pixel parity on Latin + Arabic lines.
+
+**10.4 canvas CPU path — open (`-d use_vtext_canvas`).**
+`Typeface.from_data/file`, `is_live/free`, `release_typeface_strikes`,
+`ScalerRec` (masks `BW/A8/ARGB32/LCD16`, hinting `none/slight/normal/full`,
+`embedded_bitmaps`, `embolden`, `subpixel` 1/8 packing, `force_autohint`,
+`lcd_vertical/bgr`, `gen_a8_from_lcd`, `linear_metrics`,
+`baseline_snap`, `frame/gamma/contrast/preblend/luminance`), `Strike`
+budgets (32 strikes, 256 glyphs, 256KB, `max_dimension` 512),
+`make_glyph` bounds/advance/image with `-2/-3` guards,
+`draw_glyph_run` (perspective reject, `>256px` draw-as-path,
+axis-alignment, `blit_a8`), `HAS_COLOR`/`IS_SCALABLE` gates, freetype
+`load_size<1` residual, `NO_BITMAP` vs transform/delta, `LIGHT/NORMAL/MONO`
+targets (`text_freetype_linux.h`, `text_coretext_darwin.h` stay default).
+vtext answers the same `box_only`/`render_into` contract; hinting rides 7.7,
+LCD FIR rides the 8.5 follow-up, stroking rides 8.6 (currently refused in
+canvas: `stroked text is not supported yet`), color rides 7.7, mono/gray2/4
+via coverage quantize, gamma/contrast preblend stays in canvas, strike
+policy stays caller-owned. Pinned by `canvas` text tests plus the freetype
+reference header; break-fix neuters hinting/subpixel/gamma in turn.
+
+**10.5 discovery + providers (completes 7.8/8.8) — open.** `os.font`
+`default()` order (`VUI_FONT`, `config/v/fonts`, Windows segoeui/arial,
+macOS SFNS, Android `fonts.xml`, `fc-match -s`, bundled
+`examples/assets/fonts`), `get_path_variant` bold/italic/mono heuristics,
+`sokol/sfons` power-of-two + `rgba/flush/destroy`, `x/ttf` cmap-0/4 +
+kern-0 parity. fontconfig `match/sort/covers_char/covers_lang` already
+landed (8.8, linux-only); Core Text + DirectWrite land per-OS with none
+elsewhere exactly on the 7.8 pattern. Legacy `kern` table stays refused by
+design (GPOS only); 10.5 provides the filename/env/bundled migration, not
+a `kern`-table reader, with the reason recorded. Pinned per-OS with
+skip-aloud elsewhere.
+
+Each 10.x slice carries its own baseline (targeted `gg`/`canvas` tests +
+difftest 0/0), one commit per slice, break-fix that moves the score, and no
+change to default builds. Triggered items from Phase 7–9 (bytecode
+interpreter, CFF2, WOFF2/brotli, AAT `morx`, Graphite, Tibetan stacking)
+stay triggered; 10.x never pulls them in early.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
