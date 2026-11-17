@@ -176,13 +176,18 @@ pub mut:
 // reporting the base's index draws visual order and matches HarfBuzz, which
 // reports the whole reordered syllable on its first cluster.
 fn indic_visual(sub []rune, mut sub_idx []int) []rune {
-	// The Khmer split vowels grow the run: each split vowel gains its SRA E
+	// Split vowels grow the run: each Khmer split vowel gains its SRA E
 	// half before the base, so the index map grows with it through the
 	// split permutation. Without this the added halves would report the
 	// wrong character, and the length guard below would discard the split
-	// and draw the unsplit word. Runs without the five vowels come back
-	// identical, so every other script takes exactly the old path.
-	split, smap := shape.split_khmer_vowels_mapped(sub)
+	// and draw the unsplit word. The split runs through the shaper
+	// registry; a run no shaper claims keeps its identity, so every other
+	// script takes exactly the old path.
+	mut split := sub.clone()
+	mut smap := []int{}
+	if sh := shape.shaper_for_content(sub) {
+		split, smap = sh.split_run(sub)
+	}
 	mut run := sub.clone()
 	if split.len != sub.len {
 		if smap.len != split.len || sub_idx.len != sub.len {

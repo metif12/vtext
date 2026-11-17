@@ -277,65 +277,6 @@ pub fn reorder_indic_mapped(cps []rune) ([]rune, []int) {
 	return out, map_
 }
 
-// split_khmer_vowels_mapped decomposes the Khmer split vowels the way
-// HarfBuzz shapes them: SRA OE 17BE, SRA YA 17BF, SRA IE 17C0 and SRA AU
-// 17C4/17C5 draw as SRA E 17C1 before the base consonant plus the right
-// part through the vowel's own GSUB rule, so a line without the split is
-// missing a whole 288-unit glyph. The right part keeps working because
-// the consonant and the vowel stay adjacent: the SRA E goes before the
-// syllable's first consonant, never between the consonant and the vowel,
-// which is the context the abvf and psts rules match. A syllable with no
-// consonant keeps its vowel whole: with no base there is nowhere to
-// anchor the halves, and HarfBuzz draws a dotted circle there that this
-// engine does not insert. A run without the five vowels comes back
-// identical with the identity map.
-pub fn split_khmer_vowels_mapped(cps []rune) ([]rune, []int) {
-	if cps.len == 0 {
-		return []rune{}, []int{}
-	}
-	syl_ranges := indic_syllabic_ranges()
-	mut out := []rune{cap: cps.len}
-	mut map_ := []int{cap: cps.len}
-	for s in segment_indic_syllables(cps) {
-		syl := cps[s.start..s.end]
-		mut vowels := []int{}
-		mut base := -1
-		for i, cp in syl {
-			if cp == rune(0x17BE) || cp == rune(0x17BF) || cp == rune(0x17C0)
-				|| cp == rune(0x17C4) || cp == rune(0x17C5) {
-				vowels << i
-			} else if base < 0
-				&& is_indic_consonant_like(indic_syllabic_of(syl_ranges, cp)) {
-				base = i
-			}
-		}
-		if vowels.len == 0 || base < 0 {
-			for i, cp in syl {
-				out << cp
-				map_ << s.start + i
-			}
-			continue
-		}
-		// One SRA E per split vowel, before the base, each tagged with the
-		// base's index: the placing pass draws glyphs grouped by cluster
-		// along bidi order, so a half reporting a later character than the
-		// base it precedes would be drawn after it. Merging the halves onto
-		// the base is what the reorder's own cluster merge does for a
-		// preposed pair, and the right part keeps the vowel's index.
-		for i, cp in syl {
-			if i == base {
-				for _ in vowels {
-					out << rune(0x17C1)
-					map_ << s.start + base
-				}
-			}
-			out << cp
-			map_ << s.start + i
-		}
-	}
-	return out, map_
-}
-
 // reorder_indic_syllable_mapped moves a pre-base matra before the first
 // consonant of its syllable and a syllable-initial reph to the end, with
 // the permutation map. An unchanged syllable maps to itself. The repha
@@ -401,48 +342,12 @@ fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
 			map_ << i
 		}
 	}
-	// A Khmer COENG+RO pair draws before its syllable's base consonant:
-	// HarfBuzz preposes the pair with or without the pref fusion behind
-	// it (the fusion then claims the pair through lookup 12), the way a
-	// reph moves for the Indic scripts. The codepoints gate the rule: no
-	// Devanagari or Bengali syllable contains U+17D2 or U+179A, so every
-	// Indic syllable passes through exactly as before. Only directly
-	// adjacent pairs move; a join control between them is unevidenced,
-	// and each pair keeps its order when several prepose at once.
-	if out.len > 1 {
-		mut at := -1
-		for i in 0 .. out.len - 1 {
-			if out[i] == rune(0x17D2) && out[i + 1] == rune(0x179A) {
-				at = i
-				break
-			}
-		}
-		if at >= 0 {
-			mut front := []rune{cap: out.len}
-			mut front_map := []int{cap: out.len}
-			mut rest := []rune{cap: out.len}
-			mut rest_map := []int{cap: out.len}
-			mut i := 0
-			for i < out.len {
-				if out[i] == rune(0x17D2) && i + 1 < out.len && out[i + 1] == rune(0x179A) {
-					front << out[i]
-					front << out[i + 1]
-					front_map << map_[i]
-					front_map << map_[i + 1]
-					i += 2
-				} else {
-					rest << out[i]
-					rest_map << map_[i]
-					i++
-				}
-			}
-			out = []rune{cap: front.len + rest.len}
-			out << front
-			out << rest
-			map_ = []int{cap: front_map.len + rest_map.len}
-			map_ << front_map
-			map_ << rest_map
-		}
+	// Script-specific tail reorders run through the registry: a shaper
+	// claiming the syllable rearranges what the matra/repha moves above
+	// arranged. Myanmar's kinzi rotation still sits below inline until
+	// its script migrates to the registry.
+	if sh := shaper_for_content(out) {
+		out, map_ = sh.reorder_tail(out, map_)
 	}
 	// A Myanmar kinzi trio draws its base first: HarfBuzz preposes the
 	// consonant after [C, ASAT, VIRAMA] ahead of the trio, and the abvs

@@ -195,46 +195,18 @@ fn indic_default_features() []string {
 		'psts']
 }
 
-// khmer_default_features are the Khmer shaping features that run without
-// being asked, for the same reason the Indic ones do: a line whose coeng
-// subscripts stay unfused is not the text. Each is a HarfBuzz default-on
-// feature proven by toggling it off under uharfbuzz: -pref unfolds
-// COENG+RO (0xdc), -blwf unfolds COENG+TA (0xcc) and -pstf unfolds
-// COENG+KHO (0xba); -pres unfolds the preposed pair's low variant
-// (SA+COENG+RO+COENG+TA draws 0xdc with -pres), -abvs unfolds RO+Nikahit
-// to 0x69 and KA+Nikahit+Killer to three glyphs, -blws unfolds
-// SA+COENG+RO+U to plain 0x73, -psts unfolds SA+17C4 to 0x86 and
-// SA+YA to plain 0x7a, -abvf unfolds SA+OE to plain 0x79. pref runs
-// first so it claims the preposed pair before the blwf chains see it;
-// blwf and pstf are disjoint plain ligatures, so no order is owed
-// between them; pres runs after both because its lookahead names the
-// blwf subscript (neutered pres-before-blwf leaves the low variant
-// unfolded, which is the order break-fix). abvs, blws, psts and abvf
-// follow in specification order pres/abvs/blws/psts/abvf, the same
-// order the Indic pres-group keeps.
-fn khmer_default_features() []string {
-	return ['pref', 'blwf', 'pstf', 'pres', 'abvs', 'blws', 'psts', 'abvf']
-}
-
-// is_khmer_shaping_script reports whether a run resolves under the Khmer
-// shaping script, in either the UCD spelling the run arrives with or the
-// OpenType one the caller overrides with.
-fn is_khmer_shaping_script(script string) bool {
-	return font.ot_script_tag(script) == 'khmr'
-}
-
 // myanmar_default_features are the Myanmar shaping features that run
-// without being asked, for the same reason the Khmer ones do: a line
-// whose kinzi stays unfolded is not the text. abvs is a HarfBuzz
-// default-on feature proven by toggling it off under uharfbuzz: -abvs
-// unfolds the kinzi trio NGA/ASAT/VIRAMA (lookup 52 fuses it to the
-// kinzi mark) and the asat beside it. blws is default-on the same way:
-// -blws unfolds a VIRAMA+DHA stack back to virama and DHA while -abvs,
-// -blwf and -ccmp change nothing on it. abvs runs first because
-// HarfBuzz orders it there: with abvs off, blws subjoins the surviving
-// virama, and with abvs on the kinzi consumes it first. blwf stays
-// caller-asked: its medial-dot rules fire on no corpus word, so the
-// order they need is unproven.
+// without being asked: a line whose kinzi stays unfolded is not the
+// text. abvs is a HarfBuzz default-on feature proven by toggling it off
+// under uharfbuzz: -abvs unfolds the kinzi trio NGA/ASAT/VIRAMA (lookup
+// 52 fuses it to the kinzi mark) and the asat beside it. blws is
+// default-on the same way: -blws unfolds a VIRAMA+DHA stack back to
+// virama and DHA while -abvs, -blwf and -ccmp change nothing on it.
+// abvs runs first because HarfBuzz orders it there: with abvs off, blws
+// subjoins the surviving virama, and with abvs on the kinzi consumes it
+// first. blwf stays caller-asked: its medial-dot rules fire on no corpus
+// word, so the order they need is unproven. Myanmar migrates to the
+// shaper registry next, one script per commit, the way Khmer just did.
 fn myanmar_default_features() []string {
 	return ['abvs', 'blws']
 }
@@ -321,22 +293,26 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 	// half forms, conjuncts, below-base and post-base variants (whose order
 	// against the matra group the font decides), pre-base, above-base and
 	// below-base variants, post-base forms and psts. Pref stays caller-asked
-	// until a corpus word proves its order against HarfBuzz. The Khmer coeng fusions run under
-	// their own gate below: blwf and pstf are proven HarfBuzz-default-on
-	// and exact, while pref needs the reordering machine. Like the joining
-	// features these are not toggleable; a `-tag` for one names nothing.
+	// until a corpus word proves its order against HarfBuzz. Registered
+	// scripts run their own defaults after the Indic gate: Khmer through
+	// the shaper registry, Myanmar under its own gate until its script
+	// migrates. Like the joining features these are not toggleable; a
+	// `-tag` for one names nothing.
 	if is_indic_shaping_script(script) {
 		for feature in indic_default_features() {
-			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
-		}
-	} else if is_khmer_shaping_script(script) {
-		for feature in khmer_default_features() {
 			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 		}
 	} else if is_myanmar_shaping_script(script) {
 		for feature in myanmar_default_features() {
 			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 		}
+	}
+	// Registered scripts run their defaults here, after the Indic and
+	// Myanmar gates: Khmer is first, and an unregistered script gets an
+	// empty list, which is nothing.
+	shaper_defaults := shaper_default_features_for(script)
+	for feature in shaper_defaults {
+		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
 	for feature in ['rlig'] {
 		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
@@ -373,8 +349,11 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 				// again), so naming a default is a no-op rather than a
 				// second run.
 				continue
-			} else if is_khmer_shaping_script(script) && tag in khmer_default_features() {
-				// Same no-op for the Khmer coeng fusions.
+			} else if tag in shaper_defaults {
+				// Already on above: applying a fusing feature twice is not
+				// idempotent in every font (a Bengali below-base piece fuses
+				// again), so naming a registry default is a no-op rather
+				// than a second run.
 				continue
 			} else if is_myanmar_shaping_script(script) && tag in myanmar_default_features() {
 				// Same no-op for the Myanmar kinzi fusion.

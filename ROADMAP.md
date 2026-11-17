@@ -896,7 +896,15 @@ public API renames: pure file moves, `vtext.h` untouched.
 
 **Extendable.** E1 is a `ScriptShaper` interface with a registry (Khmer
 first, other scripts follow one per commit): feature order, reorder and
-split become registry calls and the `is_khmer`/`is_myanmar` branches delete.
+split become registry calls and the `is_khmer`/`is_myanmar` branches
+delete. E1 landed 2026-11-17 as `shape/shaper.v`: the interface plus a
+registry resolving scripts to shapers and content to the claiming
+shaper, with Khmer moved across (defaults, COENG+RO prepose, split
+vowels) and its `is_khmer` branches deleted. Myanmar keeps its inline
+branches until its commit migrates kinzi, abvs/blws and the pre-blwf
+carve-out the same way. Reorder and split dispatch on content because
+both run before the run script resolves; substitution dispatches on the
+script, which it has.
 E2 makes feature order data, including the before-`ccmp` slot the Myanmar
 carve-out needs. E3 writes the script-onboarding checklist down (OFL face +
 licence, HB pins, difftest cases, order proof). No plugin DLLs or FFI:
@@ -973,7 +981,7 @@ owns the queue.
 | 10.4 | canvas CPU helpers as generic coverage only | landed (10.3; hint/LCD/stroke/color stay 7.7/8.5/8.6/7.7) |
 | 10.5 | generic discovery (`providers/discovery.v`) | landed (order/variant/pow2; 7.8 stays per-OS) |
 | 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | M1 landed (ratchet test + deliberate-violation break-fix); M2/M3 open (pure moves, no API renames) |
-| 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | open (Khmer first, one script per commit; no FFI) |
+| 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | E1 landed (Khmer: interface + registry; reorder/split/defaults moved); Myanmar + E2/E3 open (one script per commit; no FFI) |
 | 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | open (profile before tuning; absolute times, quiet box) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
