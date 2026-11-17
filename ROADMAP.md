@@ -923,6 +923,11 @@ owns the queue.
 | 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi + blws landed; Khmer pres-group + Myanmar blwf open; `nko ` tag fold landed | open |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
+| 10.1 | fontstash state / measure / draw compat (no hidden atlas) | open |
+| 10.2 | stb pack / bake compat over box + fill | open |
+| 10.3 | gg GPU path behind `-d use_vtext_gg` | open |
+| 10.4 | canvas CPU path behind `-d use_vtext_canvas` | open |
+| 10.5 | discovery + providers completing 7.8 / 8.8 | open |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx`, Graphite, WOFF2/brotli, the full TrueType bytecode interpreter,
