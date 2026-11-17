@@ -1341,11 +1341,13 @@ pub mut:
 // The features are the ones a font uses for this and the list is not the same for every font: a Latin
 // font carries none at all, and an Arabic font carries them under calt, mark and mkmk depending on
 // which of them has rules that need context. Asking per script rather than collecting once is what
-// keeps a Latin lookup from being run over Arabic text.
+// keeps a Latin lookup from being run over Arabic text. dist rides beside kern because Indic and
+// Thai/Khmer faces kern their marks through it: Thai SARA U after 0331 and Khmer above-marks
+// after a subscript resolve their chain SinglePos there, and HarfBuzz applies it over the anchor.
 pub fn (g &Gpos) contextual_for(script string, lang string) []u16 {
 	mut out := []u16{}
 	mut named_lookups := map[u16]bool{}
-	for tag in ['calt', 'mark', 'mkmk', 'abvm', 'blwm', 'rclt', 'curs', 'kern'] {
+	for tag in ['calt', 'mark', 'mkmk', 'abvm', 'blwm', 'rclt', 'curs', 'kern', 'dist'] {
 		for li in g.lookups_for_lang(script, lang, tag) {
 			if named_lookups[li] || li >= g.lookups.len {
 				continue

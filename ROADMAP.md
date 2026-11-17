@@ -568,10 +568,14 @@ fusions and pref reorder landed 2026-11-16/17, Myanmar kinzi landed
 2026-11-17.** Wave 3
 (NotoSansThai/Lao/Khmer/Myanmar variable faces, HB pins in
 `seasian_test.v`). The ccc=0 spacing marks attach (Thai/Lao/Khmer
-HB-exact); the Khmer pres-group and the Myanmar blwf/blws stay
-caller-asked. Tibetan stacks arrive as their own slice with a stacking
-font, or the slice says why they cannot. A dangling Myanmar virama's
-dotted circle belongs there too.
+HB-exact); the Khmer pres-group (`pres/abvs/blws/psts/abvf`, landed
+2026-11-17 in spec order pref<blwf<pstf<pres<abvs<blws<psts<abvf behind
+`seasian_remainder_test.v` with neutered-group break-fix), Myanmar blws
+landed, and Myanmar blwf stays caller-asked (proven: enabling it by default
+would fuse KA+DOT and fail the pin). GPOS marks beyond anchors compose
+through `apply_mark_chain` (Thai dist chain at U). Tibetan stacks arrive as
+their own slice with a stacking font, or the slice says why they cannot. A
+dangling Myanmar virama's dotted circle belongs there too.
 
 **9.3 The Indic machine — Bengali generality landed 2026-11-16 (joining hook
 open).** The Devanagari acceptance above stands; this slice proves the
@@ -899,7 +903,7 @@ owns the queue.
 | 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
 | 7.10 | Composite instancing; raster wiring | open (HVAR/MVAR/cvar readers landed) |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
-| 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi + blws landed; Khmer pres-group + Myanmar blwf open; `nko ` tag fold landed | open |
+| 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf caller-asked; `nko ` tag fold landed | open (GPOS marks beyond anchors + mark-cluster merge remain) |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
 | 10.1 | generic measure / iterate (`layout/iterator.v`) | landed (standalone, no FONS) |

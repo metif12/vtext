@@ -1209,6 +1209,16 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 			bases[g.cluster] = i
 		}
 	}
+	// The glyph ids in line order, which is what chaining contexts match
+	// against. For left-to-right Southeast Asian lines visual order is
+	// logical order, so the pattern reads the same glyphs HarfBuzz shaped;
+	// right-to-left runs keep their logical order in the substitution pass
+	// above, and marks there resolve the same way because the search below
+	// is by cluster rather than by position.
+	mut gids := []u16{cap: line.glyphs.len}
+	for g in line.glyphs {
+		gids << g.gid
+	}
 
 	// The marks are placed from the last cluster backwards, which is the order a stack has to be
 	// built in. A mark on another mark is measured from where the mark under it ended up, so the
@@ -1315,6 +1325,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 					} else {
 						line.glyphs[i].y = -f64(off.y) * stack_scale
 					}
+					apply_mark_chain(mut line, i, gids, stack_font, em_px, script, lang)
 					continue
 				}
 			}
@@ -1345,7 +1356,55 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		} else {
 			line.glyphs[i].y = -f64(off.y) * scale
 		}
+		apply_mark_chain(mut line, i, gids, f, em_px, script, lang)
 	}
+}
+
+// apply_mark_chain composes a chaining SinglePos adjustment over a mark's
+// anchor placement, which is the GPOS half beyond anchors.
+//
+// Anchors place the mark; chains move it further. Thai SARA U after 0331
+// drops 150 design units through the dist chain, and Khmer above-marks
+// shift after a subscript through the abvm/blwm chains, and HarfBuzz sums
+// both. The adjustment is read off the chaining lookups the run's script
+// names (mark, mkmk, abvm, blwm, kern and dist alike) through the same
+// apply_contextual path the tests pin, then filtered to SinglePos records
+// for this mark: a chain that names a pair lookup carries no placement for
+// a lone mark and is skipped. PairPos kerns fold into advances elsewhere
+// and have no meaning for a zero-advance mark. A mark with no chain rule
+// keeps its anchor answer, which is every line laid out before this pass.
+fn apply_mark_chain(mut line Line, at int, gids []u16, f &shape.Font, em_px f64, script string, lang string) {
+	if at < 0 || at >= gids.len || at >= line.glyphs.len {
+		return
+	}
+	gpos := f.face.gpos or { return }
+	mark_gid := line.glyphs[at].gid
+	apps := gpos.apply_contextual(gids, script, lang)
+	mut x := 0
+	mut y := 0
+	mut found := false
+	for app in apps {
+		if app.at != at {
+			continue
+		}
+		if app.lookup >= gpos.lookups.len {
+			continue
+		}
+		for single in gpos.lookups[app.lookup].singles {
+			if off := single.offset_for(mark_gid) {
+				x += off.x
+				y += off.y
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		return
+	}
+	scale := em_px / f64(f.face.units_per_em)
+	line.glyphs[at].x += f64(x) * scale
+	line.glyphs[at].y += -f64(y) * scale
 }
 
 // shaped_mark_offset finds a mark's anchor offset, resolving across the joining-route

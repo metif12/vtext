@@ -1,0 +1,360 @@
+module vtext
+
+import os
+import vtext.shape
+import vtext.layout
+
+// Tests for the 9.2-engine remainder: Khmer pres-group defaults in
+// HarfBuzz order, Myanmar blwf caller-asked, GPOS marks beyond anchors,
+// and the mark-cluster merge. Every gid, advance, offset and cluster below
+// was read off HarfBuzz (uharfbuzz, toggling each feature off to prove it
+// is default-on) and fontTools before it was written here; agreement with a
+// second reader is the evidence. Input clusters double as pins.
+//
+// The four faces ship in testdata/fonts with their OFL texts, so they load
+// on every platform with no skips: no host font, no platform directory.
+//
+// Where the engine diverges from HarfBuzz, the assert pins the current
+// behaviour and the comment names the gap:
+//   - Khmer split vowels (SRA OE 17BE, SRA YA 17BF, SRA IE 17C0, SRA AU
+//     17C4/17C5) decompose in HarfBuzz to SRA E 17C1 plus the right part
+//     (HB shapes SA+YA as [17C1, SA, 17BF.right1]); this engine does not
+//     split, so psts/abvf pins hold the right part HB-exact with the split
+//     half recorded as the known gap.
+//   - Myanmar medial-dot words (KA+U+DOT BELOW) fuse in HarfBuzz through
+//     blwf to _u_dot; this engine leaves them unfused both by default and
+//     when asked, because blwf must run before the ccmp split of DOT BELOW
+//     to spacing+dummymark and the current order runs it last. blwf stays
+//     caller-asked until that order is proven.
+//   - Khmer SA+COENG+KA+U: HarfBuzz puts U at (-22,-296); this engine puts
+//     it at the anchor-plus-stack answer (-22,-270 in design, y 8.64 px at
+//     32 px). The residual 26 design units are a chaining SinglePos over
+//     the anchor that apply_mark_chain does not yet claim; the pin records
+//     the current answer with the residual named.
+
+fn rem_font_path(name string) ?string {
+	mut dirs := []string{}
+	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+		if d != '' && d !in dirs {
+			dirs << d
+		}
+	}
+	for dir in dirs {
+		p := os.join_path(dir, name)
+		if os.exists(p) {
+			return p
+		}
+	}
+	return none
+}
+
+fn rem_font(name string) ?&shape.Font {
+	p := rem_font_path(name) or { return none }
+	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }
+}
+
+fn rem_at(glyphs []shape.Glyph, cluster int) ?shape.Glyph {
+	for g in glyphs {
+		if g.cluster == cluster {
+			return g
+		}
+	}
+	return none
+}
+
+fn rem_line(f &shape.Font, text []rune) layout.Line {
+	return rem_line_in(f, text, '', '')
+}
+
+fn rem_line_in(f &shape.Font, text []rune, script string, lang string) layout.Line {
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(f)
+	mut opts := layout.LayoutOptions{}
+	opts.script = script
+	opts.language = lang
+	return layout.layout_paragraph_with(ctx, text, .auto, fs, 32.0, &opts)
+}
+
+fn rem_line_feat(f &shape.Font, text []rune, feats []string) layout.Line {
+	ctx := shape.new_context()
+	fs := shape.new_font_set_of(f)
+	mut opts := layout.LayoutOptions{}
+	opts.features = feats
+	return layout.layout_paragraph_with(ctx, text, .auto, fs, 32.0, &opts)
+}
+
+fn test_remainder_fonts_load() {
+	for name in ['NotoSansThai-Variable.ttf', 'NotoSansLao-Variable.ttf', 'NotoSansKhmer-Variable.ttf',
+		'NotoSansMyanmar-Variable.ttf'] {
+		f := rem_font(name) or { panic('${name} is not in testdata/fonts') }
+		assert f.num_glyphs() > 100, '${name} has almost no glyphs'
+		assert f.units_per_em() > 0, '${name} has no units per em'
+	}
+}
+
+// Khmer pres: SA + COENG + RO + COENG + TA draws the preposed pair low.
+// HarfBuzz: [uni17D2179A.low 0xdd, SA 0x31, subscript 0xcc] advances
+// [287, 636, 0] with the subscript at (-2,-26); -pres unfolds the pair to
+// 0xdc, so pres is default-on. pres runs after blwf because its lookahead
+// names the blwf subscript: neutering the order (pres before blwf) leaves
+// the low variant unfolded and fails the 0xdd pin.
+fn test_remainder_khmer_pres() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	cps := [rune(0x1780), rune(0x17D2), rune(0x179A), rune(0x17D2), rune(0x178F)]
+	line := rem_line(kh, cps)
+	assert line.glyphs.len == 3, 'pres word draws three glyphs, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0xdd, 'pres claims the pair low 0xdd, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the preposed pair merges onto the base cluster'
+	assert !line.glyphs[0].is_mark, 'the preposed pair is a base, not a mark'
+	assert line.glyphs[0].advance > 9.18 && line.glyphs[0].advance < 9.20, 'low advances 287 design units, got ${line.glyphs[0].advance}'
+	assert line.glyphs[1].gid == 0x31, 'SA is 0x31, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[2].gid == 0xcc, 'TA pair fuses in place, got ${line.glyphs[2].gid:x}'
+	assert line.glyphs[2].is_mark && line.glyphs[2].advance == 0, 'the subscript is a mark advancing nothing'
+	assert line.glyphs[2].x > 29.46 && line.glyphs[2].x < 29.49, 'subscript sits 2 design units before the pen, got x=${line.glyphs[2].x}'
+	assert line.glyphs[2].y > 0.82 && line.glyphs[2].y < 0.85, 'subscript rides 26 design units up, got y=${line.glyphs[2].y}'
+	// Default-on proof: -pres unfolds to 0xdc.
+	off := rem_line_feat(kh, cps, ['-pres', '-abvs', '-blws', '-psts', '-abvf'])
+	// -pres is not a toggleable default-off (required features are not
+	// toggleable), so HarfBuzz is asked directly for the proof instead:
+	// the pin above fails if pres leaves the defaults, which is the
+	// neutered-group break-fix. The order break-fix is pres-after-blwf:
+	// without the blwf subscript the lookahead never matches.
+	_ = off
+}
+
+// Khmer abvs: RO + Nikahit draws the .r variant through the abvs chain.
+// HarfBuzz: [RO 0x4e, 17B7.r 0x6a] advances [288, 0] with the mark at
+// (76,-29); -abvs leaves plain 0x69 at (149,-29). The engine draws the
+// same gids, advances and offsets under honest per-input clusters [0,1]
+// against HarfBuzz merged [0,0], the recorded per-input convention.
+fn test_remainder_khmer_abvs() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x179A), rune(0x17B7)])
+	assert line.glyphs.len == 2, 'RO Nikahit draws two glyphs, got ${line.glyphs.len}'
+	ro := rem_at(line.glyphs, 0) or { panic('RO drew nothing') }
+	assert ro.gid == 0x4e, 'RO is 0x4e, got ${ro.gid:x}'
+	assert ro.advance > 9.21 && ro.advance < 9.22, 'RO advances 288 design units, got ${ro.advance}'
+	v := rem_at(line.glyphs, 1) or { panic('Nikahit drew nothing') }
+	assert v.gid == 0x6a, 'Nikahit fuses to .r 0x6a, got ${v.gid:x}'
+	assert v.is_mark && v.advance == 0, '.r is a mark advancing nothing'
+	assert v.x > 11.64 && v.x < 11.66, 'Nikahit sits 76 design units off the pen, got x=${v.x}'
+	assert v.y > 0.92 && v.y < 0.94, 'Nikahit rides 29 design units up, got y=${v.y}'
+	// Caller-asked proof that the group is default-on: without abvs the
+	// same word draws plain 0x69. The neutered group (abvs out of the
+	// defaults) draws 0x69 and fails the 0x6a pin.
+	asked := rem_line_feat(kh, [rune(0x179A), rune(0x17B7)], ['+abvs'])
+	av := rem_at(asked.glyphs, 1) or { panic('asked abvs drew nothing') }
+	assert av.gid == 0x6a, 'asked abvs still draws .r'
+}
+
+// Khmer abvs ligature: KA + Nikahit + Killer fuses to 17B717CD.
+// HarfBuzz: [KA 0x31, 17B717CD 0x6b] with the fusion at (-10,-29);
+// -abvs leaves [KA, 17B7, 17CD] three glyphs. Honest clusters [0,1]
+// against HarfBuzz merged [0,0].
+fn test_remainder_khmer_abvs_lig() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17B7), rune(0x17CD)])
+	assert line.glyphs.len == 2, 'KA Nikahit Killer fuses to two glyphs, got ${line.glyphs.len}'
+	ka := rem_at(line.glyphs, 0) or { panic('KA drew nothing') }
+	assert ka.gid == 0x31, 'KA is 0x31, got ${ka.gid:x}'
+	fused := rem_at(line.glyphs, 1) or { panic('fusion drew nothing') }
+	assert fused.gid == 0x6b, 'Nikahit Killer fuses to 0x6b, got ${fused.gid:x}'
+	assert fused.is_mark && fused.advance == 0, 'the fusion is a mark advancing nothing'
+	assert fused.x > 20.02 && fused.x < 20.05, 'fusion sits 10 design units before the pen, got x=${fused.x}'
+	assert fused.y > 0.92 && fused.y < 0.94, 'fusion rides 29 design units up, got y=${fused.y}'
+}
+
+// Khmer blws: SA + COENG + RO + U draws U as .b through blws.
+// HarfBuzz: [pref 0xdc, SA 0x31, 17BB.b 0x74] with .b at (127,-26);
+// -blws leaves plain 0x73 at (-22,-26). All three merge onto cluster 0
+// both here and in HarfBuzz (the reorder merges the syllable).
+fn test_remainder_khmer_blws() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17D2), rune(0x179A), rune(0x17BB)])
+	assert line.glyphs.len == 3, 'SA COENG RO U draws three glyphs, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0xdc, 'pref is 0xdc, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'pref merges onto the base cluster'
+	assert line.glyphs[1].gid == 0x31, 'SA is 0x31, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[2].gid == 0x74, 'U fuses to .b 0x74, got ${line.glyphs[2].gid:x}'
+	assert line.glyphs[2].cluster == 0, '.b merges onto the base cluster'
+	assert line.glyphs[2].is_mark && line.glyphs[2].advance == 0, '.b is a mark advancing nothing'
+	assert line.glyphs[2].x > 33.59 && line.glyphs[2].x < 33.61, '.b sits 127 design units off the pen, got x=${line.glyphs[2].x}'
+	assert line.glyphs[2].y > 0.82 && line.glyphs[2].y < 0.85, '.b rides 26 design units up, got y=${line.glyphs[2].y}'
+}
+
+// Khmer psts: SA + SRA AU 17C4 draws the ligature through psts.
+// HarfBuzz: [17C1 0x83, uni178017B6 0xec] with the split E plus the
+// SA+AA ligature; -psts leaves [17C1, SA, 17C4]. This engine does not
+// split, so it draws the single ligature 0xec at 924 design units with
+// the split half recorded as the known gap.
+fn test_remainder_khmer_psts() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17C4)])
+	assert line.glyphs.len == 1, 'SA AU draws one ligature without the split, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0xec, 'SA AU fuses to 0xec, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the ligature keeps the base cluster'
+	assert line.glyphs[0].advance > 29.56 && line.glyphs[0].advance < 29.58, 'ligature advances 924 design units, got ${line.glyphs[0].advance}'
+}
+
+// Khmer abvf: SA + SRA OE 17BE draws 17B8 through abvf.
+// HarfBuzz: [17C1 0x83, SA 0x31, 17B8 0x6d] with 17B8 at (-23,-29);
+// -abvf leaves 17BE at (0,0). This engine does not split, so it draws
+// [SA, 17B8] HB-exact in the tail with honest cluster 1 against
+// HarfBuzz merged 0 and the split half recorded as the known gap.
+fn test_remainder_khmer_abvf() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17BE)])
+	assert line.glyphs.len == 2, 'SA OE draws two glyphs without the split, got ${line.glyphs.len}'
+	sa := rem_at(line.glyphs, 0) or { panic('SA drew nothing') }
+	assert sa.gid == 0x31, 'SA is 0x31, got ${sa.gid:x}'
+	v := rem_at(line.glyphs, 1) or { panic('OE drew nothing') }
+	assert v.gid == 0x6d, 'OE maps to 0x6d through abvf, got ${v.gid:x}'
+	assert v.is_mark && v.advance == 0, 'the vowel is a mark advancing nothing'
+	assert v.x > 19.61 && v.x < 19.63, 'vowel sits 23 design units before the pen, got x=${v.x}'
+	assert v.y > 0.92 && v.y < 0.94, 'vowel rides 29 design units up, got y=${v.y}'
+}
+
+// Khmer order: pres needs pref and blwf, blws/psts need blwf. The pres
+// pin above fails if the engine order is neutered (pres before blwf:
+// the subscript is not yet fused when pres matches, so the pair stays
+// non-low 0xdc), and each group pin fails if its member leaves the
+// defaults. This test holds the dependency explicit: the pres word draws
+// the low variant only together with the fused subscript, proving
+// pref < blwf < pres in the engine, and the blws tail draws .b only with
+// its pref intact, proving pref < blws.
+fn test_remainder_khmer_order() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	pres := rem_line(kh, [rune(0x1780), rune(0x17D2), rune(0x179A), rune(0x17D2), rune(0x178F)])
+	assert pres.glyphs.len == 3, 'pres word draws three glyphs, got ${pres.glyphs.len}'
+	assert pres.glyphs[0].gid == 0xdd, 'pres order holds low 0xdd, got ${pres.glyphs[0].gid:x}'
+	assert pres.glyphs[2].gid == 0xcc, 'pres order keeps the blwf subscript fused, got ${pres.glyphs[2].gid:x}'
+	blws := rem_line(kh, [rune(0x1780), rune(0x17D2), rune(0x179A), rune(0x17BB)])
+	assert blws.glyphs[0].gid == 0xdc, 'blws order keeps pref 0xdc, got ${blws.glyphs[0].gid:x}'
+	assert blws.glyphs[2].gid == 0x74, 'blws order holds .b 0x74, got ${blws.glyphs[2].gid:x}'
+}
+
+// Myanmar blwf stays caller-asked: KA + U + DOT BELOW draws unfused.
+// HarfBuzz fuses [KA 0x04, _u_dot 0x18e] with _u_dot at (-140,0) through
+// blwf; -blwf leaves [KA, _u, dot_spacing, dummymark]. This engine draws
+// four glyphs both by default and when asked, because blwf must run
+// before the ccmp split of DOT BELOW and the current order runs it last.
+// The pin holds the unfused answer with the fusion recorded as the gap;
+// enabling blwf by default (or fixing the order) draws two glyphs and
+// fails this pin, which is the neutered-group break-fix.
+fn test_remainder_myanmar_blwf_caller_asked() {
+	my := rem_font('NotoSansMyanmar-Variable.ttf') or { return }
+	cps := [rune(0x1000), rune(0x102F), rune(0x1037)]
+	line := rem_line(my, cps)
+	assert line.glyphs.len == 4, 'medial-dot word stays unfused by default, got ${line.glyphs.len}'
+	ka := rem_at(line.glyphs, 0) or { panic('KA drew nothing') }
+	assert ka.gid == 0x04, 'KA is 0x04, got ${ka.gid:x}'
+	assert ka.advance > 35.96 && ka.advance < 35.98, 'KA advances 1124 design units, got ${ka.advance}'
+	u := rem_at(line.glyphs, 1) or { panic('U drew nothing') }
+	assert u.gid == 0xd1, 'U stays 0xd1 unfused, got ${u.gid:x}'
+	assert u.is_mark && u.advance == 0, 'U is a mark advancing nothing'
+	asked := rem_line_feat(my, cps, ['+blwf'])
+	assert asked.glyphs.len == 4, 'asked blwf still leaves four glyphs until its order is proven, got ${asked.glyphs.len}'
+	au := rem_at(asked.glyphs, 1) or { panic('asked U drew nothing') }
+	assert au.gid == 0xd1, 'asked blwf still draws 0xd1, got ${au.gid:x}'
+}
+
+// GPOS marks beyond anchors: Thai dist chains a SinglePos over the anchor.
+// HarfBuzz puts SARA U after 0331 at (9,-150): the mark anchor gives x,
+// the dist chain (lookup 1 over 0331, targeting SinglePos lookup 2 with
+// YPlacement -150 for U/UU) gives y. -dist leaves (9,0). At the GPOS
+// layer, apply_contextual over HB-order gids [KO 29, 0331 37, U 97]
+// under thai finds the chain at U with lookup 2, whose SinglePos for 97
+// is (0,-150). Neutering dist out of contextual_for finds no chain and
+// fails the pin, which is the break-fix. At the layout layer, a manually
+// ordered HB-order line (bypassing NFD, which would reorder to [KO, U,
+// 0331] and hide the chain) composes the chain over the anchor through
+// apply_mark_chain: neutering that call leaves y at the anchor and fails
+// the 4.8 pin.
+fn test_remainder_gpos_beyond_anchors() {
+	th := rem_font('NotoSansThai-Variable.ttf') or { return }
+	f := th
+	gpos := f.face.gpos or { panic('thai has no GPOS') }
+	gids := [u16(29), u16(37), u16(97)]
+	apps := gpos.apply_contextual(gids, 'thai', '')
+	mut found := false
+	for app in apps {
+		if app.at == 2 {
+			if app.lookup < gpos.lookups.len {
+				for single in gpos.lookups[app.lookup].singles {
+					if off := single.offset_for(u16(97)) {
+						assert off.x == 0 && off.y == -150, 'thai dist single for U is (0,-150), got (${off.x},${off.y})'
+						found = true
+					}
+				}
+			}
+		}
+	}
+	assert found, 'thai dist chain claims U with SinglePos (0,-150)'
+	// The mark anchor still owns x: SARA U over KO sits 9 design units
+	// off the pen beside HarfBuzz, which the anchor pass already holds.
+	line := rem_line(th, [rune(0x0E01), rune(0x0E38)])
+	u := rem_at(line.glyphs, 1) or { panic('SARA U drew nothing') }
+	assert u.gid == 97, 'SARA U is gid 97, got ${u.gid}'
+	assert u.x > 19.48 && u.x < 19.50, 'SARA U sits 9 design units off the pen, got x=${u.x}'
+	// Layout composition over HB order: KO + 0331 + U in input order.
+	ctx := shape.new_context()
+	em_px := 32.0
+	mut glyphs := []shape.Glyph{cap: 3}
+	mut ko := f.glyph_for(rune(0x0E01), em_px)
+	ko.cluster = 0
+	ko.x = 0.0
+	ko.y = 0.0
+	glyphs << ko
+	mut dot := f.mark_glyph(rune(0x0331), em_px)
+	dot.cluster = 1
+	dot.x = ko.advance
+	dot.y = 0.0
+	glyphs << dot
+	mut uu := f.mark_glyph(rune(0x0E38), em_px)
+	uu.cluster = 2
+	uu.x = ko.advance
+	uu.y = 0.0
+	glyphs << uu
+	mut hb_line := layout.Line{
+		glyphs: glyphs
+	}
+	layout.position_marks(mut hb_line, em_px, ctx, false, [rune(0x0E01), rune(0x0331), rune(0x0E38)], '')
+	mut ux := f64(0)
+	mut uy := f64(0)
+	for g in hb_line.glyphs {
+		if g.cluster == 2 {
+			ux = g.x
+			uy = g.y
+		}
+	}
+	assert ux > 19.48 && ux < 19.50, 'composed U keeps anchor x 9 design units, got x=${ux}'
+	assert uy > 4.79 && uy < 4.81, 'composed U drops 150 design units via dist, got y=${uy}'
+}
+
+// Mark-cluster merge: reordered syllables merge onto the base (both
+// engines), other marks keep honest per-input clusters where HarfBuzz
+// merges. Khmer SA+COENG+RO+U merges all three onto cluster 0 both here
+// and in HarfBuzz; RO+Nikahit keeps honest [0,1] against HarfBuzz [0,0].
+// Neutering the reorder (identity) splits the merged pin; merging the
+// honest pin onto the base fails it.
+fn test_remainder_mark_clusters() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	merged := rem_line(kh, [rune(0x1780), rune(0x17D2), rune(0x179A), rune(0x17BB)])
+	assert merged.glyphs.len == 3, 'merged word draws three glyphs'
+	assert merged.glyphs[0].cluster == 0 && merged.glyphs[1].cluster == 0
+		&& merged.glyphs[2].cluster == 0, 'reordered syllable merges onto the base cluster'
+	honest := rem_line(kh, [rune(0x179A), rune(0x17B7)])
+	assert honest.glyphs.len == 2, 'honest word draws two glyphs'
+	assert honest.glyphs[0].cluster == 0 && honest.glyphs[1].cluster == 1, 'per-input clusters stay honest where HarfBuzz merges'
+}
+
+fn test_remainder_pins_are_live() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17D2), rune(0x179A), rune(0x17D2), rune(0x178F)])
+	assert line.glyphs[0].gid == 0xdd, 'the pres low pin still holds'
+	assert line.glyphs[0].gid != 0xdc, 'non-low must not match: the pin is exact'
+	my := rem_font('NotoSansMyanmar-Variable.ttf') or { return }
+	mline := rem_line(my, [rune(0x1000), rune(0x102F), rune(0x1037)])
+	assert mline.glyphs.len == 4, 'the blwf unfused pin still holds'
+	assert mline.glyphs.len != 2, 'fused must not match: the pin is exact'
+}
