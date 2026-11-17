@@ -353,7 +353,10 @@ fix found by measuring against the FT 2.13.2 source), behind additive
 `set_var_coords` / `instanced_glyph_points` on Face and Font. Pinned by
 `varinstance_test.v` beside FreeType and fontTools, plus a dev-time sweep
 of every simple glyph × four coords at 142,848/142,848 exact across four
-variable faces. Follow-ups: composites, HVAR/MVAR/cvar, raster wiring.
+variable faces. HVAR/MVAR/cvar readers landed 2026-11-17 (`font/hvar.v`,
+pure lookups over caller blend coords, otRound half-up, pinned by
+`font_hvar_test.v` with neutered-delta break-fix). Follow-ups: composites,
+raster wiring.
 
 **7.11 Cache and the rival number — landed 2026-11-15/16.** `shape/cache.v`:
 `CacheKey` (font id, gid, size bits, subpixel x/y) with `==` and canonical
@@ -478,14 +481,15 @@ roughly doubles the ink (2.0–2.4×) where outline-level FT lifts 1.55–1.75×
 and LCD lacks FT's one-column FIR spill. Follow-ups: outline-level
 embolden, true FIR LCD (needs ⅓-px shifts; the API quantizes to quarters).
 
-**8.6 Stroking — outline reader landed 2026-11-16 (8.6a), stroker open.**
+**8.6 Stroking — landed 2026-11-17 (8.6a outline reader + stroker).**
 `Face.glyph_outline` answers every glyph's points, curve flags, contour
 ends and header box with composites flattened and transforms applied,
 fontTools-pinned (FiraCode A/Aacute/mirror/nested, Amiri rotation+scale,
-empty space, CFF and out-of-range refusals). The stroker itself —
-`FT_Stroker` parity for joins, caps and miter limits flattened through the
-curve path, pixel-compared — is still open and needs `raster/`, serialized
-after 7.7 like the rest of the raster work. Effects are the caller's;
+empty space, CFF and out-of-range refusals). The stroker —
+`raster/stroke.v`, `FT_Stroker` parity for joins, caps and miter limits
+flattened through the curve path — is pinned by `raster_stroke_test.v`
+(miter/bevel/round pins, limit fallbacks, caps, flatten tolerance) with
+neutered-join/limit break-fix. Effects are the caller's;
 geometry is the library's.
 
 **8.7 MATH — reader landed 2026-11-15.** Opt-in `shape/math.v` pass
@@ -883,10 +887,10 @@ owns the queue.
 | 7.11-2H | Rival A/B harness | landed (README table, re-measured per release) |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
-| 8.6 | Stroking | open (8.6a outline reader landed; stroker needs `raster/`) |
+| 8.6 | Stroking | landed (8.6a outline reader + stroker) |
 | 8.7 | Face/subset MATH wiring; top-accent fallback | landed (half-advance fallback, MATH closure) |
 | 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
-| 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
+| 7.10 | Composite instancing; raster wiring | open (HVAR/MVAR/cvar readers landed) |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
 | 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi + blws landed; Khmer pres-group + Myanmar blwf open; `nko ` tag fold landed | open |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
