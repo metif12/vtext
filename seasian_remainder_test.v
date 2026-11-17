@@ -31,6 +31,10 @@ import vtext.layout
 //     2026-11-17, pinned HB-exact below (U rides the mark-to-mark stack on
 //     the fused subscript; neutering blwf out of the Khmer defaults
 //     unfolds the subscript and fails the 0xb7 pin).
+//   - Khmer KA+SRAII+KAKABAT [KA, 17B6, 17CE]: HarfBuzz puts 17CE at
+//     (46,-29); this engine puts it at (-1281,0) in design. The mark
+//     anchor over the KA+SRAII ligature 0xec misses by a full ligature
+//     width. Open work, both numbers measured; no pin yet.
 
 fn rem_font_path(name string) ?string {
 	mut dirs := []string{}
@@ -358,6 +362,54 @@ fn test_remainder_gpos_beyond_anchors() {
 	}
 	assert ux > 19.48 && ux < 19.50, 'composed U keeps anchor x 9 design units, got x=${ux}'
 	assert uy > 4.79 && uy < 4.81, 'composed U drops 150 design units via dist, got y=${uy}'
+}
+
+// GPOS abvm stack over above-marks: KA + MUUSIKATOAN 17C9 + KAKABAT
+// 17CE. HarfBuzz: [KA 0x31, 17C9 0x8d, 17CE 0x98] advances [636, 0, 0]
+// with 17C9 at (-23,-29) and 17CE at (-23,+237); -abvm leaves both at
+// (0,0), so in HarfBuzz the whole placement rides abvm. In this engine
+// the same numbers come from the anchor stack: 17C9 sits on KA at the
+// base anchor (613,-29), and 17CE rides 17C9 at the mark-to-mark anchor
+// (0,+266), composing to (-23,+237). No abvm chain is involved:
+// apply_contextual over the HB-order run finds no application for
+// either mark, and neutering the mark chain leaves this word untouched
+// (it fails the Thai dist pin instead). Neutering the mark stack drops
+// 17CE to the base anchor y and fails the -7.58 pin, which is the
+// break-fix. Honest per-input clusters [0,1,2] against HarfBuzz merged
+// [0,0,0], the recorded per-input convention.
+fn test_remainder_khmer_abvm_chain() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17C9), rune(0x17CE)])
+	assert line.glyphs.len == 3, 'KA MUUSIKATOAN KAKABAT draws three glyphs, got ${line.glyphs.len}'
+	ka := rem_at(line.glyphs, 0) or { panic('KA drew nothing') }
+	assert ka.gid == 0x31, 'KA is 0x31, got ${ka.gid:x}'
+	assert ka.advance > 20.34 && ka.advance < 20.37, 'KA advances 636 design units, got ${ka.advance}'
+	mu := rem_at(line.glyphs, 1) or { panic('MUUSIKATOAN drew nothing') }
+	assert mu.gid == 0x8d, 'MUUSIKATOAN is 0x8d, got ${mu.gid:x}'
+	assert mu.is_mark && mu.advance == 0, 'MUUSIKATOAN is a mark advancing nothing'
+	assert mu.x > 19.60 && mu.x < 19.63, 'MUUSIKATOAN sits 23 design units before the pen, got x=${mu.x}'
+	assert mu.y > 0.92 && mu.y < 0.94, 'MUUSIKATOAN rides 29 design units up, got y=${mu.y}'
+	kak := rem_at(line.glyphs, 2) or { panic('KAKABAT drew nothing') }
+	assert kak.gid == 0x98, 'KAKABAT is 0x98, got ${kak.gid:x}'
+	assert kak.is_mark && kak.advance == 0, 'KAKABAT is a mark advancing nothing'
+	assert kak.x > 19.60 && kak.x < 19.63, 'KAKABAT sits 23 design units before the pen, got x=${kak.x}'
+	assert kak.y > -7.60 && kak.y < -7.57, 'KAKABAT rides 237 design units up on the mark stack, got y=${kak.y}'
+	// GPOS level: the two anchors the stack composes, asked the way the
+	// layout pass asks (under khmr; the empty and UCD spellings answer
+	// nothing, which is why the script gate matters).
+	a29 := kh.mark_offset_in(u16(0x8d), u16(0x31), false, 'khmr', '') or {
+		panic('khmer has no base anchor for MUUSIKATOAN')
+	}
+	assert a29.x == 613 && a29.y == -29, 'MUUSIKATOAN base anchor is (613,-29), got (${a29.x},${a29.y})'
+	a266 := kh.mark_offset_in(u16(0x98), u16(0x8d), true, 'khmr', '') or {
+		panic('khmer has no mark anchor for KAKABAT')
+	}
+	assert a266.x == 0 && a266.y == 266, 'KAKABAT mark anchor is (0,+266), got (${a266.x},${a266.y})'
+	// ... and no chain: the abvm lookups name no application on this run.
+	gpos := kh.face.gpos or { panic('khmer has no GPOS') }
+	apps := gpos.apply_contextual([u16(0x31), u16(0x8d), u16(0x98)], 'khmr', '',
+		kh.face.gdef)
+	assert apps.len == 0, 'no chain applies to the MUUSIKATOAN KAKABAT run, got ${apps.len}'
 }
 
 // Mark-cluster merge: reordered syllables merge onto the base (both
