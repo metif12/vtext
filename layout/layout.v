@@ -1138,22 +1138,19 @@ pub fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {
 	line.line_height = if options.line_height > 0.0 { options.line_height } else { natural }
 }
 
-// mark_indices_by_cluster lists the line's marks, from the last cluster backwards,
+// mark_indices_by_cluster lists the line's marks, from the first cluster onwards,
 // which is the order a stack is built in.
 //
-// The order is by descending input position, not by position on the line, because a right to left
+// The order is by ascending input position, not by position on the line, because a right to left
 // line is drawn in the opposite order to the one it was written in and stacking order is a property
-// of the writing. Two marks of one character keep their line order between themselves, which is the
-// one case where there is no writing order to go by.
+// of the writing. A mark on another mark is measured from where the mark under it ended up, so
+// the mark underneath has to be placed first: the under-mark was written before the over-mark,
+// so ascending input order places it first. Two marks of one character keep their line order
+// between themselves, which is the one case where there is no writing order to go by.
 //
 // The sort is written out rather than handed to a comparison closure because a closure cannot reach
 // the glyphs it would be comparing, and this is the only place in the module that needs an order
 // defined against them.
-//
-// This used to carry two stacked copies of this comment, the first of which said the order was by
-// ascending input position. The code sorts descending and always did, so the first copy described the
-// opposite of what happened and the second copy described it correctly; two comments, one of them
-// wrong, is worse than one.
 pub fn mark_indices_by_cluster(glyphs []shape.Glyph) []int {
 	mut marks := []int{}
 	for i in 0 .. glyphs.len {
@@ -1161,11 +1158,11 @@ pub fn mark_indices_by_cluster(glyphs []shape.Glyph) []int {
 			marks << i
 		}
 	}
-	// An insertion sort by descending cluster, which is the order a stack is built in.
+	// An insertion sort by ascending cluster, which is the order a stack is built in.
 	mut i := 1
 	for i < marks.len {
 		mut j := i
-		for j > 0 && glyphs[marks[j]].cluster > glyphs[marks[j - 1]].cluster {
+		for j > 0 && glyphs[marks[j]].cluster < glyphs[marks[j - 1]].cluster {
 			marks[j], marks[j - 1] = marks[j - 1], marks[j]
 			j--
 		}
@@ -1210,10 +1207,10 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 	// line a mark comes before the letter it belongs to, so collecting the letters and then
 	// placing the marks in one pass would find the mark's base already behind it. Collecting
 	// every letter first means a mark can look in any direction.
-	mut bases := map[int]int{}
+	mut bases := map[int][]int{}
 	for i, g in line.glyphs {
 		if !g.is_mark {
-			bases[g.cluster] = i
+			bases[g.cluster] << i
 		}
 	}
 	// The glyph ids in line order, which is what chaining contexts match
@@ -1227,10 +1224,10 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		gids << g.gid
 	}
 
-	// The marks are placed from the last cluster backwards, which is the order a stack has to be
+	// The marks are placed from the first cluster onwards, which is the order a stack has to be
 	// built in. A mark on another mark is measured from where the mark under it ended up, so the
-	// mark underneath has to be placed first; placing a shadda and then a fatha on it in glyph
-	// order would put the fatha at the shadda's position before the shadda had one, and the fatha
+	// mark underneath has to be placed first; placing a fatha before the shadda it rides on would
+	// put the fatha at the shadda's position before the shadda had one, and the fatha
 	// would then be carried along when the shadda moved.
 	mut marks := mark_indices_by_cluster(line.glyphs)
 	for oi in 0 .. marks.len {
@@ -1256,12 +1253,31 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		// script. A mark with no letter base keeps 'arab', which is what every mark used
 		// before scripts were asked. Moving the search changes no decision here: both searches
 		// only read the line.
+		mut win := -1
+		for cluster, _ in bases {
+			if cluster <= g.cluster && (win < 0 || cluster > win) {
+				win = cluster
+			}
+		}
+		// Within the winning cluster the base is the nearest letter before
+		// the mark in run order (line order within one cluster is run
+		// order): a merged syllable holds several bases under one cluster,
+		// and the flag after a conjunct belongs to the conjunct, not to
+		// the matra after it. A mark before every letter of its cluster
+		// keeps the last one, which is what every line laid out before
+		// this tie-break.
 		mut base_index := -1
 		mut best := 0
-		for cluster, bi in bases {
-			if cluster <= g.cluster && (base_index < 0 || cluster > best) {
-				base_index = bi
-				best = cluster
+		if win >= 0 {
+			best = win
+			for ci in bases[win] {
+				if ci < i && (base_index < 0 || ci > base_index) {
+					base_index = ci
+				}
+			}
+			if base_index < 0 {
+				cands := bases[win]
+				base_index = cands[cands.len - 1]
 			}
 		}
 		mut script := 'arab'
@@ -1296,8 +1312,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		// where HarfBuzz leaves it at the pen. A shadda carrying a fatha
 		// passes: both answer the beh. A mark whose own cluster has a letter
 		// base skips stacking as before.
-		mut stacked_at := -1
-		mut stacked_best := 0
+		mut stacked_at := []int{}
 		if base_index >= 0 && g.cluster !in bases {
 			for k, c in line.glyphs {
 				if k == i || !c.is_mark || c.cluster == g.cluster || c.cluster >= g.cluster {
@@ -1312,30 +1327,47 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 				if target_base != best {
 					continue
 				}
-				if stacked_at < 0 || c.cluster > stacked_best {
-					stacked_at = k
-					stacked_best = c.cluster
+				stacked_at << k
+			}
+			// Highest cluster first: the mark stacks on the nearest mark
+			// below it, and a farther one only when the nearer has no rule
+			// for it — the tra candrabindu stacks on the flag, whose rule
+			// names it, rather than on the nearer rakar, which has none
+			// for it. An insertion sort, stable for equal clusters.
+			for a in 1 .. stacked_at.len {
+				mut b := a
+				for b > 0
+					&& line.glyphs[stacked_at[b]].cluster > line.glyphs[stacked_at[b - 1]].cluster {
+					stacked_at[b], stacked_at[b - 1] = stacked_at[b - 1], stacked_at[b]
+					b--
 				}
 			}
 		}
-		if stacked_at >= 0 {
-			target := line.glyphs[stacked_at]
+		mut stacked := false
+		for sk in stacked_at {
+			target := line.glyphs[sk]
 			// A mark and the mark under it have to come from the same font, as below.
-			stack_font := g.font or { continue }
+			stack_font := g.font or { break }
 			stack_target_font := target.font or { continue }
-			if stack_font == stack_target_font {
-				if off := stack_font.mark_offset_in(g.gid, target.gid, true, script, lang) {
-					stack_scale := em_px / f64(stack_font.face.units_per_em)
-					line.glyphs[i].x = target.x + f64(off.x) * stack_scale
-					if vertical {
-						line.glyphs[i].y = target.y - f64(off.y) * stack_scale
-					} else {
-						line.glyphs[i].y = -f64(off.y) * stack_scale
-					}
-					apply_mark_chain(mut line, i, gids, stack_font, em_px, script, lang)
-					continue
-				}
+			if stack_font != stack_target_font {
+				continue
 			}
+			if off := stack_font.mark_offset_in(g.gid, target.gid, true, script, lang) {
+				// The stack rides the mark underneath in both modes: x
+				// and y carry the under-mark's, then the attachment
+				// moves the over-mark from there. Dropping the
+				// under-mark's y parks every stacked mark at the
+				// baseline instead of on its own mark.
+				stack_scale := em_px / f64(stack_font.face.units_per_em)
+				line.glyphs[i].x = target.x + f64(off.x) * stack_scale
+				line.glyphs[i].y = target.y - f64(off.y) * stack_scale
+				apply_mark_chain(mut line, i, gids, stack_font, em_px, script, lang)
+				stacked = true
+				break
+			}
+		}
+		if stacked {
+			continue
 		}
 		if base_index < 0 {
 			continue
@@ -1348,27 +1380,27 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		if f != base_font {
 			continue
 		}
-		mut off := shaped_mark_offset(f, g.gid, base, script, lang) or { continue }
+		mut anchor := shaped_mark_offset(f, g.gid, base, script, lang) or { continue }
 		// The offset is in design units and the line is in pixels, so it is scaled by the same
 		// ratio the advances came from.
 		scale := em_px / f64(f.face.units_per_em)
-		line.glyphs[i].x = base.x + f64(off.x) * scale
+		line.glyphs[i].x = base.x + f64(anchor.x) * scale
 		// y is positive upwards in the font's coordinates and downwards on a line, so the sign
 		// is flipped here rather than leaving every caller to remember. In a
 		// vertical line the flip is measured from the base, which hangs below
 		// the pen by the vertical origin: from zero the mark would land a whole
 		// origin above its letter.
 		if vertical {
-			line.glyphs[i].y = base.y - f64(off.y) * scale
+			line.glyphs[i].y = base.y - f64(anchor.y) * scale
 		} else {
-			line.glyphs[i].y = -f64(off.y) * scale
+			line.glyphs[i].y = -f64(anchor.y) * scale
 		}
 		apply_mark_chain(mut line, i, gids, f, em_px, script, lang)
 	}
 }
 
-// apply_mark_chain composes a chaining SinglePos adjustment over a mark's
-// anchor placement, which is the GPOS half beyond anchors.
+// mark_chain_offset answers the chaining SinglePos adjustment for one mark,
+// which is the GPOS half beyond anchors.
 //
 // Anchors place the mark; chains move it further. Thai SARA U after 0331
 // drops 150 design units through the dist chain, and Khmer above-marks
@@ -1379,14 +1411,12 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 // for this mark: a chain that names a pair lookup carries no placement for
 // a lone mark and is skipped. PairPos kerns fold into advances elsewhere
 // and have no meaning for a zero-advance mark. A mark with no chain rule
-// keeps its anchor answer, which is every line laid out before this pass.
-fn apply_mark_chain(mut line Line, at int, gids []u16, f &shape.Font, em_px f64, script string, lang string) {
-	if at < 0 || at >= gids.len || at >= line.glyphs.len {
-		return
+// answers none, which is every line laid out before this pass.
+fn mark_chain_offset(gpos &font.Gpos, mark_gid u16, at int, gids []u16, script string, lang string, gdef ?&font.Gdef) ?font.Offset2 {
+	if at < 0 || at >= gids.len {
+		return none
 	}
-	gpos := f.face.gpos or { return }
-	mark_gid := line.glyphs[at].gid
-	apps := gpos.apply_contextual(gids, script, lang)
+	apps := gpos.apply_contextual(gids, script, lang, gdef)
 	mut x := 0
 	mut y := 0
 	mut found := false
@@ -1407,11 +1437,24 @@ fn apply_mark_chain(mut line Line, at int, gids []u16, f &shape.Font, em_px f64,
 		}
 	}
 	if !found {
+		return none
+	}
+	return font.Offset2{ x: x, y: y }
+}
+
+// apply_mark_chain composes a chaining SinglePos adjustment over a mark's
+// anchor placement: it adds the mark_chain_offset answer onto the placed
+// mark, or does nothing when the run's chains name no SinglePos for it.
+fn apply_mark_chain(mut line Line, at int, gids []u16, f &shape.Font, em_px f64, script string, lang string) {
+	if at < 0 || at >= line.glyphs.len {
 		return
 	}
+	gpos := f.face.gpos or { return }
+	mark_gid := line.glyphs[at].gid
+	off := mark_chain_offset(gpos, mark_gid, at, gids, script, lang, f.face.gdef) or { return }
 	scale := em_px / f64(f.face.units_per_em)
-	line.glyphs[at].x += f64(x) * scale
-	line.glyphs[at].y += -f64(y) * scale
+	line.glyphs[at].x += f64(off.x) * scale
+	line.glyphs[at].y += -f64(off.y) * scale
 }
 
 // shaped_mark_offset finds a mark's anchor offset, resolving across the joining-route

@@ -133,7 +133,7 @@ fn test_gpos_kern_contexts_answer_the_rules_a_font_wrote() {
 					continue
 				}
 				asked++
-				if gpos.context_offset(run, pair_at, pair_at + 1, 'arab', '') != none {
+				if gpos.context_offset(run, pair_at, pair_at + 1, 'arab', '', f.face.gdef) != none {
 					answered++
 				}
 			}
@@ -190,7 +190,7 @@ fn test_gpos_kern_context_reaches_a_glyph_through_its_backtrack() {
 		mut run := []u16{}
 		run << bg
 		run << u16(3)
-		if gpos.context_offset(run, 0, 1, 'arab', '') != none {
+		if gpos.context_offset(run, 0, 1, 'arab', '', f.face.gdef) != none {
 			answered++
 		}
 	}
@@ -265,7 +265,7 @@ fn test_gpos_kern_class_rules_parse_and_match() {
 			records: [font.ContextRecord{ position: 1, lookup: 0 }]
 		}]]
 	}
-	m, rule := gpos.match_chain_class_at(cc, [u16(9), u16(15), u16(12)], 1) or {
+	m, rule := gpos.match_chain_class_at(cc, [u16(9), u16(15), u16(12)], [0, 1, 2], 1) or {
 		panic('the class pattern should match')
 	}
 	assert m.start == 1, 'the match starts at the covered glyph'

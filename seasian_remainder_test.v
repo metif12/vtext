@@ -275,7 +275,7 @@ fn test_remainder_gpos_beyond_anchors() {
 	f := th
 	gpos := f.face.gpos or { panic('thai has no GPOS') }
 	gids := [u16(29), u16(37), u16(97)]
-	apps := gpos.apply_contextual(gids, 'thai', '')
+	apps := gpos.apply_contextual(gids, 'thai', '', f.face.gdef)
 	mut found := false
 	for app in apps {
 		if app.at == 2 {

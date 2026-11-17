@@ -604,9 +604,7 @@ Bengali codepoints); shaping agrees exactly where no reordering or assembly
 is owed (raam gids 0x33/0x3b/0x31, advances 596/266/612; kssa fuses to 0x87
 at exactly 859 through the bng2 akhn rule). Slices left: UCD tables (done),
 Devanagari (done), Bengali (done); the joining hook landed 2026-11-16
-(9.3b), the conjunct defaults landed 2026-11-16 (9.3c). Remaining: reph
-movement, pstf/blwf/vatu, the Bengali assembly chain, GPOS marks, with
-Arabic staying green.
+(9.3b), the conjunct defaults landed 2026-11-16 (9.3c); assembly + GPOS marks landed 2026-11-17 (defaults nukt,akhn,rphf,half,blwf,pstf,vatu,cjct,pres,abvs,blws,psts in blwf,pstf,vatu,cjct order; SingleSubst coverage-first fix; mark-filtered chain matching; cluster-ordered stacking; pinned by extended bengali_test.v), with Arabic staying green.
 
 **9.3b The joining hook — landed 2026-11-16.** `layout/layout.v` feeds the
 machine into shaping: `indic_visual` reorders each run with
@@ -906,7 +904,7 @@ owns the queue.
 
 | Slice | Item | State |
 | --- | --- | --- |
-| 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults + repha + zero-class marks | landed (HB-default incl. reph; assembly/GPOS open as 9.3e remainder) |
+| 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults + repha + zero-class marks + assembly + GPOS | landed (HB-default incl. reph; rkma reph order stays the recorded divergence) |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | landed (grid-fit autohinter, color readers + composite; bytecode triggered) |
 | 7.8 | Core Text + DirectWrite providers | landed (per-OS real, none elsewhere) |
@@ -920,7 +918,7 @@ owns the queue.
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | landed (KR face, HB pins, break-fix) |
 | 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf caller-asked; `nko ` tag fold landed | open (GPOS marks beyond anchors + mark-cluster merge remain) |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
-| 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
+| 9.3 | Bengali generality proof (after Devanagari) | landed (assembly + GPOS marks; joining hook included) |
 | 10.1 | generic measure / iterate (`layout/iterator.v`) | landed (standalone, no FONS) |
 | 10.2 | generic rect packing (`raster/pack.v`) | landed (standalone, caller-owned atlas) |
 | 10.3 | generic coverage helpers (`raster/quantize.v`) | landed (mono/gray2/4, gamma, blur) |

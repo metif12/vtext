@@ -24,16 +24,25 @@ import vtext.shape
 //     feeds the reordered run into shaping and merges the clusters, and the
 //     Indic defaults fuse what needs no reordering. Bengali needs no pres
 //     variant: the cmap matra is what HarfBuzz draws too.
-//   - KSSA fuses by default through the bng2 akhn rule, which resolves now
-//     that the tag fallback names the v2 script. What stays open is the
-//     Bengali conjunct assembly chain: the below-base split fires but its
-//     pstf/blwf/cjct reassembly and mark positioning do not, so hindi and
-//     nomoste draw the pieces where HarfBuzz draws fused, positioned forms.
-//   - GPOS mark advances and offsets are the font layer: the halant reports
-//     its own hmtx advance of zero, not HarfBuzz mark offsets.
-//
-// Repha placement and movement, split-matra halves, pstf/blwf/vatu and the
-// Bengali assembly chain stay follow-ups: the 9.3d slice.
+//   - the conjunct assembly chain runs by default in the order the font
+//     needs: blwf, pstf and vatu ahead of cjct, pres after them. kya fuses
+//     through the bng2 pstf rule, the JA stack through vatu, kta/nta/sta
+//     through cjct with the pres flag split, kri/stra through the blwf
+//     rakar with the dist widening. Every gid, advance, offset and cluster
+//     below is HarfBuzz-exact but the post-base tails, which keep their own
+//     input where HarfBuzz merges them onto the base cluster — the known
+//     post-base convention this slice does not change.
+//   - GPOS marks land by anchor, by stacking, and by chain: a below-base
+//     matra on a conjunct stacks on the conjunct's own mark (the under-mark
+//     places first), a candrabindu over a matra-carrying base reads the
+//     chain alone when no anchor names it, and the HA pair widens through
+//     the dist chain the mark filter selects. Single-subst tables read
+//     coverage-first with a transposed fallback the buffer fit settles, so
+//     the pres singles land on their variant instead of past the font.
+//   - the one reph order that diverges: rkma with a post-base matra draws
+//     [KA, AA, reph] where HarfBuzz draws [KA, reph, AA]. The gids and
+//     advances agree; only the order differs, and it is recorded here
+//     rather than hidden.
 
 fn bengali_font_path() string {
 	return 'testdata/fonts/NotoSansBengali-Variable.ttf'
@@ -450,6 +459,232 @@ fn test_bengali_conjunct_assembly() {
 	assert stra.glyphs[3].advance == 0.0, 'the rakar advances nothing'
 }
 
+fn test_bengali_shape_pstf() {
+	// Post-base YA fuses through pstf by default: HarfBuzz shapes kya as KA
+	// gid 0x19 at 807 and the ya-pstf gid 0x85 at 270, both on cluster 0.
+	// The engine draws the same gids with the same advances; the pstf mark
+	// keeps its own input where HarfBuzz merges it onto the base cluster,
+	// the known post-base convention. Without pstf in the defaults the pair
+	// unfolds to KA plus the halant plus YA, which is the neuter this pin
+	// fails.
+	f := bengali_font() or { return }
+	kya := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x09AF)]))
+	assert kya.glyphs.len == 2, 'kya fuses to two glyphs, got ${bengali_dump(kya)}'
+	assert kya.glyphs[0].gid == 0x19 && kya.glyphs[0].cluster == 0, 'kya opens with KA, got ${bengali_dump(kya)}'
+	assert kya.glyphs[0].advance > 25.76 && kya.glyphs[0].advance < 25.88, 'KA advances 807 design units'
+	assert kya.glyphs[1].gid == 0x85 && kya.glyphs[1].cluster == 1, 'the ya-pstf keeps the halant input (HarfBuzz reports 0), got ${bengali_dump(kya)}'
+	assert kya.glyphs[1].advance > 8.58 && kya.glyphs[1].advance < 8.7, 'the ya-pstf advances 270 design units'
+	assert kya.glyphs[1].advance != 0.0, 'the pstf form is spacing, not a mark'
+	assert kya.glyphs[1].gid != 0x86 && kya.glyphs[1].gid != 0x84, 'off-by-one gid must not match: the pin is exact'
+	// The same fusion feeds the other dentals: dya draws DA 0x2a at 553
+	// with the same ya-pstf at 270, both HB-exact but the tail cluster.
+	dya := bengali_line(f, bengali_word([rune(0x09A6), rune(0x09CD), rune(0x09AF)]))
+	assert dya.glyphs.len == 2, 'dya fuses to two glyphs, got ${bengali_dump(dya)}'
+	assert dya.glyphs[0].gid == 0x2a && dya.glyphs[0].cluster == 0, 'dya opens with DA, got ${bengali_dump(dya)}'
+	assert dya.glyphs[0].advance > 17.64 && dya.glyphs[0].advance < 17.76, 'DA advances 553 design units'
+	assert dya.glyphs[1].gid == 0x85 && dya.glyphs[1].cluster == 1, 'the ya-pstf keeps the halant input, got ${bengali_dump(dya)}'
+	// A pre-base matra reorders ahead of the fusion: kyi draws the I matra
+	// 0x3c at 266, KA at 807 and the ya-pstf at 270, all on cluster 0 the
+	// way HarfBuzz merges the reordered syllable.
+	kyi := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x09AF), rune(0x09BF)]))
+	assert kyi.glyphs.len == 3, 'kyi draws three glyphs, got ${bengali_dump(kyi)}'
+	assert kyi.glyphs[0].gid == 0x3c && kyi.glyphs[0].cluster == 0, 'kyi opens with the I matra, got ${bengali_dump(kyi)}'
+	assert kyi.glyphs[1].gid == 0x19 && kyi.glyphs[1].cluster == 0, 'KA keeps cluster 0'
+	assert kyi.glyphs[2].gid == 0x85 && kyi.glyphs[2].cluster == 0, 'the ya-pstf keeps cluster 0, got ${bengali_dump(kyi)}'
+	assert kyi.glyphs[2].advance > 8.58 && kyi.glyphs[2].advance < 8.7, 'the ya-pstf advances 270 design units'
+}
+
+fn test_bengali_shape_vatu() {
+	// The JA stack fuses through vatu by default: HarfBuzz shapes JA hal JA
+	// hal BA as the single gid 0x8e at 1169 on cluster 0. vatu runs after
+	// blwf, whose baphalabeng product its ligature consumes, and before
+	// cjct, which would otherwise fuse the JAs to 0x8d first and starve it.
+	// A cjct-first order draws [0x8d, 0x127] where HarfBuzz draws one glyph,
+	// which is the neuter this pin fails.
+	f := bengali_font() or { return }
+	jjb := bengali_line(f, bengali_word([rune(0x099C), rune(0x09CD), rune(0x099C), rune(0x09CD),
+		rune(0x09AC)]))
+	assert jjb.glyphs.len == 1, 'the JA stack fuses to one glyph, got ${bengali_dump(jjb)}'
+	assert jjb.glyphs[0].gid == 0x8e && jjb.glyphs[0].cluster == 0, 'the stack is gid 8e on cluster 0, got ${bengali_dump(jjb)}'
+	assert jjb.glyphs[0].advance > 37.35 && jjb.glyphs[0].advance < 37.47, 'the stack advances 1169 design units'
+	assert jjb.glyphs[0].gid != 0x8d && jjb.glyphs[0].gid != 0x8f, 'off-by-one gid must not match: the pin is exact'
+}
+
+fn test_bengali_shape_tra() {
+	// TTA hal RA assembles through half, blwf and pres: HarfBuzz draws the
+	// half form 0xd9 at 552, the flag 0x149 at -541 and the rakar alt
+	// 0x11d at (-548, -134). The flag keeps its syllable base while the
+	// rakar keeps its own input where HarfBuzz merges it onto cluster 0,
+	// the known post-base convention. The pres single naming the rakar alt
+	// is the SingleSubst reader pin: a coverage-last reading parses its
+	// count out of the coverage and turns the rakar into gid 12033, which
+	// this fails.
+	f := bengali_font() or { return }
+	tra := bengali_line(f, bengali_word([rune(0x099F), rune(0x09CD), rune(0x09B0)]))
+	assert tra.glyphs.len == 3, 'tra assembles to three glyphs, got ${bengali_dump(tra)}'
+	assert tra.glyphs[0].gid == 0xd9 && tra.glyphs[0].cluster == 0, 'tra opens with the half form, got ${bengali_dump(tra)}'
+	assert tra.glyphs[0].advance > 17.6 && tra.glyphs[0].advance < 17.72, 'the half form advances 552 design units'
+	assert tra.glyphs[1].gid == 0x149 && tra.glyphs[1].cluster == 0, 'the flag keeps cluster 0, got ${bengali_dump(tra)}'
+	assert tra.glyphs[1].advance == 0.0 && tra.glyphs[1].is_mark, 'the flag advances nothing'
+	assert tra.glyphs[1].x > 0.29 && tra.glyphs[1].x < 0.41, 'the flag sits 541 design units off the pen, got x=${tra.glyphs[1].x}'
+	assert tra.glyphs[2].gid == 0x11d && tra.glyphs[2].cluster == 1, 'the rakar keeps the halant input (HarfBuzz reports 0), got ${bengali_dump(tra)}'
+	assert tra.glyphs[2].advance == 0.0 && tra.glyphs[2].is_mark, 'the rakar advances nothing'
+	assert tra.glyphs[2].x > 0.07 && tra.glyphs[2].x < 0.19, 'the rakar sits 548 design units off the pen, got x=${tra.glyphs[2].x}'
+	assert tra.glyphs[2].y > 4.23 && tra.glyphs[2].y < 4.35, 'the rakar rides 134 design units up, got y=${tra.glyphs[2].y}'
+	assert tra.glyphs[2].gid != 0x11c && tra.glyphs[2].gid != 0x11e, 'off-by-one gid must not match: the pin is exact'
+}
+
+fn test_bengali_shape_marks() {
+	// A below-base matra on a conjunct stacks on the conjunct's own mark:
+	// HarfBuzz draws tra plus the U-matra 0x3e at (372, 110) — the pen plus
+	// the blwm chain, which is also what stacking on the placed rakar
+	// through mkmk sums to. The under-mark places first; a pen-measured
+	// stack parks the matra at 26.11 instead of 11.90, which is the neuter
+	// this pin fails.
+	f := bengali_font() or { return }
+	tra_u := bengali_line(f, bengali_word([rune(0x099F), rune(0x09CD), rune(0x09B0), rune(0x09C1)]))
+	assert tra_u.glyphs.len == 4, 'tra plus U draws four glyphs, got ${bengali_dump(tra_u)}'
+	assert tra_u.glyphs[3].gid == 0x3e && tra_u.glyphs[3].cluster == 3, 'the U matra keeps its own input (HarfBuzz reports 0), got ${bengali_dump(tra_u)}'
+	assert tra_u.glyphs[3].advance == 0.0 && tra_u.glyphs[3].is_mark, 'the matra advances nothing'
+	assert tra_u.glyphs[3].x > 11.84 && tra_u.glyphs[3].x < 11.96, 'the matra sits 372 design units off the pen, got x=${tra_u.glyphs[3].x}'
+	assert tra_u.glyphs[3].y > 4.23 && tra_u.glyphs[3].y < 4.35, 'the matra rides 134 design units up, got y=${tra_u.glyphs[3].y}'
+	// The same stack on the dva conjunct: 0xe2 at 531, the blws mark
+	// 0x12b at (-434, 20) and the U-matra at (382, 110), all HB-exact but
+	// the honest clusters.
+	dva_u := bengali_line(f, bengali_word([rune(0x09A6), rune(0x09CD), rune(0x09AC), rune(0x09C1)]))
+	assert dva_u.glyphs.len == 3, 'dva plus U draws three glyphs, got ${bengali_dump(dva_u)}'
+	assert dva_u.glyphs[0].gid == 0xe2 && dva_u.glyphs[0].cluster == 0, 'dva opens with the conjunct, got ${bengali_dump(dva_u)}'
+	assert dva_u.glyphs[0].advance > 16.93 && dva_u.glyphs[0].advance < 17.05, 'the conjunct advances 531 design units'
+	assert dva_u.glyphs[1].gid == 0x12b && dva_u.glyphs[1].cluster == 1, 'the mark keeps cluster 1, got ${bengali_dump(dva_u)}'
+	assert dva_u.glyphs[1].x > 3.04 && dva_u.glyphs[1].x < 3.16, 'the mark sits 434 design units off the pen, got x=${dva_u.glyphs[1].x}'
+	assert dva_u.glyphs[1].y > -0.7 && dva_u.glyphs[1].y < -0.58, 'the mark rides 20 design units down, got y=${dva_u.glyphs[1].y}'
+	assert dva_u.glyphs[2].gid == 0x3e && dva_u.glyphs[2].cluster == 3, 'the U matra keeps its own input (HarfBuzz reports 0), got ${bengali_dump(dva_u)}'
+	assert dva_u.glyphs[2].x > 12.16 && dva_u.glyphs[2].x < 12.28, 'the matra sits 382 design units off the pen, got x=${dva_u.glyphs[2].x}'
+	assert dva_u.glyphs[2].y > 3.46 && dva_u.glyphs[2].y < 3.58, 'the matra rides 110 design units up, got y=${dva_u.glyphs[2].y}'
+	// The candrabindu over a matra-carrying base reads the abvm chain
+	// alone: HarfBuzz draws KA, the I-matra 0x3c at 266, the candrabindu
+	// 0x15e at (446, 35) and KA at 807, with the zero-width space the
+	// chain emits. No anchor names the pair; a chain-blind engine leaves
+	// the mark at the pen (8.51, 0), which is the neuter this pin fails.
+	ku_candra := bengali_line(f, bengali_word([rune(0x0995), rune(0x09BF), rune(0x0981)]))
+	assert ku_candra.glyphs.len == 4, 'ki plus candrabindu draws four glyphs, got ${bengali_dump(ku_candra)}'
+	assert ku_candra.glyphs[0].gid == 0x3c && ku_candra.glyphs[0].cluster == 0, 'the I matra opens on cluster 0, got ${bengali_dump(ku_candra)}'
+	assert ku_candra.glyphs[1].gid == 0x15e && ku_candra.glyphs[1].cluster == 0, 'the candrabindu keeps cluster 0, got ${bengali_dump(ku_candra)}'
+	assert ku_candra.glyphs[1].advance == 0.0 && ku_candra.glyphs[1].is_mark, 'the candrabindu advances nothing'
+	assert ku_candra.glyphs[1].x > 22.72 && ku_candra.glyphs[1].x < 22.84, 'the mark sits 446 design units off the pen, got x=${ku_candra.glyphs[1].x}'
+	assert ku_candra.glyphs[1].y > -1.18 && ku_candra.glyphs[1].y < -1.06, 'the mark rides 35 design units up, got y=${ku_candra.glyphs[1].y}'
+	assert ku_candra.glyphs[2].gid == 0x19 && ku_candra.glyphs[2].cluster == 0, 'KA keeps cluster 0'
+	assert ku_candra.glyphs[3].gid == 0x5, 'the chain emits the zero-width space, got ${bengali_dump(ku_candra)}'
+	// The candrabindu on the kta conjunct stacks on the placed flag: 0xbe
+	// at 727, the flag 0x14a at -654 and 0x15f at (369, 16) off the flag,
+	// HB-exact. Stacking on the nearer rakar, which has no rule for the
+	// mark, parks it at 8.0 instead of 10.56, which is the neuter this pin
+	// fails.
+	kta_candra := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x099F), rune(0x0981)]))
+	assert kta_candra.glyphs.len == 3, 'kta plus candrabindu draws three glyphs, got ${bengali_dump(kta_candra)}'
+	assert kta_candra.glyphs[0].gid == 0xbe && kta_candra.glyphs[0].cluster == 0, 'kta opens with the conjunct, got ${bengali_dump(kta_candra)}'
+	assert kta_candra.glyphs[1].gid == 0x14a && kta_candra.glyphs[1].cluster == 0, 'the flag keeps cluster 0'
+	assert kta_candra.glyphs[2].gid == 0x15f && kta_candra.glyphs[2].cluster == 3, 'the candrabindu keeps its own input (HarfBuzz reports 0), got ${bengali_dump(kta_candra)}'
+	assert kta_candra.glyphs[2].advance == 0.0 && kta_candra.glyphs[2].is_mark, 'the candrabindu advances nothing'
+	assert kta_candra.glyphs[2].x > 14.08 && kta_candra.glyphs[2].x < 14.22, 'the mark stacks 369 design units off the flag, got x=${kta_candra.glyphs[2].x}'
+	assert kta_candra.glyphs[2].y > -0.57 && kta_candra.glyphs[2].y < -0.45, 'the mark rides 16 design units up, got y=${kta_candra.glyphs[2].y}'
+	// The candrabindu on the tra conjunct stacks on the placed flag, not on
+	// the nearer rakar: 0xd9 at 552, the flag 0x149 at -541, the rakar
+	// 0x11d at (-548, -134) and 0x15f at (330, 16) off the flag, HB-exact.
+	// The rakar has no rule for the mark, so a nearest-only stack parks it
+	// at 8.0 instead of 10.56, which is the neuter this pin fails.
+	tra_candra := bengali_line(f, bengali_word([rune(0x099F), rune(0x09CD), rune(0x09B0), rune(0x0981)]))
+	assert tra_candra.glyphs.len == 4, 'tra plus candrabindu draws four glyphs, got ${bengali_dump(tra_candra)}'
+	assert tra_candra.glyphs[0].gid == 0xd9 && tra_candra.glyphs[0].cluster == 0, 'tra opens with the half form, got ${bengali_dump(tra_candra)}'
+	assert tra_candra.glyphs[1].gid == 0x149 && tra_candra.glyphs[1].cluster == 0, 'the flag keeps cluster 0'
+	assert tra_candra.glyphs[2].gid == 0x11d && tra_candra.glyphs[2].cluster == 1, 'the rakar keeps the halant input (HarfBuzz reports 0), got ${bengali_dump(tra_candra)}'
+	assert tra_candra.glyphs[3].gid == 0x15f && tra_candra.glyphs[3].cluster == 3, 'the candrabindu keeps its own input (HarfBuzz reports 0), got ${bengali_dump(tra_candra)}'
+	assert tra_candra.glyphs[3].advance == 0.0 && tra_candra.glyphs[3].is_mark, 'the candrabindu advances nothing'
+	assert tra_candra.glyphs[3].x > 10.5 && tra_candra.glyphs[3].x < 10.62, 'the mark stacks 319 design units off the flag, got x=${tra_candra.glyphs[3].x}'
+	assert tra_candra.glyphs[3].y > -0.57 && tra_candra.glyphs[3].y < -0.45, 'the mark rides 16 design units up, got y=${tra_candra.glyphs[3].y}'
+	// The O-kar on the kta conjunct takes the tie-break base: the E-kar
+	// 0x18e at 361, the conjunct at 727, the flag at 73 design units off
+	// the conjunct (not off the AA after it) and the spacing AA at 266.
+	// Last-base-wins hands the flag to the AA, which has no anchor for it,
+	// and the flag stays at the pen, which is the neuter this pin fails.
+	kta_o := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x099F), rune(0x09CB)]))
+	assert kta_o.glyphs.len == 4, 'kta plus O draws four glyphs, got ${bengali_dump(kta_o)}'
+	assert kta_o.glyphs[0].gid == 0x18e && kta_o.glyphs[0].cluster == 0, 'the E-kar opens on cluster 0, got ${bengali_dump(kta_o)}'
+	assert kta_o.glyphs[0].advance > 11.49 && kta_o.glyphs[0].advance < 11.61, 'the E-kar advances 361 design units'
+	assert kta_o.glyphs[1].gid == 0xbe && kta_o.glyphs[1].cluster == 0, 'the conjunct keeps cluster 0'
+	assert kta_o.glyphs[2].gid == 0x14a && kta_o.glyphs[2].cluster == 0, 'the flag keeps cluster 0, got ${bengali_dump(kta_o)}'
+	assert kta_o.glyphs[2].advance == 0.0 && kta_o.glyphs[2].is_mark, 'the flag advances nothing'
+	assert kta_o.glyphs[2].x > 13.83 && kta_o.glyphs[2].x < 13.95, 'the flag sits 73 design units off the conjunct, got x=${kta_o.glyphs[2].x}'
+	assert kta_o.glyphs[3].gid == 0x3b && kta_o.glyphs[3].cluster == 0, 'the AA matra closes on cluster 0'
+	assert kta_o.glyphs[3].advance > 8.45 && kta_o.glyphs[3].advance < 8.57, 'the AA matra advances 266 design units'
+	assert !kta_o.glyphs[3].is_mark, 'the AA matra is spacing, got ${bengali_dump(kta_o)}'
+	// The reph takes the tie-break base too: rki with a matra draws the
+	// pres matra 0x3c at 266, the reph 0x84 at (690, -3) off the matra
+	// ahead of it, KA at 807 and the zero-width space, all HB-exact.
+	// Last-base-wins hands the reph to KA, whose anchor reads (446, 0),
+	// which is the neuter this pin fails.
+	rki_chain := bengali_line(f, bengali_word([rune(0x09B0), rune(0x09CD), rune(0x0995), rune(0x09BF)]))
+	assert rki_chain.glyphs.len == 4, 'rki draws four glyphs, got ${bengali_dump(rki_chain)}'
+	assert rki_chain.glyphs[0].gid == 0x3c && rki_chain.glyphs[0].cluster == 0, 'the matra opens on cluster 0, got ${bengali_dump(rki_chain)}'
+	assert rki_chain.glyphs[1].gid == 0x84 && rki_chain.glyphs[1].cluster == 0, 'the reph keeps cluster 0'
+	assert rki_chain.glyphs[1].advance == 0.0 && rki_chain.glyphs[1].is_mark, 'the reph advances nothing'
+	assert rki_chain.glyphs[1].x > 22.02 && rki_chain.glyphs[1].x < 22.14, 'the reph sits 690 design units off the matra, got x=${rki_chain.glyphs[1].x}'
+	assert rki_chain.glyphs[1].y > 0.04 && rki_chain.glyphs[1].y < 0.16, 'the reph rides 3 design units down, got y=${rki_chain.glyphs[1].y}'
+	assert rki_chain.glyphs[2].gid == 0x19 && rki_chain.glyphs[2].cluster == 0, 'KA keeps cluster 0'
+	assert rki_chain.glyphs[3].gid == 0x5, 'the chain emits the zero-width space, got ${bengali_dump(rki_chain)}'
+}
+
+fn test_bengali_shape_spacing_marks() {
+	// Some single substitutions change a mark into a spacing glyph: the
+	// pres single turns the U-matra into gid 0x114, which the font
+	// classifies as a base with a 194-unit advance, and HarfBuzz advances
+	// it as one. A mark input staying a mark parks it at the pen with no
+	// advance, which is the neuter this pin fails.
+	f := bengali_font() or { return }
+	ra_u := bengali_line(f, bengali_word([rune(0x09B0), rune(0x09C1)]))
+	assert ra_u.glyphs.len == 2, 'ra plus U draws two glyphs, got ${bengali_dump(ra_u)}'
+	assert ra_u.glyphs[0].gid == 0x33 && ra_u.glyphs[0].cluster == 0, 'RA opens on cluster 0, got ${bengali_dump(ra_u)}'
+	assert ra_u.glyphs[0].advance > 19.01 && ra_u.glyphs[0].advance < 19.13, 'RA advances 596 design units'
+	assert ra_u.glyphs[1].gid == 0x114 && ra_u.glyphs[1].cluster == 1, 'the variant keeps its own input (HarfBuzz reports 0), got ${bengali_dump(ra_u)}'
+	assert !ra_u.glyphs[1].is_mark, 'the variant is spacing, got ${bengali_dump(ra_u)}'
+	assert ra_u.glyphs[1].advance > 6.15 && ra_u.glyphs[1].advance < 6.27, 'the variant advances 194 design units'
+	// The AA matra after the abvs swap is the same story: kta with AA and
+	// candrabindu draws KA, the candrabindu and the spacing AA at 266, and
+	// HarfBuzz agrees glyph for glyph. A mark-staying mark draws the AA at
+	// the pen with no advance, which is the neuter this pin fails.
+	stk := bengali_line(f, bengali_word([rune(0x0995), rune(0x09BE), rune(0x0981)]))
+	assert stk.glyphs.len == 3, 'KA plus AA plus candrabindu draws three glyphs, got ${bengali_dump(stk)}'
+	assert stk.glyphs[0].gid == 0x19 && stk.glyphs[0].cluster == 0, 'KA opens on cluster 0, got ${bengali_dump(stk)}'
+	assert stk.glyphs[1].gid == 0xa && stk.glyphs[1].cluster == 1, 'the candrabindu keeps cluster 1 (HarfBuzz reports 0), got ${bengali_dump(stk)}'
+	assert stk.glyphs[1].advance == 0.0 && stk.glyphs[1].is_mark, 'the candrabindu advances nothing'
+	assert stk.glyphs[1].x > 14.21 && stk.glyphs[1].x < 14.33, 'the mark sits 446 design units off the pen, got x=${stk.glyphs[1].x}'
+	assert stk.glyphs[2].gid == 0x3b && stk.glyphs[2].cluster == 2, 'the AA matra keeps its own input (HarfBuzz reports 0), got ${bengali_dump(stk)}'
+	assert !stk.glyphs[2].is_mark, 'the AA matra is spacing, got ${bengali_dump(stk)}'
+	assert stk.glyphs[2].advance > 8.45 && stk.glyphs[2].advance < 8.57, 'the AA matra advances 266 design units'
+}
+
+fn test_bengali_shape_dist_kern() {
+	// The HA pair widens through the dist chain the mark filter selects:
+	// HarfBuzz draws HA gid 0x38 at 674 (534 hmtx plus the 140-unit
+	// chaining single), the vocalic mark 0x143 at (-275, 165) and the rakar
+	// 0x15a at -200, with the marks on cluster 1 where the honest
+	// per-input clusters keep them. A filter-blind matcher skips nothing
+	// and misses the rule, leaving HA at 534, which is the neuter this pin
+	// fails.
+	f := bengali_font() or { return }
+	ha_voc := bengali_line(f, bengali_word([rune(0x09B9), rune(0x09C3)]))
+	assert ha_voc.glyphs.len == 3, 'HA plus vocalic R draws three glyphs, got ${bengali_dump(ha_voc)}'
+	assert ha_voc.glyphs[0].gid == 0x38 && ha_voc.glyphs[0].cluster == 0, 'HA opens on cluster 0, got ${bengali_dump(ha_voc)}'
+	assert ha_voc.glyphs[0].advance > 21.51 && ha_voc.glyphs[0].advance < 21.63, 'the dist kern leaves 674 design units'
+	assert ha_voc.glyphs[1].gid == 0x143 && ha_voc.glyphs[1].cluster == 1, 'the mark keeps its own input (HarfBuzz reports 0), got ${bengali_dump(ha_voc)}'
+	assert ha_voc.glyphs[1].advance == 0.0 && ha_voc.glyphs[1].is_mark, 'the mark advances nothing'
+	assert ha_voc.glyphs[1].x > 12.71 && ha_voc.glyphs[1].x < 12.83, 'the mark sits 275 design units off the pen, got x=${ha_voc.glyphs[1].x}'
+	assert ha_voc.glyphs[1].y > -5.34 && ha_voc.glyphs[1].y < -5.22, 'the mark rides 165 design units up, got y=${ha_voc.glyphs[1].y}'
+	assert ha_voc.glyphs[2].gid == 0x15a && ha_voc.glyphs[2].cluster == 1, 'the rakar keeps cluster 1, got ${bengali_dump(ha_voc)}'
+	assert ha_voc.glyphs[2].advance == 0.0 && ha_voc.glyphs[2].is_mark, 'the rakar advances nothing'
+	assert ha_voc.glyphs[2].x > 15.11 && ha_voc.glyphs[2].x < 15.23, 'the rakar sits 200 design units off the pen, got x=${ha_voc.glyphs[2].x}'
+}
+
 fn test_bengali_draw_base() {
 	// One rasterised base consonant: a face that shapes but never inks is a
 	// face the test cannot see.
@@ -474,4 +709,26 @@ fn test_bengali_pins_are_live() {
 	line := bengali_line(f, bengali_word([rune(0x09B0), rune(0x09BE), rune(0x09AE)]))
 	assert line.glyphs[0].gid == 0x33, 'the raam pin still holds'
 	assert line.glyphs[0].gid != 0x34, 'off-by-one gid must not match: the pin is exact'
+	// The assembly chain discriminates: unfolding pstf leaves KA hal YA at
+	// three glyphs, starving vatu of its blwf product leaves the JA stack
+	// at two, and the coverage-last SingleSubst reading turns the tra rakar
+	// into gid 12033. Each pin above fails on its neuter.
+	kya := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x09AF)]))
+	assert kya.glyphs.len == 2 && kya.glyphs[1].gid == 0x85, 'kya stays fused: a dropped pstf must fail'
+	assert kya.glyphs[1].gid != 0x86, 'off-by-one gid must not match: the pin is exact'
+	jjb := bengali_line(f, bengali_word([rune(0x099C), rune(0x09CD), rune(0x099C), rune(0x09CD),
+		rune(0x09AC)]))
+	assert jjb.glyphs.len == 1 && jjb.glyphs[0].gid == 0x8e, 'the JA stack stays fused: vatu after cjct must fail'
+	tra := bengali_line(f, bengali_word([rune(0x099F), rune(0x09CD), rune(0x09B0)]))
+	assert tra.glyphs.len == 3 && tra.glyphs[2].gid == 0x11d, 'tra keeps its rakar: a coverage-last single must fail'
+	assert tra.glyphs[2].gid != 12033, 'the misparsed gid must not come back'
+	// The placing pass discriminates: marks place under-first, so the
+	// under-mark precedes the over-mark in cluster order; a last-backwards
+	// order stacks the candrabindu before its flag and must fail.
+	marks_line := bengali_line(f, bengali_word([rune(0x0995), rune(0x09CD), rune(0x099F), rune(0x0981)]))
+	mut mark_order := []u16{}
+	for mi in layout.mark_indices_by_cluster(marks_line.glyphs) {
+		mark_order << marks_line.glyphs[mi].gid
+	}
+	assert mark_order == [u16(0x14a), u16(0x15f)], 'the flag places before the candrabindu it carries, got ${mark_order}'
 }

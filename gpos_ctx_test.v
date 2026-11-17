@@ -145,9 +145,9 @@ fn test_gpos_contextual_does_not_fire_on_a_run_it_does_not_match() {
 	for c in [`a`, `b`, `c`, `d`, `e`] {
 		run << f.glyph_index(c)
 	}
-	assert gpos.apply_contextual(run, 'arab', '').len == 0, 'Latin letters match no Arabic pattern'
+	assert gpos.apply_contextual(run, 'arab', '', f.face.gdef).len == 0, 'Latin letters match no Arabic pattern'
 	// An empty run is nothing rather than a match at position zero.
-	assert gpos.apply_contextual([]u16{}, 'arab', '').len == 0
+	assert gpos.apply_contextual([]u16{}, 'arab', '', f.face.gdef).len == 0
 }
 
 // A font's chaining rules are written against the glyphs its own pipeline produces, and for a font
@@ -212,11 +212,11 @@ fn test_gpos_contextual_does_nothing_on_text_it_does_not_match() {
 	for g in line.glyphs {
 		gids << g.gid
 	}
-	assert gpos.apply_contextual(gids, 'arab', '').len == 0, 'Latin letters match no Arabic pattern'
+	assert gpos.apply_contextual(gids, 'arab', '', f.face.gdef).len == 0, 'Latin letters match no Arabic pattern'
 	// An empty run is nothing rather than a match at position zero.
-	assert gpos.apply_contextual([]u16{}, 'arab', '').len == 0
+	assert gpos.apply_contextual([]u16{}, 'arab', '', f.face.gdef).len == 0
 	// A single glyph cannot match a two glyph pattern, whatever the glyph is.
-	assert gpos.apply_contextual([u16(f.glyph_index(rune(0x0651)))], 'arab', '').len == 0, 'one glyph cannot satisfy a two glyph pattern'
+	assert gpos.apply_contextual([u16(f.glyph_index(rune(0x0651)))], 'arab', '', f.face.gdef).len == 0, 'one glyph cannot satisfy a two glyph pattern'
 }
 
 // ctx_produced is every glyph a spread of marked letters produces, which is what a pattern's coverage

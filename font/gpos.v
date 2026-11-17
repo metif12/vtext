@@ -1491,7 +1491,7 @@ pub fn (g &Gpos) apply_pos_records(records []ContextRecord, m ChainMatchPosition
 // Both answers count when both exist: adjustments accumulate across lookups rather than stopping at
 // the first, so a class-0 zero from the pairs does not hide a contextual kern for the same glyphs.
 // e-f in Amiri is (0, 0) plain and -11 in context, and HarfBuzz draws the sum.
-pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, lang string) ?Offset2 {
+pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, lang string, gdef ?&Gdef) ?Offset2 {
 	if left < 0 || right >= gids.len || left >= right {
 		return none
 	}
@@ -1509,28 +1509,42 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, 
 		if li >= g.lookups.len {
 			continue
 		}
-		for c in g.lookups[li].chains {
-			// The pattern is tried at every position from which it could reach both of the pair, which
-			// is from the left of the pair back by the number of backtrack glyphs to the right of it
-			// forward by the number of lookahead glyphs. Trying only the pair's own left position
-			// misses every rule with a backtrack, and a rule with a backtrack is most of them: the point
-			// of a backtrack is that the answer depends on what came before.
-			mut first := left - c.backtrack.len
+		lookup := g.lookups[li]
+		// A lookup gated by USE_MARK_FILTERING_SET matches only its set's
+		// marks: the effective sequence skips every other mark, so a
+		// vocalic matra between HA and its rakar does not break the dist
+		// rule written for the pair. Every other flag is ignored here, the
+		// way it always was.
+		eff := g.chain_eff(gids, lookup.flag, lookup.mark_filtering_set, gdef)
+		if eff.len == 0 {
+			continue
+		}
+		skipped := gids.len - eff.len
+		for c in lookup.chains {
+			// The pattern is tried at every effective position from which
+			// it could reach both of the pair: the run window of the old
+			// walk widened by the skipped count, because each skipped mark
+			// stretches the run further than the pattern counts.
+			mut first := left - c.backtrack.len - skipped
 			if first < 0 {
 				first = 0
 			}
-			mut last := right + c.lookahead.len
+			mut last := right + c.lookahead.len + skipped
 			if last > gids.len - 1 {
 				last = gids.len - 1
 			}
-			for at in first .. last + 1 {
-				m := match_chain_position(c, gids, at)
+			for ei in 0 .. eff.len {
+				if eff[ei] < first || eff[ei] > last {
+					continue
+				}
+				m := match_chain_position(c, gids, eff, ei)
 				if m.start < 0 {
 					continue
 				}
 				// A pattern that matched somewhere else in the run is not this pair's rule, and the
 				// only thing that says so is whether it covers both of the glyphs the caller named.
-				if !spans_pair(c, m, left, right) {
+				lo, hi := span_of(eff, ei, c.backtrack.len, c.input.len, c.lookahead.len, m)
+				if !spans_run(lo, hi, left, right) {
 					continue
 				}
 				if a := g.apply_pos_records(c.records, m, gids, left, right, left_gid,
@@ -1541,13 +1555,14 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, 
 				}
 			}
 		}
-		for cc in g.lookups[li].chain_classes {
+		for cc in lookup.chain_classes {
 			// A class rule carries its own backtrack and lookahead lengths, so unlike the
 			// coverage version there is no per-lookup window to narrow: every position is
 			// tried and the matcher bounds-checks each sequence itself.
-			for at in 0 .. gids.len {
-				m, rule := g.match_chain_class_at(cc, gids, at) or { continue }
-				if !spans_span(rule.backtrack.len, rule.lookahead.len, m, left, right) {
+			for at in 0 .. eff.len {
+				m, rule := g.match_chain_class_at(cc, gids, eff, at) or { continue }
+				lo, hi := span_of(eff, at, rule.backtrack.len, rule.input.len + 1, rule.lookahead.len, m)
+				if !spans_run(lo, hi, left, right) {
 					continue
 				}
 				if a := g.apply_pos_records(rule.records, m, gids, left, right, left_gid,
@@ -1558,13 +1573,14 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, 
 				}
 			}
 		}
-		for cg in g.lookups[li].chain_glyphs {
+		for cg in lookup.chain_glyphs {
 			// A glyph rule carries its own backtrack and lookahead lengths, so like the
 			// class version every position is tried and the matcher bounds-checks each
 			// sequence itself.
-			for at in 0 .. gids.len {
-				m, rule := g.match_chain_glyph_at(cg, gids, at) or { continue }
-				if !spans_span(rule.backtrack.len, rule.lookahead.len, m, left, right) {
+			for at in 0 .. eff.len {
+				m, rule := g.match_chain_glyph_at(cg, gids, eff, at) or { continue }
+				lo, hi := span_of(eff, at, rule.backtrack.len, rule.input.len + 1, rule.lookahead.len, m)
+				if !spans_run(lo, hi, left, right) {
 					continue
 				}
 				if a := g.apply_pos_records(rule.records, m, gids, left, right, left_gid,
@@ -1580,6 +1596,65 @@ pub fn (g &Gpos) context_offset(gids []u16, left int, right int, script string, 
 		return none
 	}
 	return Offset2{ x: x, y: y }
+}
+
+// spans_run reports whether a matched pattern is about the pair the caller
+// named, from the run indices of its first and last covered glyph. It is
+// the effective-sequence form of spans_span below: where a gated lookup
+// skips marks, backtrack and lookahead lengths count participating glyphs
+// rather than run positions, so the span is read off the match instead of
+// computed from the lengths.
+//
+// The check is one or the other rather than both, and that is the
+// distinction worth writing down: a pattern naming both glyphs is about the
+// pair, and a pattern naming one and reaching the other as its context is
+// about one of them with a condition. Requiring both would throw away every
+// rule with a backtrack, and requiring neither would let any rule in the run
+// apply to any pair.
+pub fn spans_run(lo int, hi int, left int, right int) bool {
+	return (left >= lo && left <= hi) || (right >= lo && right <= hi)
+}
+
+// span_of answers the run indices of the first and last glyph a match
+// covers: the backtrack and lookahead ends in the effective sequence the
+// match was tried at, or the input ends when the pattern names none.
+fn span_of(eff []int, at int, back int, input int, ahead int, m ChainMatchPositions) (int, int) {
+	lo := if back > 0 { eff[at - back] } else { m.start }
+	mut hi := m.positions[m.positions.len - 1]
+	if ahead > 0 {
+		hi = eff[at + input + ahead - 1]
+	}
+	return lo, hi
+}
+
+// chain_eff lists the glyphs of a run that take part in one lookup's
+// chaining match, as indices into the run.
+//
+// A lookup gated by USE_MARK_FILTERING_SET matches only its set's marks:
+// every other mark is skipped the way the GSUB matcher skips ignored
+// marks, so a vocalic matra between HA and its rakar does not break the
+// dist rule written for the pair. Without the flag — or without a GDEF to
+// test membership — every glyph takes part, which is what every lookup did
+// before this gate.
+fn (g &Gpos) chain_eff(gids []u16, flag u16, mark_set u16, gdef ?&Gdef) []int {
+	mut out := []int{cap: gids.len}
+	for i in 0 .. gids.len {
+		out << i
+	}
+	if flag & 0x0010 == 0 {
+		return out
+	}
+	if gd := gdef {
+		mut kept := []int{cap: gids.len}
+		for i, gid in gids {
+			if gd.is_mark(gid) && !gpos_mark_in_set(g.mark_sets, mark_set, gid) {
+				continue
+			}
+			kept << i
+		}
+		return kept
+	}
+	return out
 }
 
 // spans_pair reports whether a matched pattern is about the pair the caller named.
@@ -1605,13 +1680,11 @@ pub fn spans_span(backtrack_len int, lookahead_len int, m ChainMatchPositions, l
 	if m.start < 0 || m.positions.len == 0 {
 		return false
 	}
-	mut low := m.start - backtrack_len
-	if low < 0 {
-		low = 0
+	mut lo := m.start - backtrack_len
+	if lo < 0 {
+		lo = 0
 	}
-	mut high := m.positions[m.positions.len - 1]
-	high += lookahead_len
-	return (left >= low && left <= high) || (right >= low && right <= high)
+	return spans_run(lo, m.positions[m.positions.len - 1] + lookahead_len, left, right)
 }
 
 // apply_contextual walks a glyph run and returns every positioning a chaining context asks for.
@@ -1624,7 +1697,7 @@ pub fn spans_span(backtrack_len int, lookahead_len int, m ChainMatchPositions, l
 // A glyph is reported at most once. Two rules can both match at the same position and both want to
 // move it, and which one wins is the order the lookups are applied in, which the caller owns; this
 // returns what each rule asks for and lets the caller decide.
-pub fn (g &Gpos) apply_contextual(gids []u16, script string, lang string) []ChainApplication {
+pub fn (g &Gpos) apply_contextual(gids []u16, script string, lang string, gdef ?&Gdef) []ChainApplication {
 	mut out := []ChainApplication{}
 	if gids.len == 0 {
 		return out
@@ -1637,9 +1710,13 @@ pub fn (g &Gpos) apply_contextual(gids []u16, script string, lang string) []Chai
 			continue
 		}
 		lookup := g.lookups[li]
+		eff := g.chain_eff(gids, lookup.flag, lookup.mark_filtering_set, gdef)
+		if eff.len == 0 {
+			continue
+		}
 		for c in lookup.chains {
-			for at in 0 .. gids.len {
-				m := match_chain_position(c, gids, at)
+			for at in 0 .. eff.len {
+				m := match_chain_position(c, gids, eff, at)
 				if m.start < 0 {
 					continue
 				}
@@ -1655,8 +1732,8 @@ pub fn (g &Gpos) apply_contextual(gids []u16, script string, lang string) []Chai
 			}
 		}
 		for cc in lookup.chain_classes {
-			for at in 0 .. gids.len {
-				m, rule := g.match_chain_class_at(cc, gids, at) or { continue }
+			for at in 0 .. eff.len {
+				m, rule := g.match_chain_class_at(cc, gids, eff, at) or { continue }
 				for rec in rule.records {
 					if rec.position < 0 || rec.position >= m.positions.len {
 						continue
@@ -1669,8 +1746,8 @@ pub fn (g &Gpos) apply_contextual(gids []u16, script string, lang string) []Chai
 			}
 		}
 		for cg in lookup.chain_glyphs {
-			for at in 0 .. gids.len {
-				m, rule := g.match_chain_glyph_at(cg, gids, at) or { continue }
+			for at in 0 .. eff.len {
+				m, rule := g.match_chain_glyph_at(cg, gids, eff, at) or { continue }
 				for rec in rule.records {
 					if rec.position < 0 || rec.position >= m.positions.len {
 						continue
@@ -1686,14 +1763,15 @@ pub fn (g &Gpos) apply_contextual(gids []u16, script string, lang string) []Chai
 	return out
 }
 
-// match_chain_position tests a context's pattern at one position in a glyph run.
+// match_chain_position tests a context's pattern at one effective position in a glyph run.
 //
 // The backtrack and lookahead lists are written nearest glyph first and the input list runs forwards,
-// and none of that changes with the writing direction. The returned start is negative when the pattern
-// does not match, and the positions are the indices in the run of every input glyph, in pattern order,
-// so a record's position indexes straight into them.
-pub fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPositions {
-	if c.input.len == 0 || at + c.input.len > gids.len {
+// and none of that changes with the writing direction. at is an index into eff, the run's
+// participating glyphs, so a lookup that skips gated marks reads what HarfBuzz reads. The
+// returned start and positions are indices into the run, in pattern order, so a record's
+// position indexes straight into them.
+pub fn match_chain_position(c &ChainPosition, gids []u16, eff []int, at int) ChainMatchPositions {
+	if c.input.len == 0 || at < 0 || at + c.input.len > eff.len {
 		return ChainMatchPositions{ start: -1 }
 	}
 	for k, cov in c.backtrack {
@@ -1701,7 +1779,7 @@ pub fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPosi
 		if back < 0 {
 			return ChainMatchPositions{ start: -1 }
 		}
-		if coverage_index(cov, gids[back]) == none {
+		if coverage_index(cov, gids[eff[back]]) == none {
 			return ChainMatchPositions{ start: -1 }
 		}
 	}
@@ -1709,24 +1787,24 @@ pub fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPosi
 	// that a record naming position n reads position n and not the end of the list.
 	mut positions := []int{len: c.input.len}
 	for k, cov in c.input {
-		if coverage_index(cov, gids[at + k]) == none {
+		if coverage_index(cov, gids[eff[at + k]]) == none {
 			return ChainMatchPositions{ start: -1 }
 		}
-		positions[k] = at + k
+		positions[k] = eff[at + k]
 	}
 	for k, cov in c.lookahead {
 		ahead := at + c.input.len + k
-		if ahead >= gids.len {
+		if ahead >= eff.len {
 			return ChainMatchPositions{ start: -1 }
 		}
-		if coverage_index(cov, gids[ahead]) == none {
+		if coverage_index(cov, gids[eff[ahead]]) == none {
 			return ChainMatchPositions{ start: -1 }
 		}
 	}
-	return ChainMatchPositions{ start: at, positions: positions }
+	return ChainMatchPositions{ start: eff[at], positions: positions }
 }
 
-// match_chain_class_at tests every rule of a class subtable's selected set at one position.
+// match_chain_class_at tests every rule of a class subtable's selected set at one effective position.
 // The coverage gates first — a glyph it does not name starts no rule — and then the input
 // class of the glyph selects the set; the first rule whose three class sequences all
 // match wins, with classes read off the subtable's own definitions —
@@ -1734,122 +1812,122 @@ pub fn match_chain_position(c &ChainPosition, gids []u16, at int) ChainMatchPosi
 //
 // It returns the match together with the rule that matched, because the span check and the
 // records both belong to the rule rather than to the subtable.
-pub fn (g &Gpos) match_chain_class_at(cc &ChainClass2, gids []u16, at int) ?(ChainMatchPositions, ChainClassRule) {
+pub fn (g &Gpos) match_chain_class_at(cc &ChainClass2, gids []u16, eff []int, at int) ?(ChainMatchPositions, ChainClassRule) {
 	_ = g
-	if at < 0 || at >= gids.len {
+	if at < 0 || at >= eff.len {
 		return none
 	}
-	if coverage_index(cc.coverage, gids[at]) == none {
+	if coverage_index(cc.coverage, gids[eff[at]]) == none {
 		return none
 	}
-	ic := cc.input.class_of(gids[at])
+	ic := cc.input.class_of(gids[eff[at]])
 	if ic >= cc.sets.len {
 		return none
 	}
 	for rule in cc.sets[ic] {
-		if m := match_class_rule(cc, rule, gids, at) {
+		if m := match_class_rule(cc, rule, gids, eff, at) {
 			return m, rule
 		}
 	}
 	return none
 }
 
-// match_class_rule tests one class rule's three sequences at a position. Positions are run
+// match_class_rule tests one class rule's three sequences at an effective position. Positions are run
 // indices like the coverage matcher's, so a record's position indexes straight into them.
-pub fn match_class_rule(cc &ChainClass2, rule &ChainClassRule, gids []u16, at int) ?ChainMatchPositions {
+pub fn match_class_rule(cc &ChainClass2, rule &ChainClassRule, gids []u16, eff []int, at int) ?ChainMatchPositions {
 	for k, class in rule.backtrack {
 		back := at - 1 - k
 		if back < 0 {
 			return none
 		}
-		if cc.backtrack.class_of(gids[back]) != class {
+		if cc.backtrack.class_of(gids[eff[back]]) != class {
 			return none
 		}
 	}
-	mut positions := [at]
+	mut positions := [eff[at]]
 	for k, class in rule.input {
 		next := at + 1 + k
-		if next >= gids.len {
+		if next >= eff.len {
 			return none
 		}
-		if cc.input.class_of(gids[next]) != class {
+		if cc.input.class_of(gids[eff[next]]) != class {
 			return none
 		}
-		positions << next
+		positions << eff[next]
 	}
 	for k, class in rule.lookahead {
 		ahead := at + 1 + rule.input.len + k
-		if ahead >= gids.len {
+		if ahead >= eff.len {
 			return none
 		}
-		if cc.lookahead.class_of(gids[ahead]) != class {
+		if cc.lookahead.class_of(gids[eff[ahead]]) != class {
 			return none
 		}
 	}
 	return ChainMatchPositions{
-		start:     at
+		start:     eff[at]
 		positions: positions
 	}
 }
 
-// match_chain_glyph_at tests every rule of a glyph subtable's selected set at one position.
+// match_chain_glyph_at tests every rule of a glyph subtable's selected set at one effective position.
 // The coverage gates first — a glyph it does not name starts no rule — and then the
 // coverage index selects the set; the first rule whose three glyph-id sequences all
 // match wins.
 //
 // It returns the match together with the rule that matched, because the span check and the
 // records both belong to the rule rather than to the subtable.
-pub fn (g &Gpos) match_chain_glyph_at(cg &ChainGlyph1, gids []u16, at int) ?(ChainMatchPositions, ChainGlyphRule) {
+pub fn (g &Gpos) match_chain_glyph_at(cg &ChainGlyph1, gids []u16, eff []int, at int) ?(ChainMatchPositions, ChainGlyphRule) {
 	_ = g
-	if at < 0 || at >= gids.len {
+	if at < 0 || at >= eff.len {
 		return none
 	}
-	ci := coverage_index(cg.coverage, gids[at]) or { return none }
+	ci := coverage_index(cg.coverage, gids[eff[at]]) or { return none }
 	if ci >= cg.sets.len {
 		return none
 	}
 	for rule in cg.sets[ci] {
-		if m := match_glyph_rule(rule, gids, at) {
+		if m := match_glyph_rule(rule, gids, eff, at) {
 			return m, rule
 		}
 	}
 	return none
 }
 
-// match_glyph_rule tests one glyph rule's three sequences at a position. Positions are run
+// match_glyph_rule tests one glyph rule's three sequences at an effective position. Positions are run
 // indices like the coverage matcher's, so a record's position indexes straight into them.
-pub fn match_glyph_rule(rule &ChainGlyphRule, gids []u16, at int) ?ChainMatchPositions {
+pub fn match_glyph_rule(rule &ChainGlyphRule, gids []u16, eff []int, at int) ?ChainMatchPositions {
 	for k, gid in rule.backtrack {
 		back := at - 1 - k
 		if back < 0 {
 			return none
 		}
-		if gids[back] != gid {
+		if gids[eff[back]] != gid {
 			return none
 		}
 	}
-	mut positions := [at]
+	mut positions := [eff[at]]
 	for k, gid in rule.input {
 		next := at + 1 + k
-		if next >= gids.len {
+		if next >= eff.len {
 			return none
 		}
-		if gids[next] != gid {
+		if gids[eff[next]] != gid {
 			return none
 		}
-		positions << next
+		positions << eff[next]
 	}
 	for k, gid in rule.lookahead {
 		ahead := at + 1 + rule.input.len + k
-		if ahead >= gids.len {
+		if ahead >= eff.len {
 			return none
 		}
-		if gids[ahead] != gid {
+		if gids[eff[ahead]] != gid {
 			return none
 		}
 	}
 	return ChainMatchPositions{
-		start:     at
+		start:     eff[at]
 		positions: positions
 	}
 }

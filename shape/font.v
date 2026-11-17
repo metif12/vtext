@@ -173,20 +173,26 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // because a line missing them is not the text.
 // indic_default_features are the Indic shaping features that run without
 // being asked, in specification order, for the same reason the joining
-// features do. Reph positioning (rphf, pref), post-base forms (pstf) and
-// vatu stay caller-asked: the first needs the reordering machine, the rest
-// are unproven against HarfBuzz.
+// features do. Reph positioning (rphf) rides the reordering machine above;
+// pref stays caller-asked until a corpus word proves its order against
+// HarfBuzz (no committed face fuses one by default).
 fn indic_default_features() []string {
 	// cjct sits before the matra-positioning group rather than after it,
 	// which is where the specification lists it: Noto's pres rules consume
 	// cjct products (the kta split 0xbe to [0xbe, 0x14a] through lookup 66),
 	// and a pres that runs first never sees them. HarfBuzz produces the
 	// split, so the engine follows the font, not the list order. blwf rides
-	// between them for the same reason: the rakar it fuses feeds pres (kri
-	// [KA, hal, RA] through lookup 32 to [0x19, 0x117], then pres to
-	// [0x9a, 0x15a, 0x140]), and a pres-first order leaves the unfused hal
-	// HarfBuzz never drew.
-	return ['nukt', 'akhn', 'rphf', 'half', 'cjct', 'blwf', 'pres', 'abvs', 'blws', 'psts']
+	// before cjct, with pstf and vatu beside it: the rakar it fuses feeds
+	// pres (kri [KA, hal, RA] through lookup 32 to [0x19, 0x117], then pres
+	// to [0x9a, 0x15a, 0x140]), the ya-pstf consumes the halant run the same
+	// way (kya [KA, hal, YA] to [KA, ya-pstf] through lookup 46), and the
+	// vatu stack consumes full consonants plus the blwf product (the JA
+	// stack [JA, hal, JA, hal, BA] to the single 0x8e through lookup 54) —
+	// a cjct-first order fuses the JAs to 0x8d first and starves the vatu
+	// rule HarfBuzz draws. All three orders are proven default-on by
+	// toggling each off under uharfbuzz.
+	return ['nukt', 'akhn', 'rphf', 'half', 'blwf', 'pstf', 'vatu', 'cjct', 'pres', 'abvs', 'blws',
+		'psts']
 }
 
 // khmer_default_features are the Khmer shaping features that run without
@@ -295,9 +301,10 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 	// the same reason the joining features do: a line whose conjuncts stay
 	// unfused is not the text. The set is the in-place half: nukta forms,
 	// akhn ligatures, reph forms (whose move the machine above performs),
-	// half forms, pre-base, above-base and below-base variants, post-base
-	// forms and conjuncts. Pref, pstf, blwf and vatu stay caller-asked
-	// until proven against HarfBuzz. The Khmer coeng fusions run under
+	// half forms, conjuncts, below-base and post-base variants (whose order
+	// against the matra group the font decides), pre-base, above-base and
+	// below-base variants, post-base forms and psts. Pref stays caller-asked
+	// until a corpus word proves its order against HarfBuzz. The Khmer coeng fusions run under
 	// their own gate below: blwf and pstf are proven HarfBuzz-default-on
 	// and exact, while pref needs the reordering machine. Like the joining
 	// features these are not toggleable; a `-tag` for one names nothing.
@@ -641,7 +648,7 @@ pub fn (f &Font) kerns(script string, lang string) bool {
 // right are indices into it, and for a right-to-left run left is the rightmost of the two.
 pub fn (f &Font) context_placement(gids []u16, left int, right int, script string, lang string) ?font.Offset2 {
 	gpos := f.face.gpos or { return none }
-	return gpos.context_offset(gids, left, right, script, lang)
+	return gpos.context_offset(gids, left, right, script, lang, f.face.gdef)
 }
 
 // contextually_positions reports whether the font moves a glyph based on what is around it.

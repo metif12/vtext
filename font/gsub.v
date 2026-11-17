@@ -1341,16 +1341,20 @@ pub fn one_at(pos int) []int {
 // ride as one — but the pstf and pref products are GDEF bases with a real
 // advance (COENG+KHO is 0xba at 294 units, COENG+RO is 0xdc at 287), and
 // HarfBuzz advances them as bases. Only the blwf products are GDEF marks.
-// The flag is per call rather than per table because only the ligature
-// path fuses: singles, multiples and alternates keep the old rule, where
-// a mark input composing through ccmp stays a mark even when the font
-// never classified the product.
+// A single, multiple or alternate product the font positively classifies
+// is classified the same way: a Bengali pres single turns the U-matra
+// into a spacing variant (gid 276 is GDEF base with a 194-unit advance)
+// and an abvs chain swaps AA and candrabindu (gid 59 is GDEF base), and a
+// mark input staying a mark there would park both at the pen with no
+// advance. A product the font leaves unclassified keeps the input flag,
+// which is what a mark composing through ccmp keeps when the font never
+// classified it.
 pub fn (g &Gsub) ligatables(seq []u16, from Ligatable, is_fusion bool) []Ligatable {
 	mut out := []Ligatable{cap: seq.len}
 	for gid in seq {
 		mut is_mark := from.is_mark
 		if gd := g.gdef {
-			if is_fusion || !is_mark {
+			if is_fusion || !is_mark || gd.is_base(gid) {
 				is_mark = gd.is_mark(gid)
 			}
 		}
@@ -2572,24 +2576,22 @@ pub fn resolve_subtable(r &Reader, kind u16, at int) ResolvedSubtable {
 }
 
 // parse_single_subst reads one SingleSubst subtable in either of its two formats.
-// parse_single_subst reads one SingleSubst subtable in either of its two formats.
 //
 // The coverage is reached by an offset from the start of the subtable rather than stored
-// inline, and where that offset sits is worth a note. The specification puts the delta and
-// the glyph count in the second field and the coverage offset in the third, so the header
-// reads either
-//
-//	substFormat, deltaGlyphID | glyphCount, coverage, substituteGlyphIDs[]
-//
-// and that reading is tried first. Every Arabic font on Windows was measured putting those
-// two middle fields the other way round, giving
+// inline, and where that offset sits is worth a note. The specification puts the coverage
+// offset in the second field and the delta or glyph count in the third, so the header
+// reads
 //
 //	substFormat, coverage, deltaGlyphID | glyphCount, substituteGlyphIDs[]
 //
-// and in each case only the second reading leaves the subtable ending exactly where the next
-// subtable begins. Both are accepted, documented order first, because a font that gets this
-// wrong still renders in whatever consumes it and a text engine has no business being the
-// one that draws the wrong glyph.
+// and that reading is tried first. A reading with the two middle fields transposed is
+// tried second, because a font that gets this wrong still renders in whatever consumes
+// it and a text engine has no business being the one that draws the wrong glyph. In
+// each case the coverage has to fit inside the table: the transposed reading of a
+// spec-order table points into the coverage itself and parses a giant count out of it
+// (Noto Bengali lookup 109 reads a count of 11748 and a delta of 11754 that way, turning
+// raphalabeng into glyph 12033), so a coverage that runs past the buffer rejects the
+// reading instead of drawing a wrong glyph.
 pub fn parse_single_subst(r &Reader, at int) ?SingleSubst {
 	format := r.u16_at(at)
 	if format != 1 && format != 2 {
@@ -2598,8 +2600,11 @@ pub fn parse_single_subst(r &Reader, at int) ?SingleSubst {
 	first := int(r.u16_at(at + 2))
 	second := int(r.u16_at(at + 4))
 	for pass in 0 .. 2 {
-		mid := if pass == 0 { first } else { second }
-		cov_off := if pass == 0 { second } else { first }
+		cov_off := if pass == 0 { first } else { second }
+		mid := if pass == 0 { second } else { first }
+		if !coverage_fits(r, at + cov_off) {
+			continue
+		}
 		ranges := parse_coverage(r, at + cov_off)
 		if ranges.len == 0 {
 			continue
@@ -2607,7 +2612,7 @@ pub fn parse_single_subst(r &Reader, at int) ?SingleSubst {
 		if format == 1 {
 			return SingleSubst{
 				ranges: ranges
-				delta:  i32(r.i16_at(at + 2 + pass * 2))
+				delta:  i32(r.i16_at(at + 4 - pass * 2))
 			}
 		}
 		// Format 2 pairs every covered glyph with a replacement, so the number of covered
@@ -2628,6 +2633,22 @@ pub fn parse_single_subst(r &Reader, at int) ?SingleSubst {
 		}
 	}
 	return none
+}
+
+// coverage_fits reports whether the coverage table at cov_at lies fully inside the
+// buffer. A count read from the wrong offset is usually enormous, so this is what
+// rejects a transposed reading before it draws a wrong glyph: out-of-bounds reads
+// answer zero, which would otherwise parse as ranges of glyph 0 rather than failing.
+fn coverage_fits(r &Reader, cov_at int) bool {
+	format := r.u16_at(cov_at)
+	count := int(r.u16_at(cov_at + 2))
+	if format == 1 {
+		return r.has(cov_at, 4 + count * 2)
+	}
+	if format == 2 {
+		return r.has(cov_at, 4 + count * 6)
+	}
+	return false
 }
 
 // covered_count is how many glyphs a coverage table covers, which is the total length of its

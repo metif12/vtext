@@ -120,7 +120,7 @@ fn test_gpos_chain_glyph_rule_matches_by_glyph() {
 			records:   [font.ContextRecord{ position: 1, lookup: 7 }]
 		}]]
 	}
-	m, rule := g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(20), u16(30)], 1) or {
+	m, rule := g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(20), u16(30)], [0, 1, 2, 3], 1) or {
 		panic('the glyph pattern should match')
 	}
 	assert m.start == 1, 'the match starts at the covered glyph'
@@ -128,10 +128,10 @@ fn test_gpos_chain_glyph_rule_matches_by_glyph() {
 	assert rule.lookahead == [u16(30)], 'the returned rule is the one that matched'
 	// A wrong glyph anywhere in the three sequences is no match, and a run cut
 	// short of the lookahead is one too.
-	assert g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(21), u16(30)], 1) == none, 'a wrong input glyph misses'
-	assert g.match_chain_glyph_at(&cg, [u16(6), u16(10), u16(20), u16(30)], 1) == none, 'a wrong backtrack glyph misses'
-	assert g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(20)], 1) == none, 'a cut lookahead misses'
-	assert g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(20), u16(30)], 0) == none, 'an uncovered first glyph starts nothing'
+	assert g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(21), u16(30)], [0, 1, 2, 3], 1) == none, 'a wrong input glyph misses'
+	assert g.match_chain_glyph_at(&cg, [u16(6), u16(10), u16(20), u16(30)], [0, 1, 2, 3], 1) == none, 'a wrong backtrack glyph misses'
+	assert g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(20)], [0, 1, 2], 1) == none, 'a cut lookahead misses'
+	assert g.match_chain_glyph_at(&cg, [u16(5), u16(10), u16(20), u16(30)], [0, 1, 2, 3], 0) == none, 'an uncovered first glyph starts nothing'
 }
 
 // The rule applied end to end through the lookup machinery: a synthetic lookup 0
@@ -164,13 +164,13 @@ fn test_gpos_chain_glyph_applies_through_a_lookup() {
 		}]
 	}
 	gids := [u16(5), u16(10), u16(20), u16(30)]
-	apps := g.apply_contextual(gids, 'latn', '')
+	apps := g.apply_contextual(gids, 'latn', '', none)
 	assert apps.len == 1, 'one application, got ${apps.len}'
 	assert apps[0].at == 2, 'moving the second input glyph'
 	assert apps[0].lookup == 1, 'through the lookup the record names'
-	off := g.context_offset(gids, 1, 2, 'latn', '') or { panic('the pair should place contextually') }
+	off := g.context_offset(gids, 1, 2, 'latn', '', none) or { panic('the pair should place contextually') }
 	assert off.x == -50 && off.y == 0, 'the single positioning moved it, got ${off}'
-	assert g.context_offset([u16(5), u16(10), u16(21), u16(30)], 1, 2, 'latn', '') == none, 'a run the rule does not match places nothing'
+	assert g.context_offset([u16(5), u16(10), u16(21), u16(30)], 1, 2, 'latn', '', none) == none, 'a run the rule does not match places nothing'
 }
 
 // LeelawUI, a Windows Malayalam face, is the font that proves the reader against
