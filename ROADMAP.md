@@ -893,6 +893,8 @@ Naskh, Nastaliq and SC faces.
 | `NotoSansArmenian-Variable.ttf` | 221,936 | Armenian | OFL |
 | `NotoSansEthiopic-Variable.ttf` | 1,143,168 | Ethiopic | OFL |
 | `NotoSansBengali-Variable.ttf` | 463,668 | Bengali | OFL |
+| `DoulosSIL-Regular.ttf` | 887,828 | Latin (survey-only: no `morx`/Graphite) | OFL |
+| `AwamiNastaliq-Regular.ttf` | 644,356 | Urdu Nastaliq + Graphite trigger (`Silf`/`Glat`/`Gloc`) | OFL |
 | `SourceSans3-Regular.otf` (CFF) | 334,924 | Latin | OFL |
 | `STIXTwoMath-Regular.ttf` | 1,517,976 | Math | OFL |
 | `LatinModernMath-Regular.otf` (CFF) | 733,736 | Math | GFL (LPPL instance; OFL backup carries no MATH table — rejected) |
@@ -926,7 +928,16 @@ owns the queue.
 | 10.5 | generic discovery (`providers/discovery.v`) | landed (order/variant/pow2; 7.8 stays per-OS) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
-`morx`, Graphite, WOFF2/brotli, the full TrueType bytecode interpreter,
+`morx` (no committable carrier class exists — Apple faces are
+unredistributable, no OFL `morx` carrier is known; a generated font would be
+the fixture-matches-reader failure, so there is nothing to fetch), Graphite
+(font gate pulled 2026-11-17: `AwamiNastaliq-Regular.ttf` committed with
+`Silf`/`Glat`/`Gloc`/`Feat`/`Sill`; Doulos SIL 7.000 surveyed 2026-11-17 and
+carries none — 18 tables, no `morx`/`mort`/Graphite, `Silt` is an opaque gzip
+blob; corpus 26-face scan 0 hits, full AAT-family scan on both SIL faces 0
+hits; reference gate still closed — HarfBuzz cannot shape Graphite, so a
+grengine-class reference must be proven in CI first; engine unscoped),
+WOFF2/brotli, the full TrueType bytecode interpreter,
 CFF2, Tibetan stacking (arrives with its own slice and stacking font, or
 says why it cannot).
 
