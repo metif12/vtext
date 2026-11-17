@@ -4,7 +4,7 @@ One library that does the whole text job — load, shape, lay out, rasterize,
 inspect, subset — where each job is a separate part with its own API, its own
 conformance baseline, and its own reason to exist. A caller uses one part or
 all of them; nothing is pulled in by accident. It replaces HarfBuzz,
-FreeType, Pango and fontconfig per part, on Windows, Linux and macOS, with
+FreeType, Pango, fontconfig, fontstash and stb_truetype per part, on Windows, Linux and macOS, with
 answers as good and throughput measured better — or the claim is not made.
 
 That sentence is the architecture. "Replacement" is claimed per part, against
@@ -22,7 +22,7 @@ is a part with no claim.
 | `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1 (WOFF2 refused: no brotli decoder in tree), cmap, metrics, variation-store reading. The `Font`/`FontSet`/`Glyph` wrappers and layout live in `shape/` and `layout/`; `font/` owns data, parsers, and every method on font types. |
 | `vtext.shape` | HarfBuzz core | Normalization, bidi, joining, `Context`, `Font`/`FontSet`/`Glyph`, `inspect.v`, case mapping. GSUB/GPOS application runs on font types in `font/`; orchestration taking font types as arguments lives here. |
 | `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical columns. Align/justify landed opt-in in 7.4 (kashida tatweels for uniform Arabic, spaces elsewhere); hyphenation (7.5), wrap modes/ellipsize/tabs (8.4) and log attrs (8.2) landed. |
-| `vtext.raster` | FreeType's rendering side | `GlyphBitmap` behind the box-and-fill contract `box_only`/`render_into` define; unhinted engine today, hinting and color in 7.7, synthetic styles and LCD in 8.5. The box and fill calls stay methods on `font.Face` because methods live in the type's own module, so `font` imports the leaf `raster` for the data they trade in. |
+| `vtext.raster` | FreeType's rendering side, fontstash/stb_truetype coverage | `GlyphBitmap` behind the box-and-fill contract `box_only`/`render_into` define; hinted engine, color, synth/LCD and stroking landed (7.7/8.5/8.6). Packing, quantize/gamma/blur and quads live in `raster/pack.v`, `raster/quantize.v`, `layout/iterator.v` as caller-owned generics with no FONS types. The box and fill calls stay methods on `font.Face` because methods live in the type's own module, so `font` imports the leaf `raster` for the data they trade in. |
 | `vtext.inspect` | fontTools introspection (read side) | The inspection API on `shape.Font` in `shape/inspect.v`, not a separate part: eighteen `Font` methods, and a thin `inspect/` of free functions would cycle `shape` → `inspect` → `shape` through the return type. |
 | `vtext.subset` | fontTools subsetter | `subset/` behind `subset_font(font, seed)` with `tools/subset.v` as the CLI; glyf today (the 7.9 CFF reader reads but does not rebuild — subsetting still refuses CFF with its reason). `Font.data()` returns the parsed bytes; the closure rebuilds and the tool verifies by reloading. |
 | `vtext.capi` | — (the C face of all of the above) | Opaque handles over every part; `vtext.h` stays the single header. The header mirror is proven, not claimed: `tools/capicheck.v` reads `capi.v`, `vtext.h` and `vtext.def` as text and fails either direction (49 exports). |

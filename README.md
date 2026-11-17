@@ -3,8 +3,9 @@
 A complete font and text package in V: load, shape, lay out, rasterize,
 inspect and subset — one library where each job is a separate part with its
 own API and its own conformance baseline. It replaces FreeType, HarfBuzz,
-Pango and fontconfig per part, on Windows, Linux and macOS, with answers as
-good and throughput measured better — or the claim is not made.
+Pango, fontconfig, fontstash and stb_truetype per part, on Windows, Linux
+and macOS, with answers as good and throughput measured better — or the
+claim is not made.
 
 A caller uses one part or all of them; nothing is pulled in by accident. Each
 part is measured against the incumbent for that part: shaping against
@@ -41,11 +42,12 @@ fn main() {
 | `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1, cmap, metrics, variation-store reading |
 | `vtext.shape` | HarfBuzz core | Normalization, bidi, joining, GSUB/GPOS application, case mapping |
 | `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical lines and columns |
-| `vtext.raster` | FreeType's rendering side | Unhinted box-and-fill today; hinting and color behind the same contract later |
+| `vtext.raster` | FreeType's rendering side | Hinted box-and-fill, color, synth/LCD, stroker behind the same contract |
 | `vtext.inspect` | fontTools' reading side | Reports on tables, features, scripts, coverage, variable axes and instances |
-| `vtext.subset` | fontTools' subsetter | Glyf closure and rebuild; CFF refuses with its reason |
+| `vtext.subset` | fontTools' subsetter | Glyf closure and rebuild; CFF rebuild landed, CFF2 refused with its reason |
+| generic helpers (`raster/pack`, `raster/quantize`, `layout/iterator`, `providers/discovery`) | fontstash + stb_truetype | Atlas packing, coverage quantize/gamma/blur, visual-order quads, search order — caller-owned atlas, no FONS types |
 | `vtext.capi` | — (the C face of all of the above) | Opaque handles over every part; `vtext.h` is the single header |
-| providers | fontconfig / Core Text / DirectWrite | fontconfig on Linux; the other two unwritten, none elsewhere |
+| providers | fontconfig / Core Text / DirectWrite | All three landed; none elsewhere |
 
 Dependencies run one way — `layout` → `shape` → `font` → `ucd`,
 `capi` → all — and no part imports a tool.
