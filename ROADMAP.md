@@ -328,8 +328,12 @@ autohinting verified against FreeType's own autohinter per glyph. A full
 bytecode interpreter lands only if a corpus font needs one — measured
 first, not assumed.
 
-**7.8 Providers: Core Text and DirectWrite — open.** Each pinned on its own
-OS, none elsewhere — the fontconfig pattern exactly.
+**7.8 Providers: Core Text landed 2026-11-17 (macOS), DirectWrite stub.** Each pinned on its own
+OS, none elsewhere — the fontconfig pattern exactly. `providers/coretext.v`
+resolves a family through CoreText to file path plus matched family;
+`providers/directwrite.v` is a documented Windows stub answering none until
+the COM walk lands. Pinned by `providers_os_test.v` (off-OS none plus
+skip-aloud, macOS try-real-or-skip).
 
 **7.9 CFF/CFF2 with a real font — reader landed 2026-11-15.** OFL Source
 Sans 3 OTF (non-CID Type 2, 2,478 glyphs); `font/cff.v` reads header,
@@ -871,7 +875,7 @@ owns the queue.
 | 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults + repha + zero-class marks | landed (HB-default incl. reph; assembly/GPOS open as 9.3e remainder) |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | open |
-| 7.8 | Core Text + DirectWrite providers | open (OS-gated) |
+| 7.8 | Core Text + DirectWrite providers | half-landed (CoreText real on macos; DirectWrite stub) |
 | 7.11-2H | Rival A/B harness | landed (README table, re-measured per release) |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
