@@ -224,7 +224,14 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 	// puts the lower combining class first, and a shadda is a higher one. Without the mapping the
 	// two marks would report each other's input positions, and a mark would then be looked for
 	// against the wrong letter.
-	decomposed, origin := ctx.normalizer.nfd_mapped(cps)
+	decomposed_nfd, decomposed_origin := ctx.normalizer.nfd_mapped(cps)
+	// Hangul conjoining Jamo compose back into syllables after NFD: the
+	// decomposition the joining pass needs splits every precomposed
+	// syllable into its lead, vowel and trailing parts, and HarfBuzz draws
+	// the parts composed whenever the font carries the syllable. Without
+	// this the parts draw as two or three glyphs with two or three
+	// advances where one syllable belongs.
+	decomposed, origin := shape.compose_hangul_runs(decomposed_nfd, decomposed_origin)
 
 	bidi := shape.resolve_paragraph(ctx.properties, decomposed, base_dir)
 

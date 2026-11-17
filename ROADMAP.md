@@ -561,7 +561,7 @@ proves it, **absent** = the mechanism does not exist.
 | CJK Han | smoke + breaks pinned | `extra_fonts_test` (2-glyph line, rasterise); 9.1 pins |
 | Thai, Lao, Khmer, Myanmar | pinned (corpus; Khmer fusions landed, rest open) | `seasian_test.v`, HB-measured (Thai 6E/86/2D/6E/0C/5E, Lao, Khmer coeng fusions blwf 0xcc / pstf 0xba, Myanmar kinzi order) |
 | Syriac, Thaana, NKo | pinned | `longtail_test.v`: Syriac init/medi/rlig + lone-SHIN joining acceptance |
-| Hangul (precomposed) | untested | cmap suffices, no face, no test |
+| Hangul (precomposed) | pinned | conjoining-Jamo composition + vertical CJK punctuation (`hangul_test.v`, NotoSansKR) |
 | Kana | partial | vertical rules in `vertical_test`; horizontal unpinned |
 | Tibetan | absent | stacking needs its own machine |
 | Indic (Devanagari, Bengali) | syllable machine, two-script pinned | tables + two faces + machine (unwired), HB-pinned both |
@@ -572,9 +572,11 @@ proves it, **absent** = the mechanism does not exist.
 **9.1 CJK line breaking — landed 2026-11-15 as pins.** ID/CJ/NS/OP/CL were
 already complete in the 19,346 tail: 0 fail on 1,753 ID cases and 0 on
 5,333 CJK-subset cases in `cjkbreak_test.v`, HB wrap pins on NotoSansSC, a
-520-case break-fix control. Follow-ups, each needing its own pin: Hangul
-conjoining-Jamo composition (needs a Korean face), vertical CJK
-punctuation.
+520-case break-fix control. Hangul conjoining-Jamo composition landed
+2026-11-17 (`shape/hangul.v` arithmetic fold L+V(+T) with origin-map carry,
+7-line hook after `nfd_mapped`, committed OFL NotoSansKR-Variable, pinned by
+`hangul_test.v` beside HarfBuzz with neutered-composition break-fix) and
+vertical CJK punctuation landed beside it (column geometry pins).
 
 **9.2 Southeast Asian clusters — corpus landed 2026-11-15, Khmer coeng
 fusions and pref reorder landed 2026-11-16/17, Myanmar kinzi landed
@@ -915,7 +917,7 @@ owns the queue.
 | 8.7 | Face/subset MATH wiring; top-accent fallback | landed (half-advance fallback, MATH closure) |
 | 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
 | 7.10 | Composite instancing; raster wiring | landed (HVAR/MVAR/cvar readers, composites, wiring) |
-| 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
+| 9.1 | Hangul jamo composition; vertical CJK punctuation | landed (KR face, HB pins, break-fix) |
 | 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf caller-asked; `nko ` tag fold landed | open (GPOS marks beyond anchors + mark-cluster merge remain) |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
