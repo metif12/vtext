@@ -372,8 +372,11 @@ fix found by measuring against the FT 2.13.2 source), behind additive
 of every simple glyph × four coords at 142,848/142,848 exact across four
 variable faces. HVAR/MVAR/cvar readers landed 2026-11-17 (`font/hvar.v`,
 pure lookups over caller blend coords, otRound half-up, pinned by
-`font_hvar_test.v` with neutered-delta break-fix). Follow-ups: composites,
-raster wiring.
+`font_hvar_test.v` with neutered-delta break-fix). Composites + raster
+wiring landed 2026-11-17 (recursive component instancing with phantom-honored
+offsets, HVAR-preferred advances, instanced backend behind
+`box_only`/`render_into` only at non-default coords; pinned by
+`font_varcomp_test.v` with neutered-delta/unwired-raster break-fix).
 
 **7.11 Cache and the rival number — landed 2026-11-15/16.** `shape/cache.v`:
 `CacheKey` (font id, gid, size bits, subpixel x/y) with `==` and canonical
@@ -911,7 +914,7 @@ owns the queue.
 | 8.6 | Stroking | landed (8.6a outline reader + stroker) |
 | 8.7 | Face/subset MATH wiring; top-accent fallback | landed (half-advance fallback, MATH closure) |
 | 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
-| 7.10 | Composite instancing; raster wiring | open (HVAR/MVAR/cvar readers landed) |
+| 7.10 | Composite instancing; raster wiring | landed (HVAR/MVAR/cvar readers, composites, wiring) |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
 | 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf caller-asked; `nko ` tag fold landed | open (GPOS marks beyond anchors + mark-cluster merge remain) |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |

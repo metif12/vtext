@@ -566,7 +566,9 @@ fn (f &Face) loca_is_long() bool {
 // coordinates: the default instance when the caller stored nothing, the
 // chosen one once set_var_coords ran. A font with no fvar table, or with
 // fvar but no gvar, is an error rather than a silent default: instancing a
-// font that cannot vary would pretend a choice was applied.
+// font that cannot vary would pretend a choice was applied. Simple and
+// composite `glyf` outlines instance alike; when the font carries `HVAR`
+// that table overrides the phantom-derived advance.
 pub fn (f &Face) instanced_glyph_points(gid u16) !InstancedOutline {
 	axes := f.read_variable_axes()
 	if axes.len == 0 {
@@ -576,5 +578,21 @@ pub fn (f &Face) instanced_glyph_points(gid u16) !InstancedOutline {
 	if gvar.len == 0 {
 		return error('var: font has no gvar table, so no outlines to instance')
 	}
-	return var_instance_glyph(f.sfnt.table_data(tag_glyf), f.sfnt.table_data(tag_loca), gvar, f.sfnt.table_data(tag_avar), axes, int(gid), f.var_coords(), f.loca_is_long())
+	mut out := var_instance_glyph(f.sfnt.table_data(tag_glyf), f.sfnt.table_data(tag_loca), gvar, f.sfnt.table_data(tag_avar), axes, int(gid), f.var_coords(), f.loca_is_long()) or {
+		return err
+	}
+	hvar_bytes := f.sfnt.table_data(tag_hvar)
+	if hvar_bytes.len > 0 {
+		if h := hvar_parse(hvar_bytes) {
+			blended := var_blend_coords(axes, f.sfnt.table_data(tag_avar), f.var_coords()) or {
+				[]f64{}
+			}
+			if blended.len == axes.len {
+				if adv := hvar_advance_delta(h, int(gid), blended) {
+					out.advance_dx = adv
+				}
+			}
+		}
+	}
+	return out
 }

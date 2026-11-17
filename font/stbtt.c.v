@@ -75,7 +75,16 @@ pub fn (f &Face) px_scale(em_px f64) f32 {
 // caller to the allocator the V array came from. The C call below is the same
 // one rasterize_glyph makes, with the same arguments, so the two agree pixel
 // for pixel; stbtt_test.v pins rasterize_glyph and through it this path.
+// When the face carries a non-default variation instance, the instanced
+// outline is authoritative instead: the fill comes from the flattened
+// instanced polygons, so instanced (and composite) glyphs rasterize varied
+// rather than as their default. CBDT/sbix strikes and COLR layers keep their
+// own paths and never reach this branch for strike glyphs.
 pub fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, w int, h int) {
+	if f.var_wants_instanced() {
+		f.var_render_into(gid, em_px, sub_x, sub_y, out, w, h)
+		return
+	}
 	if !f.stb_ok {
 		return
 	}
@@ -94,7 +103,12 @@ pub fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, 
 //
 // sub_x and sub_y snap the position to quarter-pixel bins, which is what stops
 // animated text from shimmering as the pen lands on fractional coordinates.
+// A non-default variation instance renders from the instanced outline;
+// otherwise the stb fill draws the default.
 pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) raster.GlyphBitmap {
+	if f.var_wants_instanced() {
+		return f.var_instanced_bitmap(gid, em_px, sub_x, sub_y)
+	}
 	mut out := raster.GlyphBitmap{}
 	if !f.stb_ok {
 		return out
@@ -149,8 +163,16 @@ pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) raste
 //
 // The numbers are the same ones rasterize_glyph would report, and provably so rather than approximately:
 // stbtt_GetGlyphBitmapBox is defined in the header as a call to the subpixel form with a shift of zero
-// (stb_truetype.h:2739), which is the shift this engine's own no-subpixel path passes.
+// (stb_truetype.h:2739), which is the shift this engine's own no-subpixel path passes. A non-default
+// variation instance measures the instanced outline instead, so instanced
+// composites measure varied; CBDT/sbix/COLR callers keep their own boxes.
 pub fn (f &Face) box_only(gid u16, em_px f64) raster.GlyphBitmap {
+	if f.var_wants_instanced() {
+		inst := f.var_instanced_box(gid, em_px, 0, 0)
+		if !inst.is_empty() || f.instanced_glyph_points(gid) or { InstancedOutline{} }.xs.len == 0 {
+			return inst
+		}
+	}
 	mut out := raster.GlyphBitmap{}
 	if !f.stb_ok {
 		return out

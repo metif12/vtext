@@ -326,20 +326,19 @@ fn test_varinstance_zeroed_deltas_breakfix() {
 	assert ox != [842, 349, 253, 17, 456, 744, 1184, 938, 397, 793, 596], 'zeroed deltas must miss the wght 500 pins'
 }
 
-// What instancing refuses: a static font has no design space, a composite
-// names components rather than points, a coordinate count that does not
-// match the axis count answers to no tent, and a truncated table is corrupt
-// input rather than zero deltas.
+// What instancing refuses: a static font has no design space, a coordinate
+// count that does not match the axis count answers to no tent, and a
+// truncated table is corrupt input rather than zero deltas. Composites used
+// to refuse; they now instance through their components (see
+// font_varcomp_test.v for the pins).
 fn test_varinstance_rejects() {
 	mut f := varinstance_font('FiraCode-Variable.ttf') or {
 		varinstance_skip('FiraCode-Variable.ttf')
 		return
 	}
-	if _ := f.instanced_glyph_points(8) {
-		assert false, 'Aogonek is composite and must not instance'
-	} else {
-		assert err.msg().contains('composite'), 'the refusal names composites, got: ${err}'
-	}
+	o := f.instanced_glyph_points(8) or { panic('Aogonek composite must instance: ${err}') }
+	assert o.xs.len == 33, 'Aogonek flattens to 33 points, got ${o.xs.len}'
+	assert o.end_pts == [7, 10, 32], 'Aogonek contours, got ${o.end_pts}'
 	if _ := f.instanced_glyph_points(1) {
 	} else {
 		assert false, 'A instances without stored coordinates: ${err}'

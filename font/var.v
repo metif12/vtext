@@ -19,21 +19,31 @@
 //     start/end range, and scale its deltas by the tent product
 //     (`supportScalar` in fontTools terms);
 //  4. infer the untouched points of each contour by IUP interpolation over
-//     the touched ones in 16.16 fixed point, op for op with tt_delta_interpolate;
+//     the touched ones in 16.16 fixed point, op for op with tt_delta_interpolate
+//     (simple glyphs; composites name components, so their deltas apply
+//     directly to offsets and phantoms with no IUP);
 //  5. sum the scaled deltas across tuples in 16.16 and round the total half up, which
 //     is `otRound` and what the rasterizer integer points need.
+//  6. composites flatten by instancing each component recursively and
+//     re-hanging on the adjusted offsets; the raster wiring below draws the
+//     instanced points through the same stb fill the default instance uses,
+//     via flattened line polygons, so instanced composites rasterize and
+//     CBDT/sbix/COLR strikes keep their own paths.
 //
 // Only simple `glyf` outlines instance here. A composite names other glyphs
-// rather than points, and instancing it means instancing each component and
-// re-hanging the offsets; that is a follow-up, and asking for one is an
-// error that says so. Advances come out of the four phantom points the way
-// `_setCoordinates` derives them (right minus left, rounded); when the font
-// carries `HVAR` that table is authoritative instead, and reading it is the
-// same follow-up. On both corpus faces the phantom derivation agrees with
-// the rasterizer exactly, which the tests pin.
+// rather than points: each component instances recursively at the same
+// blend, the composite's own `gvar` entry adjusts the component offsets
+// (first N points) and the four phantom points, and the flattened points
+// re-hang on the adjusted offsets. Advances come out of the four phantom
+// points the way `_setCoordinates` derives them (right minus left,
+// rounded); when the font carries `HVAR` that table is authoritative
+// instead (see `Face.instanced_glyph_points`, which prefers it). On both
+// corpus faces the phantom derivation agrees with the rasterizer exactly,
+// which the tests pin.
 module font
 
 import math
+import vtext.raster
 
 // InstancedOutline is one glyph outline at one point in the design space.
 pub struct InstancedOutline {
@@ -897,24 +907,598 @@ pub fn var_apply_deltas(xs []int, ys []int, dx []i64, dy []i64) ([]int, []int, i
 // a caller passes to `FT_Set_Var_Design_Coordinates`. `long_loca` says the
 // `loca` format (head indexToLocFormat of 1), and an empty `gvar` answers
 // the uninterpolated outline, which is what a caller that only wants points
-// gets for a static font. Composites are refused by the point reader.
+// gets for a static font. Composites instance through
+// `var_instance_recursive`: each component at the same blend, offsets
+// adjusted by the composite's own `gvar` deltas, phantom points honored.
 pub fn var_instance_glyph(glyf []u8, loca []u8, gvar []u8, avar []u8, axes []VariableAxis, gid int, coords []f64, long_loca bool) !InstancedOutline {
 	if axes.len == 0 {
 		return error('var: no fvar axes, nothing to instance')
 	}
 	blended := var_blend_coords(axes, avar, coords) or { return err }
-	start, stop := var_loca_range(loca, glyf.len, gid, long_loca) or { return err }
-	xs, ys, ends := var_read_glyph_points(glyf, start, stop) or { return err }
 	mut tags := []string{len: axes.len}
 	for i, a in axes {
 		tags[i] = a.tag
 	}
-	dx, dy := var_gvar_deltas(gvar, tags, gid, blended, xs, ys, ends) or { return err }
-	ox, oy, adv := var_apply_deltas(xs, ys, dx, dy)
+	ox, oy, ends, adv := var_instance_recursive(glyf, loca, gvar, tags, blended, gid, long_loca, 0) or {
+		return err
+	}
 	return InstancedOutline{
 		xs:         ox
 		ys:         oy
 		end_pts:    ends
 		advance_dx: adv
+	}
+}
+
+// var_parse_composite answers one composite's components in order, without
+// resolving them. The parsing mirrors `glyf_read_composite` op for op:
+// arguments before the transform, one transform form at most, scaled flag
+// carried. Instructions are not components and are not returned.
+fn var_parse_composite(glyf []u8, start int, stop int) ![]GlyfComponent {
+	r := new_reader(glyf)
+	mut out := []GlyfComponent{}
+	mut p := start + 10
+	for {
+		if !r.has(p, 4) {
+			return error('var: composite at ${start} component header overruns the outline')
+		}
+		flags := r.u16_at(p)
+		comp := int(r.u16_at(p + 2))
+		p += 4
+		mut c := GlyfComponent{
+			gid: comp
+		}
+		words := flags & 0x0001 != 0
+		is_xy := flags & 0x0002 != 0
+		if words && is_xy {
+			if !r.has(p, 4) {
+				return error('var: composite at ${start} arguments overrun the outline')
+			}
+			c.dx = f64(r.i16_at(p))
+			c.dy = f64(r.i16_at(p + 2))
+			p += 4
+		} else if words {
+			if !r.has(p, 4) {
+				return error('var: composite at ${start} arguments overrun the outline')
+			}
+			c.anchor = true
+			c.first = int(r.u16_at(p))
+			c.second = int(r.u16_at(p + 2))
+			p += 4
+		} else if is_xy {
+			if !r.has(p, 2) {
+				return error('var: composite at ${start} arguments overrun the outline')
+			}
+			rawx := int(r.u8_at(p))
+			rawy := int(r.u8_at(p + 1))
+			c.dx = f64(if rawx >= 128 { rawx - 256 } else { rawx })
+			c.dy = f64(if rawy >= 128 { rawy - 256 } else { rawy })
+			p += 2
+		} else {
+			if !r.has(p, 2) {
+				return error('var: composite at ${start} arguments overrun the outline')
+			}
+			c.anchor = true
+			c.first = int(r.u8_at(p))
+			c.second = int(r.u8_at(p + 1))
+			p += 2
+		}
+		if flags & 0x0008 != 0 {
+			if !r.has(p, 2) {
+				return error('var: composite at ${start} scale overruns the outline')
+			}
+			s := glyf_f2dot14(r.i16_at(p))
+			p += 2
+			c.has_xform = true
+			c.a = s
+			c.d = s
+		} else if flags & 0x0040 != 0 {
+			if !r.has(p, 4) {
+				return error('var: composite at ${start} scale overruns the outline')
+			}
+			c.has_xform = true
+			c.a = glyf_f2dot14(r.i16_at(p))
+			c.d = glyf_f2dot14(r.i16_at(p + 2))
+			p += 4
+		} else if flags & 0x0080 != 0 {
+			if !r.has(p, 8) {
+				return error('var: composite at ${start} transform overruns the outline')
+			}
+			c.has_xform = true
+			c.a = glyf_f2dot14(r.i16_at(p))
+			c.b = glyf_f2dot14(r.i16_at(p + 2))
+			c.c = glyf_f2dot14(r.i16_at(p + 4))
+			c.d = glyf_f2dot14(r.i16_at(p + 6))
+			p += 8
+		}
+		c.scaled = flags & 0x0800 != 0
+		out << c
+		if flags & 0x0020 == 0 {
+			break
+		}
+		if out.len > glyf_max_component_depth * 4 + 4 {
+			return error('var: composite at ${start} names too many components')
+		}
+	}
+	return out
+}
+
+// var_instance_recursive instances one glyph at already-blended coordinates,
+// returning flattened points, contour ends and the phantom-derived advance.
+// Simple glyphs go through `var_gvar_deltas` plus `var_apply_deltas`;
+// composites instance each component recursively, adjust the offsets by the
+// composite's own `gvar` deltas (first N points, rounded once via otRound)
+// and honor the four phantom points for the advance. Depth caps nesting the
+// way `glyf_resolve` does, so a cyclic font is refused, not recursed on.
+fn var_instance_recursive(glyf []u8, loca []u8, gvar []u8, tags []string, blended []f64, gid int, long_loca bool, depth int) !([]int, []int, []int, int) {
+	if depth > glyf_max_component_depth {
+		return error('var: gid ${gid} nests past ${glyf_max_component_depth} components, likely a corrupt cycle')
+	}
+	start, stop := var_loca_range(loca, glyf.len, gid, long_loca) or { return err }
+	if start == stop {
+		return []int{}, []int{}, []int{}, 0
+	}
+	r := new_reader(glyf)
+	if start < 0 || start + 10 > stop || stop > glyf.len {
+		return error('var: glyph bytes [${start}..${stop}] outside glyf table (${glyf.len} bytes)')
+	}
+	ncont := int(r.i16_at(start))
+	if ncont == 0 {
+		return []int{}, []int{}, []int{}, 0
+	}
+	if ncont > 0 {
+		xs, ys, ends := var_read_glyph_points(glyf, start, stop) or { return err }
+		dx, dy := var_gvar_deltas(gvar, tags, gid, blended, xs, ys, ends) or { return err }
+		ox, oy, adv := var_apply_deltas(xs, ys, dx, dy)
+		return ox, oy, ends, adv
+	}
+	comps := var_parse_composite(glyf, start, stop) or { return err }
+	ncomp := comps.len
+	mut zeros := []int{len: ncomp}
+	dx, dy := var_gvar_deltas(gvar, tags, gid, blended, zeros, zeros, []int{}) or {
+		return err
+	}
+	mut off_dx := []int{len: ncomp}
+	mut off_dy := []int{len: ncomp}
+	for i in 0 .. ncomp {
+		off_dx[i] = if i < dx.len { var_fixed_to_int(dx[i]) } else { 0 }
+		off_dy[i] = if i < dy.len { var_fixed_to_int(dy[i]) } else { 0 }
+	}
+	mut adv := 0
+	if dx.len >= ncomp + 2 && dy.len >= ncomp + 2 {
+		adv = var_fixed_to_int(dx[ncomp + 1] - dx[ncomp])
+	}
+	mut out_xs := []int{}
+	mut out_ys := []int{}
+	mut out_ends := []int{}
+	for idx, c in comps {
+		cx, cy, cends, _ := var_instance_recursive(glyf, loca, gvar, tags, blended, c.gid, long_loca, depth + 1) or {
+			return err
+		}
+		if cx.len == 0 {
+			continue
+		}
+		mut fx := []f64{len: cx.len}
+		mut fy := []f64{len: cx.len}
+		for i in 0 .. cx.len {
+			fx[i] = f64(cx[i])
+			fy[i] = f64(cy[i])
+		}
+		base := out_xs.len
+		if c.anchor {
+			if c.first < 0 || c.first >= out_xs.len || c.second < 0 || c.second >= fx.len {
+				return error('var: anchor points ${c.first}/${c.second} name no points')
+			}
+			mut px := fx[c.second]
+			mut py := fy[c.second]
+			if c.has_xform {
+				px = fx[c.second] * c.a + fy[c.second] * c.c
+				py = fx[c.second] * c.b + fy[c.second] * c.d
+			}
+			mut shx := f64(out_xs[c.first]) - px + f64(off_dx[idx])
+			mut shy := f64(out_ys[c.first]) - py + f64(off_dy[idx])
+			if c.has_xform {
+				for i in 0 .. fx.len {
+					ox := fx[i]
+					oy := fy[i]
+					fx[i] = ox * c.a + oy * c.c + shx
+					fy[i] = ox * c.b + oy * c.d + shy
+				}
+			} else {
+				for i in 0 .. fx.len {
+					fx[i] = fx[i] + shx
+					fy[i] = fy[i] + shy
+				}
+			}
+		} else {
+			ndx := c.dx + f64(off_dx[idx])
+			ndy := c.dy + f64(off_dy[idx])
+			if c.has_xform && !c.scaled {
+				for i in 0 .. fx.len {
+					ox := fx[i]
+					oy := fy[i]
+					fx[i] = ox * c.a + oy * c.c + ndx
+					fy[i] = ox * c.b + oy * c.d + ndy
+				}
+			} else if c.has_xform {
+				for i in 0 .. fx.len {
+					ox := fx[i] + ndx
+					oy := fy[i] + ndy
+					fx[i] = ox * c.a + oy * c.c
+					fy[i] = ox * c.b + oy * c.d
+				}
+			} else {
+				for i in 0 .. fx.len {
+					fx[i] = fx[i] + ndx
+					fy[i] = fy[i] + ndy
+				}
+			}
+		}
+		// Component contour ends re-base onto the growing list: instancing
+		// moves points but never adds or removes them, so the recursive
+		// ends number the same contours as the base outline.
+		for e in cends {
+			out_ends << base + e
+		}
+		for i in 0 .. fx.len {
+			out_xs << var_ot_round(fx[i])
+			out_ys << var_ot_round(fy[i])
+		}
+	}
+	return out_xs, out_ys, out_ends, adv
+}
+
+// var_wants_instanced reports whether the face carries a non-default
+// variation instance: an fvar with a gvar beside it, and stored coordinates
+// that differ from the defaults. At the default (or on a static font) the
+// stb path already draws the right ink, so the raster wiring stays out of
+// the way; off the default the instanced outline is authoritative.
+fn (f &Face) var_wants_instanced() bool {
+	axes := f.read_variable_axes()
+	if axes.len == 0 {
+		return false
+	}
+	if f.sfnt.table_data(tag_gvar).len == 0 {
+		return false
+	}
+	coords := f.var_coords()
+	if coords.len != axes.len {
+		return false
+	}
+	for i, a in axes {
+		if coords[i] != a.deflt {
+			return true
+		}
+	}
+	return false
+}
+
+// VarPoint is one flattened design-space point for the instanced raster.
+struct VarPoint {
+	x f64
+	y f64
+}
+
+// var_flatten_quad appends p2's subdivision: one segment when the control
+// sits within tol of the chord, four quarters of recursion otherwise. Depth
+// caps at twelve, far past the corpus need, so hostile curves terminate.
+fn var_flatten_quad(p0 VarPoint, p1 VarPoint, p2 VarPoint, tol f64, depth int, mut out []VarPoint) {
+	dx := p2.x - p0.x
+	dy := p2.y - p0.y
+	denom := math.sqrt(dx * dx + dy * dy)
+	mut dist := 0.0
+	if denom < 1e-12 {
+		dist = math.sqrt((p1.x - p0.x) * (p1.x - p0.x) + (p1.y - p0.y) * (p1.y - p0.y))
+	} else {
+		dist = math.abs((p1.x - p0.x) * dy - (p1.y - p0.y) * dx) / denom
+	}
+	if dist <= tol || depth >= 12 {
+		out << p2
+		return
+	}
+	q0 := VarPoint{ x: (p0.x + p1.x) / 2.0, y: (p0.y + p1.y) / 2.0 }
+	q1 := VarPoint{ x: (p1.x + p2.x) / 2.0, y: (p1.y + p2.y) / 2.0 }
+	mid := VarPoint{ x: (q0.x + q1.x) / 2.0, y: (q0.y + q1.y) / 2.0 }
+	var_flatten_quad(p0, q0, mid, tol, depth + 1, mut out)
+	var_flatten_quad(mid, q1, p2, tol, depth + 1, mut out)
+}
+
+// var_flatten_contour answers one TrueType contour as a line polygon:
+// implied on-curve midpoints split every off-curve pair (including runs that
+// are all off-curve), lines stay lines, quadratics subdivide at tol.
+fn var_flatten_contour(xs []int, ys []int, on_curve []bool, s int, e int, tol f64) []VarPoint {
+	n := e - s + 1
+	if n <= 0 {
+		return []VarPoint{}
+	}
+	if n == 1 {
+		return [VarPoint{ x: f64(xs[s]), y: f64(ys[s]) }]
+	}
+	mut nx := []f64{cap: n + 1}
+	mut ny := []f64{cap: n + 1}
+	mut nn := []bool{cap: n + 1}
+	for k in 0 .. n {
+		idx := s + k
+		nx << f64(xs[idx])
+		ny << f64(ys[idx])
+		nn << on_curve[idx]
+	}
+	mut ex := []f64{cap: nx.len * 2}
+	mut ey := []f64{cap: nx.len * 2}
+	mut en := []bool{cap: nx.len * 2}
+	for k in 0 .. n {
+		ex << nx[k]
+		ey << ny[k]
+		en << nn[k]
+		k2 := (k + 1) % n
+		if !nn[k] && !nn[k2] {
+			ex << (nx[k] + nx[k2]) / 2.0
+			ey << (ny[k] + ny[k2]) / 2.0
+			en << true
+		}
+	}
+	m := ex.len
+	mut start := -1
+	for k in 0 .. m {
+		if en[k] {
+			start = k
+			break
+		}
+	}
+	if start < 0 {
+		return []VarPoint{}
+	}
+	mut out := []VarPoint{cap: m * 2}
+	out << VarPoint{ x: ex[start], y: ey[start] }
+	cur_pt := VarPoint{ x: ex[start], y: ey[start] }
+	mut cur := start
+	for _ in 0 .. m + 2 {
+		nxt := (cur + 1) % m
+		if en[nxt] {
+			if nxt == start {
+				break
+			}
+			next_pt := VarPoint{ x: ex[nxt], y: ey[nxt] }
+			out << next_pt
+			cur = nxt
+		} else {
+			nxt2 := (cur + 2) % m
+			ctrl_pt := VarPoint{ x: ex[nxt], y: ey[nxt] }
+			end_pt := VarPoint{ x: ex[nxt2], y: ey[nxt2] }
+			var_flatten_quad(cur_pt, ctrl_pt, end_pt, tol, 0, mut out)
+			cur = nxt2
+			if cur == start {
+				break
+			}
+		}
+		if cur == start {
+			break
+		}
+	}
+	return out
+}
+
+// var_even_odd answers whether (x, y) sits inside the flattened polygons,
+// even-odd across every contour. One ray to +inf in x counts edge crossings;
+// an odd count is ink.
+fn var_even_odd(x f64, y f64, polys [][]VarPoint) bool {
+	mut inside := false
+	for poly in polys {
+		if poly.len < 3 {
+			continue
+		}
+		mut j := poly.len - 1
+		for i in 0 .. poly.len {
+			xi := poly[i].x
+			yi := poly[i].y
+			xj := poly[j].x
+			yj := poly[j].y
+			if (yi > y) != (yj > y) {
+				xint := (xj - xi) * (y - yi) / (yj - yi) + xi
+				if x < xint {
+					inside = !inside
+				}
+			}
+			j = i
+		}
+	}
+	return inside
+}
+
+// var_instanced_polys flattens the instanced outline of gid into pixel-space
+// polygons (y down, pen at the origin, subpixel shift applied). Design units
+// scale by em_px/upm; off-curves flatten at one design unit, the same order
+// as the reader's own integer rounding. Empty when the glyph has no ink, no
+// TrueType outlines (CFF), or the outlines disagree.
+fn (f &Face) var_instanced_polys(gid u16, em_px f64, sub_x i32, sub_y i32) [][]VarPoint {
+	if em_px <= 0 || f.units_per_em_f <= 0 {
+		return [][]VarPoint{}
+	}
+	inst := f.instanced_glyph_points(gid) or { return [][]VarPoint{} }
+	if inst.xs.len == 0 {
+		return [][]VarPoint{}
+	}
+	base := f.glyph_outline(gid) or { return [][]VarPoint{} }
+	if base.xs.len != inst.xs.len || base.end_pts.len != inst.end_pts.len {
+		return [][]VarPoint{}
+	}
+	for i, e in base.end_pts {
+		if e != inst.end_pts[i] {
+			return [][]VarPoint{}
+		}
+	}
+	scale := em_px / f.units_per_em_f
+	fx := f64(sub_x) * 0.25
+	fy := f64(sub_y) * 0.25
+	mut polys := [][]VarPoint{cap: base.end_pts.len}
+	mut s := 0
+	for _, e in base.end_pts {
+		flat := var_flatten_contour(inst.xs, inst.ys, base.on_curve, s, e, 1.0)
+		mut poly := []VarPoint{cap: flat.len}
+		for p in flat {
+			poly << VarPoint{
+				x: p.x * scale + fx
+				y: -p.y * scale + fy
+			}
+		}
+		// Drop degenerate polygons; they contribute no crossings.
+		if poly.len >= 3 {
+			polys << poly
+		}
+		s = e + 1
+	}
+	return polys
+}
+
+// var_instanced_box answers the instanced ink box without rendering: the
+// floor/ceil of the scaled instanced points, in the same left/top convention
+// `box_only` uses. Coverageless, like `box_only`: measuring needs no fill.
+pub fn (f &Face) var_instanced_box(gid u16, em_px f64, sub_x i32, sub_y i32) raster.GlyphBitmap {
+	mut out := raster.GlyphBitmap{}
+	if em_px <= 0 || f.units_per_em_f <= 0 {
+		return out
+	}
+	inst := f.instanced_glyph_points(gid) or { return out }
+	if inst.xs.len == 0 {
+		return out
+	}
+	scale := em_px / f.units_per_em_f
+	fx := f64(sub_x) * 0.25
+	fy := f64(sub_y) * 0.25
+	mut xmin := f64(inst.xs[0])
+	mut xmax := f64(inst.xs[0])
+	mut ymin := f64(inst.ys[0])
+	mut ymax := f64(inst.ys[0])
+	for i in 1 .. inst.xs.len {
+		x := f64(inst.xs[i])
+		y := f64(inst.ys[i])
+		if x < xmin {
+			xmin = x
+		}
+		if x > xmax {
+			xmax = x
+		}
+		if y < ymin {
+			ymin = y
+		}
+		if y > ymax {
+			ymax = y
+		}
+	}
+	ix0 := int(math.floor(xmin * scale + fx))
+	ix1 := int(math.ceil(xmax * scale + fx))
+	iy0 := int(math.floor(-ymax * scale + fy))
+	iy1 := int(math.ceil(-ymin * scale + fy))
+	w := ix1 - ix0
+	h := iy1 - iy0
+	if w <= 0 || h <= 0 || w > 4096 || h > 4096 {
+		return raster.GlyphBitmap{}
+	}
+	return raster.GlyphBitmap{
+		width:  w
+		height: h
+		left:   -ix0
+		top:    -iy0
+	}
+}
+
+// var_instanced_bitmap renders the instanced outline at em_px and the
+// caller's subpixel shift: the box from `var_instanced_box` with the same
+// left/top/width/height, coverage from a 4x4 supersampled even-odd fill of
+// the flattened polygons. Empty when the box is empty or the outlines
+// disagree.
+pub fn (f &Face) var_instanced_bitmap(gid u16, em_px f64, sub_x i32, sub_y i32) raster.GlyphBitmap {
+	box := f.var_instanced_box(gid, em_px, sub_x, sub_y)
+	if box.is_empty() {
+		return raster.GlyphBitmap{}
+	}
+	polys := f.var_instanced_polys(gid, em_px, sub_x, sub_y)
+	if polys.len == 0 {
+		return raster.GlyphBitmap{}
+	}
+	ix0 := -box.left
+	iy0 := -box.top
+	mut cov := []u8{len: box.width * box.height}
+	for dy in 0 .. box.height {
+		for dx in 0 .. box.width {
+			mut hit := 0
+			for sy in 0 .. 4 {
+				for sx in 0 .. 4 {
+					px := f64(ix0 + dx) + (f64(sx) + 0.5) / 4.0
+					py := f64(iy0 + dy) + (f64(sy) + 0.5) / 4.0
+					if var_even_odd(px, py, polys) {
+						hit++
+					}
+				}
+			}
+			cov[dy * box.width + dx] = u8((hit * 255 + 8) / 16)
+		}
+	}
+	return raster.GlyphBitmap{
+		coverage: cov
+		width:    box.width
+		height:   box.height
+		left:     box.left
+		top:      box.top
+	}
+}
+
+// var_render_into fills the caller's w*h buffer with the instanced outline at
+// the caller's shift, positioned the way `render_into` positions stb ink:
+// buffer pixel (dx, dy) covers the square at the shifted origin plus (dx,
+// dy). A glyph with no instanced ink leaves the buffer zeros.
+pub fn (f &Face) var_render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, w int, h int) {
+	if w <= 0 || h <= 0 || em_px <= 0 || f.units_per_em_f <= 0 {
+		return
+	}
+	polys := f.var_instanced_polys(gid, em_px, sub_x, sub_y)
+	if polys.len == 0 {
+		return
+	}
+	inst := f.instanced_glyph_points(gid) or { return }
+	if inst.xs.len == 0 {
+		return
+	}
+	scale := em_px / f.units_per_em_f
+	fx := f64(sub_x) * 0.25
+	fy := f64(sub_y) * 0.25
+	mut xmin := f64(inst.xs[0])
+	mut xmax := f64(inst.xs[0])
+	mut ymin := f64(inst.ys[0])
+	mut ymax := f64(inst.ys[0])
+	for i in 1 .. inst.xs.len {
+		x := f64(inst.xs[i])
+		y := f64(inst.ys[i])
+		if x < xmin {
+			xmin = x
+		}
+		if x > xmax {
+			xmax = x
+		}
+		if y < ymin {
+			ymin = y
+		}
+		if y > ymax {
+			ymax = y
+		}
+	}
+	ix0 := int(math.floor(xmin * scale + fx))
+	iy0 := int(math.floor(-ymax * scale + fy))
+	unsafe {
+		for dy in 0 .. h {
+			for dx in 0 .. w {
+				mut hit := 0
+				for sy in 0 .. 4 {
+					for sx in 0 .. 4 {
+						px := f64(ix0 + dx) + (f64(sx) + 0.5) / 4.0
+						py := f64(iy0 + dy) + (f64(sy) + 0.5) / 4.0
+						if var_even_odd(px, py, polys) {
+							hit++
+						}
+					}
+				}
+				out[dy * w + dx] = u8((hit * 255 + 8) / 16)
+			}
+		}
 	}
 }
