@@ -885,7 +885,11 @@ same-harness before/after numbers. C-API rule from 8.4 holds throughout
 
 **Modular.** M1 is an import-direction ratchet test: allowed imports per
 module (`layout` may use `shape`/`font`, `shape` never `layout`, nothing
-imports `tools/`), a deliberate violation fails. M2/M3 split the monoliths
+imports `tools/`), a deliberate violation fails. M1 landed 2026-11-17 as
+`modularity_test.v`, pinning the exact vtext-internal set per module
+(stdlib stays free; test files and the tools/ and examples/ programs are
+out of scope), with a neutered-table break-fix proving it discriminates.
+M2/M3 split the monoliths
 by lookup kind and pass (`font/gpos.v`, `font/gsub.v`, `layout/layout.v`,
 `shape/font.v`), no behavior change, every resulting file under 60 KB. No
 public API renames: pure file moves, `vtext.h` untouched.
@@ -968,7 +972,7 @@ owns the queue.
 | 10.3 | generic coverage helpers (`raster/quantize.v`) | landed (mono/gray2/4, gamma, blur) |
 | 10.4 | canvas CPU helpers as generic coverage only | landed (10.3; hint/LCD/stroke/color stay 7.7/8.5/8.6/7.7) |
 | 10.5 | generic discovery (`providers/discovery.v`) | landed (order/variant/pow2; 7.8 stays per-OS) |
-| 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | open (M1 first; pure moves, no API renames) |
+| 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | M1 landed (ratchet test + deliberate-violation break-fix); M2/M3 open (pure moves, no API renames) |
 | 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | open (Khmer first, one script per commit; no FFI) |
 | 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | open (profile before tuning; absolute times, quiet box) |
 
