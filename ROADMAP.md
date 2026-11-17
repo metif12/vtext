@@ -327,13 +327,18 @@ documented in-test: logical-order spacing matras, dropped ccc-0 matras, no
 fusion by default. Follow-up: feeding reordered runs into GSUB (the
 joining hook), repha, split matras, pres/half/blwf/rphf, GPOS marks.
 
-**7.7 Color open; hinting landed 2026-11-17 as grid-fit autohinter.** COLR/CPAL, CBDT/EBDT, sbix stay behind
-`box_only`/`render_into`; SVG refuses with its reason. The autohinter
-(`font/hint.v` outline grid-fit + `raster/hint.v` stem snap, Amiri dal pin
-within 1px/few-percent of FreeType's autohinter) is pinned by
-`raster_hint_test.v` with passthrough-identity break-fix. A full
-bytecode interpreter lands only if a corpus font needs one (presence is
-reported, need is measured) — measured first, not assumed.
+**7.7 Color + hinting landed 2026-11-17.** COLR/CPAL (layered outline color
+with v1-prefix detection), CBDT/EBDT (formats 1/2/6/7), sbix strikes and
+SVG refusal (documents refused with reason; PNG-wrapped pixels refused, no
+decoder in tree) behind `box_only`/`render_into` (`font/color.v` readers +
+`raster/color.v` straight-alpha source-over composite), monochrome fallback
+so colorless faces render exactly as before; grid-fit autohinter
+(`font/hint.v` + `raster/hint.v`, Amiri dal pin within 1px/few-percent of
+FreeType's autohinter). Pinned by `raster_color_test.v` (corpus sweep,
+synthetic fixtures, twin-Python composite pins, break-fix) and
+`raster_hint_test.v` (passthrough-identity break-fix). A full bytecode
+interpreter lands only if a corpus font needs it — measured first, not
+assumed.
 
 **7.8 Providers: Core Text landed 2026-11-17 (macOS), DirectWrite stub.** Each pinned on its own
 OS, none elsewhere — the fontconfig pattern exactly. `providers/coretext.v`
@@ -893,7 +898,7 @@ owns the queue.
 | --- | --- | --- |
 | 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults + repha + zero-class marks | landed (HB-default incl. reph; assembly/GPOS open as 9.3e remainder) |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
-| 7.7 | Color open; hinting landed (grid-fit autohinter, bytecode triggered) |
+| 7.7 | Color + hinting engines | landed (grid-fit autohinter, color readers + composite; bytecode triggered) |
 | 7.8 | Core Text + DirectWrite providers | half-landed (CoreText real on macos; DirectWrite stub) |
 | 7.11-2H | Rival A/B harness | landed (README table, re-measured per release) |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
