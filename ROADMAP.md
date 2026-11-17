@@ -339,8 +339,12 @@ skip-aloud, macOS try-real-or-skip).
 Sans 3 OTF (non-CID Type 2, 2,478 glyphs); `font/cff.v` reads header,
 INDEXes, Top DICT, CharStrings, charset, Private, both subr sets through
 the existing curve path. Pinned by `cff_test.v` against fontTools with a
-corrupt-byte break-fix. CFF2 still refuses (no committed face carries it);
-subsetting still refuses CFF (a read is not a rebuild).
+corrupt-byte break-fix. CFF2 still refuses (no committed face carries it).
+**Subsetting landed 2026-11-17:** `subset/cff.v` rebuilds CharStrings
+(verbatim keep, endchar drop), format-0 charset with original SIDs, Top DICT
+offsets, Private/subrs carried, ids preserved; CFF2/CID refused with reason.
+Pinned by `subset_cff_test.v` (reload + outline equality, tampered-mask
+break-fix, CFF2 refusal).
 
 **7.10 Variable instancing — landed 2026-11-15.** fvar/gvar at
 caller-chosen coordinates (`font/var.v`: normalize, avar warp, tuple
@@ -881,7 +885,7 @@ owns the queue.
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
 | 8.6 | Stroking | open (8.6a outline reader landed; stroker needs `raster/`) |
 | 8.7 | Face/subset MATH wiring; top-accent fallback | landed (half-advance fallback, MATH closure) |
-| 7.9 | CFF subsetting (a read is not a rebuild) | open until a slice needs it |
+| 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
 | 7.10 | Composite instancing; HVAR/MVAR/cvar; raster wiring | open |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | open (each needs its pin) |
 | 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi + blws landed; Khmer pres-group + Myanmar blwf open; `nko ` tag fold landed | open |
