@@ -873,6 +873,42 @@ stay triggered; 10.x never pulls them in early. The `vlib` adaptation
 (flags, `FT`, `ScalerRec`, `Strike`, `os.font` order, `sfons`, `x/ttf`
 callers) stays in `vlib`, not here.
 
+## Phase 11: modular, extendable, fast — open, planned 2026-11-17.
+
+The engine is done; this phase is about the shape of the tree: adding a
+script must not mean editing three files, and the slowest family must have
+numbers before anyone tunes it. Slices land in M1 → E1 → E2 → F1 → F2 → F3
+order, with M2/M3 wherever the tree is quiet. Every slice keeps the suite,
+difftest 0/0 and the perf gate green; perf slices additionally carry
+same-harness before/after numbers. C-API rule from 8.4 holds throughout
+(append-only; offsets never move).
+
+**Modular.** M1 is an import-direction ratchet test: allowed imports per
+module (`layout` may use `shape`/`font`, `shape` never `layout`, nothing
+imports `tools/`), a deliberate violation fails. M2/M3 split the monoliths
+by lookup kind and pass (`font/gpos.v`, `font/gsub.v`, `layout/layout.v`,
+`shape/font.v`), no behavior change, every resulting file under 60 KB. No
+public API renames: pure file moves, `vtext.h` untouched.
+
+**Extendable.** E1 is a `ScriptShaper` interface with a registry (Khmer
+first, other scripts follow one per commit): feature order, reorder and
+split become registry calls and the `is_khmer`/`is_myanmar` branches delete.
+E2 makes feature order data, including the before-`ccmp` slot the Myanmar
+carve-out needs. E3 writes the script-onboarding checklist down (OFL face +
+licence, HB pins, difftest cases, order proof). No plugin DLLs or FFI:
+registration is compile-time, `-prod`+LTO builds intact.
+
+**Fast.** F1 is an opt-in per-stage shaping profiler (segment, reorder,
+GSUB, GPOS, place) on the Thai/Khmer/Myanmar bench rows, silent by default.
+F2 fixes what F1 finds; the candidate is a run-level shaping memo whose key
+must include features, script override and variation coords, with a
+break-fix over an omitted input. F3 removes per-glyph heap churn on the hot
+path (reused buffers in the run loops). No SIMD (endian-clean, every
+platform), no hidden atlas or global cache (Phase 1 settled: the cache is
+the caller's), ratios vs HarfBuzz are not a target — absolute paragraph
+times are, measured on a quiet box (foreign V builds tripled suite time on
+2026-11-17, which is recorded, not tuned around).
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -932,6 +968,9 @@ owns the queue.
 | 10.3 | generic coverage helpers (`raster/quantize.v`) | landed (mono/gray2/4, gamma, blur) |
 | 10.4 | canvas CPU helpers as generic coverage only | landed (10.3; hint/LCD/stroke/color stay 7.7/8.5/8.6/7.7) |
 | 10.5 | generic discovery (`providers/discovery.v`) | landed (order/variant/pow2; 7.8 stays per-OS) |
+| 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | open (M1 first; pure moves, no API renames) |
+| 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | open (Khmer first, one script per commit; no FFI) |
+| 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | open (profile before tuning; absolute times, quiet box) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
