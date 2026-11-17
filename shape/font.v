@@ -269,6 +269,23 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 			is_mark: glyph.is_mark
 		}
 	}
+	// Myanmar caller-asked blwf runs before ccmp: the medial-dot fusion
+	// consumes DOT BELOW whole, and ccmp splits DOT BELOW into spacing and
+	// dummy marks first, which starves the rule when blwf runs late. Asked
+	// early it fuses the way HarfBuzz fuses with +blwf. Default lines never
+	// reach it: blwf is not a Myanmar default, and an unasked tag names
+	// nothing, so the default unfused answer does not move.
+	mut myanmar_pre_blwf := false
+	if is_myanmar_shaping_script(script) {
+		for feature in extra {
+			t := if feature.starts_with('+') && feature.len > 1 { feature[1..] } else { feature }
+			if t == 'blwf' {
+				out = g.substitute(g.lookups_for_lang(script, lang, 'blwf'), out)
+				myanmar_pre_blwf = true
+				break
+			}
+		}
+	}
 	for feature in ['ccmp'] {
 		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
@@ -361,6 +378,10 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 				continue
 			} else if is_myanmar_shaping_script(script) && tag in myanmar_default_features() {
 				// Same no-op for the Myanmar kinzi fusion.
+				continue
+			} else if myanmar_pre_blwf && tag == 'blwf' {
+				// Already ran above, before ccmp: a fusing feature must not
+				// run twice, and the late run would find nothing anyway.
 				continue
 			} else {
 				mut seen := false

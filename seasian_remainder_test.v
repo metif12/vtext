@@ -22,10 +22,10 @@ import vtext.layout
 //     split, so psts/abvf pins hold the right part HB-exact with the split
 //     half recorded as the known gap.
 //   - Myanmar medial-dot words (KA+U+DOT BELOW) fuse in HarfBuzz through
-//     blwf to _u_dot; this engine leaves them unfused both by default and
-//     when asked, because blwf must run before the ccmp split of DOT BELOW
-//     to spacing+dummymark and the current order runs it last. blwf stays
-//     caller-asked until that order is proven.
+//     blwf to _u_dot; this engine leaves them unfused by default and fuses
+//     them when asked, because asked blwf runs before the ccmp split of
+//     DOT BELOW to spacing+dummymark. blwf stays caller-asked: default-on
+//     would fuse every medial-dot word by default.
 //   - Khmer SA+COENG+KA+U drew U at the anchor-plus-stack answer (-22,-270
 //     design, y 8.64 px at 32 px) against HarfBuzz (-22,-296): closed
 //     2026-11-17, pinned HB-exact below (U rides the mark-to-mark stack on
@@ -266,14 +266,18 @@ fn test_remainder_khmer_order() {
 	assert blws.glyphs[2].gid == 0x74, 'blws order holds .b 0x74, got ${blws.glyphs[2].gid:x}'
 }
 
-// Myanmar blwf stays caller-asked: KA + U + DOT BELOW draws unfused.
-// HarfBuzz fuses [KA 0x04, _u_dot 0x18e] with _u_dot at (-140,0) through
-// blwf; -blwf leaves [KA, _u, dot_spacing, dummymark]. This engine draws
-// four glyphs both by default and when asked, because blwf must run
-// before the ccmp split of DOT BELOW and the current order runs it last.
-// The pin holds the unfused answer with the fusion recorded as the gap;
-// enabling blwf by default (or fixing the order) draws two glyphs and
-// fails this pin, which is the neutered-group break-fix.
+// Myanmar blwf stays caller-asked but asked it now fuses: KA + U + DOT
+// BELOW draws [KA 0x04, _u_dot 0x18e] with _u_dot at (-140,0), HarfBuzz
+// beside HarfBuzz with +blwf (and beside HB default, where blwf is on).
+// The fusion has to run before ccmp: ccmp splits DOT BELOW into spacing
+// and dummy marks, which starves the blwf rule when it runs late in the
+// asked-features tail. Neutering the pre-ccmp run (asking runs late
+// again) unfolds back to four glyphs and fails the 0x18e pin, which is
+// the break-fix. Default lines never ask, so the default four-glyph
+// answer is unchanged: blwf is not a default, and -blwf leaves HB's
+// four [KA, _u, dot_spacing, dummymark] the same way. Honest per-input
+// clusters [0,1] against HarfBuzz merged [0,0], the recorded per-input
+// convention.
 fn test_remainder_myanmar_blwf_caller_asked() {
 	my := rem_font('NotoSansMyanmar-Variable.ttf') or { return }
 	cps := [rune(0x1000), rune(0x102F), rune(0x1037)]
@@ -286,9 +290,15 @@ fn test_remainder_myanmar_blwf_caller_asked() {
 	assert u.gid == 0xd1, 'U stays 0xd1 unfused, got ${u.gid:x}'
 	assert u.is_mark && u.advance == 0, 'U is a mark advancing nothing'
 	asked := rem_line_feat(my, cps, ['+blwf'])
-	assert asked.glyphs.len == 4, 'asked blwf still leaves four glyphs until its order is proven, got ${asked.glyphs.len}'
-	au := rem_at(asked.glyphs, 1) or { panic('asked U drew nothing') }
-	assert au.gid == 0xd1, 'asked blwf still draws 0xd1, got ${au.gid:x}'
+	assert asked.glyphs.len == 2, 'asked blwf fuses to two glyphs, got ${asked.glyphs.len}'
+	aka := rem_at(asked.glyphs, 0) or { panic('asked KA drew nothing') }
+	assert aka.gid == 0x04, 'asked KA is 0x04, got ${aka.gid:x}'
+	assert aka.advance > 35.96 && aka.advance < 35.98, 'asked KA advances 1124 design units, got ${aka.advance}'
+	au := rem_at(asked.glyphs, 1) or { panic('asked _u_dot drew nothing') }
+	assert au.gid == 0x18e, 'asked blwf fuses U DOT to 0x18e, got ${au.gid:x}'
+	assert au.is_mark && au.advance == 0, 'asked _u_dot is a mark advancing nothing'
+	assert au.x > 31.48 && au.x < 31.50, 'asked _u_dot sits 140 design units before the pen, got x=${au.x}'
+	assert au.y > -0.01 && au.y < 0.01, 'asked _u_dot rides the baseline, got y=${au.y}'
 }
 
 // GPOS marks beyond anchors: Thai dist chains a SinglePos over the anchor.
