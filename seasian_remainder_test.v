@@ -17,10 +17,13 @@ import vtext.layout
 // Where the engine diverges from HarfBuzz, the assert pins the current
 // behaviour and the comment names the gap:
 //   - Khmer split vowels (SRA OE 17BE, SRA YA 17BF, SRA IE 17C0, SRA AU
-//     17C4/17C5) decompose in HarfBuzz to SRA E 17C1 plus the right part
-//     (HB shapes SA+YA as [17C1, SA, 17BF.right1]); this engine does not
-//     split, so psts/abvf pins hold the right part HB-exact with the split
-//     half recorded as the known gap.
+//     17C4/17C5): closed 2026-11-17, pinned HB-exact below (the shaper
+//     inserts SRA E before the base consonant; the consonant and the
+//     vowel stay adjacent so the vowel's own GSUB rules still match, and
+//     the placing pass keeps the order because the inserted half merges
+//     onto the base cluster. Neutering the split drops the 0x83 glyph).
+//     Lone vowels with no base consonant keep the old behavior: HarfBuzz
+//     draws a dotted circle there that this engine does not insert.
 //   - Myanmar medial-dot words (KA+U+DOT BELOW) fuse in HarfBuzz through
 //     blwf to _u_dot; this engine leaves them unfused by default and fuses
 //     them when asked, because asked blwf runs before the ccmp split of
@@ -215,36 +218,130 @@ fn test_remainder_khmer_subscript_u_chain() {
 	assert u.y > 9.46 && u.y < 9.49, 'U drops 296 design units via the chain, got y=${u.y}'
 }
 
-// Khmer psts: SA + SRA AU 17C4 draws the ligature through psts.
+// Khmer psts: SA + SRA AU 17C4 draws the split E plus the ligature.
 // HarfBuzz: [17C1 0x83, uni178017B6 0xec] with the split E plus the
-// SA+AA ligature; -psts leaves [17C1, SA, 17C4]. This engine does not
-// split, so it draws the single ligature 0xec at 924 design units with
-// the split half recorded as the known gap.
+// SA+AA ligature at 924 design units; -psts leaves [17C1, SA, 17C4].
+// The SRA E half is the split: neutering it drops the 0x83 glyph and
+// fails the two-glyph pin, which is the break-fix. The split E merges
+// onto the base cluster the way a preposed pair does, or the placing
+// pass would draw it after the base; the ligature keeps it too, and the
+// pair reads [0,0] exactly as HarfBuzz merges it.
 fn test_remainder_khmer_psts() {
 	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
 	line := rem_line(kh, [rune(0x1780), rune(0x17C4)])
-	assert line.glyphs.len == 1, 'SA AU draws one ligature without the split, got ${line.glyphs.len}'
-	assert line.glyphs[0].gid == 0xec, 'SA AU fuses to 0xec, got ${line.glyphs[0].gid:x}'
-	assert line.glyphs[0].cluster == 0, 'the ligature keeps the base cluster'
-	assert line.glyphs[0].advance > 29.56 && line.glyphs[0].advance < 29.58, 'ligature advances 924 design units, got ${line.glyphs[0].advance}'
+	assert line.glyphs.len == 2, 'SA AU draws the split E plus the ligature, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0x83, 'the split E is 0x83, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the split E merges onto the base cluster'
+	assert line.glyphs[0].advance > 9.21 && line.glyphs[0].advance < 9.23, 'the split E advances 288 design units, got ${line.glyphs[0].advance}'
+	assert line.glyphs[1].gid == 0xec, 'SA AU fuses to 0xec, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[1].cluster == 0, 'the ligature keeps the base cluster'
+	assert line.glyphs[1].advance > 29.56 && line.glyphs[1].advance < 29.58, 'ligature advances 924 design units, got ${line.glyphs[1].advance}'
 }
 
-// Khmer abvf: SA + SRA OE 17BE draws 17B8 through abvf.
+// Khmer abvf: SA + SRA OE 17BE draws the split E plus 17B8.
 // HarfBuzz: [17C1 0x83, SA 0x31, 17B8 0x6d] with 17B8 at (-23,-29);
-// -abvf leaves 17BE at (0,0). This engine does not split, so it draws
-// [SA, 17B8] HB-exact in the tail with honest cluster 1 against
-// HarfBuzz merged 0 and the split half recorded as the known gap.
+// -abvf leaves [17C1, SA, 17BE] with 17BE at (0,0). The SRA E half is
+// the split: neutering it drops the 0x83 glyph and fails the three-glyph
+// pin, which is the break-fix. The split E merges onto the base cluster
+// the way a preposed pair does; the right part keeps the vowel's honest
+// cluster 1 against HarfBuzz merged 0, the recorded per-input convention.
 fn test_remainder_khmer_abvf() {
 	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
 	line := rem_line(kh, [rune(0x1780), rune(0x17BE)])
-	assert line.glyphs.len == 2, 'SA OE draws two glyphs without the split, got ${line.glyphs.len}'
-	sa := rem_at(line.glyphs, 0) or { panic('SA drew nothing') }
+	assert line.glyphs.len == 3, 'SA OE draws the split E plus 17B8, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0x83, 'the split E is 0x83, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the split E merges onto the base cluster'
+	assert line.glyphs[0].advance > 9.21 && line.glyphs[0].advance < 9.23, 'the split E advances 288 design units, got ${line.glyphs[0].advance}'
+	sa := line.glyphs[1]
 	assert sa.gid == 0x31, 'SA is 0x31, got ${sa.gid:x}'
-	v := rem_at(line.glyphs, 1) or { panic('OE drew nothing') }
+	v := line.glyphs[2]
 	assert v.gid == 0x6d, 'OE maps to 0x6d through abvf, got ${v.gid:x}'
 	assert v.is_mark && v.advance == 0, 'the vowel is a mark advancing nothing'
-	assert v.x > 19.61 && v.x < 19.63, 'vowel sits 23 design units before the pen, got x=${v.x}'
+	assert v.cluster == 1, 'the right part keeps the vowel cluster'
+	assert v.x > 28.82 && v.x < 28.85, 'vowel sits 23 design units before the pen, got x=${v.x}'
 	assert v.y > 0.92 && v.y < 0.94, 'vowel rides 29 design units up, got y=${v.y}'
+}
+
+// Khmer split YA: SA + SRA YA 17BF draws the split E plus the right part.
+// HarfBuzz: [17C1 0x83, SA 0x31, 17BF.right1 0x7b] advances [288, 636,
+// 288]. The right part is spacing, not a mark, so it needs no anchor:
+// the split is the whole of this slice. Neutering the split drops the
+// 0x83 glyph and fails the three-glyph pin, which is the break-fix.
+// Honest per-input clusters [1,0,1] against HarfBuzz merged [0,0,0].
+fn test_remainder_khmer_split_ya() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17BF)])
+	assert line.glyphs.len == 3, 'SA YA draws the split E plus the right part, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0x83, 'the split E is 0x83, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the split E merges onto the base cluster'
+	assert line.glyphs[0].advance > 9.21 && line.glyphs[0].advance < 9.23, 'the split E advances 288 design units, got ${line.glyphs[0].advance}'
+	assert line.glyphs[1].gid == 0x31, 'SA is 0x31, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[1].cluster == 0, 'SA keeps the base cluster'
+	assert line.glyphs[1].advance > 20.34 && line.glyphs[1].advance < 20.37, 'SA advances 636 design units, got ${line.glyphs[1].advance}'
+	right := line.glyphs[2]
+	assert right.gid == 0x7b, 'YA maps to 0x7b, got ${right.gid:x}'
+	assert !right.is_mark && right.advance > 9.21 && right.advance < 9.23, 'the right part is spacing advancing 288, got ${right.advance}'
+	assert right.cluster == 1, 'the right part keeps the vowel cluster'
+	assert right.x > 29.56 && right.x < 29.58, 'the right part opens past the base, got x=${right.x}'
+}
+
+// Khmer split IE: SA + SRA IE 17C0 draws the split E plus the right part.
+// HarfBuzz: [17C1 0x83, SA 0x31, 17C0.right1 0x7f] advances [288, 636,
+// 288], the same shape as YA with its own right glyph. Same split,
+// same break-fix: the split E merges onto the base cluster and the
+// right part keeps the vowel's honest cluster.
+fn test_remainder_khmer_split_ie() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17C0)])
+	assert line.glyphs.len == 3, 'SA IE draws the split E plus the right part, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0x83, 'the split E is 0x83, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the split E merges onto the base cluster'
+	assert line.glyphs[1].gid == 0x31, 'SA is 0x31, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[1].cluster == 0, 'SA keeps the base cluster'
+	right := line.glyphs[2]
+	assert right.gid == 0x7f, 'IE maps to 0x7f, got ${right.gid:x}'
+	assert !right.is_mark && right.advance > 9.21 && right.advance < 9.23, 'the right part is spacing advancing 288, got ${right.advance}'
+	assert right.cluster == 1, 'the right part keeps the vowel cluster'
+	assert right.x > 29.56 && right.x < 29.58, 'the right part opens past the base, got x=${right.x}'
+}
+
+// Khmer split AU2: SA + SRA AU 17C5 draws the split E plus the ligature.
+// HarfBuzz: [17C1 0x83, uni178017C5 0xed] with the ligature at 924
+// design units, the AU twin of the psts pin. Same split, same break-fix:
+// the split E merges onto the base cluster and the ligature keeps it.
+fn test_remainder_khmer_split_au2() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17C5)])
+	assert line.glyphs.len == 2, 'SA AU2 draws the split E plus the ligature, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0x83, 'the split E is 0x83, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].cluster == 0, 'the split E merges onto the base cluster'
+	assert line.glyphs[1].gid == 0xed, 'SA AU2 fuses to 0xed, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[1].cluster == 0, 'the ligature keeps the base cluster'
+	assert line.glyphs[1].advance > 29.56 && line.glyphs[1].advance < 29.58, 'ligature advances 924 design units, got ${line.glyphs[1].advance}'
+}
+
+// Khmer split vowel in a coeng cluster: SA + COENG + RO + SRA YA 17BF.
+// HarfBuzz: [17C1 0x83, pref 0xdc, SA 0x31, 17BF.right1 0x7b]
+// advances [288, 287, 636, 288] — the SRA E stays ahead of the preposed
+// pair because the split inserts it before the base and the segmenter
+// keeps it in its own syllable ahead of the pair's, so the pref machine
+// never sees it. (Low 0xdd needs the second coeng pair of the pres word;
+// here both engines draw the plain pref.) Neutering the split drops the
+// SRA E and fails the four-glyph pin, which is the break-fix. The
+// reordered syllable merges onto the segment start the way the pres pin
+// merges onto its base.
+fn test_remainder_khmer_split_cluster() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17D2), rune(0x179A), rune(0x17BF)])
+	assert line.glyphs.len == 4, 'split cluster draws four glyphs, got ${line.glyphs.len}'
+	assert line.glyphs[0].gid == 0x83, 'the split E opens the line, got ${line.glyphs[0].gid:x}'
+	assert line.glyphs[0].advance > 9.21 && line.glyphs[0].advance < 9.23, 'the split E advances 288 design units, got ${line.glyphs[0].advance}'
+	assert line.glyphs[1].gid == 0xdc, 'the preposed pair stays plain 0xdc, got ${line.glyphs[1].gid:x}'
+	assert line.glyphs[1].advance > 9.18 && line.glyphs[1].advance < 9.20, 'the pair advances 287 design units, got ${line.glyphs[1].advance}'
+	assert line.glyphs[2].gid == 0x31, 'SA is 0x31, got ${line.glyphs[2].gid:x}'
+	assert line.glyphs[3].gid == 0x7b, 'YA maps to 0x7b, got ${line.glyphs[3].gid:x}'
+	assert line.glyphs[3].advance > 9.21 && line.glyphs[3].advance < 9.23, 'the right part advances 288 design units, got ${line.glyphs[3].advance}'
+	assert line.glyphs[3].x > 38.74 && line.glyphs[3].x < 38.77, 'the right part opens past the base, got x=${line.glyphs[3].x}'
 }
 
 // Khmer order: pres needs pref and blwf, blws/psts need blwf. The pres
