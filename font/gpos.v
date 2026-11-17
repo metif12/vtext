@@ -279,8 +279,10 @@ pub mut:
 	base_anchors [][]Anchor
 }
 
-// LigatureAnchorPair is one component's two anchors for one mark class: the point on the ligature
-// and the point on the mark that have to meet.
+// LigatureAnchorPair is one component's anchor for one mark class: the point on the ligature
+// a mark of that class meets at. The point on the mark lives once per mark in the rule's mark
+// array, not once per component — a ComponentRecord carries one offset per class, not two —
+// so the mark half of the pair is always empty and offset_for reads it from the mark array.
 pub struct LigatureAnchorPair {
 pub mut:
 	ligature Anchor
@@ -1066,16 +1068,19 @@ pub fn (g &Gpos) cursive_anchors(gid u16, script string, lang string) ?CursiveAn
 	return none
 }
 
-// offset_for finds the attachment for one mark and one component of one ligature.
+// offset_for finds the attachment for one mark on one component of one ligature.
 //
-// The component is the ligature's last one, because that is the only one a caller can mean: a mark
-// written after a fused pair belongs to the last character of the pair, and a mark written between
-// the two characters is a thing this does not represent.
+// The component is the last one that carries a ligature anchor for the mark's class, because
+// a mark written after a fused pair belongs to the pair's last character: Khmer KAKABAT after
+// a KA+SRAII ligature rides the SRII component's anchor, and taking the first lands it a full
+// component to the left of HarfBuzz. A font that fills only the first component still resolves,
+// because the scan stops at whatever carries an anchor: Tahoma's lam-alef keeps its anchors on
+// the first component, and the scan finds them there.
 //
 // Both anchors have to be there. A ligature anchor on its own says where a mark goes but not
-// which way up the mark should sit, and a mark anchor on its own says where the mark's own origin
-// belongs but nothing about the ligature, so a pair with only one half present is not enough to
-// place the mark and none is returned.
+// which way up the mark should sit, and a mark anchor on its own says where the mark's own
+// origin belongs but nothing about the ligature, so a pair with only one half present is not
+// enough to place the mark and none is returned.
 pub fn (rule &MarkToLigature) offset_for(mark_gid u16, ligature_gid u16) ?Offset2 {
 	mark_index := coverage_index(rule.mark_ranges, mark_gid) or { return none }
 	ligature_index := coverage_index(rule.ligature_ranges, ligature_gid) or { return none }
@@ -1085,24 +1090,25 @@ pub fn (rule &MarkToLigature) offset_for(mark_gid u16, ligature_gid u16) ?Offset
 	if ligature_index >= rule.components.len {
 		return none
 	}
+	mark_anchor := rule.mark_anchors[mark_index]
+	if !mark_anchor.exists {
+		return none
+	}
+	class := int(rule.mark_classes[mark_index])
 	parts := rule.components[ligature_index]
 	if parts.len == 0 {
 		return none
 	}
-	class := int(rule.mark_classes[mark_index])
 	// Which component the mark belongs to is not knowable from the text: a mark written after a
-	// lam-alef goes on the alef, but the font says which component by giving that one the anchors
-	// and leaving the others empty. A lam-alef in Tahoma is a two component ligature whose
-	// anchors are all on the first component, so picking the last component finds nothing and
-	// leaves the mark at the pen.
-	//
-	// So the component is the first one that has an anchor for this mark's class. Scanning for it
-	// rather than assuming a position is also what makes a ligature with a mark in the middle of
-	// it work: there the anchor is on the component the mark was written over, wherever that is.
+	// fused pair belongs to the pair's last character, so the scan runs from the end and takes
+	// the last component that carries a ligature anchor for this mark's class. A lam-alef in
+	// Tahoma is a two component ligature whose anchors are all on the first component, so the
+	// scan finds them there; an engine that took the last component positionally would find
+	// nothing and leave the mark at the pen.
 	mut found := -1
-	for ci in 0 .. parts.len {
+	for ci := parts.len - 1; ci >= 0; ci-- {
 		pairs := parts[ci].pairs
-		if class < pairs.len && pairs[class].ligature.exists && pairs[class].mark.exists {
+		if class < pairs.len && pairs[class].ligature.exists {
 			found = ci
 			break
 		}
@@ -1110,10 +1116,10 @@ pub fn (rule &MarkToLigature) offset_for(mark_gid u16, ligature_gid u16) ?Offset
 	if found < 0 {
 		return none
 	}
-	pair := parts[found].pairs[class]
+	lig := parts[found].pairs[class].ligature
 	return Offset2{
-		x: pair.ligature.x - pair.mark.x
-		y: pair.ligature.y - pair.mark.y
+		x: lig.x - mark_anchor.x
+		y: lig.y - mark_anchor.y
 	}
 }
 
@@ -3238,11 +3244,11 @@ pub fn parse_mark_to_ligature(r &Reader, at int) ?MarkToLigature {
 		// table the offset names rather than beside the offset.
 		attach := ligature_array + int(r.u16_at(ligature_array + 2 + li * 2))
 		component_count := int(r.u16_at(attach))
-		// A component record is two offsets per class, so a count that cannot fit in what is left of
+		// A component record is one offset per class, so a count that cannot fit in what is left of
 		// the table is a font claiming more than it has. Such a ligature is left with no components,
 		// which attaches nothing rather than attaching somewhere arbitrary, and the ligatures after
 		// it are still read because each has its own offset.
-		need := component_count * class_count * 4
+		need := component_count * class_count * 2
 		if component_count == 0 || need > r.len() - attach - 2 {
 			components << [][]LigatureComponent{}
 			continue
@@ -3251,12 +3257,15 @@ pub fn parse_mark_to_ligature(r &Reader, at int) ?MarkToLigature {
 		for ci in 0 .. component_count {
 			mut pairs := []LigatureAnchorPair{cap: class_count}
 			for k in 0 .. class_count {
-				// One component of one ligature for one class, and it is two offsets: the point on
-				// the ligature and the point on the mark that have to meet.
-				rec := attach + 2 + (ci * class_count + k) * 4
+				// One component of one ligature for one class, and it is one offset: the point on
+				// the ligature. The point on the mark lives once per mark in the mark array, not
+				// once per component, so reading two offsets here consumes the next component's
+				// ligature anchor as this one's mark anchor and parks the mark a full component
+				// away from where the font asked.
+				rec := attach + 2 + (ci * class_count + k) * 2
 				pairs << LigatureAnchorPair{
 					ligature: parse_anchor_at(r, attach, int(r.u16_at(rec)))
-					mark:     parse_anchor_at(r, attach, int(r.u16_at(rec + 2)))
+					mark:     Anchor{}
 				}
 			}
 			parts << LigatureComponent{

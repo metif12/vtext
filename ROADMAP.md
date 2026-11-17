@@ -924,7 +924,7 @@ owns the queue.
 | 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
 | 7.10 | Composite instancing; raster wiring | landed (HVAR/MVAR/cvar readers, composites, wiring) |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | landed (KR face, HB pins, break-fix) |
-| 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf caller-asked; `nko ` tag fold landed; Khmer subscript-U residual closed 2026-11-17 (HB-exact, pinned; U rides the stack); Khmer abvm stack pinned 2026-11-17 (anchor-side HB-exact, chains fire on no corpus word) | open (GPOS marks beyond anchors + mark-cluster merge + 17CE-over-SRAII-ligature anchor remain) |
+| 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf caller-asked; `nko ` tag fold landed; Khmer subscript-U residual closed 2026-11-17 (HB-exact, pinned; U rides the stack); Khmer abvm stack pinned 2026-11-17 (anchor-side HB-exact, chains fire on no corpus word); 17CE-over-SRAII-ligature closed 2026-11-17 (mark-lig ComponentRecord stride + last-anchored-component, Tahoma HB-exact) | open (GPOS marks beyond anchors + mark-cluster merge remain) |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (assembly + GPOS marks; joining hook included) |
 | 10.1 | generic measure / iterate (`layout/iterator.v`) | landed (standalone, no FONS) |

@@ -31,10 +31,10 @@ import vtext.layout
 //     2026-11-17, pinned HB-exact below (U rides the mark-to-mark stack on
 //     the fused subscript; neutering blwf out of the Khmer defaults
 //     unfolds the subscript and fails the 0xb7 pin).
-//   - Khmer KA+SRAII+KAKABAT [KA, 17B6, 17CE]: HarfBuzz puts 17CE at
-//     (46,-29); this engine puts it at (-1281,0) in design. The mark
-//     anchor over the KA+SRAII ligature 0xec misses by a full ligature
-//     width. Open work, both numbers measured; no pin yet.
+//   - Khmer KA+SRAII+KAKABAT [KA, 17B6, 17CE]: closed 2026-11-17, pinned
+//     HB-exact below (mark-to-ligature over the 0xec ligature; the fix
+//     is in the ComponentRecord reader and the last-anchored-component
+//     rule, and Tahoma stays HB-exact beside it).
 
 fn rem_font_path(name string) ?string {
 	mut dirs := []string{}
@@ -410,6 +410,40 @@ fn test_remainder_khmer_abvm_chain() {
 	apps := gpos.apply_contextual([u16(0x31), u16(0x8d), u16(0x98)], 'khmr', '',
 		kh.face.gdef)
 	assert apps.len == 0, 'no chain applies to the MUUSIKATOAN KAKABAT run, got ${apps.len}'
+}
+
+// Mark-to-ligature over the KA+SRAII ligature: KA + SRA II 17B6 +
+// KAKABAT 17CE. HarfBuzz: [uni178017B6 0xec, 17CE 0x98] advances
+// [924, 0] with 17CE at (46,-29); -abvm leaves (0,0), so the placement
+// rides the abvm mark-to-ligature lookups. The ligature carries one
+// anchor per component per class (a single offset, not two — the point
+// on the mark lives once per mark in the mark array), and the mark
+// belongs to the last anchored component: the SRII half at (673,655)
+// minus the mark anchor (-297,684) is (970,-29), which reads as x_off
+// 46 past the 924 advance. Reading two offsets per component consumes
+// the next component's ligature anchor as this one's mark anchor and
+// parks the mark at (-1281,0); taking the first anchored component
+// lands it at x_off -311. Either neuter fails the pins below, which is
+// the break-fix. Honest per-input clusters [0,2] against HarfBuzz
+// merged [0,0], the recorded per-input convention.
+fn test_remainder_khmer_kakabat_on_ligature() {
+	kh := rem_font('NotoSansKhmer-Variable.ttf') or { return }
+	line := rem_line(kh, [rune(0x1780), rune(0x17B6), rune(0x17CE)])
+	assert line.glyphs.len == 2, 'KA SRAII KAKABAT draws two glyphs, got ${line.glyphs.len}'
+	base := rem_at(line.glyphs, 0) or { panic('ligature drew nothing') }
+	assert base.gid == 0xec, 'KA SRAII fuses to 0xec, got ${base.gid:x}'
+	assert base.advance > 29.56 && base.advance < 29.58, 'ligature advances 924 design units, got ${base.advance}'
+	kak := rem_at(line.glyphs, 2) or { panic('KAKABAT drew nothing') }
+	assert kak.gid == 0x98, 'KAKABAT is 0x98, got ${kak.gid:x}'
+	assert kak.is_mark && kak.advance == 0, 'KAKABAT is a mark advancing nothing'
+	assert kak.x > 31.03 && kak.x < 31.05, 'KAKABAT sits 46 design units past the ligature advance, got x=${kak.x}'
+	assert kak.y > 0.92 && kak.y < 0.94, 'KAKABAT rides 29 design units up, got y=${kak.y}'
+	// GPOS level: the rule answers the SRII component's anchor minus the
+	// mark anchor, asked the way the layout pass asks.
+	off := kh.mark_offset_in(u16(0x98), u16(0xec), false, 'khmr', '') or {
+		panic('khmer has no ligature anchor for KAKABAT')
+	}
+	assert off.x == 970 && off.y == -29, 'KAKABAT ligature anchor is (970,-29), got (${off.x},${off.y})'
 }
 
 // Mark-cluster merge: reordered syllables merge onto the base (both
