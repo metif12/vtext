@@ -919,7 +919,7 @@ owns the queue.
 | 7.11-2H | Rival A/B harness | landed (README table, re-measured per release) |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
-| 8.6 | Stroking | landed (8.6a outline reader + stroker) |
+| 8.6 | Stroking | landed (8.6a outline reader + stroker; design-unit pins at 1e-9 since 2026-11-17 — miter/bevel joints divide, and C contraction moves 1-2 ulps between clang and gcc) |
 | 8.7 | Face/subset MATH wiring; top-accent fallback | landed (half-advance fallback, MATH closure) |
 | 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
 | 7.10 | Composite instancing; raster wiring | landed (HVAR/MVAR/cvar readers, composites, wiring) |

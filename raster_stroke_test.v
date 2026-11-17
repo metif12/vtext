@@ -56,22 +56,29 @@ fn stroke_close(got f64, want f64, tol f64) bool {
 // The mitered A strokes to two loops per contour with the spikes kept: the
 // box grows by the radius past every straight edge, and the ink is the ring
 // between the outer and inner loops. No trigonometry runs on this path, so
-// every number below is exact.
+// every number below is deterministic — but exact only per platform: the
+// miter joints divide and normalize, and C allows contraction (FMA) that
+// clang and gcc take differently, so macOS lands 1-2 ulps from the pins
+// below. The 1e-9 tolerance absorbs that libm noise with four orders of
+// margin while any geometry change moves the ink by whole units (the
+// break-fix at the bottom moves it by thousands).
 fn test_stroke_a_mitered_loops_and_box() {
 	st := stroke_test_a(stroke_test_opt(raster.StrokeLineJoin.miter, 4.0))
 	assert st.n_contours() == 4, 'two closed contours stroke to four loops, got ${st.n_contours()}'
 	assert st.n_points() == 22, 'the mitered A has 22 points, got ${st.n_points()}'
 	x0, y0, x1, y1 := st.bbox()
-	assert x0 == 4.6178374606562755, 'mitered x0 is 4.6178, got ${x0}'
+	assert stroke_close(x0, 4.6178374606562755, 1e-9), 'mitered x0 is 4.6178, got ${x0}'
 	assert y0 == -40.0, 'mitered y0 is -40, got ${y0}'
-	assert x1 == 1195.4204354056494, 'mitered x1 is 1195.42, got ${x1}'
+	assert stroke_close(x1, 1195.4204354056494, 1e-9), 'mitered x1 is 1195.42, got ${x1}'
 	assert y1 == 1414.0, 'mitered y1 is 1414, got ${y1}'
-	assert st.area() == 543934.8360647284, 'mitered ink is 543934.83, got ${st.area()}'
+	assert stroke_close(st.area(), 543934.8360647284, 1e-9), 'mitered ink is 543934.83, got ${st.area()}'
 }
 
 // Joins change the ink: bevel cuts every outer corner and fills the notches
 // less, so its ring is larger than the miter's here; round sits between.
-// The bevel path is trigonometry-free, so its numbers are exact too.
+// The bevel path is trigonometry-free, so its numbers are deterministic
+// per platform with the same 1-ulp cross-platform noise as the miter's,
+// hence the same 1e-9 pins.
 fn test_stroke_joins_change_ink() {
 	miter := stroke_test_a(stroke_test_opt(raster.StrokeLineJoin.miter, 4.0))
 	bevel := stroke_test_a(stroke_test_opt(raster.StrokeLineJoin.bevel, 4.0))
@@ -79,12 +86,13 @@ fn test_stroke_joins_change_ink() {
 	assert bevel.n_contours() == 4 && round.n_contours() == 4
 	assert bevel.n_points() == 33, 'the beveled A has 33 points, got ${bevel.n_points()}'
 	assert round.n_points() == 94, 'the round-joined A has 94 points, got ${round.n_points()}'
-	assert bevel.area() == 556571.5765320654, 'beveled ink is 556571.57, got ${bevel.area()}'
+	assert stroke_close(bevel.area(), 556571.5765320654, 1e-9), 'beveled ink is 556571.57, got ${bevel.area()}'
 	assert stroke_close(round.area(), 550718.7737340531, 0.5), 'round ink drifts: ${round.area()}'
 	assert bevel.area() > round.area(), 'bevel ${bevel.area()} must exceed round ${round.area()}'
 	assert round.area() > miter.area(), 'round ${round.area()} must exceed miter ${miter.area()}'
 	x0, y0, x1, y1 := bevel.bbox()
-	assert x0 == 4.6178374606562755 && y0 == -40.0 && x1 == 1195.4204354056494 && y1 == 1414.0
+	assert stroke_close(x0, 4.6178374606562755, 1e-9) && y0 == -40.0
+		&& stroke_close(x1, 1195.4204354056494, 1e-9) && y1 == 1414.0
 }
 
 // The miter limit falls back to bevel corner by corner: 1.0 keeps no miter
@@ -96,10 +104,10 @@ fn test_stroke_miter_limit_falls_back_to_bevel() {
 	assert flat.area() == bevel.area(), 'limit 1.0 answers the bevel ink exactly'
 	partial := stroke_test_a(stroke_test_opt(raster.StrokeLineJoin.miter, 2.0))
 	assert partial.n_points() == 23, 'limit 2.0 keeps all but one miter, got ${partial.n_points()}'
-	assert partial.area() == 548396.0769625083, 'limit 2.0 ink is 548396.07, got ${partial.area()}'
+	assert stroke_close(partial.area(), 548396.0769625083, 1e-9), 'limit 2.0 ink is 548396.07, got ${partial.area()}'
 	wide := stroke_test_a(stroke_test_opt(raster.StrokeLineJoin.miter, 100.0))
 	assert wide.n_points() == 22, 'limit 100 keeps every miter'
-	assert wide.area() == 543934.8360647284, 'limit 100 answers the miter ink exactly'
+	assert stroke_close(wide.area(), 543934.8360647284, 1e-9), 'limit 100 answers the miter ink'
 }
 
 // Caps close an open spine: butt cuts flush, square extends a radius past
