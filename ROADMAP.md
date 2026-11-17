@@ -774,102 +774,62 @@ Wave rule for the whole phase: every new script arrives as a committed OFL
 font plus HarfBuzz-measured pins. A shaping-affecting script also extends
 the difftest corpus, pango legs verified on CI.
 
-## Phase 10: vlib fontstash / stb_truetype replacement
+## Phase 10: standalone vlib replacement gaps
 
-vtext becomes the font/text implementation vlib uses, behind split flags,
-with zero behaviour change when the flags are off: `gg` via
-`-d use_vtext_gg`, `gg.canvas` CPU text via `-d use_vtext_canvas`, sources
-in `vlib` (`vlib/vtext/...`), one flag per surface so either surface can
-move first. Default builds keep `vlib/fontstash` +
-`thirdparty/fontstash/{fontstash.h,stb_truetype.h}` +
-`thirdparty/sokol/util/sokol_fontstash.h` + system freetype/fontconfig +
-`vlib/os/font` + `vlib/sokol/sfons` + `vlib/x/ttf` untouched.
+vtext stays standalone: no `vlib` types, no `gg`/`canvas`/`sfons`/`os.font`/`x/ttf`
+imports, no FONS/C types. vtext provides the generic gaps vlib needs to
+replace fontstash / stb_truetype / freetype behind its own split flags;
+the adaptation (`-d use_vtext_gg`, `-d use_vtext_canvas`, `vlib/vtext/...`)
+lives in `vlib`, not here.
 
 The atlas boundary does not move: Phase 1 settled against a hidden atlas
 and for a caller-owned cache (`shape/cache.v`, `shape/CacheKey`), and that
-holds here. `gg` keeps owning its atlas texture and dirty-rect upload
-(`pending_upload`/`flush`); `canvas` keeps owning its `Strike` cache
-budgets; vtext answers box-for-gid plus fill-this-buffer (`box_only` /
-`render_into` on `font.Face`, `raster.GlyphBitmap`) and the caller packs,
-uploads and evicts. No new thirdparty: the only C stays the stb header vlib
-already vendors (`font/stbtt.c.v` with `STBTT_STATIC`), isolated per the
-`vlib/fontstash/README.md` bridge pattern so `gg` + `vtext` no longer
-collide on `STB_TRUETYPE_IMPLEMENTATION`.
+holds here. The caller keeps owning its atlas texture, dirty-rect upload
+and strike budgets; vtext answers box-for-gid plus fill-this-buffer
+(`box_only` / `render_into` on `font.Face`, `raster.GlyphBitmap`) plus the
+generic helpers below. No new thirdparty.
 
-**10.1 fontstash state / measure / draw parity — open.** `vlib/fontstash`
-exposes `create/delete`, `add_font_mem`, `get_font_by_name`,
-`add_fallback_font`, `push/pop/clear_state`,
-`set_size/color/spacing/blur/align/font`, `draw_text`, `text_bounds`,
-`line_bounds`, `vert_metrics`, `text_iter_init/next` + `FONSquad`,
-`get_atlas_size/expand/reset_atlas`, `get_texture_data/validate_texture`,
-`draw_debug`, `set_error_callback` (`ATLAS_FULL`/`SCRATCH_FULL`/
-`STATES_OVERFLOW`/`UNDERFLOW`), `FONS_ZERO_TOPLEFT/BOTTOMLEFT` and
-`FONSalign`, plus the skyline packer, exponential blur, UTF-8 DFA and the
-per-base fallback list. Provide `fontstash_compat` over `FontSet` +
-`LayoutOptions` + caller cache: state maps to options (size, spacing via
-letter/word spacing, align, font id), fallback via `FontSet` chain,
-`text_bounds`/`line_bounds`/`vert_metrics` via `measure_paragraph` +
-`vmetrics`, iterator via laid-out glyphs in visual order, atlas calls via
-the caller's atlas (thin forwarding, no hidden atlas), blur as a
-post-process behind the same opt-in spelling or refused with its reason if
-`gg` never exercises it. Pinned by `gg` text/atlas tests; break-fix neuters
-state/align/fallback in turn.
+**10.1 generic measure / iterate — landed 2026-11-17.** `layout/iterator.v`:
+`advance_quads` (visual-order quads from advances with atlas uv and
+top/bottom origin) plus `line_ink_box` (the generic line-bounds/vert-metrics
+answer). No FONS types, no state stack, no atlas. Pinned by
+`layout_iterator_test.v` (empty line, order/origin, ink box).
 
-**10.2 stb packing / baking parity — open.** `stb_truetype.h` pack/bake
-surface used through fontstash: `BakeFontBitmap`, `GetBakedQuad`,
-`PackBegin/End`, `PackFontRange/Ranges`, `GetPackedQuad`,
-`PackSetOversampling/SkipMissing`, `GatherRects/PackRects/RenderIntoRects`,
-`GetScaledFontVMetrics` (outline path already covered by 8.6a
-`glyph_outline`). Provide thin packing over `box_only`/`render_into` +
-caller cache, oversampling via em scaling. Pinned by bake/pack round-trip
-tests; break-fix drops oversampling/packing.
+**10.2 generic rect packing — landed 2026-11-17.** `raster/pack.v`: skyline
+`PackAtlas` with bottom-left `insert`/`reset`/`rect_fits`, no hidden
+allocation beyond nodes, no stb/fontstash/freetype dependency. This is the
+packing half of the atlas vlib keeps owning. Pinned by
+`raster_pack_test.v` (side-by-side, full-refuses, reset-reuses).
 
-**10.3 gg GPU path — open (`-d use_vtext_gg`).** `FT` + `FonsRenderTarget`
-(`atlas_img/smp`, `pending_upload`/`flush`), `draw_text2`/`draw_text_def`,
-`set_text_cfg` (family/bold/mono/italic incl. the mono size-2 rule, scale,
-align|vertical, color), `text_width/height/size`,
-`text_atlas_pending_upload`, `fonts_map`, file/memory font loading incl.
-`os.font.get_path_variant`, macOS `native_rendering` bypass. Map to
-`layout_paragraph`/`wrap_paragraph` + `shape.Cache.get_or_rasterize`;
-synthetic bold/italic ride 8.5 bitmap synth until outline-level lands.
-Pinned by `gg` text tests with2207 pixel parity on Latin + Arabic lines.
+**10.3 generic coverage helpers — landed 2026-11-17.** `raster/quantize.v`:
+`quantize_mono/gray2/gray4`, `gamma_lut`/`apply_lut`, `blur_bitmap`
+(3x3 box, radius 0 identity). Generic form of the fontstash blur and the
+canvas mono/gray2/4 + gamma/contrast preblend, with no backend types.
+Pinned by `raster_quantize_test.v` (threshold, gray4 top, identity LUT/blur,
+single-pixel spread) with a threshold-neutered break-fix.
 
-**10.4 canvas CPU path — open (`-d use_vtext_canvas`).**
-`Typeface.from_data/file`, `is_live/free`, `release_typeface_strikes`,
-`ScalerRec` (masks `BW/A8/ARGB32/LCD16`, hinting `none/slight/normal/full`,
-`embedded_bitmaps`, `embolden`, `subpixel` 1/8 packing, `force_autohint`,
-`lcd_vertical/bgr`, `gen_a8_from_lcd`, `linear_metrics`,
-`baseline_snap`, `frame/gamma/contrast/preblend/luminance`), `Strike`
-budgets (32 strikes, 256 glyphs, 256KB, `max_dimension` 512),
-`make_glyph` bounds/advance/image with `-2/-3` guards,
-`draw_glyph_run` (perspective reject, `>256px` draw-as-path,
-axis-alignment, `blit_a8`), `HAS_COLOR`/`IS_SCALABLE` gates, freetype
-`load_size<1` residual, `NO_BITMAP` vs transform/delta, `LIGHT/NORMAL/MONO`
-targets (`text_freetype_linux.h`, `text_coretext_darwin.h` stay default).
-vtext answers the same `box_only`/`render_into` contract; hinting rides 7.7,
-LCD FIR rides the 8.5 follow-up, stroking rides 8.6 (currently refused in
-canvas: `stroked text is not supported yet`), color rides 7.7, mono/gray2/4
-via coverage quantize, gamma/contrast preblend stays in canvas, strike
-policy stays caller-owned. Pinned by `canvas` text tests plus the freetype
-reference header; break-fix neuters hinting/subpixel/gamma in turn.
+**10.4 canvas CPU helpers — landed 2026-11-17 as generic coverage only.**
+Mono/gray2/4 quantize, gamma/contrast LUT and blur land here (10.3);
+hinting rides 7.7, LCD FIR rides the 8.5 follow-up, stroking rides 8.6,
+color rides 7.7. No `Typeface`/`ScalerRec`/`Strike` types in vtext; those
+stay in `vlib` behind its own flag.
 
-**10.5 discovery + providers (completes 7.8/8.8) — open.** `os.font`
-`default()` order (`VUI_FONT`, `config/v/fonts`, Windows segoeui/arial,
-macOS SFNS, Android `fonts.xml`, `fc-match -s`, bundled
-`examples/assets/fonts`), `get_path_variant` bold/italic/mono heuristics,
-`sokol/sfons` power-of-two + `rgba/flush/destroy`, `x/ttf` cmap-0/4 +
-kern-0 parity. fontconfig `match/sort/covers_char/covers_lang` already
-landed (8.8, linux-only); Core Text + DirectWrite land per-OS with none
-elsewhere exactly on the 7.8 pattern. Legacy `kern` table stays refused by
-design (GPOS only); 10.5 provides the filename/env/bundled migration, not
-a `kern`-table reader, with the reason recorded. Pinned per-OS with
-skip-aloud elsewhere.
+**10.5 generic discovery — landed 2026-11-17.** `providers/discovery.v`:
+pure `discovery_order`/`pick_first`, `variant_path` bold/italic/mono
+heuristics, `is_power_of_two`. No ENV reads, no filesystem walks, no
+`fc-match` exec, no Android XML in this library; the caller injects
+candidates and readability. Legacy `kern` stays refused by design (GPOS
+only). Core Text / DirectWrite full providers remain 7.8 per-OS work.
+Pinned by `providers_discovery_test.v` (order, skip-unreadable, variants,
+power-of-two).
 
-Each 10.x slice carries its own baseline (targeted `gg`/`canvas` tests +
-difftest 0/0), one commit per slice, break-fix that moves the score, and no
-change to default builds. Triggered items from Phase 7–9 (bytecode
+Each 10.x slice carries its own baseline (new `*_test.v` plus full suite
+green), one commit per slice, break-fix that moves the score, and no
+change to existing behavior. Triggered items from Phase 7–9 (bytecode
 interpreter, CFF2, WOFF2/brotli, AAT `morx`, Graphite, Tibetan stacking)
-stay triggered; 10.x never pulls them in early.
+stay triggered; 10.x never pulls them in early. The `vlib` adaptation
+(flags, `FT`, `ScalerRec`, `Strike`, `os.font` order, `sfons`, `x/ttf`
+callers) stays in `vlib`, not here.
 
 ## Corpus register
 
@@ -923,11 +883,11 @@ owns the queue.
 | 9.2-engine | ccc=0 marks attach; Khmer coeng fusions + pref reorder + Myanmar kinzi + blws landed; Khmer pres-group + Myanmar blwf open; `nko ` tag fold landed | open |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (joining hook stays open) |
-| 10.1 | fontstash state / measure / draw compat (no hidden atlas) | open |
-| 10.2 | stb pack / bake compat over box + fill | open |
-| 10.3 | gg GPU path behind `-d use_vtext_gg` | open |
-| 10.4 | canvas CPU path behind `-d use_vtext_canvas` | open |
-| 10.5 | discovery + providers completing 7.8 / 8.8 | open |
+| 10.1 | generic measure / iterate (`layout/iterator.v`) | landed (standalone, no FONS) |
+| 10.2 | generic rect packing (`raster/pack.v`) | landed (standalone, caller-owned atlas) |
+| 10.3 | generic coverage helpers (`raster/quantize.v`) | landed (mono/gray2/4, gamma, blur) |
+| 10.4 | canvas CPU helpers as generic coverage only | landed (10.3; hint/LCD/stroke/color stay 7.7/8.5/8.6/7.7) |
+| 10.5 | generic discovery (`providers/discovery.v`) | landed (order/variant/pow2; 7.8 stays per-OS) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx`, Graphite, WOFF2/brotli, the full TrueType bytecode interpreter,
