@@ -54,22 +54,6 @@ pub enum HintMode {
 	hint_grid
 }
 
-// HintRequest names one hinted query: the mode plus the size and subpixel
-// offset the unhinted calls already take. The zero value is hint_none at 0
-// px, which answers empty the way a 0-px render does.
-pub struct HintRequest {
-pub:
-	mode  HintMode
-	em_px f64
-	sub_x i32
-	sub_y i32
-}
-
-// wants_grid_fit reports whether the request asks for the autohinter.
-pub fn (r HintRequest) wants_grid_fit() bool {
-	return r.mode == .hint_grid
-}
-
 // bytecode_hint_reason is why the full TrueType bytecode interpreter is not
 // here. A grid-fit autohinter covers the corpus inside the tolerance above;
 // the interpreter lands only when a committed font needs it, measured first,

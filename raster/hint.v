@@ -22,13 +22,13 @@ module raster
 // autohinted sum (12447) without overshooting it, and on gid 6227 (A) it
 // stays inside the same few-percent tolerance. The passthrough options
 // (0, 255, no trim) are the exact identity and the break-fix control: a
-// neutered hinter answers its input byte for byte, and every pin in
-// raster_hint_test.v fails on it.
+// neutered hinter answers its input byte for byte, and the ink pins in
+// raster_hint_test.v fail on it.
 
 // GridFitOptions selects the stem snap. snap_lo drops faint pixels, snap_hi
-// saturates strong ones, trim cuts the emptied border. The zero value snaps
-// nothing and trims nothing only when snap_hi is also 255; use
-// passthrough_grid_fit_options for a guaranteed identity.
+// saturates strong ones, trim cuts the emptied border. The zero value is the
+// identity through the inverted-window guard; use
+// passthrough_grid_fit_options to state it explicitly.
 pub struct GridFitOptions {
 pub:
 	snap_lo u8

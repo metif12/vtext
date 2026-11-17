@@ -192,3 +192,32 @@ fn test_hint_neutered_hinter_changes_nothing() {
 	assert hinted.coverage != plain.coverage, 'the live hinter must change the ink'
 	assert hinted.coverage_sum() != plain.coverage_sum(), 'the live hinter must move the sum'
 }
+
+fn test_hint_outline_grid_fit_pins() {
+	// The outline half of the hinter, pinned directly: dal's 31 TrueType
+	// points scale to pixels and round onto the grid, and the inclusive
+	// bounds are what hinted_box widens by one into 11x14.
+	f := load_corpus_font('Amiri-Regular.ttf') or { return }
+	gid := dal_gid(f)
+	fitted := f.face.autohint_outline(gid, 32.0)
+	assert fitted.n_points() == 31, 'dal keeps its 31 points, got ${fitted.n_points()}'
+	xmin, ymin, xmax, ymax := fitted.bounds()
+	assert xmin == 2 && ymin == 0 && xmax == 12 && ymax == 13, 'dal fitted bounds (${xmin},${ymin})..(${xmax},${ymax})'
+	assert fitted.scale == 32.0 / 1000.0
+	// Off the grid the same points sit unrounded: the fit moved at least one
+	// edge, which is the per-point half of the break-fix.
+	plain := f.face.glyph_outline(gid) or { panic(err) }
+	scale := 32.0 / 1000.0
+	mut lo := f64(plain.xs[0]) * scale
+	for x in plain.xs {
+		v := f64(x) * scale
+		if v < lo {
+			lo = v
+		}
+	}
+	// The left edge sits at 1.952 px unrounded: rounding, not truncation,
+	// decides it, which is the per-point half of the break-fix.
+	assert lo > 1.9 && lo < 2.0, 'dal scaled left edge ${lo}'
+	assert xmin == font.var_ot_round(lo)
+	assert xmin != int(lo)
+}
