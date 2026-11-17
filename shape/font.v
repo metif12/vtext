@@ -195,29 +195,6 @@ fn indic_default_features() []string {
 		'psts']
 }
 
-// myanmar_default_features are the Myanmar shaping features that run
-// without being asked: a line whose kinzi stays unfolded is not the
-// text. abvs is a HarfBuzz default-on feature proven by toggling it off
-// under uharfbuzz: -abvs unfolds the kinzi trio NGA/ASAT/VIRAMA (lookup
-// 52 fuses it to the kinzi mark) and the asat beside it. blws is
-// default-on the same way: -blws unfolds a VIRAMA+DHA stack back to
-// virama and DHA while -abvs, -blwf and -ccmp change nothing on it.
-// abvs runs first because HarfBuzz orders it there: with abvs off, blws
-// subjoins the surviving virama, and with abvs on the kinzi consumes it
-// first. blwf stays caller-asked: its medial-dot rules fire on no corpus
-// word, so the order they need is unproven. Myanmar migrates to the
-// shaper registry next, one script per commit, the way Khmer just did.
-fn myanmar_default_features() []string {
-	return ['abvs', 'blws']
-}
-
-// is_myanmar_shaping_script reports whether a run resolves under the
-// Myanmar shaping script, in either the UCD spelling the run arrives
-// with or the OpenType one the caller overrides with.
-fn is_myanmar_shaping_script(script string) bool {
-	return font.ot_script_tag(script) == 'mymr'
-}
-
 // is_indic_shaping_script reports whether a run resolves under an Indic
 // shaping script: the Devanagari and Bengali faces this engine carries, in
 // either the UCD spelling the run arrives with or the OpenType one the
@@ -241,22 +218,16 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 			is_mark: glyph.is_mark
 		}
 	}
-	// Myanmar caller-asked blwf runs before ccmp: the medial-dot fusion
-	// consumes DOT BELOW whole, and ccmp splits DOT BELOW into spacing and
-	// dummy marks first, which starves the rule when blwf runs late. Asked
-	// early it fuses the way HarfBuzz fuses with +blwf. Default lines never
-	// reach it: blwf is not a Myanmar default, and an unasked tag names
-	// nothing, so the default unfused answer does not move.
-	mut myanmar_pre_blwf := false
-	if is_myanmar_shaping_script(script) {
-		for feature in extra {
-			t := if feature.starts_with('+') && feature.len > 1 { feature[1..] } else { feature }
-			if t == 'blwf' {
-				out = g.substitute(g.lookups_for_lang(script, lang, 'blwf'), out)
-				myanmar_pre_blwf = true
-				break
-			}
-		}
+	// Asked features a shaper runs before ccmp come from the registry:
+	// Myanmar's medial-dot fusion consumes DOT BELOW whole, and ccmp
+	// splits DOT BELOW into spacing and dummy marks first, which starves
+	// the rule when blwf runs late. Asked early it fuses the way HarfBuzz
+	// fuses with +blwf. Default lines never reach it: blwf is not a
+	// Myanmar default, and an unasked tag names nothing, so the default
+	// unfused answer does not move.
+	shaper_early := shaper_early_features_for(script, extra)
+	for feature in shaper_early {
+		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
 	for feature in ['ccmp'] {
 		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
@@ -302,13 +273,9 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 		for feature in indic_default_features() {
 			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 		}
-	} else if is_myanmar_shaping_script(script) {
-		for feature in myanmar_default_features() {
-			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
-		}
 	}
-	// Registered scripts run their defaults here, after the Indic and
-	// Myanmar gates: Khmer is first, and an unregistered script gets an
+	// Registered scripts run their defaults here, after the Indic gate:
+	// Khmer first, then Myanmar, and an unregistered script gets an
 	// empty list, which is nothing.
 	shaper_defaults := shaper_default_features_for(script)
 	for feature in shaper_defaults {
@@ -355,10 +322,7 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 				// again), so naming a registry default is a no-op rather
 				// than a second run.
 				continue
-			} else if is_myanmar_shaping_script(script) && tag in myanmar_default_features() {
-				// Same no-op for the Myanmar kinzi fusion.
-				continue
-			} else if myanmar_pre_blwf && tag == 'blwf' {
+			} else if tag in shaper_early {
 				// Already ran above, before ccmp: a fusing feature must not
 				// run twice, and the late run would find nothing anyway.
 				continue

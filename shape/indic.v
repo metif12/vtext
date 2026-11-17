@@ -342,60 +342,9 @@ fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
 			map_ << i
 		}
 	}
-	// Script-specific tail reorders run through the registry: a shaper
-	// claiming the syllable rearranges what the matra/repha moves above
-	// arranged. Myanmar's kinzi rotation still sits below inline until
-	// its script migrates to the registry.
+	// Script-specific tail reorders run through the registry.
 	if sh := shaper_for_content(out) {
 		out, map_ = sh.reorder_tail(out, map_)
-	}
-	// A Myanmar kinzi trio draws its base first: HarfBuzz preposes the
-	// consonant after [C, ASAT, VIRAMA] ahead of the trio, and the abvs
-	// lookup then fuses the trio into the kinzi mark behind it (lookup
-	// 52: nga/asat/virama to kinzi). The trio opens on NGA or RA — KA
-	// with the same tail draws in place with a dotted circle for the
-	// dangling virama — and the preposed character has to be a
-	// consonant: a vowel sign after the trio draws after it, unevidenced
-	// for a prepose. The codepoints gate the rule like the Khmer one, so
-	// every other script passes through exactly as before.
-	if out.len > 3 {
-		mut at := -1
-		for i in 0 .. out.len - 3 {
-			if (out[i] == rune(0x1004) || out[i] == rune(0x101B)) && out[i + 1] == rune(0x103A) && out[i + 2] == rune(0x1039) && is_indic_consonant_family(indic_syllabic_of(syl_ranges, out[i + 3])) {
-				at = i
-				break
-			}
-		}
-		if at >= 0 {
-			mut first := []rune{cap: out.len}
-			mut first_map := []int{cap: out.len}
-			mut rest := []rune{cap: out.len}
-			mut rest_map := []int{cap: out.len}
-			mut i := 0
-			for i < out.len {
-				if i + 3 < out.len && (out[i] == rune(0x1004) || out[i] == rune(0x101B)) && out[i + 1] == rune(0x103A) && out[i + 2] == rune(0x1039) && is_indic_consonant_family(indic_syllabic_of(syl_ranges, out[i + 3])) {
-					first << out[i + 3]
-					first_map << map_[i + 3]
-					rest << out[i]
-					rest << out[i + 1]
-					rest << out[i + 2]
-					rest_map << map_[i]
-					rest_map << map_[i + 1]
-					rest_map << map_[i + 2]
-					i += 4
-				} else {
-					rest << out[i]
-					rest_map << map_[i]
-					i++
-				}
-			}
-			out = []rune{cap: first.len + rest.len}
-			out << first
-			out << rest
-			map_ = []int{cap: first_map.len + rest_map.len}
-			map_ << first_map
-			map_ << rest_map
-		}
 	}
 	for i in 0 .. repha {
 		out << syl[i]
