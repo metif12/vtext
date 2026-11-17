@@ -340,12 +340,17 @@ synthetic fixtures, twin-Python composite pins, break-fix) and
 interpreter lands only if a corpus font needs it — measured first, not
 assumed.
 
-**7.8 Providers: Core Text landed 2026-11-17 (macOS), DirectWrite stub.** Each pinned on its own
+**7.8 Providers: Core Text + DirectWrite landed 2026-11-17.** Each pinned on its own
 OS, none elsewhere — the fontconfig pattern exactly. `providers/coretext.v`
 resolves a family through CoreText to file path plus matched family;
-`providers/directwrite.v` is a documented Windows stub answering none until
-the COM walk lands. Pinned by `providers_os_test.v` (off-OS none plus
-skip-aloud, macOS try-real-or-skip).
+`providers/directwrite.v` walks the real DirectWrite path on Windows
+(factory via the `DWriteCreateFactory` DLL export — `CoCreateInstance`
+answers `REGDB_E_CLASSNOTREG`, measured — through collection, family,
+first-matching font and the local-file-loader key to a path, matched family
+read beside it). Anything unusable answers none with reason, never a wrong
+font. Pinned by `providers_os_test.v` (off-OS none plus skip-aloud, macOS
+try-real-or-skip, Windows real asserts) and `providers_dw_test.v` (Arial
+resolves to an existing path with named family).
 
 **7.9 CFF/CFF2 with a real font — reader landed 2026-11-15.** OFL Source
 Sans 3 OTF (non-CID Type 2, 2,478 glyphs); `font/cff.v` reads header,
@@ -899,7 +904,7 @@ owns the queue.
 | 7.6 / 9.3 | Indic machine + Devanagari + Bengali + hook + conjunct defaults + repha + zero-class marks | landed (HB-default incl. reph; assembly/GPOS open as 9.3e remainder) |
 | 8.5 | Synthetic styles + LCD | landed (bitmap-level) |
 | 7.7 | Color + hinting engines | landed (grid-fit autohinter, color readers + composite; bytecode triggered) |
-| 7.8 | Core Text + DirectWrite providers | half-landed (CoreText real on macos; DirectWrite stub) |
+| 7.8 | Core Text + DirectWrite providers | landed (per-OS real, none elsewhere) |
 | 7.11-2H | Rival A/B harness | landed (README table, re-measured per release) |
 | 8.2 | Log-attr/caret pass over laid-out lines | landed (grapheme engine + floor included) |
 | 8.4 | C-side spelling for `wrap_mode`/`tab_stops` | landed (append-only, offsets stable) |
