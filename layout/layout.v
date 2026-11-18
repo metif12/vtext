@@ -212,9 +212,17 @@ fn indic_visual(sub []rune, mut sub_idx []int) []rune {
 	for k in 0 .. sub_idx.len {
 		sub_idx[k] = old[perm[k]]
 	}
+	// A moved syllable merges its clusters onto its base (see above). The
+	// reorder already ran, so moved-ness reads off its answer: a span the
+	// permutation left alone is the span the reorder left alone. Re-running
+	// the reorder per syllable here re-decoded both UCD tables per
+	// syllable — the F2 hot path — for an answer already in hand. The
+	// equal-runes edge (identical codepoints permuted) cannot occur: every
+	// move the machine makes crosses unlike codepoints (matra over
+	// consonants, repha to the end, tail preposes), and the corpus pins
+	// below hold the merged clusters exactly.
 	for s in shape.segment_indic_syllables(run) {
-		syl := run[s.start..s.end]
-		if shape.reorder_indic_syllable(syl) != syl {
+		if reordered[s.start..s.end] != run[s.start..s.end] {
 			base := old[s.start]
 			for k in s.start .. s.end {
 				sub_idx[k] = base

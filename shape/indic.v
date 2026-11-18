@@ -184,7 +184,14 @@ pub:
 // run of attachers with nothing to attach to forms a syllable of its own,
 // which is the honest answer for ill-formed input rather than an empty span.
 pub fn segment_indic_syllables(cps []rune) []IndicSyllable {
-	ranges := indic_syllabic_ranges()
+	return segment_indic_syllables_with(indic_syllabic_ranges(), cps)
+}
+
+// segment_indic_syllables_with cuts a run with a caller-decoded table:
+// the F2 hot-path fix. The tables decode once per shaping run, not once
+// per syllable — ucd.parse_ranges walks hundreds of rows, and the reorder
+// below used to pay that walk for every syllable it touched.
+fn segment_indic_syllables_with(ranges []ucd.CodeRange, cps []rune) []IndicSyllable {
 	mut out := []IndicSyllable{}
 	mut start := -1
 	mut i := 0
@@ -265,10 +272,12 @@ pub fn reorder_indic_mapped(cps []rune) ([]rune, []int) {
 	if cps.len == 0 {
 		return []rune{}, []int{}
 	}
+	syl_ranges := indic_syllabic_ranges()
+	pos_ranges := indic_positional_ranges()
 	mut out := []rune{cap: cps.len}
 	mut map_ := []int{cap: cps.len}
-	for s in segment_indic_syllables(cps) {
-		reordered, m := reorder_indic_syllable_mapped(cps[s.start..s.end])
+	for s in segment_indic_syllables_with(syl_ranges, cps) {
+		reordered, m := reorder_indic_syllable_mapped_with(syl_ranges, pos_ranges, cps[s.start..s.end])
 		for k, cp in reordered {
 			out << cp
 			map_ << s.start + m[k]
@@ -284,6 +293,14 @@ pub fn reorder_indic_mapped(cps []rune) ([]rune, []int) {
 // bare halant opens the syllable, and the pair draws after everything else
 // in it (matras included), which is the context the rphf lookup consumes.
 fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
+	return reorder_indic_syllable_mapped_with(indic_syllabic_ranges(), indic_positional_ranges(),
+		syl)
+}
+
+// reorder_indic_syllable_mapped_with moves with caller-decoded tables:
+// the F2 hot-path fix, same tables shared across every syllable of the
+// run instead of re-decoded per syllable.
+fn reorder_indic_syllable_mapped_with(syl_ranges []ucd.CodeRange, pos_ranges []ucd.CodeRange, syl []rune) ([]rune, []int) {
 	if syl.len < 2 {
 		mut ids := []int{cap: syl.len}
 		for i in 0 .. syl.len {
@@ -291,8 +308,6 @@ fn reorder_indic_syllable_mapped(syl []rune) ([]rune, []int) {
 		}
 		return syl.clone(), ids
 	}
-	syl_ranges := indic_syllabic_ranges()
-	pos_ranges := indic_positional_ranges()
 	// A repha is RA plus a directly following halant-like joiner. A join
 	// control or nukta between them means no repha: an explicit halant
 	// shows as itself, and a ZWJ-forced form is not the default reph.
