@@ -8,7 +8,7 @@ import vtext.font
 // means implementing the three methods and registering the struct —
 // not editing the pipeline in three files.
 //
-// Khmer is first; Myanmar follows one commit per script. The reorder
+// Khmer is first; Myanmar and Indic follow one commit per script. The reorder
 // and split hooks dispatch on content rather than on the run script
 // because both run before the script resolves: reorder and split see
 // the runes while substitute_glyphs sees the script. A syllable with no
@@ -40,8 +40,8 @@ pub interface ScriptShaper {
 pub struct KhmerShaper {}
 
 // shaper_for_script resolves a run script to its shaper, or none when
-// no script registered one. Scripts register one commit at a time:
-// Khmer first, then Myanmar.
+// no script registered one. Scripts registered one commit at a time:
+// Khmer first, then Myanmar, then Indic.
 fn shaper_for_script(script string) ?ScriptShaper {
 	tag := font.ot_script_tag(script)
 	if tag == 'khmr' {
@@ -49,6 +49,9 @@ fn shaper_for_script(script string) ?ScriptShaper {
 	}
 	if tag == 'mymr' {
 		return MyanmarShaper{}
+	}
+	if tag in ['deva', 'dev2', 'beng', 'bng2', 'bengali'] {
+		return IndicShaper{}
 	}
 	return none
 }
@@ -80,6 +83,9 @@ pub fn shaper_for_content(cps []rune) ?ScriptShaper {
 	}
 	if MyanmarShaper{}.claims(cps) {
 		return MyanmarShaper{}
+	}
+	if IndicShaper{}.claims(cps) {
+		return IndicShaper{}
 	}
 	return none
 }
@@ -332,6 +338,70 @@ pub fn (s MyanmarShaper) reorder_tail(out []rune, map_ []int) ([]rune, []int) {
 
 // split_run is the identity: Myanmar has no split vowels to decompose.
 pub fn (s MyanmarShaper) split_run(cps []rune) ([]rune, []int) {
+	mut map_ := []int{cap: cps.len}
+	for i in 0 .. cps.len {
+		map_ << i
+	}
+	return cps.clone(), map_
+}
+
+// IndicShaper carries the Devanagari/Bengali defaults: the in-place
+// shaping features that run without being asked, in specification
+// order, for the same reason the joining features do. The repha and
+// matra moves stay in the general machine above this registry: every
+// syllable passes through them, and only the script-specific tails
+// dispatch here.
+pub struct IndicShaper {}
+
+pub fn (s IndicShaper) claims(cps []rune) bool {
+	for cp in cps {
+		if (cp >= rune(0x0900) && cp <= rune(0x097F))
+			|| (cp >= rune(0x0980) && cp <= rune(0x09FF)) {
+			return true
+		}
+	}
+	return false
+}
+
+// default_features are the Indic shaping features that run without
+// being asked, in specification order, for the same reason the joining
+// features do. Reph positioning (rphf) rides the reordering machine;
+// pref stays caller-asked until a corpus word proves its order against
+// HarfBuzz (no committed face fuses one by default).
+pub fn (s IndicShaper) default_features() []string {
+	// cjct sits before the matra-positioning group rather than after it,
+	// which is where the specification lists it: Noto's pres rules consume
+	// cjct products (the kta split 0xbe to [0xbe, 0x14a] through lookup 66),
+	// and a pres that runs first never sees them. HarfBuzz produces the
+	// split, so the engine follows the font, not the list order. blwf rides
+	// before cjct, with pstf and vatu beside it: the rakar it fuses feeds
+	// pres (kri [KA, hal, RA] through lookup 32 to [0x19, 0x117], then pres
+	// to [0x9a, 0x15a, 0x140]), the ya-pstf consumes the halant run the same
+	// way (kya [KA, hal, YA] to [KA, ya-pstf] through lookup 46), and the
+	// vatu stack consumes full consonants plus the blwf product (the JA
+	// stack [JA, hal, JA, hal, BA] to the single 0x8e through lookup 54) —
+	// a cjct-first order fuses the JAs to 0x8d first and starves the vatu
+	// rule HarfBuzz draws. All three orders are proven default-on by
+	// toggling each off under uharfbuzz.
+	return ['nukt', 'akhn', 'rphf', 'half', 'blwf', 'pstf', 'vatu', 'cjct', 'pres', 'abvs', 'blws',
+		'psts']
+}
+
+// pre_ccmp_features answers nothing: every Indic feature reads the
+// ccmp compositions, so none runs ahead of them.
+pub fn (s IndicShaper) pre_ccmp_features(extra []string) []string {
+	return []string{}
+}
+
+// reorder_tail is the identity: the repha and matra moves are the
+// general machine's head, shared by every syllable, and Indic adds no
+// script-specific tail move behind them.
+pub fn (s IndicShaper) reorder_tail(out []rune, map_ []int) ([]rune, []int) {
+	return out.clone(), map_.clone()
+}
+
+// split_run is the identity: Indic has no split vowels to decompose.
+pub fn (s IndicShaper) split_run(cps []rune) ([]rune, []int) {
 	mut map_ := []int{cap: cps.len}
 	for i in 0 .. cps.len {
 		map_ << i

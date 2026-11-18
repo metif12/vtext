@@ -171,39 +171,6 @@ pub fn (f &Font) has_variation_sequence(cp rune, selector rune) bool {
 // A `-tag` entry turns a default-on feature back off (`-calt` draws `=>` as two plain glyphs),
 // and `+tag` is the same as naming the tag; the required features above are not toggleable,
 // because a line missing them is not the text.
-// indic_default_features are the Indic shaping features that run without
-// being asked, in specification order, for the same reason the joining
-// features do. Reph positioning (rphf) rides the reordering machine above;
-// pref stays caller-asked until a corpus word proves its order against
-// HarfBuzz (no committed face fuses one by default).
-fn indic_default_features() []string {
-	// cjct sits before the matra-positioning group rather than after it,
-	// which is where the specification lists it: Noto's pres rules consume
-	// cjct products (the kta split 0xbe to [0xbe, 0x14a] through lookup 66),
-	// and a pres that runs first never sees them. HarfBuzz produces the
-	// split, so the engine follows the font, not the list order. blwf rides
-	// before cjct, with pstf and vatu beside it: the rakar it fuses feeds
-	// pres (kri [KA, hal, RA] through lookup 32 to [0x19, 0x117], then pres
-	// to [0x9a, 0x15a, 0x140]), the ya-pstf consumes the halant run the same
-	// way (kya [KA, hal, YA] to [KA, ya-pstf] through lookup 46), and the
-	// vatu stack consumes full consonants plus the blwf product (the JA
-	// stack [JA, hal, JA, hal, BA] to the single 0x8e through lookup 54) —
-	// a cjct-first order fuses the JAs to 0x8d first and starves the vatu
-	// rule HarfBuzz draws. All three orders are proven default-on by
-	// toggling each off under uharfbuzz.
-	return ['nukt', 'akhn', 'rphf', 'half', 'blwf', 'pstf', 'vatu', 'cjct', 'pres', 'abvs', 'blws',
-		'psts']
-}
-
-// is_indic_shaping_script reports whether a run resolves under an Indic
-// shaping script: the Devanagari and Bengali faces this engine carries, in
-// either the UCD spelling the run arrives with or the OpenType one the
-// caller overrides with. New scripts arrive with their faces, the way the
-// sibling script tags do.
-fn is_indic_shaping_script(script string) bool {
-	tag := font.ot_script_tag(script)
-	return tag in ['deva', 'dev2', 'beng', 'bng2', 'bengali']
-}
 
 pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, em_px f64,
 	extra []string, vertical bool) []Glyph {
@@ -257,26 +224,13 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 		font.JoiningForm.final] {
 		out = g.substitute_forms(g.lookups_for_lang(script, lang, font.feature_tag_for(form)), out, form)
 	}
-	// The Indic shaping features run next, in the specification's order, for
-	// the same reason the joining features do: a line whose conjuncts stay
-	// unfused is not the text. The set is the in-place half: nukta forms,
-	// akhn ligatures, reph forms (whose move the machine above performs),
-	// half forms, conjuncts, below-base and post-base variants (whose order
-	// against the matra group the font decides), pre-base, above-base and
-	// below-base variants, post-base forms and psts. Pref stays caller-asked
-	// until a corpus word proves its order against HarfBuzz. Registered
-	// scripts run their own defaults after the Indic gate: Khmer through
-	// the shaper registry, Myanmar under its own gate until its script
-	// migrates. Like the joining features these are not toggleable; a
-	// `-tag` for one names nothing.
-	if is_indic_shaping_script(script) {
-		for feature in indic_default_features() {
-			out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
-		}
-	}
-	// Registered scripts run their defaults here, after the Indic gate:
-	// Khmer first, then Myanmar, and an unregistered script gets an
-	// empty list, which is nothing.
+	// The shaping features run next, in each script's order, for the
+	// same reason the joining features do: a line whose conjuncts stay
+	// unfused is not the text. The registry answers the run script's
+	// defaults (Indic, Khmer, Myanmar in registration order) and an
+	// unregistered script gets an empty list, which is nothing. Like the
+	// joining features these are not toggleable; a `-tag` for one names
+	// nothing.
 	shaper_defaults := shaper_default_features_for(script)
 	for feature in shaper_defaults {
 		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
@@ -310,12 +264,6 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 			}
 			if tag == 'calt' || tag == 'liga' || tag == 'clig' {
 				enabled[tag] = true
-			} else if is_indic_shaping_script(script) && tag in indic_default_features() {
-				// Already on above: applying a fusing feature twice is not
-				// idempotent in every font (a Bengali below-base piece fuses
-				// again), so naming a default is a no-op rather than a
-				// second run.
-				continue
 			} else if tag in shaper_defaults {
 				// Already on above: applying a fusing feature twice is not
 				// idempotent in every font (a Bengali below-base piece fuses

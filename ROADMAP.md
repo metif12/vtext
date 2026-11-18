@@ -894,8 +894,8 @@ by lookup kind and pass (`font/gpos.v`, `font/gsub.v`, `layout/layout.v`,
 `shape/font.v`), no behavior change, every resulting file under 60 KB. No
 public API renames: pure file moves, `vtext.h` untouched.
 
-**Extendable.** E1 is a `ScriptShaper` interface with a registry (Khmer
-first, other scripts follow one per commit): feature order, reorder and
+**Extendable.** E1 is a `ScriptShaper` interface with a registry (Khmer,
+Myanmar, Indic migrated one commit per script): feature order, reorder and
 split become registry calls and the `is_khmer`/`is_myanmar` branches
 delete. E1 landed 2026-11-17 as `shape/shaper.v`: the interface plus a
 registry resolving scripts to shapers and content to the claiming
