@@ -32,8 +32,8 @@ work. Dated entries use the landing date; anything undated is open.
 The engine is done for Arabic, Persian and Urdu, for Latin/Cyrillic/Greek,
 and for the layout math around them. Hebrew, Syriac, Thaana and NKo are
 HarfBuzz-pinned; Thai, Lao, Khmer and Myanmar carry corpus pins, Khmer's
-coeng fusions now shaping HB-exact with the reordering and pres-group
-work documented as open; CJK line breaking is conformance-pinned.
+coeng fusions shaping HB-exact with the pref reorder and pres-group landed
+alongside; CJK line breaking is conformance-pinned.
 
 | Part | State | Evidence |
 | --- | --- | --- |
@@ -50,17 +50,17 @@ work documented as open; CJK line breaking is conformance-pinned.
 | Case mapping (incl. tr/az) | landed 8.3 | SpecialCasing conformance |
 | Line breaking (UAX #14) | landed, 19,346/19,346 | conformance floor |
 | Wrap: align/justify/kashida/hyphen-policy/modes/ellipsize/tabs | landed 7.4, 7.5, 8.4 | `align_test`, `hyphen_wrap_test`, `ellipsize_wrap_test` |
-| Vertical single column | landed | `vertical_test` (columns open) |
-| CFF reader (CFF2/subset refused) | reader landed 7.9 | `cff_test` |
-| MATH reader (Face wiring open) | reader landed 8.7 | `math_test` |
+| Vertical single column | landed | `vertical_test`, columns cut and pinned |
+| CFF reader + subset rebuild (CFF2/CID refused) | landed 7.9 | `cff_test`, `subset_cff_test` |
+| MATH reader + Face wiring | landed 8.7 | `math_test` |
 | Variable instancing | landed 7.10 | `varinstance_test` + 142,848 sweep |
 | Reference cache helper (caller-owned) | landed 7.11-1H | `cache_test` |
 | fontconfig match/sort/coverage | landed 8.8 | `match_test` (CI-owned leg) |
-| Subsetter (glyf; CFF refused) | landed | `subset_test` |
+| Subsetter (glyf + CFF rebuilds; CFF2/CID refused) | landed | `subset_test` |
 | C API + usage guide | landed | `capi.v`, `vtext.h`, `USAGE.md`, smoke test |
 | Inspection API (on `shape.Font`) | landed | `inspect_test`, `fontdump`/`fontcheck`/`shapetrace` |
 | Examples (12, multilingual, corpus-only) | landed | `examples/` |
-| Indic machine, SE-Asian engine, color/hinting, stroking, synth/LCD, CoreText/DW providers, rival A/B | open / in progress | Phase 7–9 below |
+| Indic machine, SE-Asian engine, color/hinting, stroking, synth/LCD, CoreText/DW providers, rival A/B | landed | Phase 7–9 below |
 
 Suite: 82 test files, all passing (2026-11-18). Differential baseline:
 151 entries, exact-string matching, 0 new / 0 stale (Pango legs skip aloud
@@ -233,7 +233,8 @@ Rules that cost real debugging, kept:
   needed 18.0.0, so `emoji-data-18.0.0.txt` is versioned beside it (U+2701
   answers WB3c wrong on the old file — 2 committee cases).
 - **Vertical text** — single-column placement behind `LayoutOptions.vertical`
-  with HarfBuzz-TTB-pinned geometry, reachable from C. Columns stay open.
+  with HarfBuzz-TTB-pinned geometry, reachable from C. Columns cut and
+  pinned since (`slice_for_column`, `vertical_test`).
 
 ## Phase 6: the modular replacement — done
 
@@ -425,7 +426,7 @@ are done; the rest name their trigger or their assignee.
 | hb-subset | subsetting | glyf yes | CFF → 7.9 (refused, see 7.9) |
 | FreeType load | sfnt/TTC | yes | WOFF → 8.1 ✓ (WOFF2 triggered) |
 | FreeType raster | unhinted/hinted/auto/LCD | unhinted yes; hint → 7.7 | LCD → 8.5 ✓ (bitmap-level; FIR follow-up) |
-| FreeType API | embolden/oblique, stroker | bitmap-level 8.5 ✓ (outline-level follow-up) | 8.6 open |
+| FreeType API | embolden/oblique, stroker | bitmap-level 8.5 ✓ (outline-level follow-up) | 8.6 ✓ (landed) |
 | FreeType color | COLR/CBDT/sbix/SVG | → 7.7 | — |
 | FreeType var | instancing | 7.10 ✓ | — |
 | Pango layout | wrap modes, align, ellipsize, tabs | 7.4, 8.4 ✓ | — |
@@ -566,13 +567,13 @@ proves it, **absent** = the mechanism does not exist.
 | Arabic, Persian, Urdu | full | joining/GSUB/GPOS suites, `arabic-*`/`persian-*`/`nastaliq-*`, locl pins |
 | Hebrew | pinned | `extra_fonts_test`: coverage, niqqud zero-advance, smoke. Placement not HB-pinned, no difftest case |
 | CJK Han | smoke + breaks pinned | `extra_fonts_test` (2-glyph line, rasterise); 9.1 pins |
-| Thai, Lao, Khmer, Myanmar | pinned (corpus; Khmer fusions landed, rest open) | `seasian_test.v`, HB-measured (Thai 6E/86/2D/6E/0C/5E, Lao, Khmer coeng fusions blwf 0xcc / pstf 0xba, Myanmar kinzi order) |
+| Thai, Lao, Khmer, Myanmar | pinned (corpus; fusions, reorders, kinzi/blws, pres-group landed) | `seasian_test.v`, HB-measured (Thai 6E/86/2D/6E/0C/5E, Lao, Khmer coeng fusions blwf 0xcc / pstf 0xba, pres-group, Myanmar kinzi order + blws stacks) |
 | Syriac, Thaana, NKo | pinned | `longtail_test.v`: Syriac init/medi/rlig + lone-SHIN joining acceptance |
 | Hangul (precomposed) | pinned | conjoining-Jamo composition + vertical CJK punctuation (`hangul_test.v`, NotoSansKR) |
 | Kana | partial | vertical rules in `vertical_test`; horizontal unpinned |
 | Tibetan | absent | stacking needs its own machine |
-| Indic (Devanagari, Bengali) | syllable machine, two-script pinned | tables + two faces + machine (unwired), HB-pinned both |
-| Mongolian/Phags-pa vertical | absent | no vertical-columns path |
+| Indic (Devanagari, Bengali) | syllable machine, two-script pinned | tables + two faces + machine (wired: hook, assembly, GPOS), HB-pinned both |
+| Mongolian/Phags-pa vertical | absent | vertical columns cut and pinned (`vertical_test`); no Mongolian face pinned |
 | Simple alphabets (Georgian, Armenian, Ethiopic) | pinned | corpus + HB-exact cmap smoke (`simple_test.v`) |
 | Emoji | surveyed (mono) | no color tables in corpus; FiraCode smiley cmap-pinned; color engines → 7.7 |
 
@@ -874,7 +875,7 @@ stay triggered; 10.x never pulls them in early. The `vlib` adaptation
 (flags, `FT`, `ScalerRec`, `Strike`, `os.font` order, `sfons`, `x/ttf`
 callers) stays in `vlib`, not here.
 
-## Phase 11: modular, extendable, fast — open, planned 2026-11-17.
+## Phase 11: modular, extendable, fast — landed 2026-11-18.
 
 The engine is done; this phase is about the shape of the tree: adding a
 script must not mean editing three files, and the slowest family must have
