@@ -240,6 +240,23 @@ pub fn layout_paragraph(ctx &shape.Context, cps []rune, base_dir shape.Direction
 // layout_paragraph_with is layout_paragraph with the caller's options applied.
 pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet,
 	em_px f64, options &LayoutOptions) Line {
+	mut prof := Profiler{}
+	return layout_paragraph_inner(ctx, cps, base_dir, fs, em_px, options, mut prof)
+}
+
+// layout_paragraph_profiled is layout_paragraph_with with the caller's
+// profiler enabled: the returned line is identical, and prof carries the
+// per-stage costs (see profiler.v for the stage map). A disabled profiler
+// stays silent; this entry point is the opt-in.
+pub fn layout_paragraph_profiled(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet,
+	em_px f64, options &LayoutOptions, mut prof Profiler) Line {
+	prof.enabled = true
+	return layout_paragraph_inner(ctx, cps, base_dir, fs, em_px, options, mut prof)
+}
+
+fn layout_paragraph_inner(ctx &shape.Context, cps []rune, base_dir shape.Direction, fs &shape.FontSet,
+	em_px f64, options &LayoutOptions, mut prof Profiler) Line {
+	seg_start := prof.begin()
 	// Joining keys on joining types, and a precomposed character is a different codepoint
 	// with a different one, so the text has to be decomposed before it is shaped. The
 	// marks this separates are the ones the layout pass later has to place.
@@ -259,6 +276,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 	decomposed, origin := shape.compose_hangul_runs(decomposed_nfd, decomposed_origin)
 
 	bidi := shape.resolve_paragraph(ctx.properties, decomposed, base_dir)
+	prof.end(.segment, seg_start, cps.len)
 
 	// Shape each isolating run sequence on its own, then look the shaped codepoints up. The
 	// result is in logical order still, tagged with the input character each glyph came
@@ -290,7 +308,11 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 			sub << decomposed[i]
 			sub_idx << i
 		}
-		shaped := ctx.shaper.shape_arabic(ctx.properties, indic_visual(sub, mut sub_idx))
+		re_start := prof.begin()
+		visual := indic_visual(sub, mut sub_idx)
+		prof.end(.reorder, re_start, sub.len)
+		seg2_start := prof.begin()
+		shaped := ctx.shaper.shape_arabic(ctx.properties, visual)
 		mut run := []shape.Glyph{}
 		// The script of the run, which is what the font resolves its features
 		// under. It is the first script that names one rather than the first
@@ -343,17 +365,25 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 		// same path for the same reason, and it needs the run's direction: the kern folds
 		// into the advance of the visually first glyph of the pair.
 		rtl := seq.len > 0 && bidi.levels[seq[0]] & 1 == 1
-		mut run_glyphs := substitute_in_fonts(run, em_px, script, lang, options.features, options.vertical, rtl)
+		prof.end(.segment, seg2_start, run.len)
+		gs_start := prof.begin()
+		mut run_glyphs := substitute_gsub_in_fonts(run, em_px, script, lang, options.features,
+			options.vertical)
+		prof.end(.gsub, gs_start, run.len)
 		// The vertical swap runs per run rather than over the whole line, because the
 		// vertical kern that follows it needs the run's script and must not cross a
 		// run boundary: a pair from two scripts has no single table to ask. The swap
 		// is what the kern folds into, so it comes first, and the global pass below
 		// must not run again and discard the fold.
+		gp_start := prof.begin()
 		if options.vertical {
 			apply_vertical_advances(mut run_glyphs, em_px)
 			vkern_pairs(mut run_glyphs, em_px, script, lang, rtl)
 			single_positions(mut run_glyphs, em_px, script, lang, options.features, true)
+		} else {
+			apply_gpos_in_fonts(mut run_glyphs, em_px, script, lang, options.features, rtl)
 		}
+		prof.end(.gpos, gp_start, run_glyphs.len)
 		for glyph in run_glyphs {
 			placed << glyph
 		}
@@ -365,6 +395,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 	// by both with no second walk and no chance of the width and the positions disagreeing.
 	// Spacing adds onto the advances the swap and the vertical kern settled, exactly as in
 	// horizontal mode, where it adds onto the advances the horizontal kern settled.
+	pl_start := prof.begin()
 	apply_spacing(mut placed, ctx.properties, cps, options.letter_spacing, options.word_spacing)
 
 	mut line := Line{
@@ -381,7 +412,11 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 	if !options.vertical && options.tab_stops.len > 0 {
 		expand_tabs(mut line, cps, options.tab_stops)
 	}
+	prof.end(.place, pl_start, placed.len)
+	gp2_start := prof.begin()
 	position_marks(mut line, em_px, ctx, options.vertical, cps, options.language)
+	prof.end(.gpos, gp2_start, line.glyphs.len)
+	pl2_start := prof.begin()
 	if options.vertical {
 		measure_vertical_line(mut line, em_px, options)
 	} else {
@@ -396,6 +431,7 @@ pub fn layout_paragraph_with(ctx &shape.Context, cps []rune, base_dir shape.Dire
 				options.align_width, false)
 		}
 	}
+	prof.end(.place, pl2_start, line.glyphs.len)
 	return line
 }
 
@@ -772,6 +808,24 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, lang 
 	if glyphs.len == 0 {
 		return glyphs
 	}
+	mut out := substitute_gsub_in_fonts(glyphs, em_px, script, lang, features, vertical)
+	// Horizontal pair offsets have no meaning for a downward pen: the advance
+	// they fold into is overwritten by the vertical swap, and the y they fold
+	// is the horizontal baseline's. Vertical pairs apply after the swap, per
+	// run at the call site, so this pass skips kerning entirely in vertical
+	// mode rather than folding a number the swap is about to discard.
+	if !vertical {
+		apply_gpos_in_fonts(mut out, em_px, script, lang, features, rtl)
+	}
+	return out
+}
+
+// substitute_gsub_in_fonts runs the font's own substitutions over each
+// same-font run: the GSUB half of substitute_in_fonts, timed on its own
+// by the F1 profiler. The font loop is what the kern that follows reads,
+// so it stays ahead of it exactly as before.
+fn substitute_gsub_in_fonts(glyphs []shape.Glyph, em_px f64, script string, lang string, features []string,
+	vertical bool) []shape.Glyph {
 	mut out := []shape.Glyph{cap: glyphs.len}
 	mut at := 0
 	for at < glyphs.len {
@@ -793,16 +847,17 @@ pub fn substitute_in_fonts(glyphs []shape.Glyph, em_px f64, script string, lang 
 		}
 		at = end
 	}
-	// Horizontal pair offsets have no meaning for a downward pen: the advance
-	// they fold into is overwritten by the vertical swap, and the y they fold
-	// is the horizontal baseline's. Vertical pairs apply after the swap, per
-	// run at the call site, so this pass skips kerning entirely in vertical
-	// mode rather than folding a number the swap is about to discard.
-	if !vertical {
-		kern_pairs(mut out, em_px, script, lang, rtl)
-		single_positions(mut out, em_px, script, lang, features, false)
-	}
 	return out
+}
+
+// apply_gpos_in_fonts folds the font's horizontal pair positioning into
+// advances: the GPOS half of substitute_in_fonts, timed on its own by the
+// F1 profiler. It reads the substituted run, so it stays after the GSUB
+// half exactly as before.
+fn apply_gpos_in_fonts(mut glyphs []shape.Glyph, em_px f64, script string, lang string, features []string,
+	rtl bool) {
+	kern_pairs(mut glyphs, em_px, script, lang, rtl)
+	single_positions(mut glyphs, em_px, script, lang, features, false)
 }
 
 // apply_vertical_advances swaps each glyph's advance for its vertical one, so
