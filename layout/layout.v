@@ -1361,6 +1361,22 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 	// quadratic in the mark count. Marks usually share one or two fonts, so
 	// the memo holds that many entries and the perf gate pins the shape.
 	mut chain_memo := []ChainMemo{}
+	// The stacked pass below asks, per mark per candidate, for the best
+	// cluster at or before the candidate's own — the same question with
+	// the same map, answered once per glyph here instead of once per
+	// (mark, candidate) pair there (F2c). The search reads only the
+	// line's clusters, so hoisting it changes no answer: every stacked
+	// decision below reads the precomputed value.
+	mut cand_base := []int{len: line.glyphs.len}
+	for k, c in line.glyphs {
+		mut tb := -1
+		for cluster, _ in bases {
+			if cluster <= c.cluster && cluster > tb {
+				tb = cluster
+			}
+		}
+		cand_base[k] = tb
+	}
 
 	// The marks are placed from the first cluster onwards, which is the order a stack has to be
 	// built in. A mark on another mark is measured from where the mark under it ended up, so the
@@ -1456,13 +1472,7 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 				if k == i || !c.is_mark || c.cluster == g.cluster || c.cluster >= g.cluster {
 					continue
 				}
-				mut target_base := -1
-				for cluster, _ in bases {
-					if cluster <= c.cluster && cluster > target_base {
-						target_base = cluster
-					}
-				}
-				if target_base != best {
+				if cand_base[k] != best {
 					continue
 				}
 				stacked_at << k
