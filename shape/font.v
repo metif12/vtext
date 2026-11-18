@@ -185,15 +185,15 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 			is_mark: glyph.is_mark
 		}
 	}
-	// Asked features a shaper runs before ccmp come from the registry:
+	// Asked features a shaper runs before ccmp come from the registry plan:
 	// Myanmar's medial-dot fusion consumes DOT BELOW whole, and ccmp
 	// splits DOT BELOW into spacing and dummy marks first, which starves
 	// the rule when blwf runs late. Asked early it fuses the way HarfBuzz
 	// fuses with +blwf. Default lines never reach it: blwf is not a
 	// Myanmar default, and an unasked tag names nothing, so the default
 	// unfused answer does not move.
-	shaper_early := shaper_early_features_for(script, extra)
-	for feature in shaper_early {
+	plan := feature_plan_for(script, extra)
+	for feature in plan.pre_ccmp {
 		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
 	for feature in ['ccmp'] {
@@ -226,12 +226,12 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 	}
 	// The shaping features run next, in each script's order, for the
 	// same reason the joining features do: a line whose conjuncts stay
-	// unfused is not the text. The registry answers the run script's
+	// unfused is not the text. The plan answers the run script's
 	// defaults (Indic, Khmer, Myanmar in registration order) and an
 	// unregistered script gets an empty list, which is nothing. Like the
 	// joining features these are not toggleable; a `-tag` for one names
 	// nothing.
-	shaper_defaults := shaper_default_features_for(script)
+	shaper_defaults := plan.defaults
 	for feature in shaper_defaults {
 		out = g.substitute(g.lookups_for_lang(script, lang, feature), out)
 	}
@@ -270,7 +270,7 @@ pub fn (f &Font) substitute_glyphs(glyphs []Glyph, script string, lang string, e
 				// again), so naming a registry default is a no-op rather
 				// than a second run.
 				continue
-			} else if tag in shaper_early {
+			} else if tag in plan.pre_ccmp {
 				// Already ran above, before ccmp: a fusing feature must not
 				// run twice, and the late run would find nothing anyway.
 				continue

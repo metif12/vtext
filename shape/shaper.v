@@ -56,22 +56,29 @@ fn shaper_for_script(script string) ?ScriptShaper {
 	return none
 }
 
-// shaper_default_features_for answers the registry's default list for a
-// run script, or nothing when no shaper registered one.
-fn shaper_default_features_for(script string) []string {
-	if sh := shaper_for_script(script) {
-		return sh.default_features()
-	}
-	return []string{}
+// FeaturePlan is the E2 data form of the per-script feature order: the
+// before-ccmp slot beside the defaults in one value, so the pipeline
+// fetches one plan instead of asking twice. An unregistered script gets
+// the empty plan, which applies nothing.
+pub struct FeaturePlan {
+pub:
+	pre_ccmp []string
+	defaults []string
 }
 
-// shaper_early_features_for answers the registry's before-ccmp list for
-// asked features, or nothing when no shaper registered one.
-fn shaper_early_features_for(script string, extra []string) []string {
+// feature_plan_for answers the registry's plan for a run script: the
+// asked before-ccmp features plus the script's defaults, in run order.
+pub fn feature_plan_for(script string, extra []string) FeaturePlan {
 	if sh := shaper_for_script(script) {
-		return sh.pre_ccmp_features(extra)
+		return FeaturePlan{
+			pre_ccmp: sh.pre_ccmp_features(extra)
+			defaults: sh.default_features()
+		}
 	}
-	return []string{}
+	return FeaturePlan{
+		pre_ccmp: []string{}
+		defaults: []string{}
+	}
 }
 
 // shaper_for_content resolves runes to the shaper claiming them, or
