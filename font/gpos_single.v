@@ -44,6 +44,103 @@ pub fn (g &Gpos) single_offset_on(gid u16, lookups []u16) ?PairValue {
 	}
 }
 
+// single_lookups resolves the lookups single_adjustment consults, in the
+// order it consults them: the pair-kerning feature's single half (kern
+// in a horizontal line, vkrn in a vertical one), plus the default-on
+// discretionary features and the caller's extras, resolved with the same
+// off-switch semantics substitute_glyphs keeps: `-tag` turns a default
+// off, `+tag` names one explicitly. Each lookup is listed once however
+// many features name it, because a shift applied twice is a letter moved
+// to where no shaper puts it. Mark features (abvm, blwm, mark, mkmk) are
+// not consulted: position_marks owns marks, and a second shift from here
+// would move them twice.
+//
+// The resolution is pure in the inputs, which is what lets the layout
+// pass resolve it once per font per run and reuse the list for every
+// glyph instead of rebuilding the asked list, the lookup list and the
+// seen-set per glyph.
+pub fn (g &Gpos) single_lookups(script string, lang string, extra []string, vertical bool) []u16 {
+	mut enabled := {
+		'calt': true
+		'liga': true
+		'clig': true
+	}
+	mut asked := []string{}
+	for feature in extra {
+		if feature.starts_with('-') && feature.len > 1 {
+			tag := feature[1..]
+			if tag == 'calt' || tag == 'liga' || tag == 'clig' {
+				enabled[tag] = false
+			}
+		} else {
+			mut tag := feature
+			if tag.starts_with('+') && tag.len > 1 {
+				tag = tag[1..]
+			}
+			if tag == 'calt' || tag == 'liga' || tag == 'clig' {
+				enabled[tag] = true
+			} else {
+				mut seen := false
+				for prev in asked {
+					if prev == tag {
+						seen = true
+						break
+					}
+				}
+				if !seen {
+					asked << tag
+				}
+			}
+		}
+	}
+	mut lookups := []u16{}
+	mut seen := map[u16]bool{}
+	if vertical {
+		for li in g.lookups_for_lang(script, lang, 'vkrn') {
+			if li !in seen {
+				seen[li] = true
+				lookups << li
+			}
+		}
+	} else {
+		for li in g.lookups_for_lang(script, lang, 'kern') {
+			if li !in seen {
+				seen[li] = true
+				lookups << li
+			}
+		}
+	}
+	for tag in ['calt', 'liga', 'clig'] {
+		if enabled[tag] {
+			for li in g.lookups_for_lang(script, lang, tag) {
+				if li !in seen {
+					seen[li] = true
+					lookups << li
+				}
+			}
+		}
+	}
+	for tag in asked {
+		// A tag consulted above is already in the list: the kern feature is
+		// unconditional, and a default the caller named explicitly is enabled.
+		// Adding its lookups again would apply every one of them twice, and a
+		// shift applied twice is a letter moved to where no shaper puts it.
+		if (!vertical && tag == 'kern') || (vertical && tag == 'vkrn') {
+			continue
+		}
+		if tag == 'calt' || tag == 'liga' || tag == 'clig' {
+			continue
+		}
+		for li in g.lookups_for_lang(script, lang, tag) {
+			if li !in seen {
+				seen[li] = true
+				lookups << li
+			}
+		}
+	}
+	return lookups
+}
+
 // SinglePos is one positioning rule: for a covered glyph on its own, move it.
 //
 // It is the smallest of the positioning tables and the one a context record most often names. A font

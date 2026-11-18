@@ -923,6 +923,19 @@ the caller's), ratios vs HarfBuzz are not a target — absolute paragraph
 times are, measured on a quiet box (foreign V builds tripled suite time on
 2026-11-17, which is recorded, not tuned around).
 
+**Fast F3 — landed 2026-11-18.** GPOS lookup-list hoisting: `kern_offset_in`
+and `vkern_offset_in` answer from an explicit lookup list, `Gpos.single_lookups`
+resolves the singles list the one-glyph `single_adjustment` always resolved,
+and the layout pass resolves each list once per font per run instead of per
+pair, per glyph and per mark. Two memos because the keys differ: a
+`GposPairLookupsMemo` for kern, vertical kern and mark attachments keyed on
+font, script and language, and a `GposSinglesLookupsMemo` for singles keyed
+additionally on the asked extras and direction. `shaped_mark_offset` takes
+the resolved marks list; the public one-shot forms (`kern_offset`,
+`single_adjustment`, `mark_offset_in`) delegate and keep working. No
+behavior change by construction: the resolution code moved, it was not
+rewritten, and every consumer reads the list the per-call path resolved.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -984,7 +997,7 @@ owns the queue.
 | 10.5 | generic discovery (`providers/discovery.v`) | landed (order/variant/pow2; 7.8 stays per-OS) |
 | 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | M1 landed (ratchet test + deliberate-violation break-fix); M2/M3 open (pure moves, no API renames) |
 | 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | E1 + Myanmar migration landed (all per-script GSUB/reorder/split enters through the registry); E2/E3 open |
-| 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | open (profile before tuning; absolute times, quiet box) |
+| 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | F1 landed (opt-in per-stage profiler); F2/F2b/F2c landed (Indic table hoist, format-4 reverse, stacked cluster search); F3 landed (GPOS lookup-list hoisting, no behavior change) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are

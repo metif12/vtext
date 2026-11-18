@@ -39,10 +39,17 @@ pub fn (g &Gpos) kerning_for(script string, lang string) []u16 {
 // hide a real kern a contextual lookup holds for the same pair — e-f in Amiri reports (0, 0)
 // from the class row and -11 from the chain, and HarfBuzz draws the -11.
 pub fn (g &Gpos) kern_offset(left_gid u16, right_gid u16, script string, lang string) ?Offset2 {
+	return g.kern_offset_in(left_gid, right_gid, g.kerning_for(script, lang))
+}
+
+// kern_offset_in answers kern_offset's question from an explicit lookup
+// list, which is what the layout pass resolves once per font per run
+// instead of once per pair.
+pub fn (g &Gpos) kern_offset_in(left_gid u16, right_gid u16, lookups []u16) ?Offset2 {
 	mut x := 0
 	mut y := 0
 	mut found := false
-	for li in g.kerning_for(script, lang) {
+	for li in lookups {
 		if li >= g.lookups.len {
 			continue
 		}
@@ -80,9 +87,15 @@ pub fn (g &Gpos) vkerning_for(script string, lang string) []u16 {
 // The answer is the first glyph's, in the text's own direction, the same convention kern_offset
 // keeps. A value of zero is a real answer like it is there, and none means no rule at all.
 pub fn (g &Gpos) vkern_offset(left_gid u16, right_gid u16, script string, lang string) ?Offset2 {
+	return g.vkern_offset_in(left_gid, right_gid, g.vkerning_for(script, lang))
+}
+
+// vkern_offset_in answers vkern_offset's question from an explicit
+// lookup list, resolved once per font per run like the kern half.
+pub fn (g &Gpos) vkern_offset_in(left_gid u16, right_gid u16, lookups []u16) ?Offset2 {
 	mut y := 0
 	mut found := false
-	for li in g.vkerning_for(script, lang) {
+	for li in lookups {
 		if li >= g.lookups.len {
 			continue
 		}

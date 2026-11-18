@@ -112,6 +112,10 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 	// put the fatha at the shadda's position before the shadda had one, and the fatha
 	// would then be carried along when the shadda moved.
 	mut marks := mark_indices_by_cluster(line.glyphs)
+	// Plain mark-attachment lists ride the same per-font memo as the
+	// kern pass: mark_feature_lookups_for rebuilds them per mark
+	// otherwise, and a paragraph can carry hundreds of marks.
+	mut pair_memo := []GposPairLookupsMemo{}
 	for oi in 0 .. marks.len {
 		i := marks[oi]
 		g := line.glyphs[i]
@@ -228,18 +232,21 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 			if stack_font != stack_target_font {
 				continue
 			}
-			if off := stack_font.mark_offset_in(g.gid, target.gid, true, script, lang) {
-				// The stack rides the mark underneath in both modes: x
-				// and y carry the under-mark's, then the attachment
-				// moves the over-mark from there. Dropping the
-				// under-mark's y parks every stacked mark at the
-				// baseline instead of on its own mark.
-				stack_scale := em_px / f64(stack_font.face.units_per_em)
-				line.glyphs[i].x = target.x + f64(off.x) * stack_scale
-				line.glyphs[i].y = target.y - f64(off.y) * stack_scale
-				apply_mark_chain(mut line, i, gids, stack_font, em_px, script, lang, mut chain_memo)
-				stacked = true
-				break
+			if stack_gpos := stack_font.face.gpos {
+				lk := gpos_pair_lookups_for(mut pair_memo, stack_font, script, lang)
+				if off := stack_gpos.mark_offset_on(g.gid, target.gid, true, lk.marks) {
+					// The stack rides the mark underneath in both modes: x
+					// and y carry the under-mark's, then the attachment
+					// moves the over-mark from there. Dropping the
+					// under-mark's y parks every stacked mark at the
+					// baseline instead of on its own mark.
+					stack_scale := em_px / f64(stack_font.face.units_per_em)
+					line.glyphs[i].x = target.x + f64(off.x) * stack_scale
+					line.glyphs[i].y = target.y - f64(off.y) * stack_scale
+					apply_mark_chain(mut line, i, gids, stack_font, em_px, script, lang, mut chain_memo)
+					stacked = true
+					break
+				}
 			}
 		}
 		if stacked {
@@ -256,7 +263,9 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		if f != base_font {
 			continue
 		}
-		mut anchor := shaped_mark_offset(f, g.gid, base, script, lang) or { continue }
+		mut anchor := shaped_mark_offset(f, g.gid, base, script, lang, gpos_pair_lookups_for(mut pair_memo, f, script, lang).marks) or {
+			continue
+		}
 		// The offset is in design units and the line is in pixels, so it is scaled by the same
 		// ratio the advances came from.
 		scale := em_px / f64(f.face.units_per_em)
@@ -369,8 +378,9 @@ fn apply_mark_chain(mut line Line, at int, gids []u16, f &shape.Font, em_px f64,
 // reads. base_gid is only ever set on the Arabic presentation-form path, so 'arab' is
 // that path's own script rather than a guess; a font with no such rule answers the
 // base glyph and the last step behaves as before.
-pub fn shaped_mark_offset(f &shape.Font, mark_gid u16, base shape.Glyph, script string, lang string) ?font.Offset2 {
-	if off := f.mark_offset_in(mark_gid, base.gid, false, script, lang) {
+pub fn shaped_mark_offset(f &shape.Font, mark_gid u16, base shape.Glyph, script string, lang string, lookups []u16) ?font.Offset2 {
+	gpos := f.face.gpos or { return none }
+	if off := gpos.mark_offset_on(mark_gid, base.gid, false, lookups) {
 		return off
 	}
 	if base.base_gid == 0 {
@@ -378,11 +388,11 @@ pub fn shaped_mark_offset(f &shape.Font, mark_gid u16, base shape.Glyph, script 
 	}
 	shaped := f.shaped_glyph_index(base.base_gid, base.form, 'arab', lang)
 	if shaped != base.base_gid {
-		if off := f.mark_offset_in(mark_gid, shaped, false, script, lang) {
+		if off := gpos.mark_offset_on(mark_gid, shaped, false, lookups) {
 			return off
 		}
 	}
-	return f.mark_offset_in(mark_gid, base.base_gid, false, script, lang)
+	return gpos.mark_offset_on(mark_gid, base.base_gid, false, lookups)
 }
 
 // mark_script resolves the script whose mark rules place this mark: the script of the

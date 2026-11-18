@@ -89,6 +89,93 @@ pub fn apply_vertical_advances(mut glyphs []shape.Glyph, em_px f64) {
 	}
 }
 
+// GposPairLookupsMemo holds one run's script-keyed GPOS lookup lists for
+// one font: the pair kerns, the vertical kerns and the mark attachments.
+// Every list is resolved once, the first time the run asks, and every
+// later pair or mark in the same font reads the same lists. Resolving
+// per glyph rebuilds them thousands of times a paragraph; the memo keeps
+// one copy per font, the way KernChainMemo keeps one chaining evaluation.
+// None of the three lists reads the caller's extras or direction, so the
+// key is just font, script and language.
+struct GposPairLookupsMemo {
+	font_ptr voidptr
+	script   string
+	lang     string
+	kern     []u16
+	vkrn     []u16
+	marks    []u16
+}
+
+// gpos_pair_lookups_for answers the memo entry for this font and script,
+// resolving and storing it on the first miss. A font without a GPOS
+// table answers three empty lists, which decide nothing, the same as
+// resolving them one by one would.
+fn gpos_pair_lookups_for(mut memo []GposPairLookupsMemo, f &shape.Font, script string, lang string) GposPairLookupsMemo {
+	key := voidptr(f)
+	for m in memo {
+		if m.font_ptr == key && m.script == script && m.lang == lang {
+			return m
+		}
+	}
+	mut kern := []u16{}
+	mut vkrn := []u16{}
+	mut marks := []u16{}
+	if gpos := f.face.gpos {
+		kern = gpos.kerning_for(script, lang)
+		vkrn = gpos.vkerning_for(script, lang)
+		marks = gpos.mark_feature_lookups_for(script, lang)
+	}
+	m := GposPairLookupsMemo{
+		font_ptr: key
+		script:   script
+		lang:     lang
+		kern:     kern
+		vkrn:     vkrn
+		marks:    marks
+	}
+	memo << m
+	return m
+}
+
+// GposSinglesLookupsMemo holds one run's single-adjustment lookup lists
+// for one font: the same idea as the pair memo, but the singles list
+// reads the caller's extras and direction, so those join the key. Two
+// runs asking different features must not share a list.
+struct GposSinglesLookupsMemo {
+	font_ptr voidptr
+	script   string
+	lang     string
+	extra    []string
+	vertical bool
+	lookups  []u16
+}
+
+// gpos_singles_lookups_for answers the memo entry for this font, script,
+// language, asked extras and direction, resolving and storing it on the
+// first miss.
+fn gpos_singles_lookups_for(mut memo []GposSinglesLookupsMemo, f &shape.Font, script string, lang string, extra []string, vertical bool) []u16 {
+	key := voidptr(f)
+	for m in memo {
+		if m.font_ptr == key && m.script == script && m.lang == lang && m.extra == extra
+			&& m.vertical == vertical {
+			return m.lookups
+		}
+	}
+	mut lookups := []u16{}
+	if gpos := f.face.gpos {
+		lookups = gpos.single_lookups(script, lang, extra, vertical)
+	}
+	memo << GposSinglesLookupsMemo{
+		font_ptr: key
+		script:   script
+		lang:     lang
+		extra:    extra
+		vertical: vertical
+		lookups:  lookups
+	}
+	return lookups
+}
+
 // kern_pairs folds the font's pair positioning into advances, after every substitution
 // has run so the pairs are the glyphs the font's rules are written against.
 //
@@ -133,8 +220,11 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang strin
 	}
 	// The chaining kern lookups are evaluated once per font for the whole
 	// run (see kern_chain_offsets): per pair they would walk the run again
-	// for every pair, which is quadratic in the line length.
+	// for every pair, which is quadratic in the line length. The plain
+	// pair lists ride the same memo for the same reason: kerning_for
+	// rebuilds them per pair, and a paragraph has as many pairs as glyphs.
 	mut chain_memo := []KernChainMemo{}
+	mut pair_memo := []GposPairLookupsMemo{}
 	for i in 0 .. glyphs.len - 1 {
 		a := glyphs[i]
 		b := glyphs[i + 1]
@@ -152,10 +242,11 @@ pub fn kern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang strin
 			continue
 		}
 		gpos := fa.face.gpos or { continue }
+		lk := gpos_pair_lookups_for(mut pair_memo, fa, script, lang)
 		mut x := 0
 		mut y := 0
 		mut found := false
-		if k := gpos.kern_offset(gids[i], gids[i + 1], script, lang) {
+		if k := gpos.kern_offset_in(gids[i], gids[i + 1], lk.kern) {
 			x += k.x
 			y += k.y
 			found = true
@@ -202,6 +293,7 @@ pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang stri
 	for g in glyphs {
 		gids << g.gid
 	}
+	mut pair_memo := []GposPairLookupsMemo{}
 	for i in 0 .. glyphs.len - 1 {
 		a := glyphs[i]
 		b := glyphs[i + 1]
@@ -213,7 +305,9 @@ pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang stri
 		if fa != fb {
 			continue
 		}
-		off := fa.vkern_offset(a.gid, b.gid, script, lang) or { continue }
+		gpos := fa.face.gpos or { continue }
+		lk := gpos_pair_lookups_for(mut pair_memo, fa, script, lang)
+		off := gpos.vkern_offset_in(a.gid, b.gid, lk.vkrn) or { continue }
 		scale := em_px / f64(fa.face.units_per_em)
 		if rtl {
 			glyphs[i + 1].advance += f64(off.y) * scale
@@ -238,12 +332,18 @@ pub fn vkern_pairs(mut glyphs []shape.Glyph, em_px f64, script string, lang stri
 // case: most fonts carry no single positioning under the features a line applies.
 pub fn single_positions(mut glyphs []shape.Glyph, em_px f64, script string, lang string, features []string,
 	vertical bool) {
+	// The lookup lists are resolved once per font, not once per glyph:
+	// single_lookups rebuilds the asked list, the lookup list and a
+	// seen-set map, and a paragraph has as many glyphs as pairs.
+	mut singles_memo := []GposSinglesLookupsMemo{}
 	for mut g in glyphs {
 		if g.is_mark {
 			continue
 		}
 		f := g.font or { continue }
-		v := f.single_adjustment(g.gid, script, lang, features, vertical) or { continue }
+		gpos := f.face.gpos or { continue }
+		lookups := gpos_singles_lookups_for(mut singles_memo, f, script, lang, features, vertical)
+		v := gpos.single_offset_on(g.gid, lookups) or { continue }
 		scale := em_px / f64(f.face.units_per_em)
 		if vertical {
 			if v.has_y_advance() {
