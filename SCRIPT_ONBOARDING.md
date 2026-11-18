@@ -73,7 +73,7 @@ item says which one and why, in its commit message.
   proves it discriminates.
 - A hot-path touch carries same-harness before/after numbers
   (`tools/rival_bench.v -prod -cc gcc`, absolute paragraph times on a
-  quiet box) gated by `tools/perf_check.py` against `perf.md`. Ratios
+  quiet box) gated by `tools/perf_check.py` against `PERF.md`. Ratios
   vs HarfBuzz are not a target.
 
 ## 7. Paper trail

@@ -24,9 +24,9 @@ module main
 //
 // The harness degrades the platform-ratchet way: no interpreter or no
 // rival import prints the vtext half with the reason instead of a table
-// with holes. The perf.md numbers come from a run of this tool and are
+// with holes. The PERF.md numbers come from a run of this tool and are
 // re-measured per release; the method is the pin, the absolutes are the
-// box's. The CI gate reads its baselines out of perf.md, so a table edit
+// box's. The CI gate reads its baselines out of PERF.md, so a table edit
 // keeps the marker comments around it intact.
 //
 // Usage: v -prod -cc gcc run tools/rival_bench.v (from the module root)
@@ -34,7 +34,7 @@ module main
 // checks, not the engine, and the published ratio would blame the wrong
 // one. The tree is -prod-clean since the IN enum member landed (UCD IN
 // was missing from LineBreakClass and one subset loop carried an unused
-// value); the perf.md table names the flags it was measured with, and
+// value); the PERF.md table names the flags it was measured with, and
 // -cc gcc without -prod still works but measures -O0 codegen.
 
 import os

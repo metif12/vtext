@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """CI gate for the A/B perf record: bench stdout ratios must stay within
-TOLERANCE of the perf.md -prod baseline.
+TOLERANCE of the PERF.md -prod baseline.
 
 Ratios, not absolutes: a loaded or slower box moves both engines together,
 so absolutes cannot gate across machines. Only upward breaches fail;
@@ -8,7 +8,7 @@ getting faster never does. A row the bench stops printing fails too,
 because a silent hole is a failure.
 
 Usage: v -prod -cc gcc run tools/rival_bench.v > bench.txt
-       python3 tools/perf_check.py perf.md bench.txt
+       python3 tools/perf_check.py PERF.md bench.txt
 Exit 0 when every row is within tolerance, 1 otherwise.
 """
 
@@ -37,7 +37,7 @@ def read_text(path):
 
 
 def parse_baseline(path):
-    """Read {op: ratio} out of the marked table in perf.md."""
+    """Read {op: ratio} out of the marked table in PERF.md."""
     text = read_text(path)
     try:
         seg = text.split(BASELINE_START)[1].split(BASELINE_END)[0]
@@ -85,7 +85,7 @@ def parse_bench(path):
 
 def main():
     if len(sys.argv) != 3:
-        print('usage: python3 tools/perf_check.py perf.md bench.txt')
+        print('usage: python3 tools/perf_check.py PERF.md bench.txt')
         return 1
     base = parse_baseline(sys.argv[1])
     if base is None:

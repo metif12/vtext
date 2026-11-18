@@ -125,20 +125,17 @@ base on its own still draws as text; only the pair draws as emoji.
 
 Each item names the slice that owns it in `ROADMAP.md`.
 
-- Indic shaping (7.6 machine landed with Devanagari acceptance; 9.3 Bengali generality landed — same tables, no new rows; joining hook 9.3b with pres smoke; conjunct defaults 9.3c with HB-default agreement and a fixed ligature-coverage bug; repha movement 9.3d HB-exact; zero-class marks 9.3e first cut with Thai fully HB-exact and Lao anchored) and Khmer (corpus landed, coeng fusion open).
-- Hinting and color (7.7), synthetic styles and LCD landed at bitmap level (8.5; outline-level embolden and FIR LCD stay follow-ups), stroking (8.6; outline reader landed, stroker open); MATH constants
-  and variants read beside HarfBuzz (8.7 landed with Face/subset wiring and the half-advance top-accent fallback).
-- Variable instancing at chosen coordinates landed (7.10), FreeType parity.
-- Core Text and DirectWrite providers (7.8).
-- CFF subsetting (7.9 reader landed; a read is not a rebuild).
 - Cursive attachment: read from real fonts, not applied — the one corpus rule
   that reaches its own glyphs is vestigial (four one-sided anchors, no adjacent
   exit-plus-entry pair), and it rewires the day a shaped line grows a pair.
-- Word/sentence/grapheme breaks with log attrs and caret runs landed (8.2: tables, engines, 853-floor, `logattr_test.v`); Pango
-  wrap modes, ellipsize and tabs landed (8.4, C spelling included).
-- The remaining scripts (Phase 9): CJK breaking pinned (9.1 landed), SE Asian
-  corpus landed with engine gaps documented (9.2), the Indic machine (9.3,
-  Devanagari + Bengali landed and wired (9.3b hook, pres smoke), and the long tail (9.4 corpus landed with the simple alphabets and the monochrome emoji survey; colour stays 7.7).
+- Everything else this section used to list is landed: the Indic machine with
+  Devanagari and Bengali, Khmer/Myanmar shaping, hinting and color, synthetic
+  styles and LCD, stroking, MATH wiring, variable instancing, Core Text and
+  DirectWrite providers, CFF subsetting, word/sentence breaks with log attrs,
+  wrap modes/ellipsize/tabs, and the Phase 9 scripts. What remains besides
+  cursive is the triggered set in `ROADMAP.md` (AAT `morx`, Graphite,
+  WOFF2/brotli, the full TrueType bytecode interpreter, CFF2, Tibetan
+  stacking), which lands when a font needs it.
 
 ## Refused by design
 
@@ -181,6 +178,20 @@ Font License (an LPPL instance); the licence text sits beside each font.
 | `NotoSansSC-Variable.ttf` | Simplified Chinese: CJK coverage, shaping smoke, and pinned ID/CJ/NS/OP/CL breaks (9.1). |
 | `JetBrainsMonoNerdFont-Regular.ttf` | The same code face patched with PUA icons: terminal/geek glyphs beside text. |
 | `STIXTwoMath-Regular.ttf` | A math face: MATH constants, variants and assemblies beside HarfBuzz. |
+| `NotoSansBengali-Variable.ttf` | Bengali: the Indic generality proof beside HarfBuzz (9.3). |
+| `NotoSansThai-Variable.ttf` | Thai: SE Asian engine pins beside HarfBuzz (9.2). |
+| `NotoSansLao-Variable.ttf` | Lao: same engine, anchored marks (9.2). |
+| `NotoSansKhmer-Variable.ttf` | Khmer: coeng fusions, pref reorder, pres-group, abvm stack (9.2). |
+| `NotoSansMyanmar-Variable.ttf` | Myanmar: kinzi, blws stacks, caller-asked blwf (9.2). |
+| `NotoSansSyriac-Variable.ttf` | Syriac: long-tail shaping smoke (9.4). |
+| `NotoSansThaana-Variable.ttf` | Thaana: fili attach beside HarfBuzz (9.4). |
+| `NotoSansNKo-Regular.ttf` | NKo: joining beside HarfBuzz, space-pad tag fold (9.4). |
+| `NotoSansGeorgian-Variable.ttf` | Georgian: hello-word pin beside HarfBuzz (9.4). |
+| `NotoSansArmenian-Variable.ttf` | Armenian: same pin (9.4). |
+| `NotoSansEthiopic-Variable.ttf` | Ethiopic: same pin (9.4). |
+| `DoulosSIL-Regular.ttf` | Survey face: carries neither `morx` nor Graphite. |
+| `AwamiNastaliq-Regular.ttf` | Graphite trigger face (`Silf`/`Glat`/`Gloc`); shaped here through OpenType. |
+| `SourceSans3-Regular.otf` | CFF outlines through the same reader and rasterizer pins. |
 | `LatinModernMath-Regular.otf` | A second math face (CFF outlines, GUST licence): same pins, different tables. |
 
 ## Differential testing
@@ -280,15 +291,18 @@ counting them by hand.
 
 `tools/rival_bench.v` with `tools/rival_bench.py` is the rival A/B harness: the same workload timed
 on vtext and on the stack it replaces, on the same box, in one table. The V half times line layout
-at 16 px for 1024-character Latin and Arabic paragraphs plus Amiri 'A' rasterized at 32 px cold
-(sustained miss over A–T) and through the caller-owned cache; the Python half times uharfbuzz
-shaping and Pillow rasterization of the same inputs. Best of five batches of twenty on both sides.
+and wrapping at 16 px for 1024-character paragraphs in every script the corpus covers, plus three
+char-type paragraphs (marks-heavy, digits, mixed bidi), Amiri 'A' rasterized at 32 px cold
+(sustained miss over A–T) and through the caller-owned cache, one fontconfig family match, and
+one font load. The Python half times uharfbuzz shaping, a Pango wrap at the same 400 px width,
+an fc-match lookup, and a fontTools load of the same inputs, built by the same repeat rule.
+Best of five batches of twenty on both sides.
 
 ```sh
 v -prod -cc gcc run tools/rival_bench.v
 ```
 
-The measured table lives in [perf.md](perf.md) — method, boxes, flags, both rivals, and the
+The measured table lives in [PERF.md](PERF.md) — method, boxes, flags, both rivals, and the
 history — re-measured per release. The `perf` CI job runs the harness on every commit and gates
 the ratios with `tools/perf_check.py` (3x headroom over the recorded baselines; getting faster
 never fails). What each side does differs and the table says so: vtext lays the line out (bidi,
@@ -752,6 +766,7 @@ the iteration, so the struct gets a copy.
 ```
 shape/context.v   the text system: decoded tables, shaper and normalizer handles
 shape/font.v      the loaded font: metrics, glyph lookup and rasterisation
+shape/shaper.v    ScriptShaper registry: per-script defaults, reorder, split
 shape/glyphs.v    fallback chain, joining forms, glyph metrics
 shape/inspect.v   reporting what a font contains: tables, features, scripts, coverage
 shape/joining.v   UAX #53
@@ -764,10 +779,17 @@ font/sfnt.v       the font file: tables, collections, offsets
 font/woff.v       WOFF1 containers, unwrapped to sfnt before parsing
 font/cmap.v       codepoint to glyph
 font/face.v       loads GDEF, GSUB and GPOS for a font
-font/gsub.v       OpenType substitution
-font/gpos.v       OpenType positioning
+font/gsub.v       OpenType substitution engine; single, ligature and contextual
+                  lookups live in gsub_single.v, gsub_ligature.v, gsub_context.v
+font/gpos.v       OpenType positioning engine with GDEF; pair, single, mark,
+                  cursive and contextual lookups live in gpos_pair.v,
+                  gpos_single.v, gpos_mark.v, gpos_cursive.v, gpos_context.v
 font/stbtt.c.v    the stb_truetype rasteriser, vendored and public domain
-layout/layout.v   the pipeline, and mark placement
+layout/layout.v   the pipeline
+layout/kern.v     pair kern, vertical kern, single positioning
+layout/marks.v    mark placement: anchors plus chaining singles
+layout/place.v    spacing, placing, measuring
+layout/profiler.v opt-in per-stage shaping profiler
 layout/linebreak.v UAX #14, wrapping, and measuring a paragraph's two widths
 
 trace_api.v     the pipeline's stages, reached one at a time for shapetrace

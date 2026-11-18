@@ -1,7 +1,7 @@
 name: perf-record
 
 # CI-generated baselines: a manual run re-measures the A/B table on the
-# pinned ubuntu-24.04 stack and commits the new numbers to perf.md with
+# pinned ubuntu-24.04 stack and commits the new numbers to PERF.md with
 # [skip ci]. Nothing here runs on push, so no run can commit-loop; the
 # per-push gate in ci.yml keeps enforcing the committed table.
 on:
@@ -59,8 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           v -prod -cc gcc run tools/rival_bench.v | tee rival-bench.txt
-          python3 tools/perf_record.py perf.md rival-bench.txt
-          python3 tools/perf_check.py perf.md rival-bench.txt
+          python3 tools/perf_record.py PERF.md rival-bench.txt
+          python3 tools/perf_check.py PERF.md rival-bench.txt
         env:
           TMPDIR: ${{ runner.temp }}/rivalbench
           VJOBS: '1'
@@ -71,7 +71,7 @@ jobs:
           set -euo pipefail
           git config user.name 'vtext-perf-bot'
           git config user.email 'vtext-perf-bot@users.noreply.github.com'
-          git add perf.md
+          git add PERF.md
           if git diff --cached --quiet; then
             echo 'no baseline change; nothing to commit'
           else
@@ -86,4 +86,4 @@ jobs:
           name: rival-bench-output-record
           path: |
             rival-bench.txt
-            perf.md
+            PERF.md

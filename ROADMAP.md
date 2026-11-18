@@ -62,7 +62,7 @@ work documented as open; CJK line breaking is conformance-pinned.
 | Examples (12, multilingual, corpus-only) | landed | `examples/` |
 | Indic machine, SE-Asian engine, color/hinting, stroking, synth/LCD, CoreText/DW providers, rival A/B | open / in progress | Phase 7–9 below |
 
-Suite: 57 test files, all passing (2026-11-15). Differential baseline:
+Suite: 82 test files, all passing (2026-11-18). Differential baseline:
 151 entries, exact-string matching, 0 new / 0 stale (Pango legs skip aloud
 on Windows without a Pango stack; CI verifies them).
 
@@ -168,7 +168,8 @@ are gitignored, never committed.
 ## Phase 4: tools — done
 
 `fontdump`, `shapetrace`, `fontcheck`, `metrics` (found the doubled vertical
-extent), `glyphdump`, `subset` (glyf; CFF refused with the reason),
+extent), `glyphdump`, `subset` (glyf and CFF rebuilds landed; CFF2/CID
+refused with the reason),
 `capicheck` (the full C export list, both directions, CI-gated before the
 library builds). Deliberately not taken: deduplicating the 31 copies of a
 font-path helper across test files — each test stays self-contained so any
@@ -394,7 +395,7 @@ landed 2026-11-16**: `tools/rival_bench.v` drives the V half and parses the
 `tools/rival_bench.py` rival half (uharfbuzz shaping, Pillow rasterization,
 Pango layout, fc-match discovery, fontTools loading — the CI reference
 stack, nothing more) into one table with per-op ratios and
-a hit-beats-miss refusal as its liveness control. perf.md carries the
+a hit-beats-miss refusal as its liveness control. PERF.md carries the
 measured table with box, flags, versions and date, re-measured by the
 manual `perf-record` workflow (which commits with `[skip ci]`), and the
 `perf` CI job gates the ratios on every commit. The matrix covers every

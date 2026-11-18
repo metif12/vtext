@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Regenerate the perf.md A/B baseline table from one bench run.
+"""Regenerate the PERF.md A/B baseline table from one bench run.
 
 CI-generated, manual dispatch only: .github/workflows/perf-record.yml runs
 the bench with -prod, runs this script, gates with perf_check.py, and
-commits perf.md with [skip ci]. Nothing here runs on push, so no run can
+commits PERF.md with [skip ci]. Nothing here runs on push, so no run can
 commit-loop. Numbers are never hand-edited: an unknown bench op, a missing
 op, or an unparseable row fails loud instead of writing a partial table.
 
-Usage: python3 tools/perf_record.py perf.md bench.txt
-Exit 0 after rewriting perf.md in place, 1 on any refusal.
+Usage: python3 tools/perf_record.py PERF.md bench.txt
+Exit 0 after rewriting PERF.md in place, 1 on any refusal.
 """
 
 import datetime
@@ -113,7 +113,7 @@ def versions_of(text):
 
 def main():
     if len(sys.argv) != 3:
-        print('usage: python3 tools/perf_record.py perf.md bench.txt')
+        print('usage: python3 tools/perf_record.py PERF.md bench.txt')
         return 1
     perf_path, bench_path = sys.argv[1], sys.argv[2]
     base = parse_baseline(perf_path)

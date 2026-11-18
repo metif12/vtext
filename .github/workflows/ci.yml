@@ -192,7 +192,7 @@ jobs:
       # Pillow are already pinned above, so this step exercises the driver,
       # the rival half and the hit-beats-miss self-check end to end. Only the
       # exit code gates: ratios on a loaded runner are findings, not verdicts,
-      # and the perf.md table is re-measured per release on a quiet box. The
+      # and the PERF.md table is re-measured per release on a quiet box. The
       # per-commit ratio gate lives in the perf job below.
       - name: v run tools/rival_bench.v
         shell: bash
@@ -204,7 +204,7 @@ jobs:
   perf:
     name: perf A/B gate (ubuntu 24.04)
     # Pinned to 24.04, not latest: the gate compares ratios against the
-    # perf.md baselines, and the rival stack measures differently across
+    # PERF.md baselines, and the rival stack measures differently across
     # system stacks. Same pinned-runner rationale as the difftest job.
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -232,7 +232,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libpango-1.0-0 libcairo2 fontconfig libfontconfig1-dev
 
-      # Pinned to the versions perf.md was recorded against; an unpinned
+      # Pinned to the versions PERF.md was recorded against; an unpinned
       # install drifts with every release and the gate then measures the
       # reference moving, not the engine.
       - name: pip install the pinned rival stack
@@ -258,14 +258,14 @@ jobs:
       # -prod is the point: the gate locks in the -prod-clean tree, and the
       # ratios only mean anything under optimized codegen. pipefail carries
       # a bench refusal into the step's exit code; the gate script compares
-      # the printed ratios against perf.md (3x headroom, improvements never
+      # the printed ratios against PERF.md (3x headroom, improvements never
       # fail) and fails loud on a missing row.
       - name: run the A/B harness and gate the ratios
         shell: bash
         run: |
           set -euo pipefail
           v -prod -cc gcc run tools/rival_bench.v | tee rival-bench.txt
-          python3 tools/perf_check.py perf.md rival-bench.txt
+          python3 tools/perf_check.py PERF.md rival-bench.txt
         env:
           TMPDIR: ${{ runner.temp }}/rivalbench
           VJOBS: '1'

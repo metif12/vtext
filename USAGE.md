@@ -348,8 +348,9 @@ Subset: `vtext_subset` rebuilds a font around seed glyph ids (get them from
 `vtext_font_glyph_index` over the text, the way `tools/subset.v` does) and
 returns malloc'd bytes with their count, or -1 with the reason in `err`;
 `.notdef` is always kept and the bytes reload with
-`vtext_font_load_bytes`. `vtext_subset_free` releases them. CFF fonts are
-refused with the reason in `err` until Phase 7.9 lands them.
+`vtext_font_load_bytes`. `vtext_subset_free` releases them. CFF rebuilds
+landed (verbatim keep); CFF2 and CID-keyed faces are refused with the
+reason in `err`.
 
 ## Keeping the C surface in step
 
