@@ -891,7 +891,12 @@ imports `tools/`), a deliberate violation fails. M1 landed 2026-11-17 as
 out of scope), with a neutered-table break-fix proving it discriminates.
 M2/M3 split the monoliths
 by lookup kind and pass (`font/gpos.v`, `font/gsub.v`, `layout/layout.v`,
-`shape/font.v`), no behavior change, every resulting file under 60 KB. No
+`shape/font.v`), no behavior change, every resulting file under 60 KB. M2
+landed 2026-11-18 splitting the font monoliths by lookup kind
+(`gpos_pair`/`gpos_single`/`gpos_mark`/`gpos_cursive`/`gpos_context`,
+`gsub_single`/`gsub_ligature`/`gsub_context`); M3 landed the same day
+splitting the layout monolith by pass (`layout/kern.v`, `layout/marks.v`,
+`layout/place.v` beside the slimmed `layout.v`). No
 public API renames: pure file moves, `vtext.h` untouched.
 
 **Extendable.** E1 is a `ScriptShaper` interface with a registry (Khmer,
@@ -908,8 +913,17 @@ with it. Reorder and split dispatch on content because
 both run before the run script resolves; substitution dispatches on the
 script, which it has.
 E2 makes feature order data, including the before-`ccmp` slot the Myanmar
-carve-out needs. E3 writes the script-onboarding checklist down (OFL face +
-licence, HB pins, difftest cases, order proof). No plugin DLLs or FFI:
+carve-out needs: E2 landed 2026-11-18 as the `FeaturePlan` value
+(`pre_ccmp` beside the defaults in one value, fetched once per run
+through `feature_plan_for`), with `feature_order_test.v` pinning the
+slot. Indic migrated to the registry the same day, closing the E1
+plan: the Indic defaults, reorder tail and run split move across and
+the old per-script branches delete with them. E3 writes the
+script-onboarding checklist down (OFL face +
+licence, HB pins, difftest cases, order proof): E3 landed 2026-11-18
+as `SCRIPT_ONBOARDING.md`, the seven-item list every future script
+follows, each item naming the Khmer/Myanmar/Indic precedent that
+proves it. No plugin DLLs or FFI:
 registration is compile-time, `-prod`+LTO builds intact.
 
 **Fast.** F1 is an opt-in per-stage shaping profiler (segment, reorder,
@@ -917,7 +931,12 @@ GSUB, GPOS, place) on the Thai/Khmer/Myanmar bench rows, silent by default.
 F2 fixes what F1 finds; the candidate is a run-level shaping memo whose key
 must include features, script override and variation coords, with a
 break-fix over an omitted input. F3 removes per-glyph heap churn on the hot
-path (reused buffers in the run loops). No SIMD (endian-clean, every
+path (reused buffers in the run loops). F1 landed 2026-11-18 as the opt-in
+per-stage profiler above (`layout/profiler.v`, `layout_paragraph_profiled`,
+`profiler_test.v` pinning profiled==plain); F2 and its tails landed the
+same day hoisting what it found (Indic table decodes out of per-syllable
+paths, O(1) format-4 reverse lookup by segment kind, stacked cluster
+search out of the per-mark loop). No SIMD (endian-clean, every
 platform), no hidden atlas or global cache (Phase 1 settled: the cache is
 the caller's), ratios vs HarfBuzz are not a target — absolute paragraph
 times are, measured on a quiet box (foreign V builds tripled suite time on
@@ -987,7 +1006,7 @@ owns the queue.
 | 7.9 | CFF subsetting | landed (verbatim keep, CFF2/CID refused) |
 | 7.10 | Composite instancing; raster wiring | landed (HVAR/MVAR/cvar readers, composites, wiring) |
 | 9.1 | Hangul jamo composition; vertical CJK punctuation | landed (KR face, HB pins, break-fix) |
-| 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf order closed 2026-11-17 (asked runs pre-ccmp, HB-exact; default stays unfused); `nko ` tag fold landed; Khmer subscript-U residual closed 2026-11-17 (HB-exact, pinned; U rides the stack); Khmer abvm stack pinned 2026-11-17 (anchor-side HB-exact, chains fire on no corpus word); 17CE-over-SRAII-ligature closed 2026-11-17 (mark-lig ComponentRecord stride + last-anchored-component, Tahoma HB-exact); Khmer split vowels closed 2026-11-17 (SRA E inserted pre-base, HB-exact incl. coeng cluster) | open (GPOS marks beyond anchors + mark-cluster merge remain) |
+| 9.2-engine | ccc=0 marks attach; coeng fusions, pref reorder, kinzi, blws, Khmer pres-group landed; Myanmar blwf order closed 2026-11-17 (asked runs pre-ccmp, HB-exact; default stays unfused); `nko ` tag fold landed; Khmer subscript-U residual closed 2026-11-17 (HB-exact, pinned; U rides the stack); Khmer abvm stack pinned 2026-11-17 (anchor-side HB-exact, chains fire on no corpus word); 17CE-over-SRAII-ligature closed 2026-11-17 (mark-lig ComponentRecord stride + last-anchored-component, Tahoma HB-exact); Khmer split vowels closed 2026-11-17 (SRA E inserted pre-base, HB-exact incl. coeng cluster); chaining singles compose through apply_mark_chain (Thai dist chain, Khmer abvm/blwm) | landed (clusters stay honest per input where HarfBuzz merges onto the base — convention, recorded) |
 | 9.4-rest | More simple alphabets; emoji survey | landed (Georgian/Armenian/Ethiopic + mono survey; color → 7.7) |
 | 9.3 | Bengali generality proof (after Devanagari) | landed (assembly + GPOS marks; joining hook included) |
 | 10.1 | generic measure / iterate (`layout/iterator.v`) | landed (standalone, no FONS) |
@@ -995,8 +1014,8 @@ owns the queue.
 | 10.3 | generic coverage helpers (`raster/quantize.v`) | landed (mono/gray2/4, gamma, blur) |
 | 10.4 | canvas CPU helpers as generic coverage only | landed (10.3; hint/LCD/stroke/color stay 7.7/8.5/8.6/7.7) |
 | 10.5 | generic discovery (`providers/discovery.v`) | landed (order/variant/pow2; 7.8 stays per-OS) |
-| 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | M1 landed (ratchet test + deliberate-violation break-fix); M2/M3 open (pure moves, no API renames) |
-| 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | E1 + Myanmar migration landed (all per-script GSUB/reorder/split enters through the registry); E2/E3 open |
+| 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | landed (M1 ratchet + deliberate-violation break-fix; M2/M3 pure moves, no API renames, all files under 60 KB) |
+| 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | landed (E1 registry + Khmer/Myanmar/Indic migrations; E2 FeaturePlan with pre-ccmp slot; E3 SCRIPT_ONBOARDING.md) |
 | 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | F1 landed (opt-in per-stage profiler); F2/F2b/F2c landed (Indic table hoist, format-4 reverse, stacked cluster search); F3 landed (GPOS lookup-list hoisting, no behavior change) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
