@@ -720,18 +720,40 @@ fn (c &Cmap) codepoint_for(gid u16) ?u32 {
 		}
 		4 {
 			for seg in 0 .. c.start_code.len {
-				// The loops are written as an explicit counter rather than as a range because a
-				// segment is inclusive of its end and V's range is not, and losing the last
-				// codepoint of every segment is a bug that shows up as one character per segment
-				// quietly getting the wrong name.
-				mut cp := u32(c.start_code[seg])
+				// The last segment of a format 4 subtable is conventionally 0xFFFF..0xFFFF, and it
+				// terminates the array rather than covering a character.
+				if c.id_range[seg] == 0 {
+					// Delta mapping: every codepoint in the segment answers
+					// gid = (cp + delta) mod 2^16, so the wanted codepoint
+					// inverts directly instead of scanning the segment
+					// codepoint by codepoint with a binary search each. The
+					// wraparound matches lookup_format4's own u16
+					// truncation, and the terminator exclusion below is the
+					// same one the scan carried.
+					start := u32(c.start_code[seg])
+					last := u32(c.end_code[seg])
+					want := u16(u32(gid) - u32(c.id_delta[seg]))
+					if want != 0xFFFF && u32(want) >= start && u32(want) <= last {
+						return u32(want)
+					}
+					continue
+				}
+				// GlyphIdArray mapping: only this segment's slice is read,
+				// with one reader for the segment instead of one per
+				// codepoint, and no binary search — the segment is known.
+				start := u32(c.start_code[seg])
 				last := u32(c.end_code[seg])
+				range_off := c.id_range[seg]
+				delta := c.id_delta[seg]
+				mut r := new_reader(c.data)
+				mut cp := start
 				for cp <= last {
-					// The last segment of a format 4 subtable is conventionally 0xFFFF..0xFFFF, and it
-					// terminates the array rather than covering a character.
 					if cp != 0xFFFF {
-						if g := c.lookup_format4(cp) {
-							if g == gid {
+						idx := c.id_range_base + seg * 2 + int(range_off) +
+							int(cp - start) * 2
+						if r.has(idx, 2) {
+							entry := r.u16_at(idx)
+							if entry != 0 && u16(u32(entry) + u32(delta)) == gid {
 								return cp
 							}
 						}

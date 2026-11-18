@@ -8,6 +8,7 @@ import vtext.shape
 // past the end of the glyph range, and a glyph several codepoints share.
 
 import os
+import vtext.font
 
 fn corpus_font(name string) &shape.Font {
 	return shape.load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
@@ -55,6 +56,55 @@ fn test_codepoint_for_round_trips_what_the_font_maps() {
 		assert back <= cp, 'the answer is the lowest codepoint for the glyph, not a later one: U+${cp:04X} gave U+${back:04X}'
 		// The glyph really is the one that codepoint maps to, so the pair is genuinely the same
 		// glyph rather than two that happen to be neighbours in the table.
+		assert f.glyph_index(back) == gid, 'the reverse answer maps back to the same glyph'
+		checked++
+	}
+	assert checked > 100, 'enough of the font was checked to mean something, got ${checked}'
+}
+
+// The round trip above can be served by a format 12 subtable when the
+// font carries one, which leaves the format 4 delta inversion above
+// unexercised: a +1 there would pass. Amiri's first subtable answers
+// through format 4, so the same property over Amiri pins the delta
+// arm — neutering the inversion fails here.
+fn test_codepoint_for_round_trips_through_format4() {
+	f := corpus_font('Amiri-Regular.ttf')
+	mut checked := 0
+	for cp in rune(0x20) .. rune(0x600) {
+		gid := f.glyph_index(cp)
+		if gid == 0 {
+			continue
+		}
+		back := f.codepoint_for(gid) or { continue }
+		assert back <= cp, 'the answer is the lowest codepoint for the glyph, not a later one: U+${cp:04X} gave U+${back:04X}'
+		assert f.glyph_index(back) == gid, 'the reverse answer maps back to the same glyph'
+		checked++
+	}
+	assert checked > 100, 'enough of the font was checked to mean something, got ${checked}'
+}
+
+// The round trips above take whichever subtable answers first, which in
+// these faces is not necessarily format 4 — neutering the delta
+// inversion below still passes them. This test filters the face's own
+// subtables down to format 4, so the delta arm must answer: a +1 in the
+// inversion fails here.
+fn test_codepoint_for_format4_delta_inversion() {
+	f := corpus_font('Amiri-Regular.ttf')
+	mut f4 := []font.Cmap{}
+	for c in f.face.cmaps {
+		if c.format == 4 {
+			f4 << c
+		}
+	}
+	assert f4.len > 0, 'Amiri carries a format 4 subtable'
+	mut checked := 0
+	for cp in rune(0x20) .. rune(0x600) {
+		gid := f.glyph_index(cp)
+		if gid == 0 {
+			continue
+		}
+		back := font.codepoint_for(f4, gid) or { continue }
+		assert back <= cp, 'the answer is the lowest codepoint for the glyph, not a later one: U+${cp:04X} gave U+${back:04X}'
 		assert f.glyph_index(back) == gid, 'the reverse answer maps back to the same glyph'
 		checked++
 	}
