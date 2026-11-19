@@ -957,6 +957,28 @@ the resolved marks list; the public one-shot forms (`kern_offset`,
 behavior change by construction: the resolution code moved, it was not
 rewritten, and every consumer reads the list the per-call path resolved.
 
+## Phase 12: rival parity — open, planned 2026-11-19.
+
+The perf table compares vtext's full pipeline against rivals that do less
+per row (layout+shape vs HarfBuzz shape-only), and the ratios show it:
+hundreds to one on the shape rows. This phase closes that gap slice by
+slice, each with same-harness before/after numbers attributed by the F1
+stage profiler, and the suite, difftest 0/0 and the perf gate green on
+every commit. Ratios, not absolutes, are the finding — a loaded box lies
+about absolutes — and getting faster never fails the gate.
+
+**Phase 12 G1 — landed 2026-11-19.** GSUB lookup pre-filter
+(`font/gsub_prefilter.v`): `substitute_forms` builds the run's glyph set
+once per lookup and skips lookups whose first-position coverage names
+nothing in it. Sound because every apply path coverage-gates position
+zero first and the set is rebuilt from the current run for every lookup.
+Latin GSUB 9.97ms to 0.49ms, arabic 4.99ms to 0.91ms.
+
+**Phase 12 G2 — landed 2026-11-19.** The mark pass is skipped outright on
+markless lines, and the F2c stacked-cluster precompute binary-searches a
+once-sorted base-cluster array instead of walking the map per glyph. Same
+maximum over an unchanged set. Latin GPOS 1.18ms to 0.18ms.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1019,6 +1041,7 @@ owns the queue.
 | 11.1 | Modularity: import ratchet (M1), split gpos/gsub/layout/shape-font (M2/M3) | landed (M1 ratchet + deliberate-violation break-fix; M2/M3 pure moves, no API renames, all files under 60 KB) |
 | 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | landed (E1 registry + Khmer/Myanmar/Indic migrations; E2 FeaturePlan with pre-ccmp slot; E3 SCRIPT_ONBOARDING.md) |
 | 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | F1 landed (opt-in per-stage profiler); F2/F2b/F2c landed (Indic table hoist, format-4 reverse, stacked cluster search); F3 landed (GPOS lookup-list hoisting, no behavior change) |
+| 12.1 | Rival parity: GSUB pre-filter (G1), mark-pass skip (G2) | landed (first-coverage run-set filter; markless early return + binary-searched cand_base) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
