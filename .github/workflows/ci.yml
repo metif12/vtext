@@ -56,7 +56,10 @@ jobs:
   suite:
     name: suite (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    # 60, not 30: the serial runner needs ~29 minutes on windows-latest on a
+    # good day (28m53s green 2026-11-18) and two 30m10s timeouts killed the
+    # same tree on slow days. fmt_check alone takes ~13 minutes there.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
