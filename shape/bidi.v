@@ -70,6 +70,21 @@ pub fn resolve_paragraph(p &ucd.Properties, cps []rune, base_dir Direction) Bidi
 		return result
 	}
 
+	// The ASCII fast path. ASCII assigns no R or AL, no AN, no explicit
+	// or isolate controls, no combiners and no paragraph separators
+	// outside the bailed C0 range, so a non-RTL paragraph over ASCII
+	// resolves without running UAX9: L stays level 0, digits turn into L
+	// at W7 (the only strong type in ASCII is L, and sos is L at level 0)
+	// and so take level 0 at I1, and every neutral resolves to the
+	// paragraph level by N1/N2 over all-even surroundings. No odd level
+	// can arise, so L2 is the identity; no isolate can split, so X10 is
+	// the maximal same-level runs; nothing is X9-removed, so everything
+	// stays visible. An RTL base direction keeps the slow path: it flips
+	// the paragraph level and the argument above does not hold.
+	if base_dir != .rtl && is_bidi_ascii(cps) {
+		return resolve_ascii_ltr(cps)
+	}
+
 	// Original types, kept because rules W1 to N2 work on a mutable copy and N0
 	// consults the original classes.
 	mut orig := []ucd.BidiClass{len: cps.len, init: .l}
@@ -132,6 +147,52 @@ pub fn resolve_paragraph(p &ucd.Properties, cps []rune, base_dir Direction) Bidi
 
 	// L2.
 	result.visual_order = reorder_by_levels(result.levels, result.visible)
+	return result
+}
+
+// is_bidi_ascii reports whether every character is safe for the ASCII
+// fast path: printable ASCII plus tab. Anything else — a non-ASCII
+// codepoint (the only home of R, AL, AN, explicit and isolate
+// controls, combiners and non-Latin digits), a C0 control (BN or a
+// paragraph separator) or DEL — takes the slow path.
+fn is_bidi_ascii(cps []rune) bool {
+	for cp in cps {
+		if cp >= 128 || cp == 127 || (cp < 32 && cp != `\t`) {
+			return false
+		}
+	}
+	return true
+}
+
+// resolve_ascii_ltr resolves an all-ASCII run at paragraph level 0,
+// which is what the fast path gate guarantees: a non-RTL base over
+// ASCII always lands on level 0, because ASCII has no R or AL for
+// P2/P3 to find. Every digit takes level 0 too: rule W7 turns an EN
+// into L when the last strong type before it is L, and the scan starts
+// at sos, which is L at paragraph level 0 with no embeddings, while
+// the only strong type ASCII names is L itself — so no EN survives to
+// rule I1. Everything else is neutral at level 0 by N1/N2 over
+// all-LTR surroundings (N0 can only agree: ASCII names no opposite
+// strong type). One level everywhere means one X10 sequence, L2 is
+// the identity, and X9 removes nothing, so everything stays visible.
+fn resolve_ascii_ltr(cps []rune) BidiResult {
+	mut result := BidiResult{
+		levels:          []u8{len: cps.len}
+		visible:         []bool{len: cps.len, init: true}
+		visual_order:    []int{len: cps.len}
+		paragraph_level: 0
+	}
+	for i in 0 .. cps.len {
+		result.visual_order[i] = i
+	}
+	if cps.len > 0 {
+		mut seq := []int{cap: cps.len}
+		for k in 0 .. cps.len {
+			seq << k
+		}
+		result.sequences << seq
+		result.isolating_sequences = 1
+	}
 	return result
 }
 

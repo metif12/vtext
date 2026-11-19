@@ -290,3 +290,44 @@ fn test_bidi_bracket_canonical_pair_resolves() {
 	assert res.levels[1] == 0, 'the opener should take the surrounding L direction'
 	assert res.levels[3] == 0, 'the closer should take the surrounding L direction'
 }
+
+// The ASCII fast path takes class-equivalent text off the full UAX9 walk. These
+// pins compare it against the slow path on an identical bidi-class sequence:
+// U+00E9 is Bidi_Class=L, so replacing one ASCII letter with it forces the slow
+// path without changing any class the algorithm reads. They also check the
+// fields the conformance file never checks (sequences and isolating_sequences),
+// so a fast path that resolved levels but built the wrong runs cannot pass.
+fn test_bidi_ascii_fast_path_matches_slow_path() {
+	p := ucd.new_properties()
+	// Letters, digits, a bracket pair, separators, whitespace and tab: every
+	// class an ASCII paragraph can name.
+	ascii := 'a1 (b);\t2.3/z'.runes()
+	mut forced := ascii.clone()
+	forced[0] = 0x00e9
+	fast := shape.resolve_paragraph(p, ascii, .ltr)
+	slow := shape.resolve_paragraph(p, forced, .ltr)
+	assert fast.paragraph_level == slow.paragraph_level
+	assert fast.levels == slow.levels
+	assert fast.visible == slow.visible
+	assert fast.visual_order == slow.visual_order
+	assert fast.isolating_sequences == slow.isolating_sequences
+	assert fast.sequences == slow.sequences
+	assert fast.isolating_sequences == 1
+}
+
+fn test_bidi_ascii_fast_path_auto_and_rtl() {
+	p := ucd.new_properties()
+	ascii := 'a1 (b);\t2.3/z'.runes()
+	auto := shape.resolve_paragraph(p, ascii, .auto)
+	ltr := shape.resolve_paragraph(p, ascii, .ltr)
+	assert auto.paragraph_level == 0, 'ASCII has no R or AL to move the auto level'
+	assert auto.levels == ltr.levels
+	assert auto.visual_order == ltr.visual_order
+	assert auto.sequences == ltr.sequences
+
+	// An RTL base must stay on the slow path: the paragraph level flips, so the
+	// all-zero identity above would be wrong.
+	rtl := shape.resolve_paragraph(p, ascii, .rtl)
+	assert rtl.paragraph_level == 1
+	assert rtl.levels != ltr.levels
+}
