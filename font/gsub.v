@@ -341,11 +341,25 @@ pub fn (g &Gsub) substitute_forms(lookups []u16, items []Ligatable, want ?Joinin
 		return items
 	}
 	mut out := items
+	// One bitset serves every lookup in this feature: cleared and re-marked
+	// per lookup, because each walk can rewrite the run the next one reads.
+	mut set := new_gid_set()
 	for li in lookups {
 		if li >= g.lookups.len {
 			continue
 		}
 		if !lookup_substitutes(g.lookups[li]) {
+			continue
+		}
+		// A lookup whose first-position coverage names nothing in the run
+		// cannot substitute anywhere in it — every apply path
+		// coverage-gates position zero first — so the walk, including the
+		// effective-sequence scan that opens it, is skipped outright.
+		set.clear()
+		for item in out {
+			set.mark(item.gid)
+		}
+		if !g.lookup_touches_run(li, &set) {
 			continue
 		}
 		out = g.substitute_one(li, mut out, want)
