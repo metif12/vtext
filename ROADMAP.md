@@ -1016,6 +1016,20 @@ invisible-character inputs) with a neutered-dense break-fix; full suite and
 difftest 0/0 green on CI, where the pinned runners do not carry the 39–44
 foreign V builds that made the local compiler run out of memory.
 
+**Phase 12 G7 — landed 2026-11-20.** Per-line measurement memo
+(`layout/place.v`): `measure_line` read each font's metrics and called
+`box_only` on every glyph, although a line is measured at one size and a
+paragraph draws a few dozen distinct gids. A memo local to the call keys boxes
+and metrics by (font, gid), so 1024 glyphs make about 47 box reads; the glyph's
+own `y` is still applied per glyph and nothing is cached across lines, so a
+caller changing size or variation coordinates cannot read a stale box. The
+memo keeps only the three integer fields it needs rather than a
+`raster.GlyphBitmap`, because the module boundary forbids a `layout` -> `raster`
+import. `measure_line` on 1024 glyphs went 2.94 ms to 0.27 ms (10.7x,
+`tools/bench_measure.v`, interleaved best-of). Pinned by `layout_test.v` against
+an unmemoized walk over repeated gids with varied mark offsets, with a
+collapsed-key break-fix; full suite and difftest 0/0 green on CI.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1082,6 +1096,7 @@ owns the queue.
 | 12.2 | Rival parity: NFD ASCII path (G3), Context-decoded Indic tables (G4) | landed (identity mapping pre-scan; tables decode once per Context) |
 | 12.3 | Rival parity: ASCII bidi fast path (G5) | landed (14–19x on `resolve_paragraph`; gate-neuter control 1.04x) |
 | 12.4 | Rival parity: dense placement arrays (G6) | landed (1.7–2.2x on `place_glyphs`; dense==map pinned across plain/merged/RTL inputs) |
+| 12.5 | Rival parity: per-line measurement memo (G7) | landed (10.7x on `measure_line`; memo==per-glyph pinned across repeated gids and mark offsets) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
