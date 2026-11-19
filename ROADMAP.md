@@ -600,8 +600,8 @@ through `apply_mark_chain` (Thai dist chain at U). Tibetan stacks arrive as
 their own slice with a stacking font, or the slice says why they cannot. A
 dangling Myanmar virama's dotted circle belongs there too.
 
-**9.3 The Indic machine — Bengali generality landed 2026-11-16 (joining hook
-open).** The Devanagari acceptance above stands; this slice proves the
+**9.3 The Indic machine — Bengali generality landed 2026-11-16 (joining hook,
+conjunct defaults and assembly + GPOS land in 9.3b–9.3d below).** The Devanagari acceptance above stands; this slice proves the
 machine is script-agnostic: committed OFL NotoSansBengali-Variable (730
 glyphs, `akhn blwf cjct half pres pstf rphf vatu` under `bng2`), pinned by
 `bengali_test.v` beside HarfBuzz with a neutered-reorder break-fix. No new
@@ -657,7 +657,7 @@ AA, reph] in Devanagari — every gid, advance, cluster and offset HarfBuzz
 reports. The one divergence is Bengali rkma with a post-base matra:
 HarfBuzz puts the reph before the AA ([KA, reph, AA]) while this engine
 appends it after, pinned as-is. Pref, pstf/blwf/vatu, the Bengali
-conjunct assembly chain and GPOS marks stay open.
+conjunct assembly chain and GPOS marks land in the assembly + GPOS slice below.
 
 **9.3e Zero-class marks attach — landed 2026-11-16 (first cut).** The
 `attach_marks` skip for invisible format controls gated on a zero combining
