@@ -979,6 +979,17 @@ markless lines, and the F2c stacked-cluster precompute binary-searches a
 once-sorted base-cluster array instead of walking the map per glyph. Same
 maximum over an unchanged set. Latin GPOS 1.18ms to 0.18ms.
 
+**Phase 12 G3 — landed 2026-11-19.** ASCII fast path for NFD mapping:
+a single pre-scan of plain comparisons takes ASCII text straight to the
+identity mapping, replacing two Unicode table lookups per character.
+Sound because ASCII characters are starters with no decomposition.
+
+**Phase 12 G4 — landed 2026-11-19.** The decoded Indic syllabic and
+positional tables live in `shape.Context` beside the other caller-owned
+tables, decoded once at construction; the reorder path resolves each run
+against them instead of re-parsing the generator text per run per
+sequence. Same tables, same code, caller-decoded.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1042,6 +1053,7 @@ owns the queue.
 | 11.2 | Extendability: ScriptShaper registry (E1), feature order as data (E2), onboarding checklist (E3) | landed (E1 registry + Khmer/Myanmar/Indic migrations; E2 FeaturePlan with pre-ccmp slot; E3 SCRIPT_ONBOARDING.md) |
 | 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | F1 landed (opt-in per-stage profiler); F2/F2b/F2c landed (Indic table hoist, format-4 reverse, stacked cluster search); F3 landed (GPOS lookup-list hoisting, no behavior change) |
 | 12.1 | Rival parity: GSUB pre-filter (G1), mark-pass skip (G2) | landed (first-coverage run-set filter; markless early return + binary-searched cand_base) |
+| 12.2 | Rival parity: NFD ASCII path (G3), Context-decoded Indic tables (G4) | landed (identity mapping pre-scan; tables decode once per Context) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
