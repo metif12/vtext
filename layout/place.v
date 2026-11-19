@@ -373,6 +373,69 @@ pub fn apply_align(ctx &shape.Context, mut line Line, cps []rune, from int, to i
 // one glyph per character that has one and passes over the ones a glyph already drawn
 // stands for.
 pub fn place_glyphs(placed []shape.Glyph, bidi shape.BidiResult, origin []int) []shape.Glyph {
+	// Clusters and origin values are indices into the caller's text, so in the
+	// normal case they are small non-negative ints and two dense arrays replace
+	// the two maps. Keys that are negative or far out of range are not worth a
+	// huge allocation and keep the general map path, which has no key bound.
+	mut max_idx := 0
+	for g in placed {
+		if g.cluster < 0 {
+			return place_glyphs_maps(placed, bidi, origin)
+		}
+		if g.cluster > max_idx {
+			max_idx = g.cluster
+		}
+	}
+	for v in bidi.visual_order {
+		orig := if v < origin.len { origin[v] } else { v }
+		if orig < 0 {
+			return place_glyphs_maps(placed, bidi, origin)
+		}
+		if orig > max_idx {
+			max_idx = orig
+		}
+	}
+	if max_idx > 4 * placed.len + 256 {
+		return place_glyphs_maps(placed, bidi, origin)
+	}
+	return place_glyphs_dense(placed, bidi, origin, max_idx + 1)
+}
+
+// place_glyphs_dense is the loop below with array slots in place of the two
+// maps. Every key was checked in range by the caller, so an index here cannot
+// miss or go out of bounds. Merged clusters still hold a list of indices, and
+// a repeated origin is still drawn once, exactly as in the map version.
+fn place_glyphs_dense(placed []shape.Glyph, bidi shape.BidiResult, origin []int, slots int) []shape.Glyph {
+	mut out := []shape.Glyph{cap: placed.len}
+	mut by_cluster := [][]int{len: slots}
+	for i, g in placed {
+		by_cluster[g.cluster] << i
+	}
+	mut drawn := []bool{len: slots, init: false}
+	mut x := f64(0)
+	for v in bidi.visual_order {
+		if !bidi.visible[v] {
+			continue
+		}
+		orig := if v < origin.len { origin[v] } else { v }
+		if drawn[orig] {
+			continue
+		}
+		drawn[orig] = true
+		for i in by_cluster[orig] {
+			mut g := placed[i]
+			g.x += x
+			out << g
+			x += g.advance
+		}
+	}
+	return out
+}
+
+// place_glyphs_maps is the general form: hash maps make no assumption about
+// how large or how negative a cluster is. It is the fallback for callers that
+// hand in keys outside the dense window the public entry point checks.
+fn place_glyphs_maps(placed []shape.Glyph, bidi shape.BidiResult, origin []int) []shape.Glyph {
 	mut out := []shape.Glyph{cap: placed.len}
 	mut by_cluster := map[int][]int{}
 	for i, g in placed {

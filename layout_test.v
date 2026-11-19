@@ -1036,6 +1036,54 @@ fn test_wrapping_and_measuring_agree_about_features() {
 	assert laid.width < plain.max_content_width, 'liga should narrow this line: ${laid.width} against ${plain.max_content_width}'
 }
 
+// place_glyphs has a dense-array fast path for small non-negative clusters and
+// a general map path for anything else. They have to be the same function. Pin
+// them against each other by putting a negative cluster on a glyph that no
+// origin names: it is undrawn either way, so the two outputs cannot differ.
+fn assert_same_placement(placed []shape.Glyph, bidi shape.BidiResult, origin []int, undrawn int) {
+	dense := layout.place_glyphs(placed, bidi, origin)
+	mut forced := placed.clone()
+	forced[undrawn].cluster = -1
+	maps := layout.place_glyphs(forced, bidi, origin)
+	assert maps.len == dense.len
+	for i in 0 .. dense.len {
+		assert maps[i].gid == dense[i].gid
+		assert maps[i].x == dense[i].x
+		assert maps[i].cluster == dense[i].cluster
+	}
+}
+
+fn test_place_glyphs_dense_matches_maps() {
+	mut plain := []shape.Glyph{cap: 6}
+	for i in 0 .. 6 {
+		plain << shape.Glyph{ gid: u16(10 + i), advance: 5.0, cluster: i }
+	}
+	// Origin 2 appears twice and cluster 3 is never named, so one glyph is
+	// drawn once and another not at all.
+	assert_same_placement(plain, shape.BidiResult{
+		levels:          []u8{len: 6, init: 0}
+		visible:         []bool{len: 6, init: true}
+		visual_order:    [0, 1, 2, 3, 4, 5]
+		paragraph_level: 0
+	}, [0, 1, 2, 2, 4, 5], 3)
+
+	// Merged clusters, reversed visual order and an invisible position: the
+	// dense path still has to agree with the map path. Glyph 4's cluster is
+	// never named by this origin, so it is the one forced negative.
+	mut merged := []shape.Glyph{cap: 6}
+	for g in 0 .. 6 {
+		merged << shape.Glyph{ gid: u16(g), advance: 4.0, cluster: g / 2 }
+	}
+	mut rtl := shape.BidiResult{
+		levels:          []u8{len: 6, init: 1}
+		visible:         []bool{len: 6, init: true}
+		visual_order:    [5, 4, 3, 2, 1, 0]
+		paragraph_level: 1
+	}
+	rtl.visible[3] = false
+	assert_same_placement(merged, rtl, [0, 1, 1, 2, 3, 4], 4)
+}
+
 // A Latin run after a decomposed character lays out left to right, not as if its first
 // character belonged to the run on its right.
 //
