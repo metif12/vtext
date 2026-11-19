@@ -17,6 +17,13 @@ pub:
 	normalizer &Normalizer
 	// shaper holds the Arabic presentation forms, which the joining pass maps onto.
 	shaper &Shaper
+	// indic_syl_ranges and indic_pos_ranges are the decoded Indic
+	// syllabic and positional category tables. The reorder machine
+	// reads them for every run, and parsing the generator text per
+	// run cost more than the reorder itself, so they decode once
+	// here and travel with the caller-owned tables beside them.
+	indic_syl_ranges []ucd.CodeRange
+	indic_pos_ranges []ucd.CodeRange
 }
 
 // new_context decodes every table. The caller owns the result and keeps it for the
@@ -24,9 +31,11 @@ pub:
 pub fn new_context() &Context {
 	tables := ucd.new_properties()
 	return &Context{
-		properties: tables
-		normalizer: new_normalizer(*tables)
-		shaper:     new_shaper()
+		properties:       tables
+		normalizer:       new_normalizer(*tables)
+		shaper:           new_shaper()
+		indic_syl_ranges: indic_syllabic_ranges()
+		indic_pos_ranges: indic_positional_ranges()
 	}
 }
 

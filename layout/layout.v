@@ -174,7 +174,7 @@ pub mut:
 // later cluster than the base it precedes). Every glyph of the syllable
 // reporting the base's index draws visual order and matches HarfBuzz, which
 // reports the whole reordered syllable on its first cluster.
-fn indic_visual(sub []rune, mut sub_idx []int) []rune {
+fn indic_visual(ctx &shape.Context, sub []rune, mut sub_idx []int) []rune {
 	// Split vowels grow the run: each Khmer split vowel gains its SRA E
 	// half before the base, so the index map grows with it through the
 	// split permutation. Without this the added halves would report the
@@ -200,7 +200,8 @@ fn indic_visual(sub []rune, mut sub_idx []int) []rune {
 		sub_idx = grown.clone()
 		run = split.clone()
 	}
-	reordered, perm := shape.reorder_indic_mapped(run)
+	reordered, perm := shape.reorder_indic_mapped_with(ctx.indic_syl_ranges, ctx.indic_pos_ranges,
+		run)
 	if reordered.len != run.len || reordered.len != sub_idx.len {
 		return run
 	}
@@ -220,7 +221,7 @@ fn indic_visual(sub []rune, mut sub_idx []int) []rune {
 	// move the machine makes crosses unlike codepoints (matra over
 	// consonants, repha to the end, tail preposes), and the corpus pins
 	// below hold the merged clusters exactly.
-	for s in shape.segment_indic_syllables(run) {
+	for s in shape.segment_indic_syllables_with(ctx.indic_syl_ranges, run) {
 		if reordered[s.start..s.end] != run[s.start..s.end] {
 			base := old[s.start]
 			for k in s.start .. s.end {
@@ -316,7 +317,7 @@ fn layout_paragraph_inner(ctx &shape.Context, cps []rune, base_dir shape.Directi
 			sub_idx << i
 		}
 		re_start := prof.begin()
-		visual := indic_visual(sub, mut sub_idx)
+		visual := indic_visual(ctx, sub, mut sub_idx)
 		prof.end(.reorder, re_start, sub.len)
 		seg2_start := prof.begin()
 		shaped := ctx.shaper.shape_arabic(ctx.properties, visual)

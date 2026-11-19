@@ -191,7 +191,7 @@ pub fn segment_indic_syllables(cps []rune) []IndicSyllable {
 // the F2 hot-path fix. The tables decode once per shaping run, not once
 // per syllable — ucd.parse_ranges walks hundreds of rows, and the reorder
 // below used to pay that walk for every syllable it touched.
-fn segment_indic_syllables_with(ranges []ucd.CodeRange, cps []rune) []IndicSyllable {
+pub fn segment_indic_syllables_with(ranges []ucd.CodeRange, cps []rune) []IndicSyllable {
 	mut out := []IndicSyllable{}
 	mut start := -1
 	mut i := 0
@@ -269,11 +269,18 @@ pub fn reorder_indic(cps []rune) []rune {
 // maps to itself, so the map is the identity wherever the text was already
 // in visual order.
 pub fn reorder_indic_mapped(cps []rune) ([]rune, []int) {
+	return reorder_indic_mapped_with(indic_syllabic_ranges(), indic_positional_ranges(),
+		cps)
+}
+
+// reorder_indic_mapped_with is reorder_indic_mapped over caller-decoded
+// tables: the layout pass resolves each run against the tables its
+// Context decoded once, instead of re-parsing the generator text for
+// every run it shapes.
+pub fn reorder_indic_mapped_with(syl_ranges []ucd.CodeRange, pos_ranges []ucd.CodeRange, cps []rune) ([]rune, []int) {
 	if cps.len == 0 {
 		return []rune{}, []int{}
 	}
-	syl_ranges := indic_syllabic_ranges()
-	pos_ranges := indic_positional_ranges()
 	mut out := []rune{cap: cps.len}
 	mut map_ := []int{cap: cps.len}
 	for s in segment_indic_syllables_with(syl_ranges, cps) {
