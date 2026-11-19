@@ -84,6 +84,13 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 	for g in line.glyphs {
 		gids << g.gid
 	}
+	// The marks are collected before any per-glyph work: a line with no
+	// marks has nothing to place, and every pass below answers the
+	// marks loop alone, so it returns with the line untouched.
+	mut marks := mark_indices_by_cluster(line.glyphs)
+	if marks.len == 0 {
+		return
+	}
 	// The chaining lookups for one font evaluated once, not once per mark:
 	// apply_contextual walks the whole run, so running it for every mark is
 	// quadratic in the mark count. Marks usually share one or two fonts, so
@@ -94,16 +101,28 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 	// the same map, answered once per glyph here instead of once per
 	// (mark, candidate) pair there (F2c). The search reads only the
 	// line's clusters, so hoisting it changes no answer: every stacked
-	// decision below reads the precomputed value.
+	// decision below reads the precomputed value. The base clusters are
+	// sorted once and each glyph binary-searches them, because walking
+	// the map per glyph is quadratic in the line length and a markless
+	// line never reaches here at all.
+	mut base_clusters := []int{cap: bases.len}
+	for cluster, _ in bases {
+		base_clusters << cluster
+	}
+	base_clusters.sort()
 	mut cand_base := []int{len: line.glyphs.len}
 	for k, c in line.glyphs {
-		mut tb := -1
-		for cluster, _ in bases {
-			if cluster <= c.cluster && cluster > tb {
-				tb = cluster
+		mut lo := 0
+		mut hi := base_clusters.len
+		for lo < hi {
+			mid := (lo + hi) >> 1
+			if base_clusters[mid] <= c.cluster {
+				lo = mid + 1
+			} else {
+				hi = mid
 			}
 		}
-		cand_base[k] = tb
+		cand_base[k] = if lo > 0 { base_clusters[lo - 1] } else { -1 }
 	}
 
 	// The marks are placed from the first cluster onwards, which is the order a stack has to be
@@ -111,7 +130,6 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 	// mark underneath has to be placed first; placing a fatha before the shadda it rides on would
 	// put the fatha at the shadda's position before the shadda had one, and the fatha
 	// would then be carried along when the shadda moved.
-	mut marks := mark_indices_by_cluster(line.glyphs)
 	// Plain mark-attachment lists ride the same per-font memo as the
 	// kern pass: mark_feature_lookups_for rebuilds them per mark
 	// otherwise, and a paragraph can carry hundreds of marks.
