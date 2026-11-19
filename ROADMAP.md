@@ -990,6 +990,20 @@ tables, decoded once at construction; the reorder path resolves each run
 against them instead of re-parsing the generator text per run per
 sequence. Same tables, same code, caller-decoded.
 
+**Phase 12 G5 — landed 2026-11-19.** ASCII fast path for bidi resolution
+(`shape/bidi.v`): a non-RTL paragraph over printable ASCII plus tab skips the
+UAX9 walk. L stays at level 0, W7 folds every EN into L at sos (ASCII names no
+R or AL), N0/N1/N2 over all-even surroundings leave every neutral at level 0,
+so L2 and X10 are both the identity and X9 removes nothing. An RTL base or any
+non-ASCII codepoint keeps the slow path. `resolve_paragraph` on 4096 ASCII
+characters went 3.2–3.9 ms to 0.17–0.27 ms (14–19x, `tools/bench_bidi.v`,
+interleaved best-of); neutering the gate collapses the ratio to 1.04x. Pinned
+by `bidi_test.v` (the fast path equals the slow path on a class-identical
+sequence, including the `sequences` fields the conformance file never checks,
+plus the `.auto`/`.rtl` split), with the 94k-line UAX9 file green, difftest
+0 new / 0 stale and the full suite green (one parallel-run tcc `dwrite.h`
+header fallback passed on serial repro).
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1054,6 +1068,7 @@ owns the queue.
 | 11.3 | Fast: shaping profiler (F1), fix what it finds (F2), allocation pass (F3) | F1 landed (opt-in per-stage profiler); F2/F2b/F2c landed (Indic table hoist, format-4 reverse, stacked cluster search); F3 landed (GPOS lookup-list hoisting, no behavior change) |
 | 12.1 | Rival parity: GSUB pre-filter (G1), mark-pass skip (G2) | landed (first-coverage run-set filter; markless early return + binary-searched cand_base) |
 | 12.2 | Rival parity: NFD ASCII path (G3), Context-decoded Indic tables (G4) | landed (identity mapping pre-scan; tables decode once per Context) |
+| 12.3 | Rival parity: ASCII bidi fast path (G5) | landed (14–19x on `resolve_paragraph`; gate-neuter control 1.04x) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
