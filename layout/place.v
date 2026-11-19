@@ -586,6 +586,16 @@ pub fn measure_vertical_line(mut line Line, em_px f64, options &LayoutOptions) {
 	line.line_height = if options.line_height > 0.0 { options.line_height } else { line.width }
 }
 
+// MeasuredBox is the part of a glyph's bitmap box that measure_line reads.
+// Keeping just these three fields, rather than a raster.GlyphBitmap, avoids a
+// layout -> raster import: the module boundary allows layout only shape, font
+// and ucd. is_empty is width/height <= 0 on the full bitmap.
+struct MeasuredBox {
+	empty  bool
+	top    int
+	height int
+}
+
 // measure_line fills in the line's width and vertical extent.
 //
 // A line can be drawn from more than one font, and the fonts need not agree on how tall they
@@ -604,12 +614,41 @@ pub fn measure_vertical_line(mut line Line, em_px f64, options &LayoutOptions) {
 // does propagate the mutation to the caller's `mut` local.
 pub fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {
 	mut natural := f64(0)
+	// One line is measured at one size, and a font's metrics cannot change during
+	// it. Glyph ids repeat far more often than they are distinct — a long Latin
+	// paragraph draws a few dozen — so the metric reads and the box lookup are
+	// done once per (font, gid) and reused. The memo lives in this call: nothing
+	// is cached across lines, so a caller changing size or variation coordinates
+	// cannot read a stale box. g.y is still read per glyph, because a mark rides
+	// its base at a different offset from the same box.
+	mut fonts := []&shape.Font{}
+	mut ascents := []f64{}
+	mut descents := []f64{}
+	mut line_heights := []f64{}
+	mut boxes := map[u32]MeasuredBox{}
+	mut last := -1
 	for g in line.glyphs {
 		line.width = larger(line.width, g.x + g.advance)
 		if f := g.font {
-			line.ascent = larger(line.ascent, f.ascent(em_px))
-			line.descent = larger(line.descent, f.descent(em_px))
-			natural = larger(natural, f.line_height(em_px))
+			if last < 0 || fonts[last] != f {
+				last = -1
+				for k, known in fonts {
+					if known == f {
+						last = k
+						break
+					}
+				}
+				if last < 0 {
+					fonts << f
+					ascents << f.ascent(em_px)
+					descents << f.descent(em_px)
+					line_heights << f.line_height(em_px)
+					last = fonts.len - 1
+				}
+			}
+			line.ascent = larger(line.ascent, ascents[last])
+			line.descent = larger(line.descent, descents[last])
+			natural = larger(natural, line_heights[last])
 			// The bitmap's top is how far the ink reaches ABOVE the baseline and its height is how
 			// tall the box is, so the box spans from `top` above the baseline down to
 			// `top - height` — which is below it exactly when the glyph has a descender.
@@ -622,10 +661,20 @@ pub fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {
 			//
 			// A glyph whose ink stops above the baseline gives a negative depth, which is harmless
 			// because the descent starts at zero and only ever grows.
-			bmp := f.face.box_only(g.gid, em_px)
-			if !bmp.is_empty() {
-				line.ascent = larger(line.ascent, g.y + f64(bmp.top))
-				line.descent = larger(line.descent, f64(bmp.height) - g.y - f64(bmp.top))
+			key := u32(last) << 16 | u32(g.gid)
+			boxed := boxes[key] or {
+				bmp := f.face.box_only(g.gid, em_px)
+				b := MeasuredBox{
+					empty:  bmp.is_empty()
+					top:    bmp.top
+					height: bmp.height
+				}
+				boxes[key] = b
+				b
+			}
+			if !boxed.empty {
+				line.ascent = larger(line.ascent, g.y + f64(boxed.top))
+				line.descent = larger(line.descent, f64(boxed.height) - g.y - f64(boxed.top))
 			}
 		}
 	}

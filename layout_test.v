@@ -1084,6 +1084,47 @@ fn test_place_glyphs_dense_matches_maps() {
 	assert_same_placement(merged, rtl, [0, 1, 1, 2, 3, 4], 4)
 }
 
+// measure_line memoizes font metrics and box_only per (font, gid), but a mark's
+// own y still has to be read per glyph. Pin the memo against a deliberately
+// unmemoized walk over the same run, with repeated gids and varied offsets.
+fn test_measure_line_memo_matches_per_glyph() {
+	f := shape.load_font_file('testdata/fonts/FiraCode-Variable.ttf') or { return }
+	mut glyphs := []shape.Glyph{cap: 300}
+	for i in 0 .. 300 {
+		glyphs << shape.Glyph{
+			gid:     u16(30 + i % 37)
+			advance: 8.0
+			x:       f64(i) * 8.0
+			y:       f64(i % 5) - 2.0
+			font:    f
+		}
+	}
+	mut got := layout.Line{ glyphs: glyphs }
+	layout.measure_line(mut got, 16.0, &layout.LayoutOptions{})
+
+	mut want_width := f64(0)
+	mut want_ascent := f64(0)
+	mut want_descent := f64(0)
+	mut natural := f64(0)
+	for g in glyphs {
+		want_width = layout.larger(want_width, g.x + g.advance)
+		if font_at := g.font {
+			want_ascent = layout.larger(want_ascent, font_at.ascent(16.0))
+			want_descent = layout.larger(want_descent, font_at.descent(16.0))
+			natural = layout.larger(natural, font_at.line_height(16.0))
+			bmp := font_at.face.box_only(g.gid, 16.0)
+			if !bmp.is_empty() {
+				want_ascent = layout.larger(want_ascent, g.y + f64(bmp.top))
+				want_descent = layout.larger(want_descent, f64(bmp.height) - g.y - f64(bmp.top))
+			}
+		}
+	}
+	assert got.width == want_width
+	assert got.ascent == want_ascent, 'memo ascent ${got.ascent} != ${want_ascent}'
+	assert got.descent == want_descent, 'memo descent ${got.descent} != ${want_descent}'
+	assert got.line_height == natural
+}
+
 // A Latin run after a decomposed character lays out left to right, not as if its first
 // character belonged to the run on its right.
 //
