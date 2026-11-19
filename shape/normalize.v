@@ -183,6 +183,25 @@ pub fn (n &Normalizer) nfd(cps []rune) []rune {
 // index it had, which is the whole point: the text the user wrote is the text a mark is reported
 // against, however many combining characters the font draws it with.
 pub fn (n &Normalizer) nfd_mapped(cps []rune) ([]rune, []int) {
+	// The ASCII path: every character below 128 is a starter in
+	// canonical order with nothing to decompose, so the text maps to
+	// itself. One scan of plain comparisons replaces the two table
+	// lookups per character the quick check below performs, and the
+	// non-ASCII bail breaks on the first character.
+	mut ascii := true
+	for cp in cps {
+		if cp >= 128 {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		mut same := []int{len: cps.len}
+		for i in 0 .. cps.len {
+			same[i] = i
+		}
+		return cps.clone(), same
+	}
 	// The quick path, where nothing is decomposed and nothing is reordered, maps every character to
 	// itself and costs one array.
 	if n.is_normalized_nfd(cps) && !n.marks_out_of_order(cps) {
