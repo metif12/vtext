@@ -1004,6 +1004,18 @@ plus the `.auto`/`.rtl` split), with the 94k-line UAX9 file green, difftest
 0 new / 0 stale and the full suite green (one parallel-run tcc `dwrite.h`
 header fallback passed on serial repro).
 
+**Phase 12 G6 — landed 2026-11-19.** Dense arrays in `place_glyphs`
+(`layout/place.v`): the two hash maps keyed by cluster and origin become
+indexable arrays when every key is a small non-negative int, the normal case
+since both index the caller's text. Negative or far-out keys keep the map
+walk; merged clusters and repeated origins behave the same. `place_glyphs` on
+1024 glyphs went 1.66 ms to 0.87 ms (1.7–2.2x, `tools/bench_place.v`,
+interleaved best-of with the map path forced by one negative cluster). Pinned
+by `layout_test.v` (dense equals the map walk across plain, merged, RTL and
+invisible-character inputs) with a neutered-dense break-fix; full suite and
+difftest 0/0 green on CI, where the pinned runners do not carry the 39–44
+foreign V builds that made the local compiler run out of memory.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1069,6 +1081,7 @@ owns the queue.
 | 12.1 | Rival parity: GSUB pre-filter (G1), mark-pass skip (G2) | landed (first-coverage run-set filter; markless early return + binary-searched cand_base) |
 | 12.2 | Rival parity: NFD ASCII path (G3), Context-decoded Indic tables (G4) | landed (identity mapping pre-scan; tables decode once per Context) |
 | 12.3 | Rival parity: ASCII bidi fast path (G5) | landed (14–19x on `resolve_paragraph`; gate-neuter control 1.04x) |
+| 12.4 | Rival parity: dense placement arrays (G6) | landed (1.7–2.2x on `place_glyphs`; dense==map pinned across plain/merged/RTL inputs) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
