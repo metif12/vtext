@@ -824,18 +824,16 @@ fn (c &Cmap) lookup_format4(cp u32) ?u16 {
 }
 
 // glyph_index_for maps cp through the first subtable that has an opinion.
+// A second scan used to run when no subtable gave a non-zero glyph, but every
+// opinion was then either none or an explicit zero (.notdef), so that scan
+// could only return the zero the fallthrough already gives. lookup_glyph is a
+// pure read of immutable cmap tables, so the two passes cannot disagree.
 pub fn glyph_index_for(cmaps []Cmap, cp u32) u16 {
 	for c in cmaps {
 		if g := c.lookup_glyph(cp) {
 			if g != 0 {
 				return g
 			}
-		}
-	}
-	// Explicitly-zero glyphs mean the font really does map cp to .notdef.
-	for c in cmaps {
-		if g := c.lookup_glyph(cp) {
-			return g
 		}
 	}
 	return 0
