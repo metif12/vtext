@@ -1056,6 +1056,23 @@ gid the original run did not hold. FiraCode's `calt` carries 103 chain lookups
 7.3–8.8 ms enabled (~1.9–2.3x on the GSUB call). GSUB, class, calt/liga and
 joining suites green locally; full suite and difftest 0/0 green on CI.
 
+**Phase 12 G10 — landed 2026-11-20.** Read the precomputed mark base cluster
+(`layout/marks.v`): F2c built `cand_base` once per glyph for the stacked-candidate
+question, but each mark still walked the whole `bases` hash map to find its own
+base — about 300 marks times 700 clusters on a long marked line. `cand_base[i]`
+is the same answer from the same keys with the same `<=` predicate, and the loop
+never writes a cluster, so the snapshot stays valid. An interleaved
+single-process A/B (`tools/bench_markbase.v`) measured 836 us to 16 us on the
+search itself (53x, with per-mark equality asserted); layout, gpos_mkm and
+commonbase suites green locally, full suite and difftest 0/0 green on CI.
+
+Scoped but not yet measured (a loaded host gave unusable absolutes): a `tested`
+set in `first_coverage_hits` so each distinct gid's negative result is queried
+once instead of once per occurrence, and a per-layout memo around
+`FontSet.shaped_glyphs` keyed by form/base cp, form, mark flag, script and
+selectors. Both are pure-function memos; each needs an interleaved A/B on a
+quiet box before landing.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1125,6 +1142,7 @@ owns the queue.
 | 12.5 | Rival parity: per-line measurement memo (G7) | landed (10.7x on `measure_line`; memo==per-glyph pinned across repeated gids and mark offsets) |
 | 12.6 | Rival parity: ASCII joining fast path (G8) | landed (4.7–5.7x on `shape_arabic`; fast==full walk pinned across printable ASCII) |
 | 12.7 | Rival parity: per-lookup GSUB hit set (G9) | landed (1.9–2.3x on `substitute_glyphs`; filter toggle pinned, calt has 103 lookups) |
+| 12.8 | Rival parity: precomputed mark base cluster (G10) | landed (53x on the mark base search; cand_base==map walk asserted per mark) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
