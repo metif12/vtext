@@ -1124,8 +1124,25 @@ helpers now take the dense table as a parameter (all callers are in-file).
 joining, joining_gsub, bengali, indic, seasian and layout suites green locally;
 full suite and difftest 0/0 green on CI.
 
-All scouted Phase 12 candidates have now been measured: eleven landed, one
-rejected (the GSUB gate fold above).
+**Phase 12 G14 — landed 2026-11-20.** Drop the dead second pass in
+`glyph_index_for` (`font/cmap.v`): the function scanned every cmap subtable
+twice. Pass 1 returned the first non-zero opinion; if it found none, pass 2
+returned the first non-none opinion, which can only be an explicit zero
+(.notdef) — exactly what the trailing `return 0` already gives. `lookup_glyph`
+is a pure read of immutable tables, so the two passes cannot disagree; this is
+dead-code elimination, not a heuristic. An interleaved single-process A/B
+(two-pass vs one-pass in one binary, all 2048 mixed hit/miss cps asserted equal
+across both fonts before timing) measured 1.67–1.78x on Amiri and 1.90–1.91x on
+FiraCode for the lookup itself. cmap, cmap_reverse, cmap_vs, font and glyph
+suites green locally; full suite and difftest 0/0 green on CI.
+
+A third scout wave scoped three more candidates, still unmeasured: port G6's
+dense arrays to `place_glyphs_vertical` (~1.3–2x on the vertical placement
+subspan, needs a vhea/vmtx CJK font); index `ChainMemo.apps` by `at` so
+`mark_chain_offset` stops scanning every application per mark (~1.05–1.2x on
+the mark pass for chain-heavy scripts); and hoist the bracket table out of
+`apply_n0`'s per-sequence calls (mixed-RTL only). The first two are the higher
+value; each needs an interleaved A/B before landing.
 
 ## Corpus register
 
@@ -1200,6 +1217,7 @@ owns the queue.
 | 12.9 | Rival parity: query each first-coverage gid once (G11) | landed (1.40–1.42x on GSUB, interleaved single-process A/B; binary coverage_has) |
 | 12.10 | Rival parity: per-layout shaped_glyphs memo (G12) | landed (1.05–1.14x on `.segment`; direct-mapped, full Line equality asserted) |
 | 12.11 | Rival parity: dense per-run JoiningType (G13) | landed (1.05–1.11x on `shape_arabic`; full ShapedRun equality asserted) |
+| 12.12 | Rival parity: drop dead cmap second pass (G14) | landed (1.67–1.91x on `glyph_index_for`; 2048 cps equality asserted) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
