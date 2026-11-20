@@ -1168,9 +1168,46 @@ no regression where there is nothing to hoist. bidi, layout, linebreak,
 script_lang and profiler suites green locally; full suite and difftest 0/0
 green on CI.
 
-Every third-wave candidate has now been measured. AAT `morx`, Graphite, WOFF2,
-the full TrueType interpreter, CFF2 and Tibetan stacking remain gated on a
-carrier font or a CI reference engine, not on performance.
+**Phase 12 G17 — landed 2026-11-20.** ASCII fast path for grapheme clustering
+(`layout/graphemes.v`): `grapheme_breaks` spent about four UCD binary searches
+per character on all-ASCII input, and none of GB9/GB9a/GB9b/GB9c/GB10/GB11/GB12
+can fire there — ASCII has no Extend, ZWJ, SpacingMark, Hangul or Regional
+Indicator. A strict `cp <= 0x7f` gate now answers true at every boundary except
+CRLF (GB3, the only no-break pair), and `skip_gb9` is inert. Non-ASCII falls
+through to the unchanged full walk. An interleaved single-process A/B on 4147
+ASCII codepoints with real CRLFs (full output equality asserted for both
+`GraphemeOpts` values and for a non-ASCII fallback case) measured 26.4x, 29.0x
+and 27.8x on the function itself. grapheme, logattr, wordbreak, linebreak and
+layout suites green locally; full suite and difftest 0/0 green on CI.
+
+**Phase 12 G18 — landed 2026-11-20.** Separable max filter for
+`embolden_bitmap` (`raster/synth.v`). The dilation window is the asymmetric
+rectangle `[x-2r, x] x [y-2r, y]`, and max is associative and idempotent, so a
+horizontal max over each source row followed by a vertical max over each column
+is byte-identical at `2(2r+1)` neighbour visits instead of `(2r+1)^2`;
+out-of-range neighbours stay skipped. An interleaved single-process A/B over 15
+real glyph bitmaps x 5 strengths (every coverage byte and box field asserted
+equal before timing, plus empty and coverageless edge cases) measured 3.17x,
+3.05x and 2.52x on the embolden pass. synth, raster_color and stbtt suites green
+locally; full suite and difftest 0/0 green on CI.
+
+**Phase 12 G19 — landed 2026-11-20.** Direct hmtx metric writes (`font/face.v`).
+`read_hmtx` filled a third `Face.glyphs` array and copied each advance and lsb
+out of it; nothing outside that function ever read the array. The two live
+arrays are now written straight from the table, leaving `glyphs` declared but
+empty for source compatibility. Truncation, tail-advance reuse and LSB defaults
+are unchanged. An interleaved single-process A/B over five corpus fonts
+(advances, lsbs, glyph count and units_per_em asserted equal before timing)
+measured 1.03x, 1.08x and 1.08x on whole-face load. font, cmap, glyph and
+font_varcomp suites green locally; full suite and difftest 0/0 green on CI.
+
+A fourth scout wave covered rasterization, cold font loading and the
+segmentation utilities; all three of its candidates (G17–G19) are now landed.
+Of its runner-ups, oblique ink-bbox folding and the linebreak raw-class table
+remain scoped but unmeasured; skipping WOFF checksum passes was rejected as
+behavior-changing. AAT `morx`, Graphite, WOFF2, the full TrueType interpreter,
+CFF2 and Tibetan stacking remain gated on a carrier font or a CI reference
+engine, not on performance.
 
 ## Corpus register
 
@@ -1248,6 +1285,9 @@ owns the queue.
 | 12.12 | Rival parity: drop dead cmap second pass (G14) | landed (1.67–1.91x on `glyph_index_for`; 2048 cps equality asserted) |
 | 12.13 | Rival parity: dense vertical placement (G15) | landed (1.95–2.09x on `.place`; full Line equality asserted) |
 | 12.14 | Rival parity: bracket table once per paragraph (G16) | landed (2.55–2.68x on `resolve_paragraph`; single-sequence control ~1.00x) |
+| 12.15 | Rival parity: ASCII grapheme fast path (G17) | landed (26–29x on `grapheme_breaks`; full equality pinned for both opts + fallback) |
+| 12.16 | Rival parity: separable embolden max filter (G18) | landed (2.52–3.17x on the embolden pass; byte-for-byte coverage equality) |
+| 12.17 | Rival parity: direct hmtx metric writes (G19) | landed (1.03–1.08x on whole-face load; metrics equality pinned across 5 fonts) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
