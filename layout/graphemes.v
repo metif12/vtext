@@ -24,6 +24,26 @@ pub:
 // grapheme_breaks returns one decision per boundary: index i is the break
 // before cps[i], and index cps.len is the break at the end of the text.
 pub fn grapheme_breaks(ctx &shape.Context, cps []rune, opt GraphemeOpts) []bool {
+	// On ASCII the only non-other grapheme classes are CR, LF and Control, so
+	// GB3 (CR x LF) is the only no-break boundary and skip_gb9 is inert: there
+	// are no Extend or ZWJ characters to hold. The full walk below would spend
+	// four UCD binary searches per character answering exactly that table.
+	mut all_ascii := true
+	for cp in cps {
+		if cp > 0x7f {
+			all_ascii = false
+			break
+		}
+	}
+	if all_ascii {
+		mut fast := []bool{len: cps.len + 1, init: true}
+		for i in 1 .. cps.len {
+			if cps[i - 1] == 0x0d && cps[i] == 0x0a {
+				fast[i] = false
+			}
+		}
+		return fast
+	}
 	props := ctx.properties
 	mut cls := []ucd.GraphemeClass{len: cps.len}
 	for i, cp in cps {
