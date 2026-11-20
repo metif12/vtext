@@ -1136,13 +1136,23 @@ across both fonts before timing) measured 1.67–1.78x on Amiri and 1.90–1.91x
 FiraCode for the lookup itself. cmap, cmap_reverse, cmap_vs, font and glyph
 suites green locally; full suite and difftest 0/0 green on CI.
 
-A third scout wave scoped three more candidates, still unmeasured: port G6's
-dense arrays to `place_glyphs_vertical` (~1.3–2x on the vertical placement
-subspan, needs a vhea/vmtx CJK font); index `ChainMemo.apps` by `at` so
+**Phase 12 G15 — landed 2026-11-20.** Dense arrays for vertical placement
+(`layout/place.v`): `place_glyphs_vertical` still used two hash maps
+(`by_cluster`, `drawn`) and asked `glyph_advance` twice per glyph, while the
+horizontal path had moved to dense arrays in G6. It now has the same guarded
+dense path — the same `max_idx` bound and map fallback for negative or far-out
+clusters — with one advance per glyph reused for centering. Merged clusters
+still hold a list and a repeated origin is still drawn once. An interleaved
+single-process A/B on a 1024-glyph vertical CJK line (full `Line` equality
+asserted across every field before timing) measured 151 us to 73 us (2.09x) and
+151 us to 77 us (1.95x) on the `.place` stage. layout, vertical, bidi, indic
+and cjkbreak suites green locally; full suite and difftest 0/0 green on CI.
+
+Two third-wave candidates remain unmeasured: index `ChainMemo.apps` by `at` so
 `mark_chain_offset` stops scanning every application per mark (~1.05–1.2x on
-the mark pass for chain-heavy scripts); and hoist the bracket table out of
-`apply_n0`'s per-sequence calls (mixed-RTL only). The first two are the higher
-value; each needs an interleaved A/B before landing.
+the mark pass for chain-heavy scripts, ~1.00x where no contextual apps apply);
+and hoist the bracket table out of `apply_n0`'s per-sequence calls (mixed-RTL
+only). Both need an interleaved A/B before landing.
 
 ## Corpus register
 
@@ -1218,6 +1228,7 @@ owns the queue.
 | 12.10 | Rival parity: per-layout shaped_glyphs memo (G12) | landed (1.05–1.14x on `.segment`; direct-mapped, full Line equality asserted) |
 | 12.11 | Rival parity: dense per-run JoiningType (G13) | landed (1.05–1.11x on `shape_arabic`; full ShapedRun equality asserted) |
 | 12.12 | Rival parity: drop dead cmap second pass (G14) | landed (1.67–1.91x on `glyph_index_for`; 2048 cps equality asserted) |
+| 12.13 | Rival parity: dense vertical placement (G15) | landed (1.95–2.09x on `.place`; full Line equality asserted) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
