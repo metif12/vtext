@@ -173,6 +173,15 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 		return out
 	}
 
+	// Joining type is asked roughly four times per character in the walk below,
+	// and every answer is a binary search over the UCD range table. Ask it once
+	// per character here and carry a dense per-run table through the walk: the
+	// other questions become array reads. Pure lookup, so the answers are exact.
+	mut types := []ucd.JoiningType{len: cps.len}
+	for i, cp in cps {
+		types[i] = p.joining_type_of(cp)
+	}
+
 	// The decision for a letter needs the nearest non-transparent letter on each side,
 	// since combining marks are transparent for joining: they attach to the letter they
 	// follow without coming between it and the next letter.
@@ -181,19 +190,19 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 	// both have to be seen by the scan.
 	mut join_prev := []bool{len: cps.len, init: false}
 	mut join_next := []bool{len: cps.len, init: false}
-	compute_joins(p, cps, mut join_prev, mut join_next)
+	compute_joins(cps, mut join_prev, mut join_next, types)
 
 	mut i := 0
 	for i < cps.len {
 		cp := cps[i]
-		jt := p.joining_type_of(cp)
+		jt := types[i]
 		// A lam followed by an alef is one glyph, not two.
 		//
 		// The ligature's shape comes from the join on the lam's own left, which is the
 		// only side the pair can connect on: the alef is right joining, so it takes no
 		// join of its own and the pair is never medial. That is why the form is asked
 		// for from the lam's join alone rather than from a pair of them.
-		if cp == 0x0644 && i + 1 < cps.len && p.joining_type_of(cps[i + 1]) == .r {
+		if cp == 0x0644 && i + 1 < cps.len && types[i + 1] == .r {
 			form := if join_prev[i] { font.JoiningForm.final } else { font.JoiningForm.isolated }
 			glyph := s.find_ligature(0x0644, u32(cps[i + 1]), u16(form))
 			if glyph != 0 {
@@ -215,7 +224,7 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 					end:    i + 2
 				}
 				mut out_ref := &out
-				i = attach_marks(p, cps, i + 2, mut out_ref)
+				i = attach_marks(p, cps, i + 2, mut out_ref, types)
 				continue
 			}
 		}
@@ -272,7 +281,7 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 				is_mark: p.combining_class_of(cp) != 0
 			}
 			mut out_ref := &out
-			i = attach_marks(p, cps, i + 1, mut out_ref)
+			i = attach_marks(p, cps, i + 1, mut out_ref, types)
 			continue
 		}
 
@@ -289,7 +298,7 @@ pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 			end:    i + 1
 		}
 		mut out_ref := &out
-		i = attach_marks(p, cps, i + 1, mut out_ref)
+		i = attach_marks(p, cps, i + 1, mut out_ref, types)
 	}
 	return out
 }
@@ -315,13 +324,13 @@ fn is_indic_pre_base_matra(cp rune) bool {
 // codepoint, so a mark folded into it would be lost at the font lookup and never drawn.
 // The mark still costs no advance and still sits where the letter is, so the layout pass
 // places it from is_mark.
-pub fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun) int {
+pub fn attach_marks(p &ucd.Properties, cps []rune, from int, mut out &ShapedRun, types []ucd.JoiningType) int {
 	mut i := from
 	mut selectors := []rune{}
 	for i < cps.len {
 		// Transparent is the joining type that covers a mark, and it is what decided
 		// where the letter's run of characters stopped, so the two agree on the boundary.
-		if !p.joining_type_of(cps[i]).is_transparent() {
+		if !types[i].is_transparent() {
 			break
 		}
 		// A variation selector belongs to the character in front of it and is not drawn at all, so
@@ -398,14 +407,14 @@ pub fn form_for(join_prev bool, join_next bool) font.JoiningForm {
 
 // compute_joins fills in whether each character connects to the one before it and to the
 // one after it.
-pub fn compute_joins(p &ucd.Properties, cps []rune, mut join_prev []bool, mut join_next []bool) {
+pub fn compute_joins(cps []rune, mut join_prev []bool, mut join_next []bool, types []ucd.JoiningType) {
 	// The previous non-transparent index for each position, so a mark does not hide the
 	// letter in front of it.
 	mut prev_letter := []int{len: cps.len, init: -1}
 	mut last := -1
 	for i in 0 .. cps.len {
 		prev_letter[i] = last
-		if !p.joining_type_of(cps[i]).is_transparent() {
+		if !types[i].is_transparent() {
 			last = i
 		}
 	}
@@ -418,33 +427,33 @@ pub fn compute_joins(p &ucd.Properties, cps []rune, mut join_prev []bool, mut jo
 		// two letters it sits between are looked up and the control decides for them.
 		if cp == zero_width_joiner || cp == zero_width_non_joiner {
 			before := prev_letter[i]
-			after := next_letter(p, cps, i)
+			after := next_letter(cps, i, types)
 			if before >= 0 && after >= 0 {
 				// A control only ever has marks between it and the letters on either
 				// side, because prev_letter and next_letter both skip transparents.
-				connect(p, cps, before, after, mut join_prev, mut join_next)
+				connect(cps, before, after, mut join_prev, mut join_next, types)
 			}
 			continue
 		}
 
 		before := prev_letter[i]
 		if before >= 0 {
-			connect(p, cps, before, i, mut join_prev, mut join_next)
+			connect(cps, before, i, mut join_prev, mut join_next, types)
 		}
-		after := next_letter(p, cps, i)
+		after := next_letter(cps, i, types)
 		if after >= 0 {
-			connect(p, cps, i, after, mut join_prev, mut join_next)
+			connect(cps, i, after, mut join_prev, mut join_next, types)
 		}
 	}
 }
 
 // connect decides the join between two letters that face each other. The two may have
 // controls between them, and a control there overrides what the letters would do.
-pub fn connect(p &ucd.Properties, cps []rune, left int, right int, mut join_prev []bool, mut join_next []bool) {
+pub fn connect(cps []rune, left int, right int, mut join_prev []bool, mut join_next []bool, types []ucd.JoiningType) {
 	// The letters have to face each other: a right joining letter connects only to what
 	// comes before it, and a left joining letter only to what comes after.
-	mut allowed := p.joining_type_of(cps[left]).joins_to_next()
-		&& p.joining_type_of(cps[right]).joins_to_previous()
+	mut allowed := types[left].joins_to_next()
+		&& types[right].joins_to_previous()
 
 	// A control between the two overrides what the letters would do. A non-joiner wins
 	// over a joiner, so a pair of them in either order leaves the letters apart.
@@ -465,9 +474,9 @@ pub fn connect(p &ucd.Properties, cps []rune, left int, right int, mut join_prev
 }
 
 // next_letter returns the index of the nearest non-transparent character after i.
-pub fn next_letter(p &ucd.Properties, cps []rune, i int) int {
+pub fn next_letter(cps []rune, i int, types []ucd.JoiningType) int {
 	for k in i + 1 .. cps.len {
-		if !p.joining_type_of(cps[k]).is_transparent() {
+		if !types[k].is_transparent() {
 			return k
 		}
 	}
