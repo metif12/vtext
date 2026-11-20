@@ -1098,13 +1098,23 @@ and 968 us to 919 us (1.05x) on the `.segment` stage, with the full `Line`
 before any numbers were taken. joining, commonbase, gpos_mkm, indic, layout and
 profiler suites green locally; full suite and difftest 0/0 green on CI.
 
-The three earlier scouts' main candidates are now all measured and either
-landed or rejected. A later scout named two runner-ups that remain unmeasured:
-folding the per-lookup `lookup_touches_run` gate into `first_coverage_hits`
-(`substitute_forms` would drop one 8 KB memset and mark loop per lookup), and
-a dense per-run `JoiningType` array in `shape_arabic`. Both need an interleaved
-A/B — the gate candidate in particular must be timed on a miss-heavy input,
-where its binary-search-per-gid could lose to the old span check.
+**Rejected 2026-11-20:** folding the per-lookup `lookup_touches_run` gate into
+`first_coverage_hits`. The idea was to have the coverage walk also return
+`any_hit`, dropping the 8 KB memset, the mark loop and the gate check per
+lookup. An interleaved single-process A/B (identical substituted runs asserted
+before timing) showed 1.02–1.10x on a hit-heavy Latin `calt` run but **0.27–0.36x
+on a miss-heavy run** — the new path was 2.8–3.7x slower. The cause is real: on
+a miss, `first_coverage_hits` does one binary search per distinct gid, while
+`lookup_touches_run.touches` answers the same question with a handful of bitset
+span checks. The change was reverted; do not retry it without fixing that
+asymmetry first.
+
+The one remaining unmeasured runner-up is a dense per-run `JoiningType` array
+in `shape_arabic`: precompute one `ucd.JoiningType` per position and replace the
+~6–8 `joining_type_of` binary searches per character across `compute_joins`,
+the main loop and `attach_marks` with O(1) reads. It is a pure-function memo, so
+behavior-preserving, but `joining_type_of` is a small range table and joining
+is not dominant on the slow script rows, so the expected gain is modest.
 
 ## Corpus register
 
