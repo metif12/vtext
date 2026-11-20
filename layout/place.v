@@ -494,6 +494,92 @@ fn place_glyphs_maps(placed []shape.Glyph, bidi shape.BidiResult, origin []int) 
 // line reorders the same way a horizontal one does — direction still runs
 // along the line, and the line now runs down.
 pub fn place_glyphs_vertical(placed []shape.Glyph, bidi shape.BidiResult, origin []int, em_px f64) []shape.Glyph {
+	// Clusters and origin values are original-text indices, so the normal case
+	// is small non-negative ints and two dense arrays replace the two maps.
+	// Out-of-range keys keep the general map path, as in the horizontal pass.
+	mut max_idx := 0
+	for g in placed {
+		if g.cluster < 0 {
+			return place_glyphs_vertical_maps(placed, bidi, origin, em_px)
+		}
+		if g.cluster > max_idx {
+			max_idx = g.cluster
+		}
+	}
+	for v in bidi.visual_order {
+		orig := if v < origin.len { origin[v] } else { v }
+		if orig < 0 {
+			return place_glyphs_vertical_maps(placed, bidi, origin, em_px)
+		}
+		if orig > max_idx {
+			max_idx = orig
+		}
+	}
+	if max_idx > 4 * placed.len + 256 {
+		return place_glyphs_vertical_maps(placed, bidi, origin, em_px)
+	}
+	return place_glyphs_vertical_dense(placed, bidi, origin, em_px, max_idx + 1)
+}
+
+// place_glyphs_vertical_dense is the map walk with array slots in place of the
+// two maps, and one glyph_advance per glyph instead of two. Every key was
+// checked in range by the caller, so an index here cannot miss or go out of
+// bounds. Merged clusters still hold a list and a repeated origin is still
+// drawn once, exactly as in the map version.
+fn place_glyphs_vertical_dense(placed []shape.Glyph, bidi shape.BidiResult, origin []int, em_px f64, slots int) []shape.Glyph {
+	mut width := f64(0)
+	mut advances := []f64{len: placed.len, init: 0.0}
+	for i, g in placed {
+		if g.is_mark {
+			continue
+		}
+		if f := g.font {
+			advances[i] = f.glyph_advance(g.gid, em_px)
+			width = larger(width, advances[i])
+		}
+	}
+	mut out := []shape.Glyph{cap: placed.len}
+	mut by_cluster := [][]int{len: slots}
+	for i, g in placed {
+		by_cluster[g.cluster] << i
+	}
+	mut y := f64(0)
+	mut drawn := []bool{len: slots, init: false}
+	for v in bidi.visual_order {
+		if !bidi.visible[v] {
+			continue
+		}
+		orig := if v < origin.len { origin[v] } else { v }
+		if drawn[orig] {
+			continue
+		}
+		drawn[orig] = true
+		for i in by_cluster[orig] {
+			mut g := placed[i]
+			sx := g.x
+			sy := g.y
+			g.x = 0
+			g.y = y
+			if !g.is_mark {
+				if f := g.font {
+					g.x = sx + (width - advances[i]) / 2.0
+					if f.has_vertical_metrics() {
+						g.y = y + sy - f.vertical_origin_y(g.gid, em_px)
+					} else {
+						g.y = y + sy
+					}
+				}
+			}
+			out << g
+			y += g.advance
+		}
+	}
+	return out
+}
+
+// place_glyphs_vertical_maps is the general form: hash maps make no assumption
+// about how large or how negative a cluster is.
+fn place_glyphs_vertical_maps(placed []shape.Glyph, bidi shape.BidiResult, origin []int, em_px f64) []shape.Glyph {
 	// The column is as wide as its widest advance box, the same width the
 	// measure pass reports, and centering is against it: a full-width glyph
 	// lands at 0 and a narrower one lands mid-column. It is read before
