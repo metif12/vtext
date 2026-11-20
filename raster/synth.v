@@ -78,6 +78,13 @@ pub fn apply_synth(src GlyphBitmap, opt SynthOptions) GlyphBitmap {
 // copies FreeType ORs. The box grows by the radius on every side, the way the
 // FreeType outline embolden pushes every edge outward. Strength at or below
 // zero, an empty bitmap, or a coverageless box answers src unchanged.
+//
+// The window is [x-2r, x] x [y-2r, y] — asymmetric, because the old radius
+// arithmetic reached back two radii and stopped at the pixel. Max is
+// associative and idempotent, so the square filter is separable: a horizontal
+// max over each source row followed by a vertical max over the result gives
+// byte-identical coverage for a fraction of the neighbour visits. Out-of-range
+// neighbours are skipped (zero is the identity for max), exactly as before.
 pub fn embolden_bitmap(src GlyphBitmap, strength_px f64) GlyphBitmap {
 	if src.is_empty() || strength_px <= 0 {
 		return src
@@ -93,6 +100,27 @@ pub fn embolden_bitmap(src GlyphBitmap, strength_px f64) GlyphBitmap {
 	h2 := src.height + 2 * r
 	mut out := []u8{len: w2 * h2}
 	side := 2 * r + 1
+
+	// Horizontal max over [x-2r, x] for each source row.
+	mut tmp := []u8{len: w2 * src.height}
+	for sy in 0 .. src.height {
+		row := sy * src.width
+		for x in 0 .. w2 {
+			mut m := u8(0)
+			for wx in 0 .. side {
+				sx := x - r + wx - r
+				if sx < 0 || sx >= src.width {
+					continue
+				}
+				v := src.coverage[row + sx]
+				if v > m {
+					m = v
+				}
+			}
+			tmp[sy * w2 + x] = m
+		}
+	}
+	// Vertical max over [y-2r, y] for each column of that result.
 	for y in 0 .. h2 {
 		for x in 0 .. w2 {
 			mut m := u8(0)
@@ -101,15 +129,9 @@ pub fn embolden_bitmap(src GlyphBitmap, strength_px f64) GlyphBitmap {
 				if sy < 0 || sy >= src.height {
 					continue
 				}
-				for wx in 0 .. side {
-					sx := x - r + wx - r
-					if sx < 0 || sx >= src.width {
-						continue
-					}
-					v := src.coverage[sy * src.width + sx]
-					if v > m {
-						m = v
-					}
+				v := tmp[sy * w2 + x]
+				if v > m {
+					m = v
 				}
 			}
 			out[y * w2 + x] = m
