@@ -290,6 +290,10 @@ fn layout_paragraph_inner(ctx &shape.Context, cps []rune, base_dir shape.Directi
 	// result is in logical order still, tagged with the input character each glyph came
 	// from, because that tag is the only thing that survives reordering.
 	mut placed := []shape.Glyph{cap: decomposed.len}
+	// Glyph lookup is a pure cmap/UCD read, and a line repeats the same letters
+	// and forms many times. Keep one memo for this layout call: it dies with the
+	// call, so a different FontSet or em size cannot read a stale entry.
+	mut glyph_memo := []ShapedGlyphMemoEntry{len: glyph_memo_slots}
 	for seq in bidi.sequences {
 		// The bidi pass takes X9-shape.removed characters out of its sequences, and a zero
 		// width non-joiner is one of them — its bidi class is BN. But joining has to
@@ -350,7 +354,7 @@ fn layout_paragraph_inner(ctx &shape.Context, cps []rune, base_dir shape.Directi
 			// lam-alef in a font with no ligature form. Each of those glyphs is tagged with
 			// the input character it stands for, so the two are traced back to the lam and
 			// the alef separately.
-			for j, mut out in fs.shaped_glyphs(ctx, g, em_px) {
+			for j, mut out in shaped_glyphs_for(mut glyph_memo, fs, ctx, g, em_px) {
 				// The cluster is an index into the caller's text, not into the decomposed one. Going
 				// through the decomposition's own mapping is what makes a mark report the character
 				// it was written after rather than whichever character canonical ordering happened
