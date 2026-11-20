@@ -16,8 +16,11 @@ pub mut:
 	gsub ?&Gsub
 	// gpos is the font's positioning table and gdef its glyph definition table, when it has
 	// them. Together they say where a mark goes on the letter it belongs to.
-	gpos         ?&Gpos
-	gdef         ?&Gdef
+	gpos ?&Gpos
+	gdef ?&Gdef
+	// glyphs is retained for source compatibility but is no longer populated:
+	// read_hmtx writes advances and lsbs directly, which is where every metric
+	// accessor reads. Use those two arrays instead.
 	glyphs       []GlyphMetrics
 	units_per_em int
 	num_glyphs   int
@@ -180,6 +183,11 @@ pub fn (mut f Face) read_hhea_maxp() {
 	}
 }
 
+// read_hmtx reads the horizontal metrics into advances and lsbs. It used to
+// fill a third `glyphs` array first and copy each field out of it; that array
+// was never read outside this function, so the values are written straight to
+// the two live arrays now — one fewer allocation and two fewer copies per glyph.
+// The truncation, tail-advance and LSB-default rules are unchanged.
 pub fn (mut f Face) read_hmtx() {
 	hhea := f.sfnt.record(tag_hhea) or { return }
 	hmtx := f.sfnt.record(tag_hmtx) or { return }
@@ -191,7 +199,6 @@ pub fn (mut f Face) read_hmtx() {
 	if f.num_glyphs <= 0 {
 		f.num_glyphs = num_h
 	}
-	f.glyphs = []GlyphMetrics{len: f.num_glyphs}
 	f.advances = []u16{len: f.num_glyphs}
 	f.lsbs = []i16{len: f.num_glyphs}
 	mut last_advance := u16(0)
@@ -202,20 +209,14 @@ pub fn (mut f Face) read_hmtx() {
 				break
 			}
 			last_advance = r.u16_at(off)
-			f.glyphs[i] = GlyphMetrics{
-				advance: last_advance
-				lsb:     r.i16_at(off + 2)
-			}
+			f.advances[i] = last_advance
+			f.lsbs[i] = r.i16_at(off + 2)
 		} else {
 			// Monospaced tail: the advance repeats, lsb is a separate array.
 			off := hmtx.offset + num_h * 4 + (i - num_h) * 2
-			f.glyphs[i] = GlyphMetrics{
-				advance: last_advance
-				lsb:     if r.has(off, 2) { r.i16_at(off) } else { 0 }
-			}
+			f.advances[i] = last_advance
+			f.lsbs[i] = if r.has(off, 2) { r.i16_at(off) } else { 0 }
 		}
-		f.advances[i] = f.glyphs[i].advance
-		f.lsbs[i] = f.glyphs[i].lsb
 	}
 }
 
