@@ -1109,12 +1109,23 @@ a miss, `first_coverage_hits` does one binary search per distinct gid, while
 span checks. The change was reverted; do not retry it without fixing that
 asymmetry first.
 
-The one remaining unmeasured runner-up is a dense per-run `JoiningType` array
-in `shape_arabic`: precompute one `ucd.JoiningType` per position and replace the
-~6–8 `joining_type_of` binary searches per character across `compute_joins`,
-the main loop and `attach_marks` with O(1) reads. It is a pure-function memo, so
-behavior-preserving, but `joining_type_of` is a small range table and joining
-is not dominant on the slow script rows, so the expected gain is modest.
+**Phase 12 G13 — landed 2026-11-20.** Dense per-run `JoiningType` table
+(`shape/joining.v`): `shape_arabic` asked `joining_type_of` roughly four times
+per character, each a binary search over the UCD range table. It now asks once
+per character and threads a dense `[]ucd.JoiningType` through `compute_joins`,
+`connect`, `next_letter` and `attach_marks`, so the remaining questions are
+array reads. The value is a pure lookup, so the answers are exact — a full
+`ShapedRun` equality gate ran before either arm was timed. An isolated
+microbench of the lookup mechanism alone measured 118x, but the one-time
+precompute and the rest of `shape_arabic` absorb most of it: the interleaved
+single-process A/B on a 768-glyph Arabic line measured 1.31 ms to 1.25 ms
+(1.05x) and 1.25 ms to 1.13 ms (1.11x) on `shape_arabic` itself. The four
+helpers now take the dense table as a parameter (all callers are in-file).
+joining, joining_gsub, bengali, indic, seasian and layout suites green locally;
+full suite and difftest 0/0 green on CI.
+
+All scouted Phase 12 candidates have now been measured: eleven landed, one
+rejected (the GSUB gate fold above).
 
 ## Corpus register
 
@@ -1188,6 +1199,7 @@ owns the queue.
 | 12.8 | Rival parity: precomputed mark base cluster (G10) | landed (53x on the mark base search; cand_base==map walk asserted per mark) |
 | 12.9 | Rival parity: query each first-coverage gid once (G11) | landed (1.40–1.42x on GSUB, interleaved single-process A/B; binary coverage_has) |
 | 12.10 | Rival parity: per-layout shaped_glyphs memo (G12) | landed (1.05–1.14x on `.segment`; direct-mapped, full Line equality asserted) |
+| 12.11 | Rival parity: dense per-run JoiningType (G13) | landed (1.05–1.11x on `shape_arabic`; full ShapedRun equality asserted) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
