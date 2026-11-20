@@ -1080,10 +1080,31 @@ one binary, alternating, warmup + best-of, so host load cancels) measured
 at 1.42x on a second run. gsub, gsub_class, calt_liga, joining_gsub and
 feature_order suites green locally; full suite and difftest 0/0 green on CI.
 
-Scoped but not yet measured: a per-layout memo around `FontSet.shaped_glyphs`
-keyed by form/base cp, form, mark flag, script and selectors (a pure-function
-memo, but each key component matters — script on marks, form vs base cp,
-variation selectors, lam-alef). It needs an interleaved A/B before landing.
+**Phase 12 G12 — landed 2026-11-20.** Per-layout `shaped_glyphs` memo
+(`layout/glyph_memo.v`, `layout/layout.v`): `FontSet.shaped_glyphs` is a pure
+cmap/UCD read, and a line repeats the same letters and forms many times. One
+memo per layout call (so it cannot outlive the FontSet, em size or Context that
+gave it) caches the common single-codepoint, selector-free shaped glyph in 64
+direct-mapped slots keyed by form cp, base cp, form, mark flag and script —
+everything the function reads. Multi-codepoint forms, lam-alef and variation
+selectors fall through uncached. A hit returns the stored slice directly: the
+only caller iterates by value, sets `.cluster` on the copy and appends that
+copy, so the backing array is never written. The first attempt used a linear
+key scan with a clone per hit and measured 1.00x — the scan and allocation cost
+more than the lookups saved. Direct-mapping fixed that: an interleaved
+single-process A/B on a 768-glyph Arabic line measured 942 us to 826 us (1.14x)
+and 968 us to 919 us (1.05x) on the `.segment` stage, with the full `Line`
+(gid, advance, x, y, cluster, is_mark, form, base_gid, width) asserted identical
+before any numbers were taken. joining, commonbase, gpos_mkm, indic, layout and
+profiler suites green locally; full suite and difftest 0/0 green on CI.
+
+The three earlier scouts' main candidates are now all measured and either
+landed or rejected. A later scout named two runner-ups that remain unmeasured:
+folding the per-lookup `lookup_touches_run` gate into `first_coverage_hits`
+(`substitute_forms` would drop one 8 KB memset and mark loop per lookup), and
+a dense per-run `JoiningType` array in `shape_arabic`. Both need an interleaved
+A/B — the gate candidate in particular must be timed on a miss-heavy input,
+where its binary-search-per-gid could lose to the old span check.
 
 ## Corpus register
 
@@ -1156,6 +1177,7 @@ owns the queue.
 | 12.7 | Rival parity: per-lookup GSUB hit set (G9) | landed (1.9–2.3x on `substitute_glyphs`; filter toggle pinned, calt has 103 lookups) |
 | 12.8 | Rival parity: precomputed mark base cluster (G10) | landed (53x on the mark base search; cand_base==map walk asserted per mark) |
 | 12.9 | Rival parity: query each first-coverage gid once (G11) | landed (1.40–1.42x on GSUB, interleaved single-process A/B; binary coverage_has) |
+| 12.10 | Rival parity: per-layout shaped_glyphs memo (G12) | landed (1.05–1.14x on `.segment`; direct-mapped, full Line equality asserted) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
