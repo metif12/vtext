@@ -76,16 +76,10 @@ fn (s &GidSet) touches(ranges []CoverageRange) bool {
 }
 
 // coverage_has reports whether one glyph falls in a sorted coverage range set.
+// Ranges are sorted and disjoint by the format, so this is the same binary
+// search the apply paths already use rather than a scan of every range.
 fn coverage_has(ranges []CoverageRange, gid u16) bool {
-	for r in ranges {
-		if gid < r.first {
-			return false
-		}
-		if gid <= r.last {
-			return true
-		}
-	}
-	return false
+	return coverage_index(ranges, gid) != none
 }
 
 // gid_in_first_coverage is the one-glyph form of lookup_touches_run: can this
@@ -167,9 +161,18 @@ fn (g &Gsub) gid_in_first_coverage(li u16, gid u16) bool {
 // positions no rule can match.
 fn (g &Gsub) first_coverage_hits(li u16, items []Ligatable) GidSet {
 	mut hits := new_gid_set()
+	mut tested := new_gid_set()
 	for item in items {
-		if !hits.has(item.gid) && g.gid_in_first_coverage(li, item.gid) {
-			hits.mark(item.gid)
+		gid := item.gid
+		// hits remembers only positives, so an uncovered gid would be queried
+		// again on every occurrence without a separate negative memo. In a long
+		// Latin run the uncovered gids far outnumber the covered ones.
+		if tested.has(gid) {
+			continue
+		}
+		tested.mark(gid)
+		if g.gid_in_first_coverage(li, gid) {
+			hits.mark(gid)
 		}
 	}
 	return hits
