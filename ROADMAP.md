@@ -1030,6 +1030,19 @@ import. `measure_line` on 1024 glyphs went 2.94 ms to 0.27 ms (10.7x,
 an unmemoized walk over repeated gids with varied mark offsets, with a
 collapsed-key break-fix; full suite and difftest 0/0 green on CI.
 
+**Phase 12 G8 — landed 2026-11-20.** ASCII fast path for joining
+(`shape/joining.v`): `shape_arabic` ran a two-pass join computation and several
+UCD lookups per character even when the run was all printable ASCII or tab,
+where no codepoint takes a shape, names a presentation form, is a mark or is a
+joining control. The fast path emits one isolated, unmarked ShapedGlyph per
+character, with script Latn for letters and Zyyy for everything else; a single
+non-ASCII codepoint keeps the full walk. `shape_arabic` on 1024 ASCII characters
+went 1.4 ms to 0.26 ms (4.7–5.7x, `tools/bench_join.v`, interleaved best-of with
+the slow walk forced by U+00E9). Pinned by `joining_test.v` (fast path equals the
+full walk across all 95 printable ASCII characters, with a corrupted-form
+break-fix); gate-neuter collapses the ratio to 0.98x. Full suite and difftest
+0/0 green on CI.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1097,6 +1110,7 @@ owns the queue.
 | 12.3 | Rival parity: ASCII bidi fast path (G5) | landed (14–19x on `resolve_paragraph`; gate-neuter control 1.04x) |
 | 12.4 | Rival parity: dense placement arrays (G6) | landed (1.7–2.2x on `place_glyphs`; dense==map pinned across plain/merged/RTL inputs) |
 | 12.5 | Rival parity: per-line measurement memo (G7) | landed (10.7x on `measure_line`; memo==per-glyph pinned across repeated gids and mark offsets) |
+| 12.6 | Rival parity: ASCII joining fast path (G8) | landed (4.7–5.7x on `shape_arabic`; fast==full walk pinned across printable ASCII) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
