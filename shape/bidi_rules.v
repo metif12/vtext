@@ -160,8 +160,7 @@ pub fn is_isolate_or_pdi(c ucd.BidiClass) bool {
 //       resolve the brackets on their own, or there is no supporting context, in
 //       which case both brackets fall back to the embedding direction.
 pub fn apply_n0(mut types []ucd.BidiClass, cps []rune, orig []ucd.BidiClass, idx []int, levels []u8,
-	sos ucd.BidiClass) {
-	brackets := bracket_table()
+	sos ucd.BidiClass, brackets []BracketPair) {
 	for pair in find_bracket_pairs(brackets, cps, types, idx) {
 		// The embedding direction of a bracket is the parity of its own level.
 		embedding := level_direction(levels[idx[pair.open]])

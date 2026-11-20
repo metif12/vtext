@@ -124,13 +124,17 @@ pub fn resolve_paragraph(p &ucd.Properties, cps []rune, base_dir Direction) Bidi
 	sequences := isolating_run_sequences(types, orig, explicit)
 	result.isolating_sequences = sequences.len
 	result.sequences = sequences
+	// N0 asks the bracket table once per isolating run sequence. The table is
+	// immutable and a paragraph can have several sequences, so decode it once
+	// here and pass it down rather than rebuilding it for each one.
+	brackets := bracket_table()
 	for seq in sequences {
 		work := flatten_sequence(seq)
 		sos := boundary_type(types, explicit, para_level, work[0], true)
 		eos := boundary_type(types, explicit, para_level, work[work.len - 1], false)
 		mut seq_types := slice_types(types, work)
 		apply_w_rules(mut seq_types, orig, work, sos)
-		apply_n0(mut seq_types, cps, orig, work, explicit, sos)
+		apply_n0(mut seq_types, cps, orig, work, explicit, sos, brackets)
 		apply_n_rules(mut seq_types, sos, eos, explicit, work)
 		apply_i_rules(seq_types, explicit, mut result.levels, work)
 		write_back_types(mut types, work, seq_types)
