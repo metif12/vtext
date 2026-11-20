@@ -181,6 +181,10 @@ pub fn oblique_bitmap(src GlyphBitmap, slant f64) GlyphBitmap {
 	}
 	w2 := src.width + omax - omin
 	mut canvas := []u8{len: w2 * src.height}
+	mut x0 := w2
+	mut x1 := -1
+	mut y0 := src.height
+	mut y1 := -1
 	for y in 0 .. src.height {
 		s := slant * f64(src.top - y)
 		for x in 0 .. w2 {
@@ -195,16 +199,12 @@ pub fn oblique_bitmap(src GlyphBitmap, slant f64) GlyphBitmap {
 			if i0 + 1 >= 0 && i0 + 1 < src.width {
 				b = f64(src.coverage[y * src.width + i0 + 1])
 			}
-			canvas[y * w2 + x] = u8(int(a * (1.0 - f) + b * f + 0.5))
-		}
-	}
-	mut x0 := w2
-	mut x1 := -1
-	mut y0 := src.height
-	mut y1 := -1
-	for y in 0 .. src.height {
-		for x in 0 .. w2 {
-			if canvas[y * w2 + x] != 0 {
+			v := u8(int(a * (1.0 - f) + b * f + 0.5))
+			canvas[y * w2 + x] = v
+			// The canvas is written exactly once per (y, x), so tracking the
+			// ink box here sees the same bytes a separate full-canvas scan
+			// would, without that third pixel-scale pass.
+			if v != 0 {
 				if x < x0 {
 					x0 = x
 				}
