@@ -96,9 +96,16 @@ pub fn break_opportunities(ctx &shape.Context, cps []rune, mandatory_first bool)
 	// lookup. `Properties` has no field for it because `tables.v` owns that struct and the
 	// quotation work took the caller-decode route first; the note on `sa_mark_ranges` records why.
 	sa := ucd.sa_mark_ranges()
+	// The raw (unresolved) class is what LB1, LB8a and LB17 all ask for, so read
+	// it once per character and thread it through instead of three binary
+	// searches over the 2,946-record line-break table.
+	mut raw_classes := []ucd.LineBreakClass{len: n}
+	for i in 0 .. n {
+		raw_classes[i] = props.line_break_of(cps[i])
+	}
 	mut classes := []ucd.LineBreakClass{cap: n}
 	for i in 0 .. n {
-		classes << effective_class(props, sa, cps, i, classes)
+		classes << effective_class(sa, cps, i, classes, raw_classes)
 	}
 	// The quotation roles are read once for the same reason, and by the same rules: LB15a and
 	// LB15b are the only two that ask which direction a quotation mark opens, and they ask
@@ -147,7 +154,7 @@ pub fn break_opportunities(ctx &shape.Context, cps []rune, mandatory_first bool)
 		// LB7, and then the pairs, in the order the specification numbers them. The
 		// order is not arbitrary: LB8 has to come before LB8a, which has to come
 		// before LB9, and a later rule may not override an earlier one.
-		kind := break_kind(props, cps, classes, quote, ea, eu, prev_broke, closes_span, i)
+		kind := break_kind(cps, classes, quote, ea, eu, prev_broke, closes_span, i, raw_classes)
 		// The span state moves past every position the same way, break or no
 		// break: a closing mark closes its span whether a line may end after
 		// it or not, and a break does not close anything early.
@@ -335,8 +342,9 @@ pub fn is_mandatory_break_at(classes []ucd.LineBreakClass, pos int, n int, manda
 // does not apply falls through to the next rather than returning nothing,
 // because "no rule matched" and "a later rule matched" are the same thing to
 // every rule below it.
-pub fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClass, quote []ucd.CodeRange,
-	ea []ucd.CodeRange, eu []ucd.CodeRange, prev_broke bool, closes_span bool, i int) BreakKind {
+pub fn break_kind(cps []rune, classes []ucd.LineBreakClass, quote []ucd.CodeRange,
+	ea []ucd.CodeRange, eu []ucd.CodeRange, prev_broke bool, closes_span bool, i int,
+	raw_classes []ucd.LineBreakClass) BreakKind {
 	left := classes[i]
 	right := classes[i + 1]
 	n := classes.len
@@ -411,7 +419,8 @@ pub fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClas
 	// `effective_class` folds a joiner into a combining mark: at the class level this pair
 	// is indistinguishable from `× 0308 × 2757 ÷`, which breaks. The b2 rule below does the
 	// same raw read for the same reason.
-	if props.line_break_of(cps[i]) == .zwj {
+	raw_left := raw_classes[i]
+	if raw_left == .zwj {
 		return BreakKind.no
 	}
 	// The rules below ask what the left-hand character *is* — what it glues, what it may not end a
@@ -872,7 +881,7 @@ pub fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClas
 	// which both break. The file wants the joiner held and the marks broken, so the raw property
 	// is asked here rather than the resolved class. It is the only `line_break_of(cps[i])` call in
 	// the chain, and it is here because there is no class-level spelling of "a joiner, specifically".
-	if right == .b2 && (eff_left == .b2 || props.line_break_of(cps[i]) == .zwj) {
+	if right == .b2 && (eff_left == .b2 || raw_left == .zwj) {
 		return BreakKind.no
 	}
 	// LB23a and LB23b: two of the same class that must not be split, which is
@@ -1282,7 +1291,6 @@ pub fn break_kind(props &ucd.Properties, cps []rune, classes []ucd.LineBreakClas
 	// are what stop it drawing somewhere a reader cannot follow.
 	_ = n
 	_ = cps
-	_ = props
 	return BreakKind.allowed
 }
 
@@ -1424,9 +1432,9 @@ pub fn is_prohibited_end(c ucd.LineBreakClass) bool {
 // own. A word joiner is left alone: it is already a class of its own, and it is the one that forbids
 // a break on both sides of it, which is what makes it the character a caller reaches for when a
 // word must not be split.
-pub fn effective_class(props &ucd.Properties, sa []ucd.CodeRange, cps []rune, i int,
-	so_far []ucd.LineBreakClass) ucd.LineBreakClass {
-	raw := props.line_break_of(cps[i])
+pub fn effective_class(sa []ucd.CodeRange, cps []rune, i int,
+	so_far []ucd.LineBreakClass, raw_classes []ucd.LineBreakClass) ucd.LineBreakClass {
+	raw := raw_classes[i]
 	if raw == .zwj {
 		return .cm
 	}
