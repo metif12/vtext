@@ -143,26 +143,16 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		// what makes this work in both directions, and it also steps over a ligature or a
 		// discarded control that sits between the two.
 		//
-		// The search is over the clusters that are present rather than over a fixed range, so
-		// a mark whose letter was dropped from the line finds nothing and stays at the pen.
-		//
-		// A mark decomposed from the same original character as its base shares that base's
-		// cluster — U+0622 splits to U+0627 plus U+0653, and both report cluster 47 — so the
-		// comparison is <= rather than <. This is safe because bases holds only non-marks and
-		// the mark being placed is a mark: it can never select itself, only the letter it came
-		// from.
-		//
-		// The search runs before stacking because the script comes from the letter: the font
-		// writes its anchors against the base letter, and the mark rules live under the base's
-		// script. A mark with no letter base keeps 'arab', which is what every mark used
-		// before scripts were asked. Moving the search changes no decision here: both searches
-		// only read the line.
-		mut win := -1
-		for cluster, _ in bases {
-			if cluster <= g.cluster && (win < 0 || cluster > win) {
-				win = cluster
-			}
-		}
+		// The winning base cluster is cand_base[i], computed above from the same
+		// map with the same <= predicate: the largest base cluster at or before
+		// this glyph's cluster, or -1 when there is none. The old map walk here
+		// asked that exact question again per mark, which a long marked line
+		// pays for thousands of times over. The <= rather than < is what lets a
+		// mark decomposed from the same original as its base (U+0622 -> U+0627
+		// plus U+0653, both cluster 47) find that base; bases holds only non-marks,
+		// so a mark can never select itself. Nothing in the loop below writes a
+		// cluster, so the precomputed answer stays valid throughout.
+		win := cand_base[i]
 		// Within the winning cluster the base is the nearest letter before
 		// the mark in run order (line order within one cluster is run
 		// order): a merged syllable holds several bases under one cluster,
