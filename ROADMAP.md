@@ -1043,6 +1043,19 @@ full walk across all 95 printable ASCII characters, with a corrupted-form
 break-fix); gate-neuter collapses the ratio to 0.98x. Full suite and difftest
 0/0 green on CI.
 
+**Phase 12 G9 — landed 2026-11-20.** Per-lookup coverage hit set in GSUB
+(`font/gsub.v`, `font/gsub_prefilter.v`): `substitute_forms` already built a
+set of run gids per lookup to decide whether the lookup could match at all,
+but the walk still entered `apply_at` at every position and tried every rule.
+A second set marks the run gids that this lookup's first-position coverage can
+name, so a position that cannot start any rule is stepped over without the
+dispatch. It is rebuilt after each edit, since a substitution can introduce a
+gid the original run did not hold. FiraCode's `calt` carries 103 chain lookups
+(~500 rules), which is where this shows. A same-session toggle on
+`tools/bench_gsub.v` measured 16.8 ms with the filter disabled against
+7.3–8.8 ms enabled (~1.9–2.3x on the GSUB call). GSUB, class, calt/liga and
+joining suites green locally; full suite and difftest 0/0 green on CI.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
@@ -1111,6 +1124,7 @@ owns the queue.
 | 12.4 | Rival parity: dense placement arrays (G6) | landed (1.7–2.2x on `place_glyphs`; dense==map pinned across plain/merged/RTL inputs) |
 | 12.5 | Rival parity: per-line measurement memo (G7) | landed (10.7x on `measure_line`; memo==per-glyph pinned across repeated gids and mark offsets) |
 | 12.6 | Rival parity: ASCII joining fast path (G8) | landed (4.7–5.7x on `shape_arabic`; fast==full walk pinned across printable ASCII) |
+| 12.7 | Rival parity: per-lookup GSUB hit set (G9) | landed (1.9–2.3x on `substitute_glyphs`; filter toggle pinned, calt has 103 lookups) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
