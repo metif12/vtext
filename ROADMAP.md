@@ -1066,12 +1066,24 @@ single-process A/B (`tools/bench_markbase.v`) measured 836 us to 16 us on the
 search itself (53x, with per-mark equality asserted); layout, gpos_mkm and
 commonbase suites green locally, full suite and difftest 0/0 green on CI.
 
-Scoped but not yet measured (a loaded host gave unusable absolutes): a `tested`
-set in `first_coverage_hits` so each distinct gid's negative result is queried
-once instead of once per occurrence, and a per-layout memo around
-`FontSet.shaped_glyphs` keyed by form/base cp, form, mark flag, script and
-selectors. Both are pure-function memos; each needs an interleaved A/B on a
-quiet box before landing.
+**Phase 12 G11 — landed 2026-11-20.** Query each first-coverage gid once
+(`font/gsub_prefilter.v`): `first_coverage_hits` recorded only positive hits, so
+an uncovered gid's negative answer was re-tested on every occurrence — about 75
+uncovered ASCII gids times ~11 repeats per lookup, across ~80 active `calt`
+lookups. A companion `tested` set now asks `gid_in_first_coverage` once per
+distinct gid, and `coverage_has` uses the binary-search `coverage_index` that the
+apply paths already rely on (ranges are sorted and disjoint by the format).
+Both arms compute the same `hits` set from a pure function, so no position is
+skipped or reordered. A true interleaved single-process A/B (old and new arms in
+one binary, alternating, warmup + best-of, so host load cancels) measured
+9.4 ms to 6.7 ms on the 1024-glyph Latin FiraCode GSUB call — 1.40x, reproduced
+at 1.42x on a second run. gsub, gsub_class, calt_liga, joining_gsub and
+feature_order suites green locally; full suite and difftest 0/0 green on CI.
+
+Scoped but not yet measured: a per-layout memo around `FontSet.shaped_glyphs`
+keyed by form/base cp, form, mark flag, script and selectors (a pure-function
+memo, but each key component matters — script on marks, form vs base cp,
+variation selectors, lam-alef). It needs an interleaved A/B before landing.
 
 ## Corpus register
 
@@ -1143,6 +1155,7 @@ owns the queue.
 | 12.6 | Rival parity: ASCII joining fast path (G8) | landed (4.7–5.7x on `shape_arabic`; fast==full walk pinned across printable ASCII) |
 | 12.7 | Rival parity: per-lookup GSUB hit set (G9) | landed (1.9–2.3x on `substitute_glyphs`; filter toggle pinned, calt has 103 lookups) |
 | 12.8 | Rival parity: precomputed mark base cluster (G10) | landed (53x on the mark base search; cand_base==map walk asserted per mark) |
+| 12.9 | Rival parity: query each first-coverage gid once (G11) | landed (1.40–1.42x on GSUB, interleaved single-process A/B; binary coverage_has) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
