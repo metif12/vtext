@@ -1201,13 +1201,43 @@ are unchanged. An interleaved single-process A/B over five corpus fonts
 measured 1.03x, 1.08x and 1.08x on whole-face load. font, cmap, glyph and
 font_varcomp suites green locally; full suite and difftest 0/0 green on CI.
 
+**Phase 12 G20 — landed 2026-11-21.** Dense raw line-break class table
+(`layout/linebreak.v`). The UAX#14 pass asked `props.line_break_of(cps[i])` once
+in LB1 (`effective_class`) and again in LB8a and LB17 (`break_kind`) — roughly
+two binary searches over the 2,946-record table per character. `break_opportunities`
+now reads the raw class once per character into a dense slice and threads it
+through all three rules; those rules deliberately want the raw, not the resolved,
+class, so passing the effective class would be wrong. An interleaved
+single-process A/B at elevated process priority over five 1024-codepoint inputs
+(Latin, ZWJ, em-dash, Arabic, CJK) x both mandatory modes (full
+`BreakOpportunity` equality asserted for every case before timing) measured
+1.14x, 1.07x, 1.04x and 1.09x on `break_opportunities`. linebreak, cjkbreak,
+linebreak conformance, layout, logattr and inspect suites green locally; full
+suite and difftest 0/0 green on CI.
+
+**Phase 12 G21 — landed 2026-11-21.** Fold the oblique ink-box scan into the
+shear write (`raster/synth.v`). `oblique_bitmap` made a third full `w2 x height`
+pass over the freshly written canvas just to find the min/max of nonzero pixels;
+the shear loop writes every canvas byte exactly once, so tracking the box from
+the value just stored sees the same accumulators. All-zero canvases still return
+the empty sentinel, and slant sign, bounds and `left`/`top` are unchanged. An
+interleaved single-process A/B over nine real glyph bitmaps x five slants plus
+five edge cases (every coverage byte and box field asserted equal before timing)
+measured 1.16x, 1.23x and 1.13x on the oblique pass. synth, raster_color and
+stbtt suites green locally; full suite and difftest 0/0 green on CI.
+
 A fourth scout wave covered rasterization, cold font loading and the
 segmentation utilities; all three of its candidates (G17–G19) are now landed.
-Of its runner-ups, oblique ink-bbox folding and the linebreak raw-class table
-remain scoped but unmeasured; skipping WOFF checksum passes was rejected as
-behavior-changing. AAT `morx`, Graphite, WOFF2, the full TrueType interpreter,
-CFF2 and Tibetan stacking remain gated on a carrier font or a CI reference
-engine, not on performance.
+A fifth wave added the linebreak raw-class table (G20) and the oblique ink-box
+fold (G21). Two of its runner-ups were measured and rejected: the `to_lcd`
+row-index hoist was consistently 0.85–0.87x the original despite removing a
+multiply and a load per pixel, and the shaped-glyph backing arena swung between
+0.77x and 1.46x across interleaved A/B runs (0.85–1.13x even on a quieter host),
+so neither has a trustworthy gain and the original code stands. Skipping WOFF
+checksum passes was rejected earlier as behavior-changing.
+AAT `morx`, Graphite, WOFF2, the full TrueType interpreter, CFF2 and Tibetan
+stacking remain gated on a carrier font or a CI reference engine, not on
+performance.
 
 ## Corpus register
 
@@ -1288,6 +1318,8 @@ owns the queue.
 | 12.15 | Rival parity: ASCII grapheme fast path (G17) | landed (26–29x on `grapheme_breaks`; full equality pinned for both opts + fallback) |
 | 12.16 | Rival parity: separable embolden max filter (G18) | landed (2.52–3.17x on the embolden pass; byte-for-byte coverage equality) |
 | 12.17 | Rival parity: direct hmtx metric writes (G19) | landed (1.03–1.08x on whole-face load; metrics equality pinned across 5 fonts) |
+| 12.18 | Rival parity: dense raw line-break class table (G20) | landed (1.04–1.14x on `break_opportunities`; full opportunity equality pinned) |
+| 12.19 | Rival parity: oblique ink-box fold (G21) | landed (1.13–1.23x on the oblique pass; byte-for-byte coverage equality) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
