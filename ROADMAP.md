@@ -1148,11 +1148,29 @@ asserted across every field before timing) measured 151 us to 73 us (2.09x) and
 151 us to 77 us (1.95x) on the `.place` stage. layout, vertical, bidi, indic
 and cjkbreak suites green locally; full suite and difftest 0/0 green on CI.
 
-Two third-wave candidates remain unmeasured: index `ChainMemo.apps` by `at` so
-`mark_chain_offset` stops scanning every application per mark (~1.05–1.2x on
-the mark pass for chain-heavy scripts, ~1.00x where no contextual apps apply);
-and hoist the bracket table out of `apply_n0`'s per-sequence calls (mixed-RTL
-only). Both need an interleaved A/B before landing.
+**Rejected 2026-11-20:** indexing `ChainMemo.apps` by `at` so
+`mark_chain_offset` need not scan every application per mark. The interleaved
+A/B (full `Line` equality asserted first) measured 1.00x on Thai and Khmer
+after several runs on a quiet host — the earlier 1.02–1.28x readings were host
+noise, and the single-sequence Latin control swung 0.72x to 1.17x. The map and
+the extra per-mark lookup bought nothing measurable; reverted.
+
+**Phase 12 G16 — landed 2026-11-20.** Build the bracket table once per
+paragraph (`shape/bidi.v`, `shape/bidi_rules.v`): `resolve_paragraph` calls
+`apply_n0` once per isolating run sequence, and `apply_n0` rebuilt the ~150-entry
+table each time via `split_into_lines` / `split(' ')` / `hex_value` — roughly 600
+small string allocations per sequence. The decoded table is immutable, so it is
+now built once before the sequence loop and passed down. An interleaved
+single-process A/B (full `BidiResult` equality asserted before timing) on a
+three-sequence mixed RTL/LTR/digits paragraph measured 2.55–2.68x on
+`resolve_paragraph`; a single-sequence control measured 0.96–0.99x, confirming
+no regression where there is nothing to hoist. bidi, layout, linebreak,
+script_lang and profiler suites green locally; full suite and difftest 0/0
+green on CI.
+
+Every third-wave candidate has now been measured. AAT `morx`, Graphite, WOFF2,
+the full TrueType interpreter, CFF2 and Tibetan stacking remain gated on a
+carrier font or a CI reference engine, not on performance.
 
 ## Corpus register
 
@@ -1229,6 +1247,7 @@ owns the queue.
 | 12.11 | Rival parity: dense per-run JoiningType (G13) | landed (1.05–1.11x on `shape_arabic`; full ShapedRun equality asserted) |
 | 12.12 | Rival parity: drop dead cmap second pass (G14) | landed (1.67–1.91x on `glyph_index_for`; 2048 cps equality asserted) |
 | 12.13 | Rival parity: dense vertical placement (G15) | landed (1.95–2.09x on `.place`; full Line equality asserted) |
+| 12.14 | Rival parity: bracket table once per paragraph (G16) | landed (2.55–2.68x on `resolve_paragraph`; single-sequence control ~1.00x) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
