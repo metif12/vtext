@@ -212,6 +212,45 @@ fn test_joining_empty_and_single() {
 	assert one.glyphs[0].start == 0 && one.glyphs[0].end == 1
 }
 
+// ASCII takes a fast path in shape_arabic that skips the whole join computation.
+// Force the full walk with one U+00E9 (joining type U, script Latn, no mark), so
+// every other glyph must come out byte-identical, then pin the fast path's own
+// classification: letters are Latn, everything else is Common, all isolated,
+// none marked, one glyph per character.
+fn test_joining_ascii_fast_path_matches_full_walk() {
+	p := ucd.new_properties()
+	s := shape.new_shaper()
+	mut ascii := []rune{cap: 95}
+	for cp in 32 .. 127 {
+		ascii << rune(cp)
+	}
+	mut forced := ascii.clone()
+	forced[0] = 0x00e9
+	fast := s.shape_arabic(p, ascii)
+	full := s.shape_arabic(p, forced)
+	assert fast.glyphs.len == full.glyphs.len
+	for i in 1 .. fast.glyphs.len {
+		a := fast.glyphs[i]
+		b := full.glyphs[i]
+		assert a.cps == b.cps && a.base == b.base && a.form == b.form && a.script == b.script
+			&& a.start == b.start && a.end == b.end && a.is_mark == b.is_mark
+			&& a.selectors == b.selectors, 'ASCII glyph ${i} differs from the full walk'
+	}
+	for i, g in fast.glyphs {
+		assert g.cps.len == 1 && g.cps[0] == ascii[i]
+		assert g.base.len == 1 && g.base[0] == ascii[i]
+		assert g.form == .isolated
+		want := if (ascii[i] >= `A` && ascii[i] <= `Z`) || (ascii[i] >= `a` && ascii[i] <= `z`) {
+			'Latn'
+		} else {
+			'Zyyy'
+		}
+		assert g.script == want, 'ASCII ${ascii[i]} script ${g.script} != ${want}'
+		assert g.start == i && g.end == i + 1
+		assert !g.is_mark && g.selectors.len == 0
+	}
+}
+
 // The form tables have to be complete enough to shape with and sorted for the binary
 // search to work, since a lookup that lands in the wrong place returns no glyph at all.
 fn test_joining_tables_are_well_formed() {

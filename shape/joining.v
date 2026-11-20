@@ -116,6 +116,24 @@ pub fn new_shaper() &Shaper {
 	}
 }
 
+// is_ascii_joining reports whether every character is printable ASCII or tab.
+// That is exactly the range over which the joining walk has nothing to decide:
+// no joining type takes a shape, no codepoint has a presentation form, and no
+// character is a mark or a joining control. A non-ASCII codepoint or a C0
+// control other than tab takes the full walk.
+fn is_ascii_joining(cps []rune) bool {
+	for cp in cps {
+		if cp < 32 {
+			if cp != `\t` {
+				return false
+			}
+		} else if cp >= 127 {
+			return false
+		}
+	}
+	return true
+}
+
 // shape_arabic runs the joining algorithm over a run of text in logical order and returns
 // the shaped glyphs in the same order. Reordering the result is the bidirectional pass's
 // job, not this one's.
@@ -126,6 +144,32 @@ pub fn new_shaper() &Shaper {
 pub fn (s &Shaper) shape_arabic(p &ucd.Properties, cps []rune) ShapedRun {
 	mut out := ShapedRun{ glyphs: []ShapedGlyph{cap: cps.len} }
 	if cps.len == 0 {
+		return out
+	}
+
+	// The ASCII fast path. Printable ASCII and tab carry no joining type, no
+	// presentation form, no lam-alef pair, no ZWNJ or ZWJ, no variation selector
+	// and no combining mark, so compute_joins and the classification walk below
+	// can only produce one isolated, unmarked glyph per character. The generated
+	// tables answer Latn for ASCII letters and Zyyy for every other ASCII
+	// character, which is what the walk would write too. Anything outside that
+	// range — where R/AL, marks and the joining controls live — takes the full walk.
+	if is_ascii_joining(cps) {
+		for i, cp in cps {
+			script := if (cp >= `A` && cp <= `Z`) || (cp >= `a` && cp <= `z`) {
+				'Latn'
+			} else {
+				'Zyyy'
+			}
+			out.glyphs << ShapedGlyph{
+				cps:    [cp]
+				base:   [cp]
+				form:   font.JoiningForm.isolated
+				script: script
+				start:  i
+				end:    i + 1
+			}
+		}
 		return out
 	}
 
