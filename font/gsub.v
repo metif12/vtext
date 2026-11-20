@@ -362,7 +362,8 @@ pub fn (g &Gsub) substitute_forms(lookups []u16, items []Ligatable, want ?Joinin
 		if !g.lookup_touches_run(li, &set) {
 			continue
 		}
-		out = g.substitute_one(li, mut out, want)
+		mut hits := g.first_coverage_hits(li, out)
+		out = g.substitute_one_filtered(li, mut out, want, mut hits)
 	}
 	return out
 }
@@ -389,6 +390,15 @@ pub fn lookup_substitutes(l &Lookup) bool {
 // increases and the loop ends at the end of the run. A font whose rules do not reach a fixed
 // point is a font this handles in one pass, which is the same contract every shaper works to.
 pub fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm) []Ligatable {
+	mut hits := g.first_coverage_hits(li, items)
+	return g.substitute_one_filtered(li, mut items, want, mut hits)
+}
+
+// substitute_one_filtered is substitute_one with the per-lookup hit set threaded
+// through the walk. A position whose glyph cannot be rule position zero is
+// stepped over without calling apply_at at all, which is what keeps a lookup
+// with hundreds of chain rules from trying each of them at every position.
+fn (g &Gsub) substitute_one_filtered(li u16, mut items []Ligatable, want ?JoiningForm, mut hits GidSet) []Ligatable {
 	lookup := g.lookups[li]
 	rtl := lookup.flag & gsub_flag_right_to_left != 0
 	mut step := 1
@@ -405,6 +415,14 @@ pub fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm
 			}
 		} else if walk >= eff.len {
 			break
+		}
+		// A glyph the lookup's first coverage cannot name starts no rule here,
+		// so the whole apply_at dispatch and every rule walk it would try are
+		// skipped. The set is rebuilt after an edit, because a substitution can
+		// introduce a glyph that was not in the run when the set was made.
+		if !hits.has(items[eff[walk]].gid) {
+			walk += step
+			continue
 		}
 		if sub := g.apply_at(li, items, eff, walk, 0) {
 			if span := sub.span() {
@@ -426,6 +444,7 @@ pub fn (g &Gsub) substitute_one(li u16, mut items []Ligatable, want ?JoiningForm
 					items = splice(items, sub)
 					eff = g.effective(items, lookup.flag, lookup.mark_set, want)
 				}
+				hits = g.first_coverage_hits(li, items)
 				walk = eff.len - 1
 				if !rtl {
 					walk = eff_at_or_after(eff, span.last)

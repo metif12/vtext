@@ -75,6 +75,106 @@ fn (s &GidSet) touches(ranges []CoverageRange) bool {
 	return false
 }
 
+// coverage_has reports whether one glyph falls in a sorted coverage range set.
+fn coverage_has(ranges []CoverageRange, gid u16) bool {
+	for r in ranges {
+		if gid < r.first {
+			return false
+		}
+		if gid <= r.last {
+			return true
+		}
+	}
+	return false
+}
+
+// gid_in_first_coverage is the one-glyph form of lookup_touches_run: can this
+// glyph be position zero of any rule this lookup applies? An unreadable lookup
+// answers true, the same as lookup_touches_run, so the filter never skips a
+// position the old path would have tried.
+fn (g &Gsub) gid_in_first_coverage(li u16, gid u16) bool {
+	if int(li) >= g.lookups.len {
+		return true
+	}
+	lookup := g.lookups[li]
+	if lookup.kind == gsub_lookup_single {
+		for s in lookup.singles {
+			if coverage_has(s.ranges, gid) {
+				return true
+			}
+		}
+		return false
+	}
+	if lookup.kind == gsub_lookup_multiple {
+		for m in lookup.multiples {
+			if coverage_has(m.ranges, gid) {
+				return true
+			}
+		}
+		return false
+	}
+	if lookup.kind == gsub_lookup_alternate {
+		for a in lookup.alternates {
+			if coverage_has(a.ranges, gid) {
+				return true
+			}
+		}
+		return false
+	}
+	if lookup.kind == gsub_lookup_ligature {
+		for ls in lookup.ligatures {
+			if ls.first == gid {
+				return true
+			}
+		}
+		return false
+	}
+	if lookup.kind == gsub_lookup_context {
+		if coverage_has(lookup.context_coverage, gid) {
+			return true
+		}
+		for cc in lookup.context_classes {
+			if coverage_has(cc.coverage, gid) {
+				return true
+			}
+		}
+		return false
+	}
+	if lookup.kind == gsub_lookup_chain_context {
+		for c in lookup.chains {
+			if c.input.len > 0 && coverage_has(c.input[0], gid) {
+				return true
+			}
+		}
+		for cg in lookup.chain_glyphs {
+			if coverage_has(cg.coverage, gid) {
+				return true
+			}
+		}
+		for cc in lookup.chain_classes {
+			if coverage_has(cc.coverage, gid) {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+// first_coverage_hits marks the glyphs of this run that can start a rule of
+// this lookup. One entry per distinct gid, then a constant-time test per
+// position in the walk, which is what keeps a 100-lookup calt feature off the
+// positions no rule can match.
+fn (g &Gsub) first_coverage_hits(li u16, items []Ligatable) GidSet {
+	mut hits := new_gid_set()
+	for item in items {
+		if !hits.has(item.gid) && g.gid_in_first_coverage(li, item.gid) {
+			hits.mark(item.gid)
+		}
+	}
+	return hits
+}
+
 // lookup_touches_run reports whether this lookup's first-position coverage
 // names any glyph the run holds. A miss means the walk cannot substitute
 // anywhere: singles, multiples, alternates and ligatures all resolve
