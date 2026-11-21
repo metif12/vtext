@@ -1235,9 +1235,19 @@ multiply and a load per pixel, and the shaped-glyph backing arena swung between
 0.77x and 1.46x across interleaved A/B runs (0.85–1.13x even on a quieter host),
 so neither has a trustworthy gain and the original code stands. Skipping WOFF
 checksum passes was rejected earlier as behavior-changing.
-AAT `morx`, Graphite, WOFF2, the full TrueType interpreter, CFF2 and Tibetan
-stacking remain gated on a carrier font or a CI reference engine, not on
-performance.
+A sixth scout wave looked at separable blur, the UCD lookup primitive and cmap
+glyph lookup. The separable `blur_bitmap` reimplementation is byte-identical in
+principle but the function is test-only — the engine never calls it — so it
+would move no shipped number and was not landed. A dense Latin-1 glyph index on
+`Face` was built and measured: the microbenchmark was 79–95x (one array load
+instead of a cmap binary search), but across thirteen interleaved whole-paragraph
+runs the layout ratio had a median near 1.02x with several 0.87–0.96x results —
+the extra branch on the predominantly non-Latin workload erased the saving — so
+it was rejected. The UCD `lookup_range` structure-of-arrays key table remains
+scoped but unmeasured; it would touch roughly twenty-five callers for a
+projected 1.03–1.08x on whole paths. AAT `morx`, Graphite, WOFF2, the full
+TrueType interpreter, CFF2 and Tibetan stacking remain gated on a carrier font
+or a CI reference engine, not on performance.
 
 ## Corpus register
 
