@@ -1243,11 +1243,18 @@ would move no shipped number and was not landed. A dense Latin-1 glyph index on
 instead of a cmap binary search), but across thirteen interleaved whole-paragraph
 runs the layout ratio had a median near 1.02x with several 0.87–0.96x results —
 the extra branch on the predominantly non-Latin workload erased the saving — so
-it was rejected. The UCD `lookup_range` structure-of-arrays key table remains
-scoped but unmeasured; it would touch roughly twenty-five callers for a
-projected 1.03–1.08x on whole paths. AAT `morx`, Graphite, WOFF2, the full
-TrueType interpreter, CFF2 and Tibetan stacking remain gated on a carrier font
-or a CI reference engine, not on performance.
+it was rejected. The UCD `lookup_range` structure-of-arrays key table was also
+built and measured: a dense `[]u32` of `lo` keys was threaded through the seven
+`Properties` accessors so the binary search reads 4-byte strides instead of
+`CodeRange`'s 12-byte stride. Full equality was pinned over 24,384 codepoints
+(every boundary of the two largest tables plus a dense sweep, all seven
+properties) and over four whole paragraphs before timing, but eight
+interleaved A/B runs on a quiet host measured 0.84–0.96x — the final `hi`/`value`
+read from the second array costs more than the single cache-friendly array with
+hardware prefetching, so it was rejected too. All sixth-wave candidates are now
+resolved without a landable gain. AAT `morx`, Graphite, WOFF2, the full TrueType
+interpreter, CFF2 and Tibetan stacking remain gated on a carrier font or a CI
+reference engine, not on performance.
 
 ## Corpus register
 
