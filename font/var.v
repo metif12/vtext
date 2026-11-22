@@ -915,6 +915,16 @@ pub fn var_instance_glyph(glyf []u8, loca []u8, gvar []u8, avar []u8, axes []Var
 		return error('var: no fvar axes, nothing to instance')
 	}
 	blended := var_blend_coords(axes, avar, coords) or { return err }
+	return var_instance_glyph_blended(glyf, loca, gvar, axes, gid, blended, long_loca)
+}
+
+// var_instance_glyph_blended is the same instancing with the avar-warped
+// blend already computed. The caller that holds prepared per-face state can
+// pass it directly instead of re-parsing avar and re-normalizing per glyph.
+pub fn var_instance_glyph_blended(glyf []u8, loca []u8, gvar []u8, axes []VariableAxis, gid int, blended []f64, long_loca bool) !InstancedOutline {
+	if axes.len == 0 {
+		return error('var: no fvar axes, nothing to instance')
+	}
 	mut tags := []string{len: axes.len}
 	for i, a in axes {
 		tags[i] = a.tag

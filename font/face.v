@@ -86,6 +86,14 @@ pub mut:
 	// stored. Empty means the default instance. It is the only new state on
 	// the face, and nothing already here reads it.
 	var_coords []f64
+	// Prepared variable state, computed once in set_var_coords instead of
+	// re-parsing fvar/avar/HVAR on every instanced glyph. Best-effort: if any
+	// parse fails, var_cache_ready stays false and the caller takes the old
+	// per-glyph path. use_var_cache is the A/B toggle, set at construction.
+	var_cache_ready bool
+	var_cache_axes  []VariableAxis
+	var_cache_blend []f64
+	var_cache_hvar  ?HvarTable
 }
 
 // GlyphMetrics is the per-glyph part of 'hmtx'.
@@ -545,6 +553,40 @@ pub fn (mut f Face) set_var_coords(coords []f64) ! {
 		return error('var: coordinate count does not match the fvar axis count')
 	}
 	f.var_coords = coords.clone()
+	f.prepare_var_cache() or {
+		// Best effort: a malformed avar/HVAR leaves the old per-glyph path.
+		f.var_cache_ready = false
+	}
+}
+
+// prepare_var_cache decodes the immutable variable tables once for the
+// coordinates just stored: fvar axes, the avar-warped normalized blend, and
+// HVAR when present. It is the per-face counterpart of the per-glyph parses
+// in instanced_glyph_points; the blend is warped, not merely normalized.
+fn (mut f Face) prepare_var_cache() ! {
+	axes := f.read_variable_axes()
+	if axes.len == 0 || axes.len != f.var_coords.len {
+		return error('var: no axes for the stored coordinates')
+	}
+	blended := var_blend_coords(axes, f.sfnt.table_data(tag_avar), f.var_coords) or {
+		return err
+	}
+	if blended.len != axes.len {
+		return error('var: the avar blend has the wrong length')
+	}
+	mut have_hvar := false
+	mut hvar := HvarTable{}
+	hvar_bytes := f.sfnt.table_data(tag_hvar)
+	if hvar_bytes.len > 0 {
+		if parsed := hvar_parse(hvar_bytes) {
+			hvar = parsed
+			have_hvar = true
+		}
+	}
+	f.var_cache_axes = axes
+	f.var_cache_blend = blended
+	f.var_cache_hvar = if have_hvar { hvar } else { none }
+	f.var_cache_ready = true
 }
 
 // var_coords answers the effective design coordinates: what the caller
@@ -587,7 +629,23 @@ pub fn (f &Face) instanced_glyph_points(gid u16) !InstancedOutline {
 	if gvar.len == 0 {
 		return error('var: font has no gvar table, so no outlines to instance')
 	}
-	mut out := var_instance_glyph(f.sfnt.table_data(tag_glyf), f.sfnt.table_data(tag_loca), gvar, f.sfnt.table_data(tag_avar), axes, int(gid), f.var_coords(), f.loca_is_long()) or {
+	glyf := f.sfnt.table_data(tag_glyf)
+	loca := f.sfnt.table_data(tag_loca)
+	long_loca := f.loca_is_long()
+	if f.var_cache_ready && f.var_cache_axes.len == axes.len {
+		// The tables and the avar-warped blend were decoded once in
+		// set_var_coords; only the per-glyph delta math remains.
+		mut out := var_instance_glyph_blended(glyf, loca, gvar, f.var_cache_axes, int(gid),
+			f.var_cache_blend, long_loca) or { return err }
+		if h := f.var_cache_hvar {
+			if adv := hvar_advance_delta(h, int(gid), f.var_cache_blend) {
+				out.advance_dx = adv
+			}
+		}
+		return out
+	}
+	mut out := var_instance_glyph(glyf, loca, gvar, f.sfnt.table_data(tag_avar), axes, int(gid),
+		f.var_coords(), long_loca) or {
 		return err
 	}
 	hvar_bytes := f.sfnt.table_data(tag_hvar)
