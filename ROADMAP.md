@@ -1426,6 +1426,25 @@ interpreter itself is a separate multi-slice implementation (plumbing and
 of roughly 3,000–4,900 lines; a toy opcode subset would not execute the
 committed faces' 140-function `fpgm` library, so none is claimed here.
 
+**Phase 13 perf — drop the unread eager CFF2 parse (landed 2026-11-23).**
+`new_face` called `parse_cff2_from_sfnt` on every CFF2 load and stored the
+result in `Face.cff2`, which no in-tree reader uses — `inspect.v` derives
+`outlines()` from the sfnt tag and `cff2_test.v` calls `parse_cff2` directly,
+just as CFF1's `parse_cff` is not eager. For the 2478-glyph CFF2 face that
+parse walked the Top/Font/Private DICTs, 1686 local subrs and a 2478-entry
+FDSelect validation pass, all discarded. The field stays declared but
+unpopulated, matching G19's retained `glyphs` array. An interleaved
+single-process A/B on that face with full face equality pinned (metrics,
+advances, glyph ids, stb_ok plus an independent CFF2 parse) measured
+1.00–1.06x over nine runs, median ~1.01x — a marginal G19-class win from
+removing dead work. A sibling candidate, reusing the CFF2 interpreter's
+operand-stack backing array across operators, was measured over all 2478
+glyphs with exact outline equality and rejected at 0.97–0.99x: V's small-slice
+allocator already handles the churn. Tibetan reorder fast-pathing remains
+scoped but unmeasured; the Tibetan-specific code is only ~30 lines, so the
+win would be skipping the general Indic reorder's identity work on pure
+Tibetan runs (~0.5–3% end-to-end, honest estimate).
+
 ## Explicitly not planned
 
 Worth writing down so these do not come back as questions.
