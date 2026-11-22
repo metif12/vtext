@@ -158,8 +158,9 @@ jobs:
       # Pinned to the versions the baseline was verified against (locally: 0 new,
       # 0 stale with Pillow 12.3.0, fontTools 4.66.1, uharfbuzz 0.56.2; the
       # pangocffi trio are the versions pango_leg.py was read against;
-      # freetype-py 2.13.2 is the version hintref.py's point dumps were read
-      # against). An unpinned install drifts with every release and the ratchet
+      # freetype-py 2.5.1 (wrapping FreeType 2.13.2) is the version hintref.py's
+      # point dumps were read against). An unpinned install drifts with every
+      # release and the ratchet
       # then measures the reference moving, not the engine. `pip freeze` records
       # what actually ran, so a future drift has a version to blame.
       - name: pip install the pinned reference stack
@@ -168,7 +169,7 @@ jobs:
           python3 -m pip install --quiet \
             uharfbuzz==0.56.2 fonttools==4.66.1 pillow==12.3.0 \
             pangocffi==0.14.1 pangocairocffi==0.7.1 cairocffi==1.7.1 \
-            freetype-py==2.13.2
+            freetype-py==2.5.1
           python3 -m pip freeze | grep -Ei 'harfbuzz|fonttools|pillow|pango|cairo|freetype'
 
       # Prove the hinted-point reference is live before it is used to gate the

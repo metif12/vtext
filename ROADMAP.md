@@ -1377,9 +1377,54 @@ carries none — 18 tables, no `morx`/`mort`/Graphite, `Silt` is an opaque gzip
 blob; corpus 26-face scan 0 hits, full AAT-family scan on both SIL faces 0
 hits; reference gate still closed — HarfBuzz cannot shape Graphite, so a
 grengine-class reference must be proven in CI first; engine unscoped),
-WOFF2/brotli, the full TrueType bytecode interpreter,
-CFF2, Tibetan stacking (arrives with its own slice and stacking font, or
-says why it cannot).
+WOFF2/brotli, the full TrueType bytecode interpreter.
+
+**Phase 13 CFF2 — reader landed 2026-11-22.** The gate was the missing
+carrier face, now committed: `SourceSans3VF-Upright.otf` (OFL, 2478
+CharStrings, FDArray, fvar, CFF2). `font/cff2.v` reads the 5-byte header and
+raw Top DICT, FDArray/FDSelect, Global and per-FD Local Subrs, the
+ItemVariationStore region counts, and runs a Type 2 interpreter with CFF2's
+no-width 513 stack, single-byte vsindex/blend and per-FD subr dispatch. At
+the default instance every region scalar is zero, so blend keeps its default
+operands. Pinned by `cff2_test.v` against fontTools 4.66.1 on that face:
+counts, region counts [2, 1], outline op counts and the first moveTo for
+A/B/C/a; full suite green. Remaining slices: non-default instancing
+(blend scalars + HVAR interaction) and the subset rebuild. CFF2 has no
+raster backend — stb_truetype only reads CFF1 — so a CFF2 face loads and
+shapes but has no ink; that is a separate slice, not silently claimed here.
+
+**Phase 13 Tibetan — landed 2026-11-22.** The gate was the missing stacking
+face, now committed: `NotoSerifTibetan-Variable.ttf` (OFL, GSUB/GPOS `tibt`
+with abvs/blws/mark/mkmk/dist). A `TibetanShaper` claims U+0F00..U+0FFF and
+defaults abvs and blws, both proven default-on under uharfbuzz; reorder and
+split are identity because the UCD positional table has no Left vowel for
+Tibetan. The general Indic machine and the existing GPOS anchor pass do the
+stack composition and placement — no new stacking algorithm. Pinned by
+`tibetan_test.v` against HarfBuzz 0.56.2: bka, the blws stack བཀྲ (subjoined
+ra at -564,-172), the two-level སྐྱ stack (-652,-35 and -645,-372), and
+shaper registration. Known divergence recorded: the engine keeps per-input
+clusters where HarfBuzz merges the subjoined ones onto the base; cluster
+semantics are a separate decision, not silently changed here.
+
+**Phase 13 TrueType interpreter — reference gate opened 2026-11-22, engine
+not yet implemented.** The carrier half was already open (six committed OFL
+faces carry real `fpgm`/`prep`/`cvt` and glyph programs; JetBrainsMonoNerdFont
+and NotoNaskhArabic are the measurement faces — Amiri's 7-byte `prep` is only
+a scan-control stub and is not a carrier). The closed half was a CI reference
+that exposes FreeType's hinted points. `tools/hintref.py` now dumps 26.6
+point coordinates, on-curve flags, contours, phantom points and advance
+under `FT_LOAD_TARGET_NORMAL` and `FT_LOAD_NO_HINTING`; CI pins
+`freetype-py==2.5.1` (wrapping FreeType 2.13.2), and a positive-control step asserts the bytecode
+effect is live (measured locally: 87/64 px max point delta and 26/64 px
+advance delta at JetBrainsMonoNerdFont gid 36, 24 ppem; 53/64 px on
+NotoNaskhArabic gid 5). The equality claim for the future interpreter is
+point coordinates within 1/64 px of FreeType, box within 1 px and coverage
+under the existing bounded diff — not byte-equal bitmaps, which the repo
+already documents as impossible across the two fill conventions. The
+interpreter itself is a separate multi-slice implementation (plumbing and
+26.6 state, VM core with FDEF/CALL, geometry instructions, raster wiring)
+of roughly 3,000–4,900 lines; a toy opcode subset would not execute the
+committed faces' 140-function `fpgm` library, so none is claimed here.
 
 ## Explicitly not planned
 
