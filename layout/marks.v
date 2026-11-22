@@ -125,6 +125,18 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		cand_base[k] = if lo > 0 { base_clusters[lo - 1] } else { -1 }
 	}
 
+	// Stack candidates are marks sharing the winning base cluster. The old
+	// code re-scanned the whole line for every mark (O(M*N)); collect them
+	// once into buckets keyed by that cluster instead. Bucket members stay in
+	// ascending index order, exactly the order the full scan visited them,
+	// so the insertion sort below still sees the same sequence.
+	mut mark_buckets := map[int][]int{}
+	for k, c in line.glyphs {
+		if c.is_mark && cand_base[k] >= 0 {
+			mark_buckets[cand_base[k]] << k
+		}
+	}
+
 	// The marks are placed from the first cluster onwards, which is the order a stack has to be
 	// built in. A mark on another mark is measured from where the mark under it ended up, so the
 	// mark underneath has to be placed first; placing a fatha before the shadda it rides on would
@@ -208,14 +220,16 @@ pub fn position_marks(mut line Line, em_px f64, ctx &shape.Context, vertical boo
 		// base skips stacking as before.
 		mut stacked_at := []int{}
 		if base_index >= 0 && g.cluster !in bases {
-			for k, c in line.glyphs {
-				if k == i || !c.is_mark || c.cluster == g.cluster || c.cluster >= g.cluster {
-					continue
+			if bucket := mark_buckets[best] {
+				for k in bucket {
+					// is_mark and cand_base[k] == best hold by bucket
+					// construction; these two are the old full-line scan's
+					// other gates (self-skip and the cluster order test).
+					if k == i || line.glyphs[k].cluster >= g.cluster {
+						continue
+					}
+					stacked_at << k
 				}
-				if cand_base[k] != best {
-					continue
-				}
-				stacked_at << k
 			}
 			// Highest cluster first: the mark stacks on the nearest mark
 			// below it, and a farther one only when the nearer has no rule
