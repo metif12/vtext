@@ -10,6 +10,10 @@ pub struct Face {
 pub mut:
 	sfnt  &Sfnt
 	cmaps []Cmap
+	// cff2 is the parsed CFF2 table, when the face carries one. A CFF2 face
+	// still has no raster backend — this is the reader used for inspection
+	// and outline verification, the same role Cff has for CFF1.
+	cff2 ?&Cff2
 	// gsub is the font's glyph substitution table, when it has a usable one. It is how a
 	// letter's Arabic shape is found, for a font that keeps its shapes in GSUB rather than
 	// in the cmap.
@@ -125,6 +129,15 @@ pub fn new_face(data []u8) !&Face {
 	face.read_os2()
 	face.read_post()
 	face.cmaps = parse_cmap(sfnt.table_data(tag_cmap))
+	if sfnt.has(tag_cff2) {
+		// A truncated or unsupported CFF2 table does not stop the face from
+		// loading: the CFF2 reader is inspection-only, and the CFF1/CID-era
+		// fixtures use a four-byte CFF2 table to pin the refusal.
+		if parsed := parse_cff2_from_sfnt(sfnt) {
+			mut p := parsed
+			face.cff2 = &p
+		}
+	}
 	// Substitution and positioning are both optional, and a font without them still loads, so
 	// a missing or unparsable table is left as none rather than failing the face.
 	//

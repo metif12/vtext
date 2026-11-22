@@ -479,7 +479,11 @@ fn cff_parse_dict(data []u8) ![]CffDictEntry {
 			v, ni := cff_dict_real(data, i) or { return err }
 			args << v
 			i = ni
-		} else if b <= 21 {
+		} else if b <= 27 {
+			// CFF2 uses 24 (vstore) and extends the small-operator space in
+			// its Private DICTs. A DICT reader keeps unknown operators with
+			// their operands rather than guessing, so accepting these harms
+			// neither reader: the CFF1 caller only looks up the ops it knows.
 			out << CffDictEntry{
 				op:   b
 				args: args
