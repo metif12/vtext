@@ -53,6 +53,9 @@ fn shaper_for_script(script string) ?ScriptShaper {
 	if tag in ['deva', 'dev2', 'beng', 'bng2', 'bengali'] {
 		return IndicShaper{}
 	}
+	if tag == 'tibt' {
+		return TibetanShaper{}
+	}
 	return none
 }
 
@@ -93,6 +96,9 @@ pub fn shaper_for_content(cps []rune) ?ScriptShaper {
 	}
 	if IndicShaper{}.claims(cps) {
 		return IndicShaper{}
+	}
+	if TibetanShaper{}.claims(cps) {
+		return TibetanShaper{}
 	}
 	return none
 }
@@ -409,6 +415,46 @@ pub fn (s IndicShaper) reorder_tail(out []rune, map_ []int) ([]rune, []int) {
 
 // split_run is the identity: Indic has no split vowels to decompose.
 pub fn (s IndicShaper) split_run(cps []rune) ([]rune, []int) {
+	mut map_ := []int{cap: cps.len}
+	for i in 0 .. cps.len {
+		map_ << i
+	}
+	return cps.clone(), map_
+}
+
+// TibetanShaper carries the Tibetan stacking defaults. Unlike the Indic
+// scripts, Tibetan has no Left or Visual_Order_Left vowel signs in the UCD
+// positional table, so the general matra/repha machine performs an identity
+// reorder and the stacks are composed entirely by GSUB (abvs/blws) and
+// placed by GPOS (abvm/blwm/mkmk). HarfBuzz pins on the committed OFL face
+// show abvs and blws default-on: -blws unfolds བཀྲ to its base and plain
+// subjoined letter at zero offset, and -abvs turns the narrow vowel of
+// གྱི back to its wide form. ccmp and locl are already handled by the
+// general pipeline, so only the two stacking features are named here.
+pub struct TibetanShaper {}
+
+pub fn (s TibetanShaper) claims(cps []rune) bool {
+	for cp in cps {
+		if cp >= rune(0x0F00) && cp <= rune(0x0FFF) {
+			return true
+		}
+	}
+	return false
+}
+
+pub fn (s TibetanShaper) default_features() []string {
+	return ['abvs', 'blws']
+}
+
+pub fn (s TibetanShaper) pre_ccmp_features(extra []string) []string {
+	return []string{}
+}
+
+pub fn (s TibetanShaper) reorder_tail(out []rune, map_ []int) ([]rune, []int) {
+	return out.clone(), map_.clone()
+}
+
+pub fn (s TibetanShaper) split_run(cps []rune) ([]rune, []int) {
 	mut map_ := []int{cap: cps.len}
 	for i in 0 .. cps.len {
 		map_ << i
