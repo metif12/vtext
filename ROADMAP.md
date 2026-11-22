@@ -1251,8 +1251,16 @@ built and measured: a dense `[]u32` of `lo` keys was threaded through the seven
 properties) and over four whole paragraphs before timing, but eight
 interleaved A/B runs on a quiet host measured 0.84–0.96x — the final `hi`/`value`
 read from the second array costs more than the single cache-friendly array with
-hardware prefetching, so it was rejected too. All sixth-wave candidates are now
-resolved without a landable gain. AAT `morx`, Graphite, WOFF2, the full TrueType
+hardware prefetching, so it was rejected too. A seventh scout wave covered GPOS
+positioning, bidi reorder / the C API, and FontSet resolution. Its clearest
+candidate — dropping a provably redundant `tos(...).clone()` in `capi.v:c_text`
+(`string.runes()` always decodes into a fresh array, and an alias test confirmed
+the result does not borrow the caller's bytes) — was built and measured with
+full equality pinned: twelve interleaved A/B runs, including a `-prod`/gcc build,
+clustered around 1.0x (0.91–1.09x). The memcpy is below the noise floor, so with
+no trustworthy gain it was rejected under the same rule. The GPOS stack-candidate
+bucketing (`layout/marks.v`) and the FontSet double-cmap fusion (`shape/glyphs.v`)
+remain scoped but unmeasured. AAT `morx`, Graphite, WOFF2, the full TrueType
 interpreter, CFF2 and Tibetan stacking remain gated on a carrier font or a CI
 reference engine, not on performance.
 
