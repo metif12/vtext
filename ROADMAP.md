@@ -1275,6 +1275,15 @@ extent asserted equal before timing) measured 1.56x, 1.71x, 1.79x, 1.74x, 1.60x
 and 1.73x on `position_marks`. layout, seasian_remainder and bidi suites green
 locally; full suite and difftest 0/0 green on CI.
 
+The last scoped perf candidate, fusing the double cmap walk in `shape/glyphs.v`
+(using the coverage check's gid instead of fetching it again), was built and
+measured with full `Line` equality pinned across four diverse per-script and
+flat-chain cases: six interleaved whole-layout runs measured 0.99–1.01x. The
+saved cmap walk is negligible beside GSUB/GPOS/measurement, so it was rejected
+too. Phase 12 perf work is now exhausted: every candidate from seven scout
+waves is either landed or rejected with recorded evidence, and the remaining
+feature items are gated on a carrier font or a CI reference engine.
+
 ## Corpus register
 
 Every face below ships its licence text as `OFL-<Name>.txt` (or
