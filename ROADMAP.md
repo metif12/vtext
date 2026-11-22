@@ -1440,10 +1440,15 @@ advances, glyph ids, stb_ok plus an independent CFF2 parse) measured
 removing dead work. A sibling candidate, reusing the CFF2 interpreter's
 operand-stack backing array across operators, was measured over all 2478
 glyphs with exact outline equality and rejected at 0.97–0.99x: V's small-slice
-allocator already handles the churn. Tibetan reorder fast-pathing remains
-scoped but unmeasured; the Tibetan-specific code is only ~30 lines, so the
-win would be skipping the general Indic reorder's identity work on pure
-Tibetan runs (~0.5–3% end-to-end, honest estimate).
+allocator already handles the churn. The Tibetan reorder fast path was also
+built and measured: a content-guarded early return in `indic_visual` for pure
+0F00..0FFF runs, with UCD-regeneration guards asserting no Tibetan codepoint
+is a left vowel or a repha. Full `Line` equality passed on long, short and
+mixed runs, but interleaved A/B measured 0.97–1.02x on the 1024-rune paragraph
+and 0.99–1.01x on a short stack — effectively 1.00x. The reorder is a negligible
+share of even a short layout call, so it was rejected too. Phase 13 perf work
+is now exhausted: both measurable candidates were rejected and the only landable
+change was the dead-work removal above.
 
 ## Explicitly not planned
 
