@@ -1258,11 +1258,22 @@ candidate — dropping a provably redundant `tos(...).clone()` in `capi.v:c_text
 the result does not borrow the caller's bytes) — was built and measured with
 full equality pinned: twelve interleaved A/B runs, including a `-prod`/gcc build,
 clustered around 1.0x (0.91–1.09x). The memcpy is below the noise floor, so with
-no trustworthy gain it was rejected under the same rule. The GPOS stack-candidate
-bucketing (`layout/marks.v`) and the FontSet double-cmap fusion (`shape/glyphs.v`)
-remain scoped but unmeasured. AAT `morx`, Graphite, WOFF2, the full TrueType
-interpreter, CFF2 and Tibetan stacking remain gated on a carrier font or a CI
-reference engine, not on performance.
+no trustworthy gain it was rejected under the same rule. AAT `morx`, Graphite,
+WOFF2, the full TrueType interpreter, CFF2 and Tibetan stacking remain gated on
+a carrier font or a CI reference engine, not on performance.
+
+**Phase 12 G22 — landed 2026-11-22.** Bucket GPOS stack candidates by base
+cluster (`layout/marks.v`). `position_marks` rescanned the entire line once per
+mark looking for earlier marks sharing its base cluster — O(M·N) over M marks
+and N glyphs. It now collects them once into `mark_buckets` keyed by the
+precomputed `cand_base`, in ascending index order, so the existing stable
+cluster-descending insertion sort sees the identical sequence; the per-mark
+full-line scan becomes a bucket lookup. Mark filtering sets, anchor math,
+same-font gating and RTL are untouched. An interleaved single-process A/B on a
+1436-glyph / 667-mark vocalized Arabic line (every glyph field and every line
+extent asserted equal before timing) measured 1.56x, 1.71x, 1.79x, 1.74x, 1.60x
+and 1.73x on `position_marks`. layout, seasian_remainder and bidi suites green
+locally; full suite and difftest 0/0 green on CI.
 
 ## Corpus register
 
@@ -1345,6 +1356,7 @@ owns the queue.
 | 12.17 | Rival parity: direct hmtx metric writes (G19) | landed (1.03–1.08x on whole-face load; metrics equality pinned across 5 fonts) |
 | 12.18 | Rival parity: dense raw line-break class table (G20) | landed (1.04–1.14x on `break_opportunities`; full opportunity equality pinned) |
 | 12.19 | Rival parity: oblique ink-box fold (G21) | landed (1.13–1.23x on the oblique pass; byte-for-byte coverage equality) |
+| 12.20 | Rival parity: GPOS stack-candidate buckets (G22) | landed (1.56–1.79x on `position_marks`; full Line equality pinned) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
