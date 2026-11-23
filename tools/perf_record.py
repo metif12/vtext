@@ -82,7 +82,7 @@ def parse_bench_full(path):
         op = norm(cells[0])
         if op == 'op' or set(op) == {'-'}:
             continue
-        m = re.search(r'([\d.]+)x\s*$', cells[-1])
+        m = re.search(r'([+-]?[\d.]+)x\s*$', cells[-1])
         if not m:
             continue
         out[op] = (cells[1], cells[2], m.group(1))
@@ -144,7 +144,7 @@ def main():
         what = WHAT.get(op, op)
         rows.append(
             f'| {op} | {what} | {fmt_cell(*vu)} | {fmt_cell(*ru)} | {ratio}x |')
-    header = ['| op | what | harfara | rival | harfara/rival |',
+    header = ['| op | what | harfara | rival | speedup |',
               '| --- | --- | --- | --- | --- |']
     segment = '\n'.join(header + rows)
     doc = read_text(perf_path)

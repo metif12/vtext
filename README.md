@@ -318,9 +318,10 @@ v -prod -cc gcc run tools/rival_bench.v
 ```
 
 The measured table lives in [PERF.md](PERF.md) — method, boxes, flags, both rivals, and the
-history — re-measured per release. The `perf` CI job runs the harness on every commit and gates
-the ratios with `tools/perf_check.py` (3x headroom over the recorded baselines; getting faster
-never fails). What each side does differs and the table says so: HarfAra lays the line out (bidi,
+history — re-measured per release. The last column is a signed speedup factor: positive =
+HarfAra faster, negative = HarfAra slower (`-28.2x` = 28.2 times slower, `+14.3x` = 14.3 times
+faster). The `perf` CI job runs the harness on every commit and gates the ratios with
+`tools/perf_check.py` (3x headroom over the recorded baselines; getting faster never fails). What each side does differs and the table says so: HarfAra lays the line out (bidi,
 joining, GSUB/GPOS, measurement) where HarfBuzz only shapes, and Pillow renders with its own
 bundled FreeType at default flags where HarfAra fills unhinted. Throughput is the comparison;
 correctness is proven elsewhere, per part.

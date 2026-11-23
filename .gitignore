@@ -12,6 +12,8 @@
 *.exe.manifest
 # Running the differential suite compiles its helpers.
 tools/difftest/__pycache__/
+# The perf recorder imports the gate, which byte-compiles beside it.
+tools/__pycache__/
 .vtmp/
 harfara_build.*
 

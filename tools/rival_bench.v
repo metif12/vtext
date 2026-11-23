@@ -508,8 +508,8 @@ fn main() {
 	// same paragraph on both sides, so no glyph-count normalization is owed
 	// to either engine's clustering.
 	println('')
-	println('op                      | harfara        | rival        | harfara/rival')
-	println('------------------------+--------------+--------------+------------')
+	println('op                      | harfara        | rival        | speedup')
+	println('------------------------+--------------+--------------+--------')
 	print_ab('shape latin-1024', f64(ltook), rivals['shape latin-1024'] or {
 		RivalRow{ ns: -1 }
 	}, 'ns/paragraph')
@@ -555,5 +555,11 @@ fn print_ab(name string, ours f64, rival RivalRow, unit string) {
 		println('${name} | ${ours:.1f} ${unit} | (no rival row) | n/a')
 		return
 	}
-	println('${name} | ${ours:.1f} ${unit} | ${rival.ns:.1f} ${unit} | ${ours / rival.ns:.2f}x')
+	// Signed factor: positive = harfara faster, negative = harfara slower.
+	// The magnitude is the "how many times" factor (always >= 1); the sign
+	// carries the direction, so a slower row reads negative rather than as a
+	// positive number that looks like a speedup.
+	r := ours / rival.ns
+	rel := if r > 1.0 { '-${r:.2f}x' } else { '+${1.0 / r:.2f}x' }
+	println('${name} | ${ours:.1f} ${unit} | ${rival.ns:.1f} ${unit} | ${rel}')
 }

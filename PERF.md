@@ -17,6 +17,11 @@ fontTools load of the same inputs, built by the same repeat rule. Best of
 five batches of twenty on both sides, because a loaded box lies about
 absolutes and the ratio is the finding.
 
+The comparison column is a **signed speedup factor**: positive means HarfAra
+is faster, negative means it is slower, and the magnitude is how many times.
+`-28.2x` reads "28.2 times slower", `+14.3x` reads "14.3 times faster" — a slow
+row is negative, not a positive number that looks like a speedup.
+
 What each side does differs and the table says so: HarfAra lays the line out
 (bidi, joining, substitution, positioning and measurement) where HarfBuzz
 only shapes; Pango lays out and wraps where HarfAra wraps; fc-match spawns a
@@ -108,9 +113,10 @@ job) and gates on the ratios, not the absolutes: a loaded or slower box
 moves both engines together.
 
 `tools/perf_check.py` parses the bench's A/B table out of its stdout and
-the baseline out of the markers above. A row fails when its ratio exceeds
-3x the recorded one; a missing row fails too, because a silent hole is a
-failure. Getting faster never fails. 3x is generous on purpose — shared
+the baseline out of the markers above. It normalizes the signed factor to the
+HarfAra/rival slowdown ratio and gates on that: a row fails when it is more
+than 3x slower than the recorded one; a missing row fails too, because a silent
+hole is a failure. Getting faster never fails. 3x is generous on purpose — shared
 runners are noisy and hardware shifts ratios — and still catches what the
 gate is for: an algorithmic blowup, an accidental unoptimized build, or a
 broken caller cache (the harness itself already refuses when a hit does
