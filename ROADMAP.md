@@ -1464,6 +1464,17 @@ on a normal build). Full suite 84/84 green locally. This is the first Phase 13
 perf win on a genuinely shipped path — the earlier candidates were inspection-
 only or test-only.
 
+**Phase 13 perf — skip zero-scalar gvar tuples (landed 2026-11-23).** A later
+wave's runner-up: `var_gvar_deltas` decoded a tuple's point set and both x/y
+delta streams before evaluating its scalar, so tuples that cannot contribute
+still paid the full decode. Evaluate the scalar first; an inactive tuple is
+stepped over with header-only walkers that mirror `var_unpack_points` and
+`var_unpack_deltas` run for run, leaving `apos` at the same byte for the next
+tuple. An interleaved A/B with full `InstancedOutline` equality over all 1857
+`FiraCode-Variable` glyphs at three coordinates measured ~1.1x at the default
+instance (most tuples inactive) and was neutral at extremes; full suite 84/84
+green locally.
+
 The same wave found two candidates that were not landed: sharing the duplicate
 word-class array in `log_attrs` (the only duplicate left there; end-to-end win
 likely a few percent on a path not wired into the C API) and a content-guarded
