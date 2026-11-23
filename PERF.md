@@ -80,12 +80,14 @@ stays as the pre-clean baseline.
 | inspect fonttools-load | load+parse vs fontTools | 1.1 ms/op | 4.1 ms/op | 0.27x |
 <!-- perf-baseline:prod:end -->
 
-Measured 2026-11-17 on Win11 x64 (16 CPU) with `v -prod -cc gcc`,
-uharfbuzz 0.56.2, Pillow 12.3.0. The raster side is ahead; the shape side
-is the finding, not a failure to hide, and the harness is what an
-optimization lands against. The miss number supersedes the old 19.1 us
-first-touch figure with a sustained method; the hit still answers from
-the caller's cache.
+Measured 2026-11-23 on ubuntu-24.04 CI with `v -prod -cc gcc`, uharfbuzz
+0.56.2, Pillow 12.3.0 and fontTools 4.66.1 (the pinned stack in
+`.github/workflows/perf-record.yml`). Earlier Win11 x64 measurements are
+kept in the history below. The raster side is ahead; the shape side is the
+finding, not a failure to hide, and the harness is what an optimization
+lands against. The miss number supersedes the old 19.1 us first-touch
+figure with a sustained method; the hit still answers from the caller's
+cache.
 
 Pre-clean baseline, measured 2026-11-16 on the same box with `v -cc gcc`
 (no optimization), same rivals:

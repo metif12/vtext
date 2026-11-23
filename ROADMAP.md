@@ -361,7 +361,8 @@ resolves to an existing path with named family).
 Sans 3 OTF (non-CID Type 2, 2,478 glyphs); `font/cff.v` reads header,
 INDEXes, Top DICT, CharStrings, charset, Private, both subr sets through
 the existing curve path. Pinned by `cff_test.v` against fontTools with a
-corrupt-byte break-fix. CFF2 still refuses (no committed face carries it).
+corrupt-byte break-fix. CFF2 still refused here (no committed face carried it
+at the time) — superseded by Phase 13's separate CFF2 reader below.
 **Subsetting landed 2026-11-17:** `subset/cff.v` rebuilds CharStrings
 (verbatim keep, endchar drop), format-0 charset with original SIDs, Top DICT
 offsets, Private/subrs carried, ids preserved; CFF2/CID refused with reason.
@@ -571,7 +572,7 @@ proves it, **absent** = the mechanism does not exist.
 | Syriac, Thaana, NKo | pinned | `longtail_test.v`: Syriac init/medi/rlig + lone-SHIN joining acceptance |
 | Hangul (precomposed) | pinned | conjoining-Jamo composition + vertical CJK punctuation (`hangul_test.v`, NotoSansKR) |
 | Kana | partial | vertical rules in `vertical_test`; horizontal unpinned |
-| Tibetan | absent | stacking needs its own machine |
+| Tibetan | pinned (default features) | `tibetan_test.v` HB pins on NotoSerifTibetan: bka, blws stack, two-level stack, tsheg. Known cluster divergence recorded |
 | Indic (Devanagari, Bengali) | syllable machine, two-script pinned | tables + two faces + machine (wired: hook, assembly, GPOS), HB-pinned both |
 | Mongolian/Phags-pa vertical | absent | vertical columns cut and pinned (`vertical_test`); no Mongolian face pinned |
 | Simple alphabets (Georgian, Armenian, Ethiopic) | pinned | corpus + HB-exact cmap smoke (`simple_test.v`) |
@@ -870,8 +871,9 @@ power-of-two).
 Each 10.x slice carries its own baseline (new `*_test.v` plus full suite
 green), one commit per slice, break-fix that moves the score, and no
 change to existing behavior. Triggered items from Phase 7–9 (bytecode
-interpreter, CFF2, WOFF2/brotli, AAT `morx`, Graphite, Tibetan stacking)
-stay triggered; 10.x never pulls them in early. The `vlib` adaptation
+interpreter, WOFF2/brotli, AAT `morx`, Graphite) stay triggered; CFF2 and
+Tibetan stacking later landed in Phase 13. 10.x never pulls the triggered
+set in early. The `vlib` adaptation
 (flags, `FT`, `ScalerRec`, `Strike`, `os.font` order, `sfons`, `x/ttf`
 callers) stays in `vlib`, not here.
 
@@ -1259,8 +1261,9 @@ the result does not borrow the caller's bytes) — was built and measured with
 full equality pinned: twelve interleaved A/B runs, including a `-prod`/gcc build,
 clustered around 1.0x (0.91–1.09x). The memcpy is below the noise floor, so with
 no trustworthy gain it was rejected under the same rule. AAT `morx`, Graphite,
-WOFF2, the full TrueType interpreter, CFF2 and Tibetan stacking remain gated on
-a carrier font or a CI reference engine, not on performance.
+WOFF2 and the full TrueType interpreter then remained gated on a carrier font
+or a CI reference engine, not on performance; CFF2 and Tibetan stacking later
+landed in Phase 13 once their own carriers were committed.
 
 **Phase 12 G22 — landed 2026-11-22.** Bucket GPOS stack candidates by base
 cluster (`layout/marks.v`). `position_marks` rescanned the entire line once per
@@ -1366,6 +1369,11 @@ owns the queue.
 | 12.18 | Rival parity: dense raw line-break class table (G20) | landed (1.04–1.14x on `break_opportunities`; full opportunity equality pinned) |
 | 12.19 | Rival parity: oblique ink-box fold (G21) | landed (1.13–1.23x on the oblique pass; byte-for-byte coverage equality) |
 | 12.20 | Rival parity: GPOS stack-candidate buckets (G22) | landed (1.56–1.79x on `position_marks`; full Line equality pinned) |
+| 13.1 | CFF2 reader (default instance) | landed (fontTools pins on SourceSans3VF; instancing, subset and raster backend remain open) |
+| 13.2 | Tibetan stacking | landed (HB pins on NotoSerifTibetan; cluster convention divergence recorded) |
+| 13.3 | TrueType interpreter reference leg | landed (hintref.py + pinned freetype-py CI control); engine itself open |
+| 13.4 | Variable-table prep + zero-scalar gvar gate | landed (1.85–2.12x instancing, ~1.1x at default; full outline equality) |
+| 13.5 | vreview whole-package fixes | landed (CFF2 recursion cap, VarStore bounds, stale docs, method docs) |
 
 **Triggered, not scheduled** (a slice lands when a font needs it): AAT
 `morx` (no committable carrier class exists — Apple faces are
@@ -1474,6 +1482,14 @@ tuple. An interleaved A/B with full `InstancedOutline` equality over all 1857
 `FiraCode-Variable` glyphs at three coordinates measured ~1.1x at the default
 instance (most tuples inactive) and was neutral at extremes; full suite 84/84
 green locally.
+
+**Phase 13 review fixes — landed 2026-11-23.** A `/vreview` whole-package pass
+found and a second pass cleared five issues: the CFF2 subroutine recursion cap
+checked an unadvanced `Cff2Run.depth` and could nest forever on a crafted font
+(now uses `Cff2Level.depth`, matching `font/cff.v`); the VarStore ItemVariationData
+offset array was read without a bounds check (now refused when truncated);
+two stale comments described removed code; and the five new `TibetanShaper`
+public methods lacked doc comments. Affected suites green; CI green.
 
 The same wave found two candidates that were not landed: sharing the duplicate
 word-class array in `log_attrs` (the only duplicate left there; end-to-end win

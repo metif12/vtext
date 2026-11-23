@@ -72,8 +72,9 @@ so there are no runtime tables to load and no network access is needed to build.
 
 ## Supported
 
-- sfnt and TTC containers, WOFF1, and font collections; CFF/CFF2 faces are
-  detected and reported, not rasterized or subsetted.
+- sfnt and TTC containers, WOFF1, and font collections. CFF1 is read,
+  rasterized and subsetted; CFF2 is read for inspection and default-instance
+  outlines, but is not rasterized or subsetted.
 - cmap subtable formats 0, 4, 6, 12, 13 and 14, including variation sequences.
 - Arabic joining forms, and the isolated, initial, medial and final shapes.
 - GSUB single, multiple, alternate, ligature and contextual substitutions.
@@ -132,10 +133,11 @@ Each item names the slice that owns it in `ROADMAP.md`.
   Devanagari and Bengali, Khmer/Myanmar shaping, hinting and color, synthetic
   styles and LCD, stroking, MATH wiring, variable instancing, Core Text and
   DirectWrite providers, CFF subsetting, word/sentence breaks with log attrs,
-  wrap modes/ellipsize/tabs, and the Phase 9 scripts. What remains besides
-  cursive is the triggered set in `ROADMAP.md` (AAT `morx`, Graphite,
-  WOFF2/brotli, the full TrueType bytecode interpreter, CFF2, Tibetan
-  stacking), which lands when a font needs it.
+  wrap modes/ellipsize/tabs, the Phase 9 scripts, the CFF2 reader and Tibetan
+  stacking. What remains besides cursive is the triggered set in `ROADMAP.md`
+  (AAT `morx`, Graphite, WOFF2/brotli, the full TrueType bytecode interpreter),
+  which lands when a font needs it. CFF2's non-default instancing, subset
+  rebuild and raster backend are scoped but not yet landed.
 
 ## Refused by design
 
