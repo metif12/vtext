@@ -38,15 +38,27 @@ pub mut:
 	w      int
 	h      int
 	pixels []u8
+	// The caller's glyph memo, borrowed from the app for one render: the
+	// canvas blits what the cache holds and rasterizes only on a miss.
+	// Bitmaps are shared read-only, the way the cache contract requires.
+	cache &shape.Cache
 }
 
 // new_canvas allocates a blank RGBA framebuffer.
-pub fn new_canvas(w int, h int) &Canvas {
+pub fn new_canvas(w int, h int, mut cache &shape.Cache) &Canvas {
 	return &Canvas{
 		w:      w
 		h:      h
 		pixels: []u8{len: w * h * 4, init: 0}
+		cache:  cache
 	}
+}
+
+// font_id_of names a font for the glyph cache: its address as an integer.
+// Heap objects do not move, and installed fonts are never freed mid-session,
+// so the address is stable for exactly as long as the cache needs it.
+fn font_id_of(f &shape.Font) u64 {
+	return u64(uint(voidptr(f)))
 }
 
 // resize reallocates the buffer when the window changes size.
@@ -212,12 +224,14 @@ pub fn (mut c Canvas) draw_line(line &layout.Line, x int, baseline int, em f64, 
 
 // draw_glyph paints one positioned glyph with a chosen colour, which is how
 // the fallback page shows which font in the chain supplied each glyph.
+// Bitmaps come from the caller's cache: the first render of a session
+// rasterizes, every later one blits.
 pub fn (mut c Canvas) draw_glyph(f &shape.Font, g shape.Glyph, x int, baseline int, em f64,
 	col Color) {
 	// The rasteriser takes sub-pixel offsets in quarter pixels.
 	sub_x := i32(math.round(f64(g.x - f64(int(g.x))) * 4.0))
 	sub_y := i32(math.round(f64(g.y - f64(int(g.y))) * 4.0))
-	bm := f.rasterize(g.gid, em, sub_x, sub_y)
+	bm := c.cache.get_or_rasterize(font_id_of(f), f, g.gid, em, sub_x, sub_y)
 	if bm.is_empty() {
 		return
 	}
@@ -244,7 +258,7 @@ pub fn (mut c Canvas) label(ctx &shape.Context, fs &shape.FontSet, s string, x i
 // the bitmap's box so the caller can annotate it.
 pub fn (mut c Canvas) glyph_zoom(f &shape.Font, gid u16, em f64, sub_x i32, sub_y i32, x int,
 	y int, scale int, col Color) (int, int) {
-	bm := f.rasterize(gid, em, sub_x, sub_y)
+	bm := c.cache.get_or_rasterize(font_id_of(f), f, gid, em, sub_x, sub_y)
 	if bm.is_empty() {
 		return 0, 0
 	}

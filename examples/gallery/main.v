@@ -131,6 +131,12 @@ mut:
 	drag_x   f64
 	drag_y   f64
 	dragging bool
+	// Caller-owned glyph cache, the only honest memo: rasterizing is pure
+	// in (font, gid, size, subpixel), so a glyph drawn on every render is
+	// rasterized once and re-blitted after. Pan, rotate and guide toggles
+	// change no glyph and hit the cache for all of theirs; the engine
+	// never sees it. Cleared when fonts change.
+	glyph_cache shape.Cache
 }
 
 const font_names = [
@@ -325,9 +331,10 @@ fn main() {
 
 fn initial_app() App {
 	mut app := App{
-		ctx:      shape.new_context()
-		canvas:   unsafe { nil }
-		lib_info: 'HarfAra ${lib_version()} · ${lib_commit()}'
+		ctx:         shape.new_context()
+		canvas:      unsafe { nil }
+		lib_info:    'HarfAra ${lib_version()} · ${lib_commit()}'
+		glyph_cache: shape.new_cache()
 	}
 	load_fonts(mut app)
 	for i, name in page_names {
@@ -621,6 +628,7 @@ pub fn (mut app App) install_font(path string) {
 		return
 	}
 	name := os.file_name(path)
+	mut path_exists := false
 	for i, info in app.fonts {
 		if info.path == path {
 			app.fonts[i] = FontInfo{ name: name, path: path, font: f }
@@ -628,22 +636,28 @@ pub fn (mut app App) install_font(path string) {
 			app.params.font = i
 			app.font_name = name
 			app.font_status = 'reloaded ${name}'
-			app.render()
-			return
+			path_exists = true
+			break
 		}
 	}
-	app.fonts << FontInfo{ name: name, path: path, font: f }
-	app.fsets << shape.new_font_set_of(f)
-	app.params.font = app.fonts.len - 1
-	app.font_name = name
-	app.font_status = 'added ${name} (${app.fonts.len} fonts available)'
+	if !path_exists {
+		app.fonts << FontInfo{ name: name, path: path, font: f }
+		app.fsets << shape.new_font_set_of(f)
+		app.params.font = app.fonts.len - 1
+		app.font_name = name
+		app.font_status = 'added ${name} (${app.fonts.len} fonts available)'
+	}
+	// New fonts mean new glyph ids in old namespaces: drop the memoized
+	// bitmaps rather than risk a stale hit.
+	app.glyph_cache.clear()
 	app.render()
 }
 
 // render shapes and rasterises the current page, writes the PNG the Image
 // widget shows, and computes the status line.
 pub fn (mut app App) render() {
-	mut c := new_canvas(stage_w, stage_h)
+	mut cache_ptr := &app.glyph_cache
+	mut c := new_canvas(stage_w, stage_h, mut cache_ptr)
 	c.clear(stage_bg)
 	app.canvas = c
 	draw_grid_overlay(app)

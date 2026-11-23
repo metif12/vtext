@@ -77,13 +77,13 @@ Screen {
 
         Label { text: "Guides" x: 8 y: 5 width: 60 height: 16 color: #0F172A font_size: 11 bold: true }
 
-        Checkbox { id: grid_toggle text: "Grid" bind.checked: app.show_grid on_change: app.changed() x: 8 y: 24 width: 56 height: 22 background: #FFFFFF font_size: 9 }
-        Checkbox { id: baseline_toggle text: "Baseline" bind.checked: app.show_baseline on_change: app.changed() x: 68 y: 24 width: 72 height: 22 background: #FFFFFF font_size: 9 }
-        Checkbox { id: guides_toggle text: "Guides" bind.checked: app.show_guides on_change: app.changed() x: 144 y: 24 width: 60 height: 22 background: #FFFFFF font_size: 9 }
-        Checkbox { id: boxes_toggle text: "Char boxes" bind.checked: app.show_char_boxes on_change: app.changed() x: 208 y: 24 width: 78 height: 22 background: #FFFFFF font_size: 9 }
-        Checkbox { id: pens_toggle text: "Pen ticks" bind.checked: app.show_pen_ticks on_change: app.changed() x: 290 y: 24 width: 70 height: 22 background: #FFFFFF font_size: 9 }
-        Checkbox { id: margins_toggle text: "Margins" bind.checked: app.show_margins on_change: app.changed() x: 364 y: 24 width: 66 height: 22 background: #FFFFFF font_size: 9 }
-        Checkbox { id: center_toggle text: "Center" bind.checked: app.show_center on_change: app.changed() x: 434 y: 24 width: 60 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: grid_toggle text: "Grid" bind.checked: app.show_grid on_tap: app.changed() x: 8 y: 24 width: 56 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: baseline_toggle text: "Baseline" bind.checked: app.show_baseline on_tap: app.changed() x: 68 y: 24 width: 72 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: guides_toggle text: "Guides" bind.checked: app.show_guides on_tap: app.changed() x: 144 y: 24 width: 60 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: boxes_toggle text: "Char boxes" bind.checked: app.show_char_boxes on_tap: app.changed() x: 208 y: 24 width: 78 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: pens_toggle text: "Pen ticks" bind.checked: app.show_pen_ticks on_tap: app.changed() x: 290 y: 24 width: 70 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: margins_toggle text: "Margins" bind.checked: app.show_margins on_tap: app.changed() x: 364 y: 24 width: 66 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: center_toggle text: "Center" bind.checked: app.show_center on_tap: app.changed() x: 434 y: 24 width: 60 height: 22 background: #FFFFFF font_size: 9 }
 
         Label { text: "Pitch" x: 8 y: 52 width: 60 height: 18 color: #64748B font_size: 10 }
         Slider { id: grid_slider bind.value: app.grid_size on_change: app.changed() x: 72 y: 52 width: 60 height: 22 min: 8 max: 64 step: 4 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
@@ -249,11 +249,11 @@ Screen {
             }
             Label { text: "Align width" x: 8 y: 500 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
             Slider { id: align_width_slider bind.value: app.align_width on_change: app.changed() x: 96 y: 500 + app.content_h - 50 width: 158 height: 24 min: 0 max: 920 step: 10 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
-            Checkbox { id: vertical_toggle text: "Vertical writing" bind.checked: app.vertical on_change: app.changed() x: 8 y: 540 + app.content_h - 50 width: 246 height: 26 background: #FFFFFF font_size: 11 }
+            Checkbox { id: vertical_toggle text: "Vertical writing" bind.checked: app.vertical on_tap: app.changed() x: 8 y: 540 + app.content_h - 50 width: 246 height: 26 background: #FFFFFF font_size: 11 }
 
             Rectangle { x: 8 y: 574 + app.content_h - 50 width: 246 height: 1 background: #E2E8F0 }
             Label { text: "OPENTYPE" x: 8 y: 584 + app.content_h - 50 width: 240 height: 16 color: #94A3B8 font_size: 10 bold: true }
-            Checkbox { id: feature_toggle text: "Feature on" bind.checked: app.feature_on on_change: app.changed() x: 8 y: 610 + app.content_h - 50 width: 246 height: 26 background: #FFFFFF font_size: 11 }
+            Checkbox { id: feature_toggle text: "Feature on" bind.checked: app.feature_on on_tap: app.changed() x: 8 y: 610 + app.content_h - 50 width: 246 height: 26 background: #FFFFFF font_size: 11 }
             Label { text: "Feature tag" x: 8 y: 650 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
             TextField { id: feature_tag bind.text: app.feature on_change: app.changed() x: 96 y: 648 + app.content_h - 50 width: 158 height: 26 background: #F8FAFC corner_radius: 5 font_size: 11 }
             Label { text: "Script" x: 8 y: 690 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
