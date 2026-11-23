@@ -15,14 +15,17 @@ across directories.
 
 ```sh
 cd generated/linux
-gcc -shared -fPIC -o libharfara.so harfara.linux.c -I.
+gcc -shared -fPIC -o libharfara.so harfara.linux.c thirdparty/vlib/builtin/segfault_handler_nix.c -I. -lm
 ```
+
+`-lm` is what V's own builder adds for the math the engine uses; a raw
+`cc` line does not. The extra `.c` is the platform companion (see below).
 
 ## macOS
 
 ```sh
 cd generated/macos
-clang -dynamiclib -o libharfara.dylib harfara.macos.c -I.
+clang -dynamiclib -o libharfara.dylib harfara.macos.c thirdparty/vlib/builtin/segfault_handler_nix.c -I.
 install_name_tool -id @rpath/libharfara.dylib libharfara.dylib
 ```
 
@@ -34,10 +37,14 @@ gcc -shared -o harfara.dll harfara.windows.c thirdparty/vlib/builtin/core_window
 dlltool -d ../../harfara.def --dllname harfara.dll -l libharfara.dll.a
 ```
 
-The extra `.c` on Windows is a platform companion, not a discovery: the
-generated file declares the SEH thunk and `core_windows.c` defines it. The
-per-platform companion list lives in `c-generated.yml`; a V upgrade that
-emits a new undefined symbol fails the link there, not here.
+The extra `.c` on each platform is a companion, not a discovery: the
+generated file declares a symbol it never defines, and the companion defines
+it — the same split V's own link makes. On Windows it is the SEH thunk
+(`core_windows.c` for `v_set_unhandled_exception_filter`); on Linux and
+macOS it is `segfault_handler_nix.c` (the non-static
+`v_install_segfault_handler`; the vendored header carries only a `static`
+copy). The per-platform companion list lives in `c-generated.yml`; a V
+upgrade that emits a new undefined symbol fails the link there, not here.
 
 ## Regenerating by hand
 
