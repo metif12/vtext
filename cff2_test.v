@@ -1,5 +1,6 @@
 module harfara
 
+import math
 import os
 import harfara.font
 import harfara.shape
@@ -193,7 +194,25 @@ fn test_cff2_instanced_raster_pins() {
 
 // The instanced outline's first point pins the blend arithmetic itself, not
 // just its box: fontTools draws A@900 starting at (-10, 0) and A@500 at
-// (0.27943362046472586, 0), and the interpreter must agree bit for bit.
+// (0.27943362046472586, 0), and the interpreter must agree within 1e-9.
+// Bit equality does not hold across CPUs: ARM64 contracts the blend's
+// multiply-add into one fused operation while x86-64 rounds twice, moving
+// the last ulp on fractional coordinates — the same class as the stroking
+// pins, which are 1e-9 for the same reason. A zeroed-scalar break-fix moves
+// these by ~0.28, six orders above the floor, so the pins still
+// discriminate.
+fn cff2_pts_near(a []f64, b []f64) bool {
+	if a.len != b.len {
+		return false
+	}
+	for i, v in a {
+		if math.abs(v - b[i]) > 1e-9 {
+			return false
+		}
+	}
+	return true
+}
+
 fn test_cff2_instanced_first_move_pins() {
 	data := os.read_bytes(cff2_path() or { return }) or { panic(err) }
 	mut face := font.new_face(data) or { panic(err) }
@@ -201,8 +220,8 @@ fn test_cff2_instanced_first_move_pins() {
 	c := face.cff2 or { panic('the face must carry CFF2') }
 	o := c.outline_instanced(2, face.var_cache_blend) or { panic(err) }
 	assert o.ops[0].kind == font.CffOpKind.move_to, 'A@900 must start with a move'
-	assert o.ops[0].pts == [f64(-10.0), 0], 'A@900 first move ${o.ops[0].pts}, not [-10, 0]'
+	assert cff2_pts_near(o.ops[0].pts, [f64(-10.0), 0]), 'A@900 first move ${o.ops[0].pts}, not [-10, 0]'
 	face.set_var_coords([500.0]) or { panic(err) }
 	o5 := c.outline_instanced(2, face.var_cache_blend) or { panic(err) }
-	assert o5.ops[0].pts == [0.27943362046472586, 0], 'A@500 first move ${o5.ops[0].pts}'
+	assert cff2_pts_near(o5.ops[0].pts, [0.27943362046472586, 0]), 'A@500 first move ${o5.ops[0].pts}'
 }

@@ -1383,7 +1383,7 @@ owns the queue.
 | 13.4 | Variable-table prep + zero-scalar gvar gate | landed (1.85–2.12x instancing, ~1.1x at default; full outline equality) |
 | 13.5 | vreview whole-package fixes | landed (CFF2 recursion cap, VarStore bounds, stale docs, method docs) |
 | 13.6 | CFF2 raster backend | landed (interpreter + adaptive flatten + even-odd fill; fontTools box pins; .notdef/invalid-gid rules) |
-| 13.7 | CFF2 non-default instancing | landed (VarStore scalars + prepared avar blend; fontTools @900/@500 pins incl. bit-exact coords) |
+| 13.7 | CFF2 non-default instancing | landed (VarStore scalars + prepared avar blend; fontTools @900/@500 pins incl. 1e-9 coords) |
 | 13.8 | CFF2 subset rebuild | landed (verbatim carries + patched offsets; outline-equality + instanced-subset pins; CFF1 refactor guarded by its pins) |
 | 13.9 | C API variable instancing | landed (`harfara_font_set_var_coords`; smoke proves the ink change; 50 exports) |
 
@@ -1563,6 +1563,9 @@ shaping and rasterization with no new API. Pinned against fontTools
 recovery of the default box on return to 200. Break-fix: zeroed scalars
 collapse @900 to the default box and fail both pins; restored green.
 Default-instance behavior is unchanged — the earlier pins pass unmodified.
+(Coordinates pin within 1e-9, not bit-exact: ARM64 contracts the blend's
+multiply-add while x86-64 rounds twice, moving the last ulp on fractional
+coordinates — the same class as the stroking pins.)
 
 **Phase 13 CFF2 subset rebuild — landed 2026-11-23.** `subset/cff2.v`
 rebuilds the CFF2 table around the keep closure (GSUB+MATH fixpoint, no glyf
