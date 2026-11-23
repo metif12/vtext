@@ -123,31 +123,6 @@ fn (c &Cff2) cff2_outline_polys(gid int, scale f64, fx f64, fy f64, blended []f6
 	return polys
 }
 
-// cff2_even_odd answers whether a sample sits inside the flattened outline:
-// a ray to the right crosses an odd number of edges. The same rule the
-// instanced gvar fill uses, repeated for Cff2Point so the fill stays beside
-// the flattening it fills.
-fn cff2_even_odd(x f64, y f64, polys [][]Cff2Point) bool {
-	mut inside := false
-	for poly in polys {
-		if poly.len < 3 {
-			continue
-		}
-		mut j := poly.len - 1
-		for i in 0 .. poly.len {
-			xi := poly[i].x
-			yi := poly[i].y
-			xj := poly[j].x
-			yj := poly[j].y
-			if (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi {
-				inside = !inside
-			}
-			j = i
-		}
-	}
-	return inside
-}
-
 // cff2_box_of answers the ink box of flattened polygons: floor/ceil in the
 // same left/top convention box_only uses. Coverageless, like box_only.
 fn cff2_box_of(polys [][]Cff2Point) raster.GlyphBitmap {
@@ -200,30 +175,94 @@ fn cff2_box_of(polys [][]Cff2Point) raster.GlyphBitmap {
 	}
 }
 
-// cff2_fill_bitmap fills the box with the 4x4-supersampled even-odd cover,
-// the same sample grid the instanced fill uses so the two agree pixel for
-// pixel on the same polygons.
-fn cff2_fill_bitmap(box raster.GlyphBitmap, polys [][]Cff2Point) raster.GlyphBitmap {
-	if box.is_empty() || polys.len == 0 {
-		return raster.GlyphBitmap{}
+// Cff2Edge is one flattened contour segment as four numbers: the flattened
+// polygons walked once per raster, instead of once per sample.
+struct Cff2Edge {
+	x1 f64
+	y1 f64
+	x2 f64
+	y2 f64
+}
+
+// cff2_flatten_edges converts flattened polygons to one flat edge array.
+// Contours under three points draw nothing under the even-odd rule, so they
+// are dropped here rather than skipped per sample. Edge direction is
+// irrelevant to the crossing test, so edges run contour order as walked.
+fn cff2_flatten_edges(polys [][]Cff2Point) []Cff2Edge {
+	mut out := []Cff2Edge{}
+	for poly in polys {
+		if poly.len < 3 {
+			continue
+		}
+		mut j := poly.len - 1
+		for i in 0 .. poly.len {
+			out << Cff2Edge{
+				x1: poly[j].x
+				y1: poly[j].y
+				x2: poly[i].x
+				y2: poly[i].y
+			}
+			j = i
+		}
 	}
-	ix0 := -box.left
-	iy0 := -box.top
-	mut cov := []u8{len: box.width * box.height}
-	for dy in 0 .. box.height {
-		for dx in 0 .. box.width {
-			mut hit := 0
-			for sy in 0 .. 4 {
-				for sx in 0 .. 4 {
-					px := f64(ix0 + dx) + (f64(sx) + 0.5) / 4.0
-					py := f64(iy0 + dy) + (f64(sy) + 0.5) / 4.0
-					if cff2_even_odd(px, py, polys) {
-						hit++
+	return out
+}
+
+// cff2_even_odd answers whether a sample sits inside the flattened outline:
+// a ray to the right crosses an odd number of edges. The same rule the
+// instanced gvar fill uses. Edges arrive flat so the walk is one array with
+// no per-polygon loop and no nested indexing per sample; the crossing test
+// keeps the operand order the nested walk used, so a sample sitting exactly
+// on an edge rounds identically.
+fn cff2_even_odd(x f64, y f64, edges []Cff2Edge) bool {
+	mut inside := false
+	for e in edges {
+		if (e.y2 > y) != (e.y1 > y) && x < (e.x1 - e.x2) * (y - e.y2) / (e.y1 - e.y2) + e.x2 {
+			inside = !inside
+		}
+	}
+	return inside
+}
+
+// cff2_sample_offsets is the 4x4 subpixel grid, computed once instead of
+// per sample per pixel.
+const cff2_sample_offsets = [0.125, 0.375, 0.625, 0.875]
+
+// cff2_fill_into fills the caller's w*h buffer from the flat edge array at
+// the shifted origin: buffer pixel (dx, dy) covers the square at
+// (ix0+dx, iy0+dy) plus the quarter-pixel sample grid. The single fill every
+// raster path shares, so box and bitmap never disagree on a pixel; the C
+// caller owns the buffer, so the writes are unchecked the way render_into
+// writes stb ink.
+fn cff2_fill_into(edges []Cff2Edge, ix0 int, iy0 int, out &u8, w int, h int) {
+	unsafe {
+		for dy in 0 .. h {
+			for dx in 0 .. w {
+				mut hit := 0
+				by := f64(iy0 + dy)
+				bx := f64(ix0 + dx)
+				for sy in 0 .. 4 {
+					py := by + cff2_sample_offsets[sy]
+					for sx in 0 .. 4 {
+						if cff2_even_odd(bx + cff2_sample_offsets[sx], py, edges) {
+							hit++
+						}
 					}
 				}
+				out[dy * w + dx] = u8((hit * 255 + 8) / 16)
 			}
-			cov[dy * box.width + dx] = u8((hit * 255 + 8) / 16)
 		}
+	}
+}
+
+// cff2_fill_bitmap fills the box from the flat edge array.
+fn cff2_fill_bitmap(box raster.GlyphBitmap, edges []Cff2Edge) raster.GlyphBitmap {
+	if box.is_empty() || edges.len == 0 {
+		return raster.GlyphBitmap{}
+	}
+	mut cov := []u8{len: box.width * box.height}
+	unsafe {
+		cff2_fill_into(edges, -box.left, -box.top, cov.data, box.width, box.height)
 	}
 	return raster.GlyphBitmap{
 		coverage: cov
@@ -264,9 +303,9 @@ pub fn (f &Face) cff2_box(gid u16, em_px f64, sub_x i32, sub_y i32) raster.Glyph
 	return cff2_box_of(polys)
 }
 
-// cff2_bitmap renders gid's default-instance outline at em_px and the
-// caller's shift: the box from cff2_box with coverage from the same
-// polygons, so measuring and drawing agree.
+// cff2_bitmap renders gid's outline at em_px and the caller's shift: the
+// box from cff2_box with coverage from the same polygons, so measuring and
+// drawing agree. The outline instances at the face's prepared blend.
 pub fn (f &Face) cff2_bitmap(gid u16, em_px f64, sub_x i32, sub_y i32) raster.GlyphBitmap {
 	c := f.cff2 or { return raster.GlyphBitmap{} }
 	if em_px <= 0 || f.units_per_em_f <= 0 {
@@ -278,7 +317,7 @@ pub fn (f &Face) cff2_bitmap(gid u16, em_px f64, sub_x i32, sub_y i32) raster.Gl
 		blended) or {
 		return raster.GlyphBitmap{}
 	}
-	return cff2_fill_bitmap(cff2_box_of(polys), polys)
+	return cff2_fill_bitmap(cff2_box_of(polys), cff2_flatten_edges(polys))
 }
 
 // cff2_render_into fills the caller's w*h buffer with gid's outline at the
@@ -299,23 +338,5 @@ pub fn (f &Face) cff2_render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out 
 	if box.is_empty() {
 		return
 	}
-	ix0 := -box.left
-	iy0 := -box.top
-	unsafe {
-		for dy in 0 .. h {
-			for dx in 0 .. w {
-				mut hit := 0
-				for sy in 0 .. 4 {
-					for sx in 0 .. 4 {
-						px := f64(ix0 + dx) + (f64(sx) + 0.5) / 4.0
-						py := f64(iy0 + dy) + (f64(sy) + 0.5) / 4.0
-						if cff2_even_odd(px, py, polys) {
-							hit++
-						}
-					}
-				}
-				out[dy * w + dx] = u8((hit * 255 + 8) / 16)
-			}
-		}
-	}
+	cff2_fill_into(cff2_flatten_edges(polys), -box.left, -box.top, out, w, h)
 }
