@@ -2,6 +2,7 @@ module harfara
 
 import os
 import harfara.font
+import harfara.shape
 
 // CFF2 reader pins against fontTools 4.66.1 on the committed OFL face
 // SourceSans3VF-Upright.otf. Every number below was read off fontTools
@@ -94,4 +95,69 @@ fn test_cff2_truncated_header_refused() {
 		return
 	}
 	panic('a 4-byte CFF2 table must be refused, got ${c.num_charstrings} charstrings')
+}
+
+fn cff2_face() !&shape.Font {
+	p := cff2_path() or { return error('no CFF2 face on this host') }
+	return shape.load_font_file(p)
+}
+
+// The raster backend pins against fontTools 4.66.1 BoundsPen boxes on the
+// same face at the default instance. Design-unit bounds read off fontTools:
+// A (10, 0, 510, 660), B (100, 0, 528, 660), C (56, -12, 522, 672),
+// a (60, -12, 404, 490). At 32 px over 1000 units the floor/ceil of those
+// gives the boxes below; the flatten tolerance (0.05 px) sits an order of
+// magnitude inside every fractional margin, so the pins are stable and not
+// boundary-adjacent.
+fn test_cff2_raster_box_pins() {
+	f := cff2_face() or { return }
+	assert f.face.is_cff2(), 'the SourceSans3VF face must take the CFF2 backend'
+	cases := [
+		TestBox{`A`, 17, 22, 0, 22},
+		TestBox{`B`, 14, 22, -3, 22},
+		TestBox{`C`, 16, 23, -1, 22},
+		TestBox{`a`, 12, 17, -1, 16},
+	]
+	for t in cases {
+		gid := f.glyph_index(t.cp)
+		assert gid != 0, '${t.cp} must map to a real glyph'
+		bm := f.rasterize(gid, 32.0, 0, 0)
+		assert bm.width == t.w, '${t.cp}: width ${bm.width}, not ${t.w}'
+		assert bm.height == t.h, '${t.cp}: height ${bm.height}, not ${t.h}'
+		assert bm.left == t.l, '${t.cp}: left ${bm.left}, not ${t.l}'
+		assert bm.top == t.t, '${t.cp}: top ${bm.top}, not ${t.t}'
+		mut ink := u64(0)
+		for v in bm.coverage {
+			ink += v
+		}
+		assert ink > 0, '${t.cp} must rasterize with ink'
+		// Measuring and drawing agree: box_only reports the same box with
+		// no coverage.
+		box := f.face.box_only(gid, 32.0)
+		assert box.width == t.w && box.height == t.h, '${t.cp}: box_only disagrees'
+		assert box.coverage.len == 0, '${t.cp}: box_only must carry no coverage'
+		// Deterministic: the same glyph rasterizes to the same bytes.
+		again := f.rasterize(gid, 32.0, 0, 0)
+		assert again.coverage == bm.coverage, '${t.cp}: raster must be deterministic'
+	}
+}
+
+struct TestBox {
+	cp rune
+	w  int
+	h  int
+	l  int
+	t  int
+}
+
+// Glyphs outside the CharStrings INDEX rasterize empty rather than failing
+// the face; .notdef still draws its box.
+fn test_cff2_invalid_gid_rasterizes_empty() {
+	f := cff2_face() or { return }
+	bm := f.rasterize(60000, 32.0, 0, 0)
+	assert bm.is_empty(), 'an out-of-range gid must rasterize empty'
+	box := f.face.box_only(60000, 32.0)
+	assert box.is_empty(), 'an out-of-range gid must measure empty'
+	zero := f.rasterize(0, 32.0, 0, 0)
+	assert !zero.is_empty(), '.notdef must keep its ink'
 }

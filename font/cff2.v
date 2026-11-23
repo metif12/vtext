@@ -7,11 +7,10 @@ module font
 // regions. This file is the reader the inspection path needs: the tables the
 // interpreter hangs off, and the outline a glyph draws at an instance.
 //
-// The rasteriser still draws CFF through stb_truetype's own CFF1 parser; this
-// reader is for inspection and verification, the same role font/cff.v has.
-// CFF2 outlines do not yet go through stb, so a CFF2 face loads and shapes but
-// has no ink until a CFF2 raster backend lands. Refusals here are explicit
-// rather than best-effort wherever a structure is not implemented.
+// The raster backend lives in font/cff2raster.v: it interprets the same
+// outlines and fills them in-tree, because stb_truetype parses CFF1 but not
+// CFF2. Refusals here are explicit rather than best-effort wherever a
+// structure is not implemented.
 
 // Cff2Fd is one Font DICT of the FDArray: the Private DICT's byte range and
 // the Local Subrs INDEX it points at. Offsets are CFF2-relative except the

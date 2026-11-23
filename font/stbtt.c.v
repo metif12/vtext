@@ -81,6 +81,10 @@ pub fn (f &Face) px_scale(em_px f64) f32 {
 // rather than as their default. CBDT/sbix strikes and COLR layers keep their
 // own paths and never reach this branch for strike glyphs.
 pub fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, w int, h int) {
+	if f.is_cff2() {
+		f.cff2_render_into(gid, em_px, sub_x, sub_y, out, w, h)
+		return
+	}
 	if f.var_wants_instanced() {
 		f.var_render_into(gid, em_px, sub_x, sub_y, out, w, h)
 		return
@@ -106,6 +110,9 @@ pub fn (f &Face) render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out &u8, 
 // A non-default variation instance renders from the instanced outline;
 // otherwise the stb fill draws the default.
 pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) raster.GlyphBitmap {
+	if f.is_cff2() {
+		return f.cff2_bitmap(gid, em_px, sub_x, sub_y)
+	}
 	if f.var_wants_instanced() {
 		return f.var_instanced_bitmap(gid, em_px, sub_x, sub_y)
 	}
@@ -167,6 +174,9 @@ pub fn (f &Face) rasterize_glyph(gid u16, em_px f64, sub_x i32, sub_y i32) raste
 // variation instance measures the instanced outline instead, so instanced
 // composites measure varied; CBDT/sbix/COLR callers keep their own boxes.
 pub fn (f &Face) box_only(gid u16, em_px f64) raster.GlyphBitmap {
+	if f.is_cff2() {
+		return f.cff2_box(gid, em_px, 0, 0)
+	}
 	if f.var_wants_instanced() {
 		inst := f.var_instanced_box(gid, em_px, 0, 0)
 		if !inst.is_empty() || f.instanced_glyph_points(gid) or { InstancedOutline{} }.xs.len == 0 {

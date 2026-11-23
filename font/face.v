@@ -10,10 +10,11 @@ pub struct Face {
 pub mut:
 	sfnt  &Sfnt
 	cmaps []Cmap
-	// cff2 is retained for source compatibility but is no longer populated:
-	// the inspection reader is parse_cff2/parse_cff2_from_sfnt, which callers
-	// invoke on the table bytes directly. A CFF2 face still has no raster
-	// backend. Use those functions rather than this field.
+	// cff2 is the parsed CFF2 table of a CFF2 face, populated in new_face so
+	// the raster backend has outlines to draw. stb_truetype parses CFF1 but
+	// not CFF2; without this table a CFF2 face loads and shapes but has no
+	// ink. Inspection callers keep using parse_cff2/parse_cff2_from_sfnt on
+	// the table bytes directly.
 	cff2 ?&Cff2
 	// gsub is the font's glyph substitution table, when it has a usable one. It is how a
 	// letter's Arabic shape is found, for a font that keeps its shapes in GSUB rather than
@@ -123,6 +124,18 @@ pub mut:
 	maximum f64
 }
 
+// cff2_of parses the CFF2 table of an sfnt that carries one, or answers
+// none when there is no table or it is corrupt. new_face uses it so a CFF2
+// face that loads today keeps loading however its table parses; only the
+// CFF2 raster stays empty on a corrupt table.
+fn cff2_of(sfnt &Sfnt) ?&Cff2 {
+	if !sfnt.has(tag_cff2) {
+		return none
+	}
+	c := parse_cff2_from_sfnt(sfnt) or { return none }
+	return &c
+}
+
 // new_face parses data as a font face.
 pub fn new_face(data []u8) !&Face {
 	mut sfnt := parse_sfnt(data) or { return err }
@@ -138,9 +151,14 @@ pub fn new_face(data []u8) !&Face {
 	face.read_os2()
 	face.read_post()
 	face.cmaps = parse_cmap(sfnt.table_data(tag_cmap))
-	// The CFF2 reader is inspection-only and callers use parse_cff2* directly,
-	// so the face does not parse it eagerly: like the retained-but-unpopulated
-	// glyphs array, cff2 stays declared for source compatibility only.
+	// A CFF2 face parses its CFF2 table here so the raster backend below has
+	// outlines to draw: stb_truetype parses CFF1 but not CFF2, and without
+	// the table the face loads and shapes but has no ink. Best-effort none
+	// on a corrupt table: a face that loads today keeps loading, and only
+	// its CFF2 raster stays empty. The eager parse costs ~1% on CFF2 loads
+	// (measured when it was removed as dead work); now that the raster
+	// backend reads it, the cost buys the ink.
+	face.cff2 = cff2_of(sfnt)
 	// Substitution and positioning are both optional, and a font without them still loads, so
 	// a missing or unparsable table is left as none rather than failing the face.
 	//
@@ -390,6 +408,16 @@ pub fn (f &Face) read_variable_axes() []VariableAxis {
 // stb_ptr returns the address of the rasteriser handle.
 pub fn (f &Face) stb_ptr() voidptr {
 	return voidptr(&f.stb_buf[0])
+}
+
+// is_cff2 reports whether the face rasterizes through the CFF2 backend:
+// the table parsed and populated in new_face. A CFF2 face has no glyf and
+// stb cannot parse CFF2, so without this branch it would have no ink.
+pub fn (f &Face) is_cff2() bool {
+	if _ := f.cff2 {
+		return true
+	}
+	return false
 }
 
 // init_stb creates the rasteriser handle over the same bytes.
