@@ -228,6 +228,15 @@ full V suite, and the differential baseline. A green run means the headers in
 the tree match the library that was just built, because the smoke test
 compiles against exactly those headers.
 
+### Without the V toolchain
+
+`generated/` holds the library as plain C — one directory per platform,
+regenerated and committed by the `c-generated` workflow on every push to
+master — so a C user builds with only the platform compiler. Build commands
+are in `generated/README.md`; the translation is platform-specific (V
+resolves `$if windows/linux/macos` when emitting C), which is why there is
+one file per platform rather than one file.
+
 ## Releases
 
 Tag the tree `c-api-vX.Y.Z` and push the tag; `release-c.yml` builds the
