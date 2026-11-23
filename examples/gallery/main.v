@@ -98,9 +98,8 @@ pub mut:
 	show_pen_ticks  bool
 	show_margins    bool
 	show_center     bool
-	grid_size       f64    = 32
-	grid_label      string = '32 px'
-	preview_zoom    f64    = 1.0
+	grid_size       f64 = 32
+	preview_zoom    f64 = 1.0
 	pan_x           f64
 	pan_y           f64
 	rotate          f64
@@ -492,7 +491,6 @@ pub fn (mut app App) sync_swatch() {
 // changed is the shared on_change action for every bound control.
 pub fn (mut app App) changed() {
 	app.sync_params()
-	app.grid_label = '${int(app.grid_size)} px'
 	app.sync_swatch()
 	app.render()
 }
@@ -518,7 +516,7 @@ const stage_touch_action = 'app.clear_selection()'
 
 // on_pointer_event pans the stage under a pointer drag in custom-renderer
 // builds, where there are no native slider HWNDs for the Win32 gesture hook
-// to drive. Native builds keep the hook (wheel zoom, rotate and pitch need
+// to drive. Native builds keep the hook (wheel zoom and rotate need
 // modifiers the pointer event does not carry), so the hook body is empty
 // there and nothing double-handles a drag.
 pub fn (mut app App) on_pointer_event(e ui2.PointerEvent) {

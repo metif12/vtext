@@ -32,8 +32,7 @@
 #define GAL_SB_THUMBPOSITION 4
 
 enum {
-	GAL_PITCH = 0,
-	GAL_ZOOM,
+	GAL_ZOOM = 0,
 	GAL_PANX,
 	GAL_PANY,
 	GAL_ROTATE,
@@ -45,15 +44,15 @@ static HHOOK g_gal_hook = NULL;
 static HWND g_gal_main = NULL;
 static HWND g_gal_sliders[GAL_SLIDER_COUNT];
 static int g_gal_dragging = 0;
-static int g_gal_mode = 0; // 0 pan, 1 rotate, 2 pitch
+static int g_gal_mode = 0; // 0 pan, 1 rotate
 static POINT g_gal_last;
 
 // Client positions of the sliders in the guides bar. A child's VML coordinates
 // are relative to the bar at (178, 8).
-static const int g_gal_slider_x[GAL_SLIDER_COUNT] = { 250, 226, 228, 378, 534, 418 };
-static const int g_gal_slider_y[GAL_SLIDER_COUNT] = { 60, 86, 112, 112, 112, 86 };
-static const double g_gal_min[GAL_SLIDER_COUNT] = { 8.0, 1.0, -300.0, -300.0, -180.0, 220.0 };
-static const double g_gal_max[GAL_SLIDER_COUNT] = { 64.0, 3.0, 300.0, 300.0, 180.0, 420.0 };
+static const int g_gal_slider_x[GAL_SLIDER_COUNT] = { 226, 228, 378, 534, 418 };
+static const int g_gal_slider_y[GAL_SLIDER_COUNT] = { 60, 86, 86, 86, 60 };
+static const double g_gal_min[GAL_SLIDER_COUNT] = { 1.0, -300.0, -300.0, -180.0, 220.0 };
+static const double g_gal_max[GAL_SLIDER_COUNT] = { 3.0, 300.0, 300.0, 180.0, 420.0 };
 
 static double gal_clamp(double v, double lo, double hi) {
 	if (v < lo) return lo;
@@ -135,20 +134,14 @@ static LRESULT CALLBACK gal_mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
 		if (g_gal_main != NULL && ms != NULL && gal_in_preview(ms->pt)) {
 			if (wparam == WM_MOUSEWHEEL) {
 				int delta = GET_WHEEL_DELTA_WPARAM(ms->mouseData);
-				int ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-				if (ctrl) {
-					gal_set_value(GAL_PITCH, gal_value(GAL_PITCH) + (delta > 0 ? 4 : -4));
-				} else {
-					gal_set_value(GAL_ZOOM, gal_value(GAL_ZOOM) + (delta > 0 ? 0.1 : -0.1));
-				}
-				return 1; // zoom/pitch, not a scroll of the preview pane
+				gal_set_value(GAL_ZOOM, gal_value(GAL_ZOOM) + (delta > 0 ? 0.1 : -0.1));
+				return 1; // zoom, not a scroll of the preview pane
 			}
 			if (wparam == WM_LBUTTONDOWN || wparam == WM_MBUTTONDOWN) {
 				g_gal_dragging = 1;
 				g_gal_last = ms->pt;
 				int shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
-				int ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
-				g_gal_mode = (wparam == WM_MBUTTONDOWN || shift) ? 1 : (ctrl ? 2 : 0);
+				g_gal_mode = (wparam == WM_MBUTTONDOWN || shift) ? 1 : 0;
 			} else if (wparam == WM_LBUTTONUP || wparam == WM_MBUTTONUP) {
 				g_gal_dragging = 0;
 			} else if (wparam == WM_MOUSEMOVE && g_gal_dragging) {
@@ -158,10 +151,8 @@ static LRESULT CALLBACK gal_mouse_proc(int code, WPARAM wparam, LPARAM lparam) {
 				if (g_gal_mode == 0) {
 					gal_set_value(GAL_PANX, gal_value(GAL_PANX) - dx);
 					gal_set_value(GAL_PANY, gal_value(GAL_PANY) - dy);
-				} else if (g_gal_mode == 1) {
-					gal_set_value(GAL_ROTATE, gal_value(GAL_ROTATE) + dx * 0.5);
 				} else {
-					gal_set_value(GAL_PITCH, gal_value(GAL_PITCH) + dx * 0.1);
+					gal_set_value(GAL_ROTATE, gal_value(GAL_ROTATE) + dx * 0.5);
 				}
 			}
 		}

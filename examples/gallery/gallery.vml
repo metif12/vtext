@@ -71,7 +71,7 @@ Screen {
         x: 178
         y: 8
         width: root.width - 202 - app.panel_w
-        height: 124
+        height: 100
         background: #FFFFFF
         corner_radius: 8
 
@@ -85,21 +85,18 @@ Screen {
         Checkbox { id: margins_toggle text: "Margins" bind.checked: app.show_margins on_tap: app.changed() x: 364 y: 24 width: 66 height: 22 background: #FFFFFF font_size: 9 }
         Checkbox { id: center_toggle text: "Center" bind.checked: app.show_center on_tap: app.changed() x: 434 y: 24 width: 60 height: 22 background: #FFFFFF font_size: 9 }
 
-        Label { text: "Pitch" x: 8 y: 52 width: 60 height: 18 color: #64748B font_size: 10 }
-        Slider { id: grid_slider bind.value: app.grid_size on_change: app.changed() x: 72 y: 52 width: 60 height: 22 min: 8 max: 64 step: 4 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
-        Label { id: grid_value text: app.grid_label x: 380 y: 52 width: 60 height: 18 color: #1D4ED8 font_size: 10 }
 
-        Label { text: "Zoom" x: 8 y: 78 width: 40 height: 18 color: #64748B font_size: 10 }
-        Slider { id: preview_zoom bind.value: app.preview_zoom on_change: app.changed() x: 48 y: 78 width: 140 height: 18 min: 1 max: 3 step: 0.1 value_track: true }
-        Label { text: "Pane" x: 200 y: 78 width: 40 height: 18 color: #64748B font_size: 10 }
-        Slider { id: pane_slider bind.value: app.panel_w on_change: app.changed() x: 240 y: 78 width: 140 height: 18 min: 220 max: 420 step: 10 value_track: true }
+        Label { text: "Zoom" x: 8 y: 52 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: preview_zoom bind.value: app.preview_zoom on_change: app.changed() x: 48 y: 52 width: 140 height: 18 min: 1 max: 3 step: 0.1 value_track: true }
+        Label { text: "Pane" x: 200 y: 52 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: pane_slider bind.value: app.panel_w on_change: app.changed() x: 240 y: 52 width: 140 height: 18 min: 220 max: 420 step: 10 value_track: true }
 
-        Label { text: "Pan X" x: 8 y: 104 width: 40 height: 18 color: #64748B font_size: 10 }
-        Slider { id: pan_x_slider bind.value: app.pan_x on_change: app.changed() x: 50 y: 104 width: 100 height: 18 min: -300 max: 300 step: 5 value_track: true }
-        Label { text: "Pan Y" x: 158 y: 104 width: 40 height: 18 color: #64748B font_size: 10 }
-        Slider { id: pan_y_slider bind.value: app.pan_y on_change: app.changed() x: 200 y: 104 width: 100 height: 18 min: -300 max: 300 step: 5 value_track: true }
-        Label { text: "Rotate" x: 308 y: 104 width: 45 height: 18 color: #64748B font_size: 10 }
-        Slider { id: rotate_slider bind.value: app.rotate on_change: app.changed() x: 356 y: 104 width: 120 height: 18 min: -180 max: 180 step: 5 value_track: true }
+        Label { text: "Pan X" x: 8 y: 78 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: pan_x_slider bind.value: app.pan_x on_change: app.changed() x: 50 y: 78 width: 100 height: 18 min: -300 max: 300 step: 5 value_track: true }
+        Label { text: "Pan Y" x: 158 y: 78 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: pan_y_slider bind.value: app.pan_y on_change: app.changed() x: 200 y: 78 width: 100 height: 18 min: -300 max: 300 step: 5 value_track: true }
+        Label { text: "Rotate" x: 308 y: 78 width: 45 height: 18 color: #64748B font_size: 10 }
+        Slider { id: rotate_slider bind.value: app.rotate on_change: app.changed() x: 356 y: 78 width: 120 height: 18 min: -180 max: 180 step: 5 value_track: true }
     }
 
     Rectangle {

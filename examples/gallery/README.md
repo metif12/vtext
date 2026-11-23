@@ -68,7 +68,7 @@ under `testdata/fonts` is used by default, as in every other example.
   light properties panel.
 - The horizontal guide bar above the preview toggles the studio guides: Grid,
   Baseline, Guides (x-height/cap/descent), Char boxes, Pen ticks, Margins and
-  Center. Its `Pitch` slider sets the equal cell size, `Zoom` scales the
+  Center. The grid cells stay equal at a fixed 32 px pitch. `Zoom` scales the
   preview image, and `Pane` resizes the preview/properties split. `Pan X` /
   `Pan Y` shift the stage and `Rotate` turns it; both are applied to the
   rendered bitmap, and the glyph hotspots follow the same transform. When the
@@ -76,9 +76,8 @@ under `testdata/fonts` is used by default, as in every other example.
   always-visible scrollbars. All guides are drawn behind the text by HarfAra on
   every re-render.
 - On native Windows the same controls also take direct mouse gestures over the
-  preview: wheel zooms, `Ctrl`+wheel changes the pitch, drag pans,
-  `Shift`+drag (or the middle button) rotates, and `Ctrl`+drag changes the
-  pitch. The hook drives the real Sliders, so the toolbar and the model stay
+  preview: wheel zooms, drag pans, and `Shift`+drag (or the middle button)
+  rotates. The hook drives the real Sliders, so the toolbar and the model stay
   in sync. In custom-renderer builds there are no native sliders to drive, so
   a drag over the stage pans it directly through the model's pointer hook;
   wheel and modifier gestures stay on the sliders there, and other platforms
