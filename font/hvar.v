@@ -311,6 +311,81 @@ fn hvar_parse_var_store(data []u8, at int) !HvarVarStore {
 	}
 }
 
+// hvar_var_store_end answers the first byte past an ItemVariationStore at
+// offset at inside data: the furthest byte the store's regions and data
+// subtables reach. The subsetter copies the CFF2 VarStore verbatim, so an
+// extent short of the true end would truncate it; this walks the same
+// structure the parser walks and reports the high-water mark instead of
+// decoding. Keep beside hvar_parse_var_store: any format the parser learns
+// must be taught here too, or the copy silently shortens.
+pub fn hvar_var_store_end(data []u8, at int) !int {
+	r := new_reader(data)
+	if !r.has(at, 8) {
+		return error('hvar: VarStore header at ${at} outside ${data.len} bytes')
+	}
+	if r.u16_at(at) != 1 {
+		return error('hvar: unsupported VarStore format ${r.u16_at(at)}')
+	}
+	region_at := at + int(r.u32_at(at + 2))
+	data_count := int(r.u16_at(at + 6))
+	if !r.has(at + 8, data_count * 4) {
+		return error('hvar: ${data_count} VarData offsets overrun the table')
+	}
+	mut end := at + 8 + data_count * 4
+	if !r.has(region_at, 4) {
+		return error('hvar: VarRegionList at ${region_at} outside ${data.len} bytes')
+	}
+	axis_count := int(r.u16_at(region_at))
+	region_count := int(r.u16_at(region_at + 2))
+	if !r.has(region_at + 4, region_count * axis_count * 6) {
+		return error('hvar: ${region_count} regions overrun the table')
+	}
+	region_end := region_at + 4 + region_count * axis_count * 6
+	if region_end > end {
+		end = region_end
+	}
+	for d in 0 .. data_count {
+		doff := at + int(r.u32_at(at + 8 + d * 4))
+		if !r.has(doff, 6) {
+			return error('hvar: VarData ${d} at ${doff} outside ${data.len} bytes')
+		}
+		item_count := int(r.u16_at(doff))
+		num_shorts_raw := int(r.u16_at(doff + 2))
+		region_index_count := int(r.u16_at(doff + 4))
+		long_words := num_shorts_raw & 0x8000 != 0
+		word_count := num_shorts_raw & 0x7fff
+		n1 := if region_index_count < word_count {
+			region_index_count
+		} else {
+			word_count
+		}
+		n2 := if region_index_count > word_count {
+			region_index_count
+		} else {
+			word_count
+		}
+		mut pos := doff + 6 + region_index_count * 2
+		for _ in 0 .. item_count {
+			for _ in 0 .. n1 {
+				pos += if long_words { 4 } else { 2 }
+			}
+			for _ in n1 .. region_index_count {
+				pos += if long_words { 2 } else { 1 }
+			}
+			for _ in region_index_count .. n2 {
+				pos += if long_words { 2 } else { 1 }
+			}
+		}
+		if pos > data.len {
+			return error('hvar: VarData ${d} runs past ${data.len} bytes')
+		}
+		if pos > end {
+			end = pos
+		}
+	}
+	return end
+}
+
 // hvar_parse_index_map parses one DeltaSetIndexMap at offset at inside
 // data. A zero at (a NULL offset) is not parsed here; the caller turns it
 // into an absent map.

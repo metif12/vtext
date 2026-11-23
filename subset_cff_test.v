@@ -158,20 +158,21 @@ fn test_cff_subset_dropped_closure_entry_fails() {
 	assert a.ops.len > 0 && b.ops.len == 0, 'the dropped A must go from ink to empty'
 }
 
-// A CFF2-only face refuses with the format's name: there is no committed
-// CFF2 face to verify a rebuild against, so the refusal names the reason
-// rather than writing an unverified table.
-fn test_cff_subset_refuses_cff2() {
+// A corrupt CFF2 table errors with the format's name: the four zero bytes
+// below are not a CFF2 table, and the rebuild names what it failed to read
+// rather than writing an unverified table. Real CFF2 faces route to
+// subset_cff2_font instead — see subset_cff2_test.v.
+fn test_cff_subset_cff2_corrupt_errors_named() {
 	fake := cff_subset_fake_sfnt(['CFF2'])
 	only2 := shape.load_font_bytes(fake) or { panic('the CFF2-only sfnt did not load: ${err}') }
 	assert only2.outlines() == 'CFF2'
 	if _ := subset.subset_cff_font(only2, [u16(0)]) {
-		assert false, 'a CFF2 face subsetted'
+		assert false, 'a corrupt CFF2 face subsetted'
 	} else {
 		assert err.msg().contains('CFF2'), 'unexpected refusal: ${err.msg()}'
 	}
 	if _ := subset.subset_cff_with_keep(only2, [true]) {
-		assert false, 'a CFF2 face subsetted with an explicit mask'
+		assert false, 'a corrupt CFF2 face subsetted with an explicit mask'
 	} else {
 		assert err.msg().contains('CFF2'), 'unexpected refusal: ${err.msg()}'
 	}

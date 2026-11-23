@@ -20,13 +20,10 @@ import harfara.shape
 // glyphs keep naming them, and the saving is the outline data rather than
 // the whole file.
 //
-// CFF2 is refused with its name in the message. No committed face carries
-// CFF2, so a rebuild verified only against matching tables would prove
-// nothing — the fixture-matches-reader failure the corpus rule exists to
-// prevent — and the subsetter refuses rather than writing an unverified
-// table. CID-keyed CFF is refused the same way font/cff.v refuses it: its
-// CharStrings are FD-indexed, not GID-indexed, so reading one as a GID
-// would hand back the wrong glyph.
+// CFF2 faces route to subset/cff2.v, whose FDSelect maps gid to FD and
+// keeps the same gid-indexed contract. CID-keyed CFF is refused the way
+// font/cff.v refuses it: its CharStrings are FD-indexed, not GID-indexed,
+// so reading one as a GID would hand back the wrong glyph.
 
 // subset_cff_font keeps the seed glyphs and everything they need, and
 // rebuilds the font around them for a CFF-outlined face.
@@ -40,7 +37,7 @@ import harfara.shape
 // records, and their sharing runs through subrs the rebuild carries.
 pub fn subset_cff_font(f &shape.Font, seed []u16) !Subset {
 	if f.has_table('CFF2') || f.outlines() == 'CFF2' {
-		return error('cff subset: CFF2 outlines are not supported (no committed face carries CFF2 to verify a rebuild against)')
+		return subset_cff2_font(f, seed)
 	}
 	if !f.has_table('CFF ') {
 		return error('cff subset: the font has no CFF table')
@@ -88,7 +85,7 @@ pub fn subset_cff_font(f &shape.Font, seed []u16) !Subset {
 // here; the caller owns the mask outright.
 pub fn subset_cff_with_keep(f &shape.Font, keep []bool) !Subset {
 	if f.has_table('CFF2') || f.outlines() == 'CFF2' {
-		return error('cff subset: CFF2 outlines are not supported (no committed face carries CFF2 to verify a rebuild against)')
+		return subset_cff2_with_keep(f, keep)
 	}
 	if !f.has_table('CFF ') {
 		return error('cff subset: the font has no CFF table')
@@ -119,9 +116,20 @@ fn cff_build_sfnt(f &shape.Font, d []u8, keep []bool) !Subset {
 	cspan := spans['CFF '] or { return error('cff subset: the font has no CFF table') }
 	ctable := d[cspan.offset..imin(cspan.offset + cspan.length, d.len)]
 	new_cff := cff_rebuild_table(ctable, keep) or { return err }
+	return assemble_sfnt_around(f, d, spans, 'CFF ', 'CFF ', new_cff)
+}
+
+// assemble_sfnt_around assembles the subset sfnt around one rebuilt table.
+//
+// Every table but the rebuilt one is copied byte for byte: ids are preserved,
+// so cmap, hmtx, GSUB, GPOS and GDEF still address the glyph they addressed.
+// The head checksum is zeroed for the sum and patched back at the end, the
+// way the glyf rebuild does it. The output is a plain OTTO font. The CFF and
+// CFF2 rebuilds share this; their tables differ, the assembly does not.
+fn assemble_sfnt_around(f &shape.Font, d []u8, spans map[string]Span, skip_tag string, new_tag string, new_bytes []u8) !Subset {
 	mut tables := []OutTable{cap: spans.len}
 	for tag, span in spans {
-		if tag == 'CFF ' {
+		if tag == skip_tag {
 			continue
 		}
 		raw := d[span.offset..imin(span.offset + span.length, d.len)]
@@ -142,8 +150,8 @@ fn cff_build_sfnt(f &shape.Font, d []u8, keep []bool) !Subset {
 		}
 	}
 	tables << OutTable{
-		tag:   'CFF '
-		bytes: new_cff
+		tag:   new_tag
+		bytes: new_bytes
 	}
 	tables.sort(a.tag < b.tag)
 	num := tables.len

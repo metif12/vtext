@@ -14,8 +14,11 @@ module font
 
 // Cff2Fd is one Font DICT of the FDArray: the Private DICT's byte range and
 // the Local Subrs INDEX it points at. Offsets are CFF2-relative except the
-// Subrs offset, which is relative to the start of the Private DICT.
+// Subrs offset, which is relative to the start of the Private DICT. The
+// fields are public for the subset rebuild, which carries Private and subr
+// bytes verbatim and patches only the offsets that move.
 struct Cff2Fd {
+pub:
 	private_off     int
 	private_len     int
 	local_subrs_at  int
