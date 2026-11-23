@@ -416,6 +416,34 @@ fn var_unpack_points(data []u8, at int, num_points int) !([]int, int, bool) {
 	return out, pos, false
 }
 
+// var_skip_points advances past one packed point-number stream without
+// decoding it. Point runs use 7-bit counts and a 0x80 word flag (not the
+// delta stream's 6-bit count and 0x40/0xc0 width flags), so this is a
+// separate walk; it mirrors var_unpack_points run for run.
+fn var_skip_points(data []u8, at int, count int) !int {
+	if count == 0 {
+		return at
+	}
+	r := new_reader(data)
+	mut pos := at
+	mut left := count
+	for left > 0 {
+		if !r.has(pos, 1) {
+			return error('var: point run header overruns the table')
+		}
+		h := int(r.u8_at(pos))
+		pos++
+		n := (h & 0x7f) + 1
+		step := if h & 0x80 != 0 { 2 } else { 1 }
+		if !r.has(pos, step * n) {
+			return error('var: point number run overruns the table')
+		}
+		pos += step * n
+		left -= n
+	}
+	return pos
+}
+
 // var_unpack_deltas decodes one packed delta run: runs of zero fill (0x80),
 // signed bytes, signed words (0x40) or signed longs (0xC0), each run one
 // longer than its low six bits say. Exactly `count` values come back, which
@@ -693,6 +721,40 @@ fn var_ft_iup_fill(mut ox []i64, mut oy []i64, touched []bool, bxs []i64, bys []
 // point number) are skipped, and a glyph the table does not cover answers
 // zeros. `base_xs`, `base_ys` and `end_pts` are the uninterpolated outline,
 // which IUP interpolates over.
+// var_skip_deltas advances past one packed delta stream without decoding or
+// allocating it. It mirrors var_unpack_deltas's run headers exactly: an
+// inactive tuple still has to step over its x and y streams so the next
+// tuple starts at the same byte, but no value is ever read.
+fn var_skip_deltas(data []u8, at int, count int) !int {
+	r := new_reader(data)
+	mut pos := at
+	mut left := count
+	for left > 0 {
+		if !r.has(pos, 1) {
+			return error('var: delta run header at ${pos} outside table (${data.len} bytes)')
+		}
+		h := int(r.u8_at(pos))
+		pos++
+		n := (h & 0x3f) + 1
+		kind := h & 0xc0
+		step := if kind == 0x80 {
+			0
+		} else if kind == 0x40 {
+			2
+		} else if kind == 0xc0 {
+			4
+		} else {
+			1
+		}
+		if step > 0 && !r.has(pos, step * n) {
+			return error('var: delta run overruns the table')
+		}
+		pos += step * n
+		left -= n
+	}
+	return pos
+}
+
 pub fn var_gvar_deltas(gvar []u8, axis_tags []string, gid int, blended []f64, base_xs []int, base_ys []int, end_pts []int) !([]i64, []i64) {
 	point_count := base_xs.len
 	if base_ys.len != point_count {
@@ -828,6 +890,25 @@ pub fn var_gvar_deltas(gvar []u8, axis_tags []string, gid int, blended []f64, ba
 				end_r[a] = if p > 0.0 { p } else { 0.0 }
 			}
 		}
+		scalar := var_tuple_scalar(peak, start_r, end_r, blended)
+		apply := if scalar == 0.0 { 0 } else { var_scalar_fixed(scalar) }
+		if apply == 0 {
+			// Still step over this tuple's point set and both delta streams:
+			// the next tuple's offsets are relative to apos. A private point
+			// set is decoded with count=total, so it carries total numbers and
+			// total deltas; a shared one follows shared_all.
+			n_skip := if private_pts {
+				apos = var_skip_points(gvar, apos, total) or { return err }
+				total
+			} else if shared_all {
+				total
+			} else {
+				shared_points.len
+			}
+			apos = var_skip_deltas(gvar, apos, n_skip) or { return err }
+			apos = var_skip_deltas(gvar, apos, n_skip) or { return err }
+			continue
+		}
 		mut pts := shared_points.clone()
 		mut all := shared_all
 		if private_pts {
@@ -841,14 +922,6 @@ pub fn var_gvar_deltas(gvar []u8, axis_tags []string, gid int, blended []f64, ba
 		apos = next_x
 		yd, next_y := var_unpack_deltas(gvar, apos, n) or { return err }
 		apos = next_y
-		scalar := var_tuple_scalar(peak, start_r, end_r, blended)
-		if scalar == 0.0 {
-			continue
-		}
-		apply := var_scalar_fixed(scalar)
-		if apply == 0 {
-			continue
-		}
 		if all {
 			for k in 0 .. n {
 				dx[k] += var_mulfix(i64(xd[k]) << 16, apply)
