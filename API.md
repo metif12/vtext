@@ -380,7 +380,7 @@ No other part reads the UCD directly; they go through `Properties`.
 ## C API
 
 `harfara.h` is the single header; `capi.v` implements it; `harfara.def` lists the
-49 entry points for import-library generation. `tools/capicheck.v` proves the three
+50 entry points for import-library generation. `tools/capicheck.v` proves the three
 agree in both directions on every CI run.
 
 ### Build and link
@@ -425,7 +425,7 @@ harfara_breaks_t    // int *starts; int *mandatory; int len
 (0 left / 1 center / 2 right / 3 justify), `align_width`, `wrap_mode` (0 word /
 1 char / 2 word_char), `tab_stops`, `num_tab_stops`.
 
-### Function reference (49 exports)
+### Function reference (50 exports)
 
 **Version / context**
 ```c
@@ -459,6 +459,8 @@ double harfara_font_line_height(harfara_font_t *font, double em_px);
 int harfara_font_is_monospace(harfara_font_t *font);
 uint16_t harfara_font_glyph_index(harfara_font_t *font, uint32_t cp);
 int harfara_font_has_glyph(harfara_font_t *font, uint32_t cp);
+int harfara_font_set_var_coords(harfara_font_t *font, const double *coords, int ncoords,
+    char *err, int errcap);   // design units, one per fvar axis; 1 ok / 0 err
 ```
 
 **Layout**

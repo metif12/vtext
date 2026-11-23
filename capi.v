@@ -452,6 +452,40 @@ pub fn harfara_font_has_glyph(f &shape.Font, cp u32) int {
 	return if f.has_glyph(rune(cp)) { 1 } else { 0 }
 }
 
+// harfara_font_set_var_coords instances a variable font at caller-chosen axis
+// coordinates, in design units, one per fvar axis in axis order. It plays the
+// FT_Set_Var_Design_Coordinates role: the coordinates are kept on the font,
+// and shaping plus rasterization draw from them until changed. A non-variable
+// font, or a count that does not match the axis count, fails with the reason
+// in err. Returns 1 on success, 0 on failure.
+@[export: 'harfara_font_set_var_coords']
+pub fn harfara_font_set_var_coords(f &shape.Font, coords &f64, ncoords int, errbuf &u8,
+	errcap int) int {
+	if f == unsafe { nil } {
+		set_error(errbuf, errcap, 'harfara: font must be non-null')
+		return 0
+	}
+	mut all := []f64{}
+	if coords != unsafe { nil } && ncoords > 0 {
+		unsafe {
+			for i in 0 .. ncoords {
+				all << coords[i]
+			}
+		}
+	}
+	// Mutating through the caller's handle, the way any V caller of the mut
+	// method does. The handle itself comes from the C boundary this file is,
+	// so the assignment lives in unsafe with the rest of it.
+	unsafe {
+		mut m := f
+		m.set_var_coords(all) or {
+			set_error(errbuf, errcap, 'harfara: cannot instance font: ${err.msg()}')
+			return 0
+		}
+	}
+	return 1
+}
+
 // harfara_layout runs the whole pipeline for one paragraph and returns the
 // glyphs left to right, ready to draw. dir is 0 for ltr, 1 for rtl, anything
 // else takes the direction from the first strong character.

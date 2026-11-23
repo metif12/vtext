@@ -208,6 +208,59 @@ int main(int argc, char **argv) {
 		break;
 	}
 
+	/* Variable instancing: the default and the heavy weight must rasterize
+	 * different ink for the same letter. (Advances cannot tell them apart:
+	 * FiraCode is monospaced, so every weight shares them by design.) */
+	const char *var_path = argc > 2 ? argv[2] : "../../testdata/fonts/FiraCode-Variable.ttf";
+	err[0] = 0;
+	harfara_font_t *varfont = harfara_font_load_file(var_path, err, sizeof(err));
+	CHECK(varfont != 0, "variable font loads");
+	if (varfont) {
+		unsigned short hgid = harfara_font_glyph_index(varfont, 'H');
+		CHECK(hgid != 0, "H has a glyph");
+		err[0] = 0;
+		harfara_bitmap_t *hbm0 = harfara_rasterize(varfont, hgid, 32.0, 0, 0,
+			err, sizeof(err));
+		long ink0 = -1;
+		if (hbm0 && harfara_bitmap_data(hbm0)) {
+			ink0 = 0;
+			int hn = harfara_bitmap_width(hbm0) * harfara_bitmap_height(hbm0);
+			const unsigned char *hd = harfara_bitmap_data(hbm0);
+			for (int i = 0; i < hn; i++) {
+				ink0 += hd[i];
+			}
+		}
+		harfara_bitmap_free(hbm0);
+		double heavy[1] = {700.0};
+		err[0] = 0;
+		CHECK(harfara_font_set_var_coords(varfont, heavy, 1, err, sizeof(err)),
+			"instance at wght 700");
+		err[0] = 0;
+		harfara_bitmap_t *hbm1 = harfara_rasterize(varfont, hgid, 32.0, 0, 0,
+			err, sizeof(err));
+		long ink1 = -1;
+		if (hbm1 && harfara_bitmap_data(hbm1)) {
+			ink1 = 0;
+			int hn = harfara_bitmap_width(hbm1) * harfara_bitmap_height(hbm1);
+			const unsigned char *hd = harfara_bitmap_data(hbm1);
+			for (int i = 0; i < hn; i++) {
+				ink1 += hd[i];
+			}
+		}
+		harfara_bitmap_free(hbm1);
+		printf("H ink: default %ld heavy %ld\n", ink0, ink1);
+		CHECK(ink0 > 0 && ink1 > 0, "both instances rasterize");
+		CHECK(ink1 > ink0, "weight adds ink");
+		double wrong[2] = {300.0, 300.0};
+		err[0] = 0;
+		CHECK(!harfara_font_set_var_coords(varfont, wrong, 2, err, sizeof(err)),
+			"wrong axis count refused");
+		CHECK(err[0] != 0, "instance error recorded");
+		double back[1] = {300.0};
+		harfara_font_set_var_coords(varfont, back, 1, err, sizeof(err));
+		harfara_font_free(varfont);
+	}
+
 	/* Subset: keep one glyph, reload from the bytes, release everything. */
 	err[0] = 0;
 	unsigned short seed[1];

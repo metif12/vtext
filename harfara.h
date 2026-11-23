@@ -121,6 +121,12 @@ int harfara_font_is_monospace(harfara_font_t *font);
 uint16_t harfara_font_glyph_index(harfara_font_t *font, uint32_t cp);
 int harfara_font_has_glyph(harfara_font_t *font, uint32_t cp);
 
+/* Instance a variable font at caller-chosen axis coordinates (design units,
+ * one per fvar axis in order); shaping and rasterization draw from them
+ * until changed. Returns 1 on success, 0 with the reason in err. */
+int harfara_font_set_var_coords(harfara_font_t *font, const double *coords, int ncoords,
+	char *err, int errcap);
+
 harfara_line_t *harfara_layout(harfara_context_t *ctx, const char *text, int len, int dir,
 	harfara_fontset_t *fs, double em_px, char *err, int errcap);
 harfara_line_t *harfara_layout_with(harfara_context_t *ctx, const char *text, int len, int dir,

@@ -18,6 +18,7 @@ EXPORTS
 	harfara_font_is_monospace
 	harfara_font_glyph_index
 	harfara_font_has_glyph
+	harfara_font_set_var_coords
 	harfara_layout
 	harfara_layout_with
 	harfara_line_free
