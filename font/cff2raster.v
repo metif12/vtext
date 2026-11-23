@@ -78,8 +78,8 @@ fn cff2_flatten_cubic(p0 Cff2Point, p1 Cff2Point, p2 Cff2Point, p3 Cff2Point, to
 // pixel space: scaled by em_px over the face's units, y flipped to point
 // down, shifted by the caller's quarter-pixel bins. Curves are flattened;
 // lines pass through. Every contour the interpreter closes is one polygon.
-fn (c &Cff2) cff2_outline_polys(gid int, scale f64, fx f64, fy f64) ![][]Cff2Point {
-	o := c.outline(gid) or { return err }
+fn (c &Cff2) cff2_outline_polys(gid int, scale f64, fx f64, fy f64, blended []f64) ![][]Cff2Point {
+	o := c.outline_instanced(gid, blended) or { return err }
 	mut polys := [][]Cff2Point{}
 	mut cur := []Cff2Point{}
 	shift := fn (x f64, y f64, s f64, ox f64, oy f64) Cff2Point {
@@ -234,6 +234,19 @@ fn cff2_fill_bitmap(box raster.GlyphBitmap, polys [][]Cff2Point) raster.GlyphBit
 	}
 }
 
+// cff2_blended answers the normalized blend coordinates a CFF2 outline
+// instances at: the prepared avar-warped blend when coordinates were stored
+// through set_var_coords, else zeros (the default instance). A length that
+// does not match the store's axis count also answers zeros: a malformed
+// blend renders the default rather than failing the raster, the way corrupt
+// outlines rasterize empty.
+fn (f &Face) cff2_blended(axis_count int) []f64 {
+	if f.var_cache_ready && f.var_cache_blend.len == axis_count {
+		return f.var_cache_blend
+	}
+	return []f64{len: axis_count}
+}
+
 // cff2_box answers gid's ink box without rendering, through the interpreter
 // and the flattener. Empty when the glyph has no ink or the face has no
 // usable CFF2 table.
@@ -243,7 +256,9 @@ pub fn (f &Face) cff2_box(gid u16, em_px f64, sub_x i32, sub_y i32) raster.Glyph
 		return raster.GlyphBitmap{}
 	}
 	scale := em_px / f.units_per_em_f
-	polys := c.cff2_outline_polys(int(gid), scale, f64(sub_x) * 0.25, f64(sub_y) * 0.25) or {
+	blended := f.cff2_blended(c.var_store.axis_count)
+	polys := c.cff2_outline_polys(int(gid), scale, f64(sub_x) * 0.25, f64(sub_y) * 0.25,
+		blended) or {
 		return raster.GlyphBitmap{}
 	}
 	return cff2_box_of(polys)
@@ -258,7 +273,9 @@ pub fn (f &Face) cff2_bitmap(gid u16, em_px f64, sub_x i32, sub_y i32) raster.Gl
 		return raster.GlyphBitmap{}
 	}
 	scale := em_px / f.units_per_em_f
-	polys := c.cff2_outline_polys(int(gid), scale, f64(sub_x) * 0.25, f64(sub_y) * 0.25) or {
+	blended := f.cff2_blended(c.var_store.axis_count)
+	polys := c.cff2_outline_polys(int(gid), scale, f64(sub_x) * 0.25, f64(sub_y) * 0.25,
+		blended) or {
 		return raster.GlyphBitmap{}
 	}
 	return cff2_fill_bitmap(cff2_box_of(polys), polys)
@@ -273,7 +290,9 @@ pub fn (f &Face) cff2_render_into(gid u16, em_px f64, sub_x i32, sub_y i32, out 
 		return
 	}
 	scale := em_px / f.units_per_em_f
-	polys := c.cff2_outline_polys(int(gid), scale, f64(sub_x) * 0.25, f64(sub_y) * 0.25) or {
+	blended := f.cff2_blended(c.var_store.axis_count)
+	polys := c.cff2_outline_polys(int(gid), scale, f64(sub_x) * 0.25, f64(sub_y) * 0.25,
+		blended) or {
 		return
 	}
 	box := cff2_box_of(polys)

@@ -161,3 +161,48 @@ fn test_cff2_invalid_gid_rasterizes_empty() {
 	zero := f.rasterize(0, 32.0, 0, 0)
 	assert !zero.is_empty(), '.notdef must keep its ink'
 }
+
+// Instancing pins against fontTools getGlyphSet at the same location on the
+// same face. Design wght 900 normalizes to blend 1.0 (avar is the identity
+// at the extremes); design 500 warps to 0.4860085424338366, so the pins go
+// through the face's prepared blend rather than hand-normalized values.
+// Boxes derive from the fontTools instanced bounds the same floor/ceil way
+// as the default pins: A@900 (-10, 0, 594, 650), a@900 (38, -12, 482, 512),
+// A@500 (0.279, 0, 550.502, 655.140).
+fn test_cff2_instanced_raster_pins() {
+	data := os.read_bytes(cff2_path() or { return }) or { panic(err) }
+	mut face := font.new_face(data) or { panic(err) }
+	face.set_var_coords([900.0]) or { panic(err) }
+	assert face.var_cache_blend == [1.0], 'blend at wght 900 must be exactly 1.0, got ${face.var_cache_blend}'
+	bm := face.rasterize_glyph(2, 32.0, 0, 0)
+	assert bm.width == 21 && bm.height == 21, 'A@900 box ${bm.width}x${bm.height}, not 21x21'
+	assert bm.left == 1 && bm.top == 21, 'A@900 at (${bm.left},${bm.top}), not (1,21)'
+	bma := face.rasterize_glyph(28, 32.0, 0, 0)
+	assert bma.width == 15 && bma.height == 18, 'a@900 box ${bma.width}x${bma.height}, not 15x18'
+	assert bma.left == -1 && bma.top == 17, 'a@900 at (${bma.left},${bma.top}), not (-1,17)'
+	// Back at the default the default box returns: instancing is state, not
+	// a one-way trip.
+	face.set_var_coords([200.0]) or { panic(err) }
+	back := face.rasterize_glyph(2, 32.0, 0, 0)
+	assert back.width == 17 && back.height == 22, 'back at default must recover the default box'
+	face.set_var_coords([500.0]) or { panic(err) }
+	mid := face.rasterize_glyph(2, 32.0, 0, 0)
+	assert mid.width == 18 && mid.height == 21, 'A@500 box ${mid.width}x${mid.height}, not 18x21'
+	assert mid.left == 0 && mid.top == 21, 'A@500 at (${mid.left},${mid.top}), not (0,21)'
+}
+
+// The instanced outline's first point pins the blend arithmetic itself, not
+// just its box: fontTools draws A@900 starting at (-10, 0) and A@500 at
+// (0.27943362046472586, 0), and the interpreter must agree bit for bit.
+fn test_cff2_instanced_first_move_pins() {
+	data := os.read_bytes(cff2_path() or { return }) or { panic(err) }
+	mut face := font.new_face(data) or { panic(err) }
+	face.set_var_coords([900.0]) or { panic(err) }
+	c := face.cff2 or { panic('the face must carry CFF2') }
+	o := c.outline_instanced(2, face.var_cache_blend) or { panic(err) }
+	assert o.ops[0].kind == font.CffOpKind.move_to, 'A@900 must start with a move'
+	assert o.ops[0].pts == [f64(-10.0), 0], 'A@900 first move ${o.ops[0].pts}, not [-10, 0]'
+	face.set_var_coords([500.0]) or { panic(err) }
+	o5 := c.outline_instanced(2, face.var_cache_blend) or { panic(err) }
+	assert o5.ops[0].pts == [0.27943362046472586, 0], 'A@500 first move ${o5.ops[0].pts}'
+}

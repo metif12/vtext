@@ -38,6 +38,11 @@ pub:
 	fds              []Cff2Fd
 	fd_for_gid       []int
 	region_counts    []int
+	// var_store is the parsed ItemVariationStore the blend operator reads
+	// region scalars from; has_var_store is false when the table carries
+	// none. It shares the HVAR store shape, parsed by the same reader.
+	var_store     HvarVarStore
+	has_var_store bool
 }
 
 // parse_cff2_from_sfnt reads the CFF2 table of an sfnt, or refuses with CFF2
@@ -180,9 +185,13 @@ pub fn parse_cff2(table []u8) !Cff2 {
 	}
 
 	// The VarStore carries the region count per ItemVariationData index;
-	// blend needs that count to split its operand stack. At the default
-	// instance all region scalars are zero, so no delta math is required.
+	// blend needs that count to split its operand stack. The full store is
+	// parsed by the shared HVAR reader so non-default instances can evaluate
+	// region scalars; a corrupt store refuses the whole table, the same as
+	// a corrupt region count would.
 	mut region_counts := []int{}
+	mut store := HvarVarStore{}
+	mut has_store := false
 	if vstore_at >= 0 && vstore_at + 8 <= table.len {
 		data_count := int(u16_be(table, vstore_at + 6))
 		if data_count > 4096 {
@@ -201,6 +210,10 @@ pub fn parse_cff2(table []u8) !Cff2 {
 			}
 			region_counts << int(u16_be(table, off + 4))
 		}
+		// The region counts above are the quick split blend needs; the store
+		// below is the scalars and their regions. Both read the same bytes.
+		store = hvar_parse_var_store(table, vstore_at) or { return err }
+		has_store = true
 	}
 
 	return Cff2{
@@ -216,6 +229,8 @@ pub fn parse_cff2(table []u8) !Cff2 {
 		fds:              fds
 		fd_for_gid:       fd_for
 		region_counts:    region_counts
+		var_store:        store
+		has_var_store:    has_store
 	}
 }
 
@@ -231,7 +246,8 @@ mut:
 
 // Cff2Run is the shared drawing state of one CFF2 outline. Unlike CFF1 there
 // is no width: hmtx (or HVAR) owns advances. The stack holds 513 values, the
-// CFF2 default; blend reads the region count for the current vsindex.
+// CFF2 default; blend reads the region count for the current vsindex and the
+// scalars from blended, the normalized coordinates the outline instances at.
 struct Cff2Run {
 	c  &Cff2
 	fd Cff2Fd
@@ -243,6 +259,7 @@ mut:
 	stems   int
 	open    bool
 	vsindex int
+	blended []f64
 }
 
 fn (mut st Cff2Run) push(v f64) ! {
@@ -345,28 +362,54 @@ fn (mut st Cff2Run) hcurve(args []f64) ![]f64 {
 }
 
 // blend consumes n defaults, n*M deltas and the explicit n from the stack.
-// At the default instance every region scalar is zero, so the answer is the
-// defaults, which already sit on top of the stack in order once the deltas
-// and n are popped. Non-default instancing is a separate slice.
+// Each default keeps its place and gains the scalar-weighted deltas for its
+// row: result[i] = default[i] + sum over regions of scalar * delta. The
+// scalars evaluate the vsindex data's regions at the outline's normalized
+// blend coordinates, the supportScalar product HarfBuzz computes. At the
+// default instance every scalar is zero, so the answer is the defaults,
+// which already sit on top of the stack in order once the deltas and n are
+// dropped. A region index outside the region list contributes nothing, the
+// way HarfBuzz reads it, rather than erroring.
 fn (mut st Cff2Run) blend() ! {
 	n_f := st.pop() or { return err }
 	n := int(n_f)
 	if n < 1 || f64(n) != n_f {
 		return error('cff2: blend has an invalid count ${n_f}')
 	}
-	if st.vsindex < 0 || st.vsindex >= st.c.region_counts.len {
+	if !st.c.has_var_store || st.vsindex < 0 || st.vsindex >= st.c.var_store.datas.len {
 		return error('cff2: blend uses vsindex ${st.vsindex} outside the VarStore')
 	}
-	m := st.c.region_counts[st.vsindex]
+	data := st.c.var_store.datas[st.vsindex]
+	m := data.region_indexes.len
 	// n was already popped, so the remaining stack must hold n defaults and
 	// n*M deltas — n*(M+1) values, not one more.
 	need := n * (m + 1)
 	if st.stack.len < need {
 		return error('cff2: blend needs ${need} values after n, the stack has ${st.stack.len}')
 	}
-	// Drop the n*M deltas; the n defaults remain in place, in order. (n was
-	// already popped above, so only the deltas still need removing.)
-	st.stack = st.stack[..st.stack.len - n * m]
+	if st.blended.len != st.c.var_store.axis_count {
+		return error('cff2: ${st.blended.len} blend coordinates for ${st.c.var_store.axis_count} store axes')
+	}
+	base := st.stack.len - need
+	for i in 0 .. n {
+		mut v := st.stack[base + i]
+		for k in 0 .. m {
+			ri := data.region_indexes[k]
+			if ri < 0 || ri >= st.c.var_store.regions.len {
+				continue
+			}
+			s := hvar_region_scalar(st.c.var_store.regions[ri], st.blended)
+			if s == 0.0 {
+				continue
+			}
+			d := st.stack[base + n + i * m + k]
+			if d != 0.0 {
+				v += s * d
+			}
+		}
+		st.stack[base + i] = v
+	}
+	st.stack = st.stack[..base + n]
 }
 
 // subr_bytes reads one local or global subroutine by its biased index.
@@ -744,9 +787,18 @@ fn (mut st Cff2Run) exec(mut lv Cff2Level) ! {
 }
 
 // outline reads one glyph's CharString through its FD and returns the drawn
-// path. All region scalars are zero at the default instance, so blend keeps
-// the default operands; the instanced form is a separate slice.
+// path at the default instance: every region scalar is zero, so blend keeps
+// the default operands.
 pub fn (c &Cff2) outline(gid int) !CffOutline {
+	return c.outline_instanced(gid, []f64{len: c.var_store.axis_count})
+}
+
+// outline_instanced reads one glyph's CharString through its FD and returns
+// the drawn path at blended, the normalized coordinates the outline
+// instances at. A length that does not match the store's axis count is a
+// caller error; a face that never stored coordinates blends zeros, which is
+// the default instance above.
+pub fn (c &Cff2) outline_instanced(gid int, blended []f64) !CffOutline {
 	if gid < 0 || gid >= c.num_charstrings {
 		return error('cff2: glyph ${gid} is outside the CharStrings INDEX')
 	}
@@ -756,8 +808,9 @@ pub fn (c &Cff2) outline(gid int) !CffOutline {
 	}
 	s, e := cff_index_range(c.table, c.charstrings_at, gid) or { return err }
 	mut st := Cff2Run{
-		c:  c
-		fd: c.fds[fdidx]
+		c:       c
+		fd:      c.fds[fdidx]
+		blended: blended
 	}
 	mut lv := Cff2Level{ data: c.table[s..e] }
 	st.exec(mut lv) or { return err }
