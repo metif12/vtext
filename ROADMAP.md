@@ -1446,9 +1446,30 @@ built and measured: a content-guarded early return in `indic_visual` for pure
 is a left vowel or a repha. Full `Line` equality passed on long, short and
 mixed runs, but interleaved A/B measured 0.97–1.02x on the 1024-rune paragraph
 and 0.99–1.01x on a short stack — effectively 1.00x. The reorder is a negligible
-share of even a short layout call, so it was rejected too. Phase 13 perf work
-is now exhausted: both measurable candidates were rejected and the only landable
-change was the dead-work removal above.
+share of even a short layout call, so it was rejected too.
+
+**Phase 13 perf — prepare variable tables once per face (landed 2026-11-23).**
+A fresh scout into untouched hot paths found a real one: `instanced_glyph_points`
+re-parsed fvar, avar (twice) and the whole HVAR table — including a 1415-entry
+advance map — on *every* glyph of a variable face. `set_var_coords` now prepares
+the axes, the avar-warped blend and HVAR once on the Face; the instancing path
+reads that state and runs only the per-glyph gvar delta math. A failed parse
+leaves the old path and the default instance is unchanged; the FT fixed-point
+math, IUP, phantom points and HVAR override are untouched. `var_instance_glyph`
+is split into a public wrapper that still computes the blend and a blended
+core the prepared path calls directly. An interleaved single-process A/B with
+full `InstancedOutline` equality pinned over all 1415 glyphs at wght 300/500/700
+measured 1.85–2.12× on the instancing loop across four `-prod`/gcc runs (2.12×
+on a normal build). Full suite 84/84 green locally. This is the first Phase 13
+perf win on a genuinely shipped path — the earlier candidates were inspection-
+only or test-only.
+
+The same wave found two candidates that were not landed: sharing the duplicate
+word-class array in `log_attrs` (the only duplicate left there; end-to-end win
+likely a few percent on a path not wired into the C API) and a content-guarded
+no-op in `compose_hangul_runs` (same shape as the rejected Tibetan guard, so
+expected near 1.00× on `.segment`). Neither was built; both are recorded as
+scoped but unmeasured.
 
 ## Explicitly not planned
 
