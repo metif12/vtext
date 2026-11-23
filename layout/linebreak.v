@@ -878,9 +878,9 @@ pub fn break_kind(cps []rune, classes []ucd.LineBreakClass, quote []ucd.CodeRang
 	// answers by reaching back to it. And `× 200D × 2014 ÷` [8.1] refuses for a reason no class
 	// can carry: `effective_class` folds a zero width joiner into a combining mark, so at the
 	// class level this pair is indistinguishable from `× 302A ÷ 2014 ÷` and `× 0000 ÷ 2014 ÷`,
-	// which both break. The file wants the joiner held and the marks broken, so the raw property
-	// is asked here rather than the resolved class. It is the only `line_break_of(cps[i])` call in
-	// the chain, and it is here because there is no class-level spelling of "a joiner, specifically".
+	// which both break. The file wants the joiner held and the marks broken, so the raw class is
+	// asked here rather than the resolved one. break_opportunities reads it once per character
+	// into raw_classes; there is no class-level spelling of "a joiner, specifically".
 	if right == .b2 && (eff_left == .b2 || raw_left == .zwj) {
 		return BreakKind.no
 	}

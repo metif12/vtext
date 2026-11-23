@@ -433,6 +433,7 @@ pub fn (s IndicShaper) split_run(cps []rune) ([]rune, []int) {
 // general pipeline, so only the two stacking features are named here.
 pub struct TibetanShaper {}
 
+// claims reports whether the run holds a Tibetan codepoint.
 pub fn (s TibetanShaper) claims(cps []rune) bool {
 	for cp in cps {
 		if cp >= rune(0x0F00) && cp <= rune(0x0FFF) {
@@ -442,18 +443,25 @@ pub fn (s TibetanShaper) claims(cps []rune) bool {
 	return false
 }
 
+// default_features answers the two stacking features HarfBuzz proves
+// default-on; ccmp and locl are already run by the general pipeline.
 pub fn (s TibetanShaper) default_features() []string {
 	return ['abvs', 'blws']
 }
 
+// pre_ccmp_features answers nothing: every Tibetan feature reads the ccmp
+// compositions, so none runs ahead of them.
 pub fn (s TibetanShaper) pre_ccmp_features(extra []string) []string {
 	return []string{}
 }
 
+// reorder_tail is the identity: the UCD positional table has no Left vowel
+// for Tibetan, so the general machine performs no matra move.
 pub fn (s TibetanShaper) reorder_tail(out []rune, map_ []int) ([]rune, []int) {
 	return out.clone(), map_.clone()
 }
 
+// split_run is the identity: Tibetan has no split vowels to decompose.
 pub fn (s TibetanShaper) split_run(cps []rune) ([]rune, []int) {
 	mut map_ := []int{cap: cps.len}
 	for i in 0 .. cps.len {

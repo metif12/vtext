@@ -89,7 +89,7 @@ pub mut:
 	// Prepared variable state, computed once in set_var_coords instead of
 	// re-parsing fvar/avar/HVAR on every instanced glyph. Best-effort: if any
 	// parse fails, var_cache_ready stays false and the caller takes the old
-	// per-glyph path. use_var_cache is the A/B toggle, set at construction.
+	// per-glyph path.
 	var_cache_ready bool
 	var_cache_axes  []VariableAxis
 	var_cache_blend []f64

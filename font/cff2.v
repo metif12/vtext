@@ -189,9 +189,15 @@ pub fn parse_cff2(table []u8) !Cff2 {
 		if data_count > 4096 {
 			return error('cff2: VarStore declares ${data_count} ItemVariationData entries')
 		}
+		// The offset array itself must be inside the table: u32_be returns 0
+		// out of bounds, which would silently turn a truncated store into a
+		// different (wrong) region count instead of a refusal.
+		if vstore_at + 8 + data_count * 4 > table.len {
+			return error('cff2: VarStore offset array runs past the table')
+		}
 		for d in 0 .. data_count {
 			off := vstore_at + int(u32_be(table, vstore_at + 8 + d * 4))
-			if off + 6 > table.len {
+			if off < 0 || off + 6 > table.len {
 				return error('cff2: ItemVariationData ${d} is outside the table')
 			}
 			region_counts << int(u16_be(table, off + 4))
@@ -238,7 +244,6 @@ mut:
 	stems   int
 	open    bool
 	vsindex int
-	depth   int
 }
 
 fn (mut st Cff2Run) push(v f64) ! {
@@ -645,7 +650,10 @@ fn (mut st Cff2Run) operator(b int, data []u8, mut lv Cff2Level) !bool {
 		if n != f64(int(n)) {
 			return error('cff2: a subr number of ${n} is not an integer')
 		}
-		if st.depth >= 10 {
+		// The depth lives on the byte stream, not the run: st.depth is never
+		// advanced by a subr call, so checking it would let a self-recursive
+		// subr nest forever (CFF1 checks lv.depth for the same reason).
+		if lv.depth >= 10 {
 			return error('cff2: charstring subr calls nest deeper than 10')
 		}
 		bias := if b == 10 {
@@ -654,7 +662,7 @@ fn (mut st Cff2Run) operator(b int, data []u8, mut lv Cff2Level) !bool {
 			st.c.global_bias
 		}
 		bytes := st.subr_bytes(b == 10, int(n) + bias) or { return err }
-		mut sub := Cff2Level{ data: bytes, depth: st.depth + 1 }
+		mut sub := Cff2Level{ data: bytes, depth: lv.depth + 1 }
 		st.exec(mut sub) or { return err }
 		return false
 	}
