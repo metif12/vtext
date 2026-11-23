@@ -1,5 +1,10 @@
 # HarfAra
 
+**HarfAra** (حرف‌آرا) is Persian for *letter-adorner*: **harf** (حرف, "letter")
++ **ārā** (آرا, "adorning / arranging", the present stem of آراستن, "to adorn").
+Pronounced *harf-aw-RAW* (/hæɾf.ɒːˈɾɒː/). Shaping is the craft of arranging
+letters, so the name is the job.
+
 A complete font and text package in V: load, shape, lay out, rasterize,
 inspect and subset — one library where each job is a separate part with its
 own API and its own conformance baseline. It replaces FreeType, HarfBuzz,
