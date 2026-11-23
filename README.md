@@ -1,9 +1,13 @@
 # HarfAra
 
-**HarfAra** (حرف‌آرا) is Persian for *letter-adorner*: **harf** (حرف, "letter")
-+ **ārā** (آرا, "adorning / arranging", the present stem of آراستن, "to adorn").
-Pronounced *harf-aw-RAW* (/hæɾf.ɒːˈɾɒː/). Shaping is the craft of arranging
-letters, so the name is the job.
+**HarfAra (حرف‌آرا)** is a Persian compound meaning *one who adorns and arranges letters*.
+
+- **harf (حرف):** Letter or character.
+- **ārā (آرا):** An element meaning adorning, embellishing, or arranging, derived from **ārāstan (آراستن)**, the Persian verb meaning *to adorn, decorate, or put in order*.
+
+Pronounced *harf-ārā* (/hæɾf.ɒːˈɾɒː/).
+
+The name reflects the art of giving letters their proper form, position, and visual expression. In typography, beautiful text is not simply written; it is shaped, arranged, and brought to life.
 
 A complete font and text package in V: load, shape, lay out, rasterize,
 inspect and subset — one library where each job is a separate part with its
