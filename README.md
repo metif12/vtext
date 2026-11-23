@@ -78,7 +78,7 @@ The pipeline is the one UAX #9 and the OpenType specification describe, in order
 | Substitute glyphs | OpenType GSUB | `font/gsub.v` |
 | Place combining marks | OpenType GPOS | `font/gpos.v` |
 | Order glyphs for drawing | UAX #9 | `layout/layout.v` |
-| Rasterize | | `font/stbtt.c.v` |
+| Rasterize | | `font/stbtt.c.v` (glyf/CFF1), `font/cff2raster.v` (CFF2) |
 
 Character data is generated from the UCD into `ucd/ucd_*.v` (module `harfara.ucd`),
 so there are no runtime tables to load and no network access is needed to build.
@@ -86,8 +86,8 @@ so there are no runtime tables to load and no network access is needed to build.
 ## Supported
 
 - sfnt and TTC containers, WOFF1, and font collections. CFF1 is read,
-  rasterized and subsetted; CFF2 is read for inspection and default-instance
-  outlines, but is not rasterized or subsetted.
+  rasterized and subsetted; CFF2 is read, rasterized at any instance,
+  and subsetted (CID-keyed CFF is refused).
 - cmap subtable formats 0, 4, 6, 12, 13 and 14, including variation sequences.
 - Arabic joining forms, and the isolated, initial, medial and final shapes.
 - GSUB single, multiple, alternate, ligature and contextual substitutions.

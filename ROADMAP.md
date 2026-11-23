@@ -1386,6 +1386,7 @@ owns the queue.
 | 13.7 | CFF2 non-default instancing | landed (VarStore scalars + prepared avar blend; fontTools @900/@500 pins incl. 1e-9 coords) |
 | 13.8 | CFF2 subset rebuild | landed (verbatim carries + patched offsets; outline-equality + instanced-subset pins; CFF1 refactor guarded by its pins) |
 | 13.9 | C API variable instancing | landed (`harfara_font_set_var_coords`; smoke proves the ink change; 50 exports) |
+| 13.10 | CFF2 fill: flat edge array | landed (2.7–3.0x debug / 1.13–1.23x `-prod`; byte-identical over 2478 glyphs at 16/32/64) |
 
 **Still open: triggered, not scheduled.** A slice lands when its trigger
 arrives, not before; each trigger below names exactly what would unblock
@@ -1596,6 +1597,23 @@ the C face too. The smoke test instances FiraCode-Variable at wght 700 and
 proves the ink changes (26671 to 65611 coverage sum — advances cannot tell
 weights apart on a monospaced face), plus the wrong-count refusal. The
 mirror holds at 50 exports; the clib matrix proves all three platforms.
+
+**Phase 13 CFF2 fill — flat edge array, landed 2026-11-23.** The fill is
+97–99.8% of CFF2 raster time (interpreting plus flattening is ~150 us
+against 5–112 ms of fill for five glyphs at 16/32/64 px), so the
+interpreter was left alone and the per-sample walk was flattened:
+polygons become one edge array per raster, the 16 subpixel offsets hoist
+to a const, and box, bitmap and `render_into` share one fill core (the C
+API path uses the latter, so it gets the win too). An interleaved
+same-process A/B over all 2478 SourceSans3VF glyphs at 16/32/64 px times
+old vs new per glyph and asserts byte-identical coverage: 2.66x/2.95x/
+2.97x debug, 1.13x/1.14x/1.23x under `-prod` (plain `-prod` does not link
+test binaries on this box's MinGW — an LTO export failure that predates
+the change — so the `-prod` numbers use `-fno-lto`). The one divergent
+pixel found mid-way (a sample exactly on an edge) traced to operand order
+in the crossing test, and the flat test now evaluates in the same order,
+so boundary samples round identically. The box, the samples and the rule
+are untouched, and the existing pins pass unmodified.
 
 ## Explicitly not planned
 
