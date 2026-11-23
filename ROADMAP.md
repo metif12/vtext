@@ -1387,6 +1387,7 @@ owns the queue.
 | 13.8 | CFF2 subset rebuild | landed (verbatim carries + patched offsets; outline-equality + instanced-subset pins; CFF1 refactor guarded by its pins) |
 | 13.9 | C API variable instancing | landed (`harfara_font_set_var_coords`; smoke proves the ink change; 50 exports) |
 | 13.10 | CFF2 fill: flat edge array | landed (2.7–3.0x debug / 1.13–1.23x `-prod`; byte-identical over 2478 glyphs at 16/32/64) |
+| 13.11 | GSUB per-edit hit-set maintenance | landed (incremental marks, superset-safe; up to ~28% on calt-dense, neutral elsewhere; index-adjust follow-up rejected at ~1.0x) |
 
 **Still open: triggered, not scheduled.** A slice lands when its trigger
 arrives, not before; each trigger below names exactly what would unblock
@@ -1614,6 +1615,26 @@ pixel found mid-way (a sample exactly on an edge) traced to operand order
 in the crossing test, and the flat test now evaluates in the same order,
 so boundary samples round identically. The box, the samples and the rule
 are untouched, and the existing pins pass unmodified.
+
+**Phase 13 GSUB per-edit hit-set maintenance — landed 2026-11-23.** On
+calt-dense code text the per-substitution work dominates shaping: each edit
+rebuilt the first-coverage hit set from scratch, an O(run) walk with two
+set allocations, ~100 us per edit on 5k-glyph runs. The set is only
+consulted as a pre-filter before `apply_at` — which re-validates by
+matching — so it needs to stay a superset of the gids present, nothing
+more. Marking the introduced glyphs in place keeps that invariant with
+O(edits) work instead of O(run) per edit; stale removed gids only ever
+admit extra apply_at calls that fail matching, and a substitution can never
+be missed. Interleaved same-binary A/B on calt density 0/5/20/80 over the
+same text: identical output hashes everywhere, gsub down up to ~28% on the
+dense end and neutral on plain text. A follow-up replacing the per-edit
+effective-sequence recompute with an index adjust was built and measured
+too — same interleaved A/B, identical hashes — and landed nowhere near its
+predicted win: the adjust's own O(run) index walk costs what the recompute's
+O(run) probe walk costs, so old and new tracked within ~1% on every
+density. Rejected; the rebuild it would replace is not probe-bound. The
+break-fix in both directions is the old binary: same outputs, measurably
+slower without the increment, measurably identical with the adjust.
 
 ## Explicitly not planned
 
