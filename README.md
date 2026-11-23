@@ -146,11 +146,11 @@ Each item names the slice that owns it in `ROADMAP.md`.
   Devanagari and Bengali, Khmer/Myanmar shaping, hinting and color, synthetic
   styles and LCD, stroking, MATH wiring, variable instancing, Core Text and
   DirectWrite providers, CFF subsetting, word/sentence breaks with log attrs,
-  wrap modes/ellipsize/tabs, the Phase 9 scripts, the CFF2 reader and Tibetan
-  stacking. What remains besides cursive is the triggered set in `ROADMAP.md`
-  (AAT `morx`, Graphite, WOFF2/brotli, the full TrueType bytecode interpreter),
-  which lands when a font needs it. CFF2's non-default instancing, subset
-  rebuild and raster backend are scoped but not yet landed.
+  wrap modes/ellipsize/tabs, the Phase 9 scripts, the CFF2 reader, raster
+  backend, instancing and subset rebuild, and Tibetan stacking. What remains
+  besides cursive is the triggered set in `ROADMAP.md` (AAT `morx`, Graphite,
+  WOFF2/brotli, the full TrueType bytecode interpreter), which lands when a
+  font needs it.
 
 ## Refused by design
 

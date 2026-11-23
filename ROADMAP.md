@@ -56,18 +56,19 @@ alongside; CJK line breaking is conformance-pinned.
 | Line breaking (UAX #14) | landed, 19,346/19,346 | conformance floor |
 | Wrap: align/justify/kashida/hyphen-policy/modes/ellipsize/tabs | landed 7.4, 7.5, 8.4 | `align_test`, `hyphen_wrap_test`, `ellipsize_wrap_test` |
 | Vertical single column | landed | `vertical_test`, columns cut and pinned |
-| CFF reader + subset rebuild (CFF2/CID refused) | landed 7.9 | `cff_test`, `subset_cff_test` |
+| CFF reader + subset rebuild | landed 7.9 | `cff_test`, `subset_cff_test` |
+| CFF2 reader, raster backend, instancing + subset rebuild (CID refused) | landed 13.1 + 13.6/13.7/13.8 | `cff2_test`, `subset_cff2_test` |
 | MATH reader + Face wiring | landed 8.7 | `math_test` |
 | Variable instancing | landed 7.10 | `varinstance_test` + 142,848 sweep |
 | Reference cache helper (caller-owned) | landed 7.11-1H | `cache_test` |
 | fontconfig match/sort/coverage | landed 8.8 | `match_test` (CI-owned leg) |
-| Subsetter (glyf + CFF rebuilds; CFF2/CID refused) | landed | `subset_test` |
-| C API + usage guide | landed | `capi.v`, `harfara.h`, `USAGE.md`, smoke test |
+| Subsetter (glyf, CFF and CFF2 rebuilds; CID refused) | landed | `subset_test` |
+| C API + usage guide | landed (50 exports incl. variable instancing) | `capi.v`, `harfara.h`, `USAGE.md`, smoke test |
 | Inspection API (on `shape.Font`) | landed | `inspect_test`, `fontdump`/`fontcheck`/`shapetrace` |
-| Examples (12, multilingual, corpus-only) | landed | `examples/` |
+| Examples (13, multilingual, corpus-only, incl. the interactive gallery) | landed | `examples/` |
 | Indic machine, SE-Asian engine, color/hinting, stroking, synth/LCD, CoreText/DW providers, rival A/B | landed | Phase 7–9 below |
 
-Suite: 82 test files, all passing (2026-11-18). Differential baseline:
+Suite: 84 test files, all passing (2026-11-23). Differential baseline:
 151 entries, exact-string matching, 0 new / 0 stale (Pango legs skip aloud
 on Windows without a Pango stack; CI verifies them).
 
@@ -429,7 +430,7 @@ are done; the rest name their trigger or their assignee.
 | Library | Carries | Covered | Not covered |
 | --- | --- | --- | --- |
 | HarfBuzz core | GSUB/GPOS, features, variations | yes (7.1, 7.2, 7.10) | MATH → 8.7 ✓ |
-| hb-subset | subsetting | glyf yes | CFF → 7.9 (refused, see 7.9) |
+| hb-subset | subsetting | glyf yes | CFF → 7.9, CFF2 → 13.8 (CID refused, see 7.9) |
 | FreeType load | sfnt/TTC | yes | WOFF → 8.1 ✓ (WOFF2 triggered) |
 | FreeType raster | unhinted/hinted/auto/LCD | unhinted yes; hint → 7.7 | LCD → 8.5 ✓ (bitmap-level; FIR follow-up) |
 | FreeType API | embolden/oblique, stroker | bitmap-level 8.5 ✓ (outline-level follow-up) | 8.6 ✓ (landed) |
@@ -1321,6 +1322,8 @@ Naskh, Nastaliq and SC faces.
 | `DoulosSIL-Regular.ttf` | 887,828 | Latin (survey-only: no `morx`/Graphite) | OFL |
 | `AwamiNastaliq-Regular.ttf` | 644,356 | Urdu Nastaliq + Graphite trigger (`Silf`/`Glat`/`Gloc`) | OFL |
 | `SourceSans3-Regular.otf` (CFF) | 334,924 | Latin | OFL |
+| `SourceSans3VF-Upright.otf` (CFF2 variable) | 538,164 | Latin, CFF2 | OFL |
+| `NotoSerifTibetan-Variable.ttf` | 2,063,504 | Tibetan | OFL |
 | `STIXTwoMath-Regular.ttf` | 1,517,976 | Math | OFL |
 | `LatinModernMath-Regular.otf` (CFF) | 733,736 | Math | GFL (LPPL instance; OFL backup carries no MATH table — rejected) |
 
@@ -1374,23 +1377,48 @@ owns the queue.
 | 12.18 | Rival parity: dense raw line-break class table (G20) | landed (1.04–1.14x on `break_opportunities`; full opportunity equality pinned) |
 | 12.19 | Rival parity: oblique ink-box fold (G21) | landed (1.13–1.23x on the oblique pass; byte-for-byte coverage equality) |
 | 12.20 | Rival parity: GPOS stack-candidate buckets (G22) | landed (1.56–1.79x on `position_marks`; full Line equality pinned) |
-| 13.1 | CFF2 reader (default instance) | landed (fontTools pins on SourceSans3VF; instancing, subset and raster backend remain open) |
+| 13.1 | CFF2 reader (default instance) | landed (fontTools pins on SourceSans3VF; followed by the raster backend 13.6, instancing 13.7 and subset 13.8) |
 | 13.2 | Tibetan stacking | landed (HB pins on NotoSerifTibetan; cluster convention divergence recorded) |
 | 13.3 | TrueType interpreter reference leg | landed (hintref.py + pinned freetype-py CI control); engine itself open |
 | 13.4 | Variable-table prep + zero-scalar gvar gate | landed (1.85–2.12x instancing, ~1.1x at default; full outline equality) |
 | 13.5 | vreview whole-package fixes | landed (CFF2 recursion cap, VarStore bounds, stale docs, method docs) |
+| 13.6 | CFF2 raster backend | landed (interpreter + adaptive flatten + even-odd fill; fontTools box pins; .notdef/invalid-gid rules) |
+| 13.7 | CFF2 non-default instancing | landed (VarStore scalars + prepared avar blend; fontTools @900/@500 pins incl. bit-exact coords) |
+| 13.8 | CFF2 subset rebuild | landed (verbatim carries + patched offsets; outline-equality + instanced-subset pins; CFF1 refactor guarded by its pins) |
+| 13.9 | C API variable instancing | landed (`harfara_font_set_var_coords`; smoke proves the ink change; 50 exports) |
 
-**Triggered, not scheduled** (a slice lands when a font needs it): AAT
-`morx` (no committable carrier class exists — Apple faces are
-unredistributable, no OFL `morx` carrier is known; a generated font would be
-the fixture-matches-reader failure, so there is nothing to fetch), Graphite
-(font gate pulled 2026-11-17: `AwamiNastaliq-Regular.ttf` committed with
-`Silf`/`Glat`/`Gloc`/`Feat`/`Sill`; Doulos SIL 7.000 surveyed 2026-11-17 and
-carries none — 18 tables, no `morx`/`mort`/Graphite, `Silt` is an opaque gzip
-blob; corpus 26-face scan 0 hits, full AAT-family scan on both SIL faces 0
-hits; reference gate still closed — HarfBuzz cannot shape Graphite, so a
-grengine-class reference must be proven in CI first; engine unscoped),
-WOFF2/brotli, the full TrueType bytecode interpreter.
+**Still open: triggered, not scheduled.** A slice lands when its trigger
+arrives, not before; each trigger below names exactly what would unblock
+it. Everything else ever listed as remaining is landed — the table above
+owns the queue.
+
+- AAT `morx`: blocked on a carrier. No committable carrier class exists —
+  Apple faces are unredistributable, no OFL `morx` carrier is known, and a
+  generated font would be the fixture-matches-reader failure, so there is
+  nothing to fetch. Unblocks on a committable face carrying `morx`.
+- Graphite: blocked on a reference, though the font gate is open
+  (`AwamiNastaliq-Regular.ttf` committed 2026-11-17 with `Silf`/`Glat`/
+  `Gloc`/`Feat`/`Sill`; Doulos SIL 7.000 surveyed 2026-11-17 and carries
+  none — 18 tables, no `morx`/`mort`/Graphite, `Silt` is an opaque gzip
+  blob; corpus 26-face scan 0 hits, full AAT-family scan on both SIL faces
+  0 hits). HarfBuzz cannot shape Graphite, so a grengine-class reference
+  must be proven in CI first; the engine is unscoped until then.
+- Cursive attachment: blocked on a working rule. It is read and verified
+  glyph-for-glyph against fontTools but never wired: the one corpus rule
+  that reaches its own glyphs is vestigial (four one-sided anchors, no
+  adjacent exit-plus-entry pair). Unblocks on a committed face whose rule
+  reaches its own glyphs the way it describes.
+- The full TrueType bytecode interpreter: scoped, not started. The carrier
+  half is open (six committed OFL faces carry real `fpgm`/`prep`/`cvt` and
+  glyph programs) and the reference leg landed (`tools/hintref.py` with
+  pinned freetype-py and a positive-control CI step). The engine itself is
+  a separate multi-slice implementation — plumbing and 26.6 state, VM core
+  with FDEF/CALL, geometry instructions, raster wiring — of roughly
+  3,000–4,900 lines; a toy opcode subset would not execute the committed
+  faces' 140-function `fpgm` library, so none is claimed.
+- WOFF2/brotli: blocked on a decoder. No brotli decoder lives in this
+  tree and porting one is its own project, so the magic is refused with
+  the reason. Unblocks on a committable decoder.
 
 **Phase 13 CFF2 — reader landed 2026-11-22.** The gate was the missing
 carrier face, now committed: `SourceSans3VF-Upright.otf` (OFL, 2478
@@ -1401,10 +1429,11 @@ no-width 513 stack, single-byte vsindex/blend and per-FD subr dispatch. At
 the default instance every region scalar is zero, so blend keeps its default
 operands. Pinned by `cff2_test.v` against fontTools 4.66.1 on that face:
 counts, region counts [2, 1], outline op counts and the first moveTo for
-A/B/C/a; full suite green. Remaining slices: non-default instancing
-(blend scalars + HVAR interaction) and the subset rebuild. CFF2 has no
-raster backend — stb_truetype only reads CFF1 — so a CFF2 face loads and
-shapes but has no ink; that is a separate slice, not silently claimed here.
+A/B/C/a; full suite green. The remaining slices named here have since
+landed: the raster backend (13.6), non-default instancing (13.7) and the
+subset rebuild (13.8) below. (An earlier revision of this entry said CFF2
+had no raster backend; that was true until 13.6 and is kept visible here
+so the history reads straight.)
 
 **Phase 13 Tibetan — landed 2026-11-22.** The gate was the missing stacking
 face, now committed: `NotoSerifTibetan-Variable.ttf` (OFL, GSUB/GPOS `tibt`
@@ -1450,7 +1479,10 @@ unpopulated, matching G19's retained `glyphs` array. An interleaved
 single-process A/B on that face with full face equality pinned (metrics,
 advances, glyph ids, stb_ok plus an independent CFF2 parse) measured
 1.00–1.06x over nine runs, median ~1.01x — a marginal G19-class win from
-removing dead work. A sibling candidate, reusing the CFF2 interpreter's
+removing dead work. (That removal was itself partly reverted by 13.6 below:
+the field is populated again so the raster backend has outlines to draw, and
+the ~1% load cost now buys the ink. The measurement stands — the cost is
+real — but dead work that gains a reader stops being dead.) A sibling candidate, reusing the CFF2 interpreter's
 operand-stack backing array across operators, was measured over all 2478
 glyphs with exact outline equality and rejected at 0.97–0.99x: V's small-slice
 allocator already handles the churn. The Tibetan reorder fast path was also
@@ -1502,6 +1534,65 @@ likely a few percent on a path not wired into the C API) and a content-guarded
 no-op in `compose_hangul_runs` (same shape as the rejected Tibetan guard, so
 expected near 1.00× on `.segment`). Neither was built; both are recorded as
 scoped but unmeasured.
+
+**Phase 13 CFF2 raster backend — landed 2026-11-23.** `Face` populates its
+retained `cff2` field in `new_face` (best-effort none on a corrupt table, so
+a face that loads today keeps loading), and `render_into` /
+`rasterize_glyph` / `box_only` route CFF2 gids through the new backend in
+`font/cff2raster.v`: interpret the default-instance CharString, flatten the
+cubics by adaptive subdivision (0.05 px tolerance, depth cap 12), fill with
+the same 4x4-supersampled even-odd rule the instanced gvar raster uses.
+Even-odd, documented: every corpus contour agrees under both rules. The
+hinted path degrades through its existing `box_only` fallback, and
+`var_wants_instanced` needs no gvar table so the dispatch never collides
+with it. Pinned by `cff2_test.v` against fontTools 4.66.1 BoundsPen boxes —
+A/B/C/a at 32 px are 17x22, 14x22, 16x23 and 12x17 — plus ink>0, box_only
+agreement, determinism, invalid-gid emptiness and `.notdef` ink. Break-fix:
+dropping curve flattening fails the width pins; restored green.
+
+**Phase 13 CFF2 instancing — landed 2026-11-23.** The VarStore is parsed by
+the shared HVAR `ItemVariationStore` reader, and `blend` evaluates real
+region scalars — the supportScalar product at the outline's normalized
+coordinates — instead of keeping defaults. `outline_instanced` takes the
+blend; the raster path instances at the face's prepared avar-warped blend
+(zeros when no coordinates were stored), so `set_var_coords` drives CFF2
+shaping and rasterization with no new API. Pinned against fontTools
+`getGlyphSet` at wght 900 and 500: A@900 and a@900 boxes (21x21 at (1,21);
+15x18 at (-1,17)), A@500 (18x21 at (0,21)), the first moveTo bit for bit
+(`-10.0` at 900; `0.27943362046472586` at 500, avar warp included), and
+recovery of the default box on return to 200. Break-fix: zeroed scalars
+collapse @900 to the default box and fail both pins; restored green.
+Default-instance behavior is unchanged — the earlier pins pass unmodified.
+
+**Phase 13 CFF2 subset rebuild — landed 2026-11-23.** `subset/cff2.v`
+rebuilds the CFF2 table around the keep closure (GSUB+MATH fixpoint, no glyf
+pass): kept CharStrings verbatim, dropped as single endchar, the FDArray
+INDEX rebuilt with patched Private offsets, the raw Top DICT rewritten with
+the new offsets, and Global Subrs, FDSelect, the VarStore, every Private
+block and both subr sets verbatim — nothing inside them addresses the
+table absolutely. Offsets settle over a 4-pass loop mirrored on the CFF1
+rebuild; a raw-preserving generic DICT walker keeps BCD reals (BlueScale)
+and unknown ops byte-identical and patches only what moves. The shared
+sfnt assembler was extracted from `cff_build_sfnt` and the CFF1
+byte-identical pins prove the refactor. Pinned by `subset_cff2_test.v`:
+reload keeps the table set and count, every kept outline compares equal,
+dropped gids draw nothing, deterministic bytes, tampered-mask break-fix,
+and instancing the subset at wght 900 rasters equal to the original
+(VarStore and FD mapping survive). Break-fix: dropping the VarStore copy
+breaks the subset's CFF2 parse; restored green. `subset_cff_font` and
+`subset_cff_with_keep` route CFF2 faces here instead of refusing; the stale
+refusal test now asserts the corrupt-table error names CFF2.
+
+**Phase 13 C API variable instancing — landed 2026-11-23.** A C caller
+could shape, lay out, rasterize and subset, but never leave the default
+instance. One export closes it: `harfara_font_set_var_coords` takes
+design-unit coordinates, one per fvar axis, kept on the font until changed;
+wrong counts and non-variable fonts fail with the reason in err. It rides
+the same `set_var_coords` the V API uses, so CFF2 faces instance through
+the C face too. The smoke test instances FiraCode-Variable at wght 700 and
+proves the ink changes (26671 to 65611 coverage sum — advances cannot tell
+weights apart on a monospaced face), plus the wrong-count refusal. The
+mirror holds at 50 exports; the clib matrix proves all three platforms.
 
 ## Explicitly not planned
 
