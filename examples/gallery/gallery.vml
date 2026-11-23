@@ -1,0 +1,293 @@
+Screen {
+    id: root
+    background: #F1F5F9
+
+    Rectangle {
+        id: pages_panel
+        x: 0
+        y: 0
+        width: 170
+        height: root.height
+        background: #1E293B
+
+        Rectangle { x: 10 y: 13 width: 9 height: 9 background: #3B82F6 corner_radius: 2 }
+        Label { text: "HarfAra" x: 25 y: 9 width: 130 height: 20 color: #FFFFFF font_size: 15 bold: true }
+        Label { text: "FEATURE GALLERY" x: 25 y: 28 width: 130 height: 14 color: #64748B font_size: 8 bold: true }
+        Rectangle { x: 8 y: 48 width: 154 height: 1 background: #334155 }
+        Label { text: "FEATURES" x: 10 y: 58 width: 150 height: 14 color: #64748B font_size: 9 bold: true }
+
+        Scroll {
+            id: page_list
+            x: 0
+            y: 76
+            width: 170
+            height: root.height - 122
+            background: #1E293B
+
+            Repeater {
+                model: app.pages
+                key: item.id
+
+                Rectangle {
+                    x: 0
+                    y: 2 + index * 36
+                    width: 3
+                    height: 31
+                    background: #60A5FA
+                    hidden: !item.selected
+                }
+
+                Rectangle {
+                    x: 7
+                    y: 2 + index * 36
+                    width: 143
+                    height: 31
+                    background: item.selected ? #2563EB : #1E293B
+                    corner_radius: 4
+                    clickable: true
+                    button_behavior: true
+                    on_tap: app.select_page(item.id)
+
+                    Label {
+                        text: item.name
+                        x: 10
+                        y: 7
+                        width: 128
+                        height: 18
+                        color: item.selected ? #FFFFFF : #94A3B8
+                        font_size: 11
+                    }
+                }
+            }
+        }
+
+        Rectangle { x: 8 y: root.height - 46 width: 154 height: 1 background: #334155 }
+        Label { text: "13 pages · shaped by HarfAra" x: 10 y: root.height - 38 width: 150 height: 14 color: #475569 font_size: 9 }
+        Label { id: lib_info text: app.lib_info x: 10 y: root.height - 22 width: 150 height: 14 color: #64748B font_size: 9 }
+    }
+
+    Rectangle {
+        id: guides_bar
+        x: 178
+        y: 8
+        width: root.width - 202 - app.panel_w
+        height: 124
+        background: #FFFFFF
+        corner_radius: 8
+
+        Label { text: "Guides" x: 8 y: 5 width: 60 height: 16 color: #0F172A font_size: 11 bold: true }
+
+        Checkbox { id: grid_toggle text: "Grid" bind.checked: app.show_grid on_change: app.changed() x: 8 y: 24 width: 56 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: baseline_toggle text: "Baseline" bind.checked: app.show_baseline on_change: app.changed() x: 68 y: 24 width: 72 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: guides_toggle text: "Guides" bind.checked: app.show_guides on_change: app.changed() x: 144 y: 24 width: 60 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: boxes_toggle text: "Char boxes" bind.checked: app.show_char_boxes on_change: app.changed() x: 208 y: 24 width: 78 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: pens_toggle text: "Pen ticks" bind.checked: app.show_pen_ticks on_change: app.changed() x: 290 y: 24 width: 70 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: margins_toggle text: "Margins" bind.checked: app.show_margins on_change: app.changed() x: 364 y: 24 width: 66 height: 22 background: #FFFFFF font_size: 9 }
+        Checkbox { id: center_toggle text: "Center" bind.checked: app.show_center on_change: app.changed() x: 434 y: 24 width: 60 height: 22 background: #FFFFFF font_size: 9 }
+
+        Label { text: "Pitch" x: 8 y: 52 width: 60 height: 18 color: #64748B font_size: 10 }
+        Slider { id: grid_slider bind.value: app.grid_size on_change: app.changed() x: 72 y: 52 width: 60 height: 22 min: 8 max: 64 step: 4 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+        Label { id: grid_value text: app.grid_label x: 380 y: 52 width: 60 height: 18 color: #1D4ED8 font_size: 10 }
+
+        Label { text: "Zoom" x: 8 y: 78 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: preview_zoom bind.value: app.preview_zoom on_change: app.changed() x: 48 y: 78 width: 140 height: 18 min: 1 max: 3 step: 0.1 value_track: true }
+        Label { text: "Pane" x: 200 y: 78 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: pane_slider bind.value: app.panel_w on_change: app.changed() x: 240 y: 78 width: 140 height: 18 min: 220 max: 420 step: 10 value_track: true }
+
+        Label { text: "Pan X" x: 8 y: 104 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: pan_x_slider bind.value: app.pan_x on_change: app.changed() x: 50 y: 104 width: 100 height: 18 min: -300 max: 300 step: 5 value_track: true }
+        Label { text: "Pan Y" x: 158 y: 104 width: 40 height: 18 color: #64748B font_size: 10 }
+        Slider { id: pan_y_slider bind.value: app.pan_y on_change: app.changed() x: 200 y: 104 width: 100 height: 18 min: -300 max: 300 step: 5 value_track: true }
+        Label { text: "Rotate" x: 308 y: 104 width: 45 height: 18 color: #64748B font_size: 10 }
+        Slider { id: rotate_slider bind.value: app.rotate on_change: app.changed() x: 356 y: 104 width: 120 height: 18 min: -180 max: 180 step: 5 value_track: true }
+    }
+
+    Rectangle {
+        id: preview
+        x: 178
+        y: 136
+        width: root.width - 202 - app.panel_w
+        height: root.height - 148
+        background: #FFFFFF
+        corner_radius: 8
+
+        Label { id: description text: app.desc x: 10 y: 8 width: preview.width - 20 height: 22 color: #111827 font_size: 14 bold: true }
+        Label { id: status_label text: app.status x: 10 y: 30 width: preview.width - 20 height: 16 color: #1D4ED8 font_size: 10 }
+
+        Rectangle {
+            id: image_frame
+            x: 8
+            y: 52
+            width: preview.width - 16
+            height: preview.height - 62
+            background: #F8FAFC
+            corner_radius: 6
+            border_color: #CBD5E1
+            border_width: 1
+
+            Scroll {
+                id: preview_scroll
+                x: 0
+                y: 0
+                width: image_frame.width - 2
+                height: image_frame.height - 2
+                background: #F8FAFC
+                scroll_mode: both
+                persistent: true
+
+                Image {
+                    id: stage_image
+                    source: app.image_path
+                    x: 4
+                    y: 4
+                    width: (preview.width - 24) * app.preview_zoom
+                    height: (preview.width - 24) * 500 / 940 * app.preview_zoom
+                }
+
+                Repeater {
+                    model: app.hits
+                    key: item.id
+
+                    Button {
+                        text: ''
+                        opacity: 0
+                        on_tap: app.select_glyph(item.id)
+                        x: item.x * app.preview_zoom
+                        y: item.y * app.preview_zoom
+                        width: item.w * app.preview_zoom
+                        height: item.h * app.preview_zoom
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: properties
+        x: root.width - app.panel_w - 8
+        y: 8
+        width: app.panel_w
+        height: root.height - 16
+        background: #FFFFFF
+        corner_radius: 8
+
+        Label { text: "Properties" x: 12 y: 10 width: 180 height: 22 color: #0F172A font_size: 15 bold: true }
+        Button { id: reset_props text: "Reset" on_tap: app.reset_properties() x: 200 y: 8 width: 64 height: 26 background: #E2E8F0 color: #1E293B corner_radius: 5 font_size: 11 }
+        Label { id: font_status_header text: app.font_status x: 12 y: 36 width: 256 height: 16 color: #166534 font_size: 10 }
+
+        Scroll {
+            id: props_list
+            x: 6
+            y: 54
+            width: 268
+            height: root.height - 70
+            background: #FFFFFF
+
+            Label { text: "TEXT" x: 8 y: 6 width: 240 height: 16 color: #94A3B8 font_size: 10 bold: true }
+            Label { text: "Content" x: 8 y: 32 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: content_resize bind.value: app.content_h on_change: app.changed() x: 96 y: 30 width: 158 height: 22 min: 50 max: 280 step: 4 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            TextArea { id: sample_text bind.text: app.text on_change: app.changed() x: 8 y: 56 width: 246 height: app.content_h background: #F8FAFC corner_radius: 5 font_size: 11 }
+            Label { text: "Font" x: 8 y: 112 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Dropdown {
+                id: font_choice
+                bind.text: app.font_name
+                on_change: app.changed()
+                x: 96 y: 110 + app.content_h - 50 width: 158 height: 26
+                background: #F1F5F9 corner_radius: 5
+
+                Option { text: "__FONT_OPTIONS__" }
+            }
+            Label { text: "Direction" x: 8 y: 152 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Dropdown {
+                id: dir_choice
+                bind.text: app.dir_name
+                on_change: app.changed()
+                x: 96 y: 150 + app.content_h - 50 width: 158 height: 26
+                background: #F1F5F9 corner_radius: 5
+
+                Option { text: "LTR" }
+                Option { text: "RTL" }
+                Option { text: "Auto" }
+            }
+            Label { text: "Size" x: 8 y: 192 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: size_slider bind.value: app.size on_change: app.changed() x: 96 y: 192 + app.content_h - 50 width: 158 height: 24 min: 10 max: 96 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+
+            Rectangle { x: 8 y: 224 + app.content_h - 50 width: 246 height: 1 background: #E2E8F0 }
+            Label { text: "LAYOUT" x: 8 y: 234 + app.content_h - 50 width: 240 height: 16 color: #94A3B8 font_size: 10 bold: true }
+            Label { text: "Letter space" x: 8 y: 260 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: letter_slider bind.value: app.letter_spacing on_change: app.changed() x: 96 y: 260 + app.content_h - 50 width: 158 height: 24 min: -5 max: 10 step: 0.5 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "Word space" x: 8 y: 300 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: word_slider bind.value: app.word_spacing on_change: app.changed() x: 96 y: 300 + app.content_h - 50 width: 158 height: 24 min: -5 max: 20 step: 0.5 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "Line height" x: 8 y: 340 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: line_slider bind.value: app.line_height on_change: app.changed() x: 96 y: 340 + app.content_h - 50 width: 158 height: 24 min: 0 max: 100 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "Wrap width" x: 8 y: 380 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: wrap_slider bind.value: app.wrap_width on_change: app.changed() x: 96 y: 380 + app.content_h - 50 width: 158 height: 24 min: 80 max: 900 step: 10 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "Wrap mode" x: 8 y: 420 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Dropdown {
+                id: wrap_choice
+                bind.text: app.wrap_name
+                on_change: app.changed()
+                x: 96 y: 418 + app.content_h - 50 width: 158 height: 26
+                background: #F1F5F9 corner_radius: 5
+
+                Option { text: "Word" }
+                Option { text: "Char" }
+                Option { text: "Word+Char" }
+            }
+            Label { text: "Align" x: 8 y: 460 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Dropdown {
+                id: align_choice
+                bind.text: app.align_name
+                on_change: app.changed()
+                x: 96 y: 458 + app.content_h - 50 width: 158 height: 26
+                background: #F1F5F9 corner_radius: 5
+
+                Option { text: "Left" }
+                Option { text: "Center" }
+                Option { text: "Right" }
+                Option { text: "Justify" }
+            }
+            Label { text: "Align width" x: 8 y: 500 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: align_width_slider bind.value: app.align_width on_change: app.changed() x: 96 y: 500 + app.content_h - 50 width: 158 height: 24 min: 0 max: 920 step: 10 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Checkbox { id: vertical_toggle text: "Vertical writing" bind.checked: app.vertical on_change: app.changed() x: 8 y: 540 + app.content_h - 50 width: 246 height: 26 background: #FFFFFF font_size: 11 }
+
+            Rectangle { x: 8 y: 574 + app.content_h - 50 width: 246 height: 1 background: #E2E8F0 }
+            Label { text: "OPENTYPE" x: 8 y: 584 + app.content_h - 50 width: 240 height: 16 color: #94A3B8 font_size: 10 bold: true }
+            Checkbox { id: feature_toggle text: "Feature on" bind.checked: app.feature_on on_change: app.changed() x: 8 y: 610 + app.content_h - 50 width: 246 height: 26 background: #FFFFFF font_size: 11 }
+            Label { text: "Feature tag" x: 8 y: 650 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            TextField { id: feature_tag bind.text: app.feature on_change: app.changed() x: 96 y: 648 + app.content_h - 50 width: 158 height: 26 background: #F8FAFC corner_radius: 5 font_size: 11 }
+            Label { text: "Script" x: 8 y: 690 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            TextField { id: script_tag bind.text: app.script on_change: app.changed() x: 96 y: 688 + app.content_h - 50 width: 158 height: 26 background: #F8FAFC corner_radius: 5 font_size: 11 }
+            Label { text: "Language" x: 8 y: 730 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            TextField { id: lang_tag bind.text: app.language on_change: app.changed() x: 96 y: 728 + app.content_h - 50 width: 158 height: 26 background: #F8FAFC corner_radius: 5 font_size: 11 }
+
+            Rectangle { x: 8 y: 764 + app.content_h - 50 width: 246 height: 1 background: #E2E8F0 }
+            Label { text: "RASTER" x: 8 y: 774 + app.content_h - 50 width: 240 height: 16 color: #94A3B8 font_size: 10 bold: true }
+            Label { text: "Sub X" x: 8 y: 800 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: subx_slider bind.value: app.sub_x on_change: app.changed() x: 96 y: 800 + app.content_h - 50 width: 158 height: 24 min: 0 max: 3 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "Sub Y" x: 8 y: 840 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: suby_slider bind.value: app.sub_y on_change: app.changed() x: 96 y: 840 + app.content_h - 50 width: 158 height: 24 min: 0 max: 3 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "Zoom" x: 8 y: 880 + app.content_h - 50 width: 84 height: 20 color: #475569 font_size: 11 }
+            Slider { id: zoom_slider bind.value: app.zoom on_change: app.changed() x: 96 y: 880 + app.content_h - 50 width: 158 height: 24 min: 1 max: 12 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+
+            Rectangle { x: 8 y: 914 + app.content_h - 50 width: 246 height: 1 background: #E2E8F0 }
+            Label { text: "FONTS" x: 8 y: 924 + app.content_h - 50 width: 240 height: 16 color: #94A3B8 font_size: 10 bold: true }
+            Button { id: browse_installed text: "Browse installed fonts…" on_tap: app.browse_fonts('installed') x: 8 y: 946 + app.content_h - 50 width: 246 height: 26 background: #DBEAFE color: #1D4ED8 corner_radius: 5 font_size: 11 }
+            Button { id: add_font_file text: "Add font file…" on_tap: app.browse_fonts('file') x: 8 y: 982 + app.content_h - 50 width: 246 height: 26 background: #E2E8F0 color: #1E293B corner_radius: 5 font_size: 11 }
+            Label { text: "Font name or path" x: 8 y: 1020 + app.content_h - 50 width: 240 height: 18 color: #475569 font_size: 10 }
+            TextField { id: font_query bind.text: app.font_query on_submit: app.load_font_by_name() x: 8 y: 1040 + app.content_h - 50 width: 246 height: 26 background: #F8FAFC corner_radius: 5 font_size: 11 placeholder: "arial.ttf or C:/fonts/x.ttf" }
+            Button { id: load_font_name text: "Load by name" on_tap: app.load_font_by_name() x: 8 y: 1076 + app.content_h - 50 width: 246 height: 26 background: #E2E8F0 color: #1E293B corner_radius: 5 font_size: 11 }
+            Label { id: font_status text: app.font_status x: 8 y: 1112 + app.content_h - 50 width: 246 height: 18 color: #166534 font_size: 10 }
+
+            Rectangle { x: 8 y: 1148 + app.content_h - 50 width: 246 height: 1 background: #E2E8F0 }
+            Label { text: "COLOR" x: 8 y: 1158 + app.content_h - 50 width: 240 height: 16 color: #94A3B8 font_size: 10 bold: true }
+            Rectangle { id: text_swatch x: 8 y: 1180 + app.content_h - 50 width: 246 height: 26 background: app.text_swatch corner_radius: 5 border_color: #CBD5E1 border_width: 1 }
+            Label { text: "R" x: 8 y: 1214 + app.content_h - 50 width: 20 height: 20 color: #475569 font_size: 11 }
+            Slider { id: text_r bind.value: app.text_r on_change: app.changed() x: 30 y: 1214 + app.content_h - 50 width: 224 height: 22 min: 0 max: 255 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "G" x: 8 y: 1248 + app.content_h - 50 width: 20 height: 20 color: #475569 font_size: 11 }
+            Slider { id: text_g bind.value: app.text_g on_change: app.changed() x: 30 y: 1248 + app.content_h - 50 width: 224 height: 22 min: 0 max: 255 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+            Label { text: "B" x: 8 y: 1282 + app.content_h - 50 width: 20 height: 20 color: #475569 font_size: 11 }
+            Slider { id: text_b bind.value: app.text_b on_change: app.changed() x: 30 y: 1282 + app.content_h - 50 width: 224 height: 22 min: 0 max: 255 step: 1 value_track: true background: #FFFFFF value_track_color: #BFDBFE thumb_color: #2563EB thumb_size: 14 }
+        }
+    }
+}

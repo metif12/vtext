@@ -21,6 +21,12 @@ harfara_build.*
 # make a change to the engine look like a change to the example.
 examples/**/*.png
 
+# What examples/gallery writes when it runs: the headless selftest report and
+# the error file the window path leaves when it fails to open. Both land in
+# the working directory, so they are named exactly rather than globbed.
+examples/gallery/gallery_selftest.txt
+examples/gallery/gallery_error.txt
+
 # What tools/glyphdump.v writes. It is run from the repository root, so its pictures land beside v.mod
 # rather than under tools/, and the rule above does not reach them. Both names are the tool's defaults, so
 # this is an exact list rather than a pattern over everything that looks like output.
