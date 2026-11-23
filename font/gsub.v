@@ -418,8 +418,14 @@ fn (g &Gsub) substitute_one_filtered(li u16, mut items []Ligatable, want ?Joinin
 		}
 		// A glyph the lookup's first coverage cannot name starts no rule here,
 		// so the whole apply_at dispatch and every rule walk it would try are
-		// skipped. The set is rebuilt after an edit, because a substitution can
-		// introduce a glyph that was not in the run when the set was made.
+		// skipped. The set is built once per lookup and then only grows:
+		// a substitution can introduce a glyph that was not in the run
+		// when the set was made, so the introduced gids are marked and the
+		// set stays a superset of the gids present. A superset only ever
+		// admits extra apply_at calls that fail matching; it can never
+		// miss a substitution, which is what a rebuilt-from-scratch set
+		// would be needed for. Skipping the rebuild drops an O(run) walk
+		// with two set allocations per substitution.
 		if !hits.has(items[eff[walk]].gid) {
 			walk += step
 			continue
@@ -444,7 +450,11 @@ fn (g &Gsub) substitute_one_filtered(li u16, mut items []Ligatable, want ?Joinin
 					items = splice(items, sub)
 					eff = g.effective(items, lookup.flag, lookup.mark_set, want)
 				}
-				hits = g.first_coverage_hits(li, items)
+				for e in sub.edits {
+					for ng in e.glyphs {
+						hits.mark(ng.gid)
+					}
+				}
 				walk = eff.len - 1
 				if !rtl {
 					walk = eff_at_or_after(eff, span.last)
