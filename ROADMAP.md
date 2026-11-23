@@ -4,6 +4,11 @@ Where this library is, what is left in the engine, and what comes after it.
 Status first, evidence with every claim, history only where it binds future
 work. Dated entries use the landing date; anything undated is open.
 
+**Renamed 2026-11-23: vtext → HarfAra.** The brand is HarfAra; the V module,
+imports and C ABI are lowercase `harfara` / `harfara_*` (header `harfara.h`).
+Entries dated before the rename were measured under the old name. The
+published v0.1.0 release predates the rename and keeps the `vtext` names.
+
 ## How to read this
 
 **Status words** (load-bearing — a slice is one of these):
@@ -57,7 +62,7 @@ alongside; CJK line breaking is conformance-pinned.
 | Reference cache helper (caller-owned) | landed 7.11-1H | `cache_test` |
 | fontconfig match/sort/coverage | landed 8.8 | `match_test` (CI-owned leg) |
 | Subsetter (glyf + CFF rebuilds; CFF2/CID refused) | landed | `subset_test` |
-| C API + usage guide | landed | `capi.v`, `vtext.h`, `USAGE.md`, smoke test |
+| C API + usage guide | landed | `capi.v`, `harfara.h`, `USAGE.md`, smoke test |
 | Inspection API (on `shape.Font`) | landed | `inspect_test`, `fontdump`/`fontcheck`/`shapetrace` |
 | Examples (12, multilingual, corpus-only) | landed | `examples/` |
 | Indic machine, SE-Asian engine, color/hinting, stroking, synth/LCD, CoreText/DW providers, rival A/B | landed | Phase 7–9 below |
@@ -129,11 +134,11 @@ Language and platform coverage, the public API, documentation — all landed.
 
 - The shaping engine covers Arabic/Persian plus the Latin that comes with
   them; the script map in Phase 9 tracks everything after.
-- The C API is `vtext.h` with opaque handles over contexts, font sets, fonts,
+- The C API is `harfara.h` with opaque handles over contexts, font sets, fonts,
   lines, wraps, breaks and bitmaps (`capi.v`, `@[export]` wrappers, errors in
   a caller-owned buffer, explicit `i32` at the boundary because V `int` is
   64-bit here). Verified by `examples/c-api/smoke.c` through both link routes
-  (tcc direct, gcc via `vtext.def`). No versioned C release exists (only
+  (tcc direct, gcc via `harfara.def`). No versioned C release exists (only
   GitHub Release `v0.1.0`, 2026-10-16) — the C library ships as per-run CI
   artifacts, not releases.
 - Hard-won C-export facts, kept because they bite again: the wrappers needed
@@ -240,15 +245,15 @@ Rules that cost real debugging, kept:
 
 One library, separate parts, dependencies one way
 (`layout` → `shape` → `font` → `ucd`, `raster` a leaf below `font`,
-`capi` over all, no part imports a tool): `vtext.ucd`, `vtext.font`
+`capi` over all, no part imports a tool): `harfara.ucd`, `harfara.font`
 (containers, cmap, reader, Face with metrics + GSUB/GPOS parsing +
-application, stb primitives), `vtext.shape` (joining, normalization, bidi,
-`Context`, `Font`/`FontSet`/`Glyph`, `inspect.v`), `vtext.layout`
-(`linebreak.v`, `layout.v`), `vtext.raster` (`GlyphBitmap`; `box_only` /
+application, stb primitives), `harfara.shape` (joining, normalization, bidi,
+`Context`, `Font`/`FontSet`/`Glyph`, `inspect.v`), `harfara.layout`
+(`linebreak.v`, `layout.v`), `harfara.raster` (`GlyphBitmap`; `box_only` /
 `render_into` stay methods on `font.Face` because methods live in the type's
-own module, so `font` imports the leaf), `vtext.subset`
-(`subset_font(font, seed)` + CLI), `vtext.capi` (last, wraps all;
-`vtext.h` stays the single header).
+own module, so `font` imports the leaf), `harfara.subset`
+(`subset_font(font, seed)` + CLI), `harfara.capi` (last, wraps all;
+`harfara.h` stays the single header).
 
 Seams, each an explicit interface: `FontSource` (file, bytes, provider),
 `RasterBackend` (box-for-gid plus fill-this-buffer), `BreakPolicy` (UAX #14
@@ -324,7 +329,7 @@ syllabic values, 16 positional; inputs committed with licence-travels
 exceptions); committed OFL NotoSansDevanagari-Variable (1117 glyphs,
 `akhn rphf blwf cjct` under `deva`+`dev2`); the syllable machine as
 `shape/indic.v` (segmentation, Left-matra reorder, conjunct finder —
-imports only `vtext.ucd`, nothing existing touched). Pinned by
+imports only `harfara.ucd`, nothing existing touched). Pinned by
 `indic_test.v` beside HarfBuzz: segmentation == HB clusters, reorder ==
 HB visual order, akhn smoke (KSSA → gid 90), राम exact agreement, with
 mutation break-fix (neutered reorder, dropped Virama row). Engine gaps
@@ -403,7 +408,7 @@ manual `perf-record` workflow (which commits with `[skip ci]`), and the
 `perf` CI job gates the ratios on every commit. The matrix covers every
 script the corpus carries plus marks, digits and mixed-bidi char types.
 The harness degrades the ratchet way: no interpreter or rival import prints
-the vtext half with the reason. Recorded on Win11 x64 with `v -cc gcc`:
+the HarfAra half with the reason. Recorded on Win11 x64 with `v -cc gcc`:
 shape latin-1024 1672x (layout+shape vs hb shape), arabic-1024 552x, raster
 miss 0.69x, raster hit 0.03x. Recorded 2026-11-17 with `v -prod -cc gcc`:
 shape latin-1024 399x, arabic-1024 57x, raster miss 0.27x, raster hit
@@ -487,7 +492,7 @@ Pinned by `ellipsize_wrap_test.v` with fontTools-measured pins and two
 break-fix controls (char arm, ellipsis append). C-side spelling landed
 2026-11-16: `wrap_mode` (0 word, 1 char, 2 word_char, else word) and
 `tab_stops` (pointer plus count, copied) appended to `COptions` after
-`align_width` in `capi.v` and to `vtext_options_t` in `vtext.h` — existing
+`align_width` in `capi.v` and to `harfara_options_t` in `harfara.h` — existing
 offsets never move, so old callers keep reading their own fields. Pinned
 by `coptions_test.v` (mapping, copy semantics, null/empty/negative stops,
 engine equivalence for tabs and wrap modes) with a swapped-arm break-fix.
@@ -821,16 +826,16 @@ the difftest corpus, pango legs verified on CI.
 
 ## Phase 10: standalone vlib replacement gaps
 
-vtext stays standalone: no `vlib` types, no `gg`/`canvas`/`sfons`/`os.font`/`x/ttf`
-imports, no FONS/C types. vtext provides the generic gaps vlib needs to
+HarfAra stays standalone: no `vlib` types, no `gg`/`canvas`/`sfons`/`os.font`/`x/ttf`
+imports, no FONS/C types. HarfAra provides the generic gaps vlib needs to
 replace fontstash / stb_truetype / freetype behind its own split flags;
-the adaptation (`-d use_vtext_gg`, `-d use_vtext_canvas`, `vlib/vtext/...`)
+the adaptation (`-d use_harfara_gg`, `-d use_harfara_canvas`, `vlib/harfara/...`)
 lives in `vlib`, not here.
 
 The atlas boundary does not move: Phase 1 settled against a hidden atlas
 and for a caller-owned cache (`shape/cache.v`, `shape/CacheKey`), and that
 holds here. The caller keeps owning its atlas texture, dirty-rect upload
-and strike budgets; vtext answers box-for-gid plus fill-this-buffer
+and strike budgets; HarfAra answers box-for-gid plus fill-this-buffer
 (`box_only` / `render_into` on `font.Face`, `raster.GlyphBitmap`) plus the
 generic helpers below. No new thirdparty.
 
@@ -856,7 +861,7 @@ single-pixel spread) with a threshold-neutered break-fix.
 **10.4 canvas CPU helpers — landed 2026-11-17 as generic coverage only.**
 Mono/gray2/4 quantize, gamma/contrast LUT and blur land here (10.3);
 hinting rides 7.7, LCD FIR rides the 8.5 follow-up, stroking rides 8.6,
-color rides 7.7. No `Typeface`/`ScalerRec`/`Strike` types in vtext; those
+color rides 7.7. No `Typeface`/`ScalerRec`/`Strike` types in HarfAra; those
 stay in `vlib` behind its own flag.
 
 **10.5 generic discovery — landed 2026-11-17.** `providers/discovery.v`:
@@ -890,7 +895,7 @@ same-harness before/after numbers. C-API rule from 8.4 holds throughout
 **Modular.** M1 is an import-direction ratchet test: allowed imports per
 module (`layout` may use `shape`/`font`, `shape` never `layout`, nothing
 imports `tools/`), a deliberate violation fails. M1 landed 2026-11-17 as
-`modularity_test.v`, pinning the exact vtext-internal set per module
+`modularity_test.v`, pinning the exact HarfAra-internal set per module
 (stdlib stays free; test files and the tools/ and examples/ programs are
 out of scope), with a neutered-table break-fix proving it discriminates.
 M2/M3 split the monoliths
@@ -901,7 +906,7 @@ landed 2026-11-18 splitting the font monoliths by lookup kind
 `gsub_single`/`gsub_ligature`/`gsub_context`); M3 landed the same day
 splitting the layout monolith by pass (`layout/kern.v`, `layout/marks.v`,
 `layout/place.v` beside the slimmed `layout.v`). No
-public API renames: pure file moves, `vtext.h` untouched.
+public API renames: pure file moves, `harfara.h` untouched.
 
 **Extendable.** E1 is a `ScriptShaper` interface with a registry (Khmer,
 Myanmar, Indic migrated one commit per script): feature order, reorder and
@@ -961,7 +966,7 @@ rewritten, and every consumer reads the list the per-call path resolved.
 
 ## Phase 12: rival parity — open, planned 2026-11-19.
 
-The perf table compares vtext's full pipeline against rivals that do less
+The perf table compares HarfAra's full pipeline against rivals that do less
 per row (layout+shape vs HarfBuzz shape-only), and the ratios show it:
 hundreds to one on the shape rows. This phase closes that gap slice by
 slice, each with same-harness before/after numbers attributed by the F1
@@ -1508,7 +1513,7 @@ Worth writing down so these do not come back as questions.
   are in; boxes, the cascade and painting stay the caller's.
 - HarfBuzz bindings, or a port of anything. The engine is written from the
   specifications.
-- Font authoring. vtext reads fonts, subsets them, and reports on them; it
+- Font authoring. HarfAra reads fonts, subsets them, and reports on them; it
   does not build them.
 
 The last boundary has a caller: a from-scratch HTML/CSS engine (`../vweb`)
@@ -1534,8 +1539,8 @@ How slices land, kept here so it is not re-derived each session:
   possible, exclusive ownership where shared files are unavoidable. Agents
   never touch `ROADMAP.md`, docs, or another slice's files; docs and wiring
   land with the owner.
-- V resolves `vtext.*` imports by ancestor walk, so a worktree named
-  `vtext-NN` tests the sibling checkout named `vtext` instead of itself.
-  Verify worktree-local through a `VMODULES` junction (`<tmpmod>\vtext` →
+- V resolves `harfara.*` imports by ancestor walk, so a worktree named
+  `harfara-NN` tests the sibling checkout named `harfara` instead of itself.
+  Verify worktree-local through a `VMODULES` junction (`<tmpmod>\harfara` →
   the worktree) plus `v -path <tmpmod>|@vlib|@vmodules`; merge-time runs
-  happen in a `vtext`-named root.
+  happen in a `harfara`-named root.

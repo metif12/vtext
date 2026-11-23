@@ -1,4 +1,4 @@
-vtext is licensed under two licences, because it contains two different kinds of thing.
+HarfAra is licensed under two licences, because it contains two different kinds of thing.
 
     The source code                          MIT, below.
     The files under ucd/                     UNICODE LICENSE V3, in ucd/LICENSE-UNICODE.txt.
@@ -12,7 +12,7 @@ licence problem of its own. Everything else is the source of this module.
 
 MIT License
 
-Copyright (c) 2026 the vtext authors
+Copyright (c) 2026 the HarfAra authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

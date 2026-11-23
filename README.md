@@ -1,4 +1,4 @@
-# vtext
+# HarfAra
 
 A complete font and text package in V: load, shape, lay out, rasterize,
 inspect and subset — one library where each job is a separate part with its
@@ -15,9 +15,13 @@ with no claim, and every remaining difference is recorded with its reason.
 See `GOAL.md` for the one paragraph that decides scope arguments, and
 `ROADMAP.md` for where each part stands.
 
+> HarfAra was named **vtext** until 2026-11-23. The module and C symbols are
+> lowercase `harfara` / `harfara_*`; the v0.1.0 release predates the rename and
+> keeps the old names. See `API.md` for the full V and C reference.
+
 ```v
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 fn main() {
 	ctx := shape.new_context()
@@ -38,15 +42,15 @@ fn main() {
 
 | Part | Replaces | Status |
 | --- | --- | --- |
-| `vtext.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`; case mapping included |
-| `vtext.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1, cmap, metrics, variation-store reading |
-| `vtext.shape` | HarfBuzz core | Normalization, bidi, joining, GSUB/GPOS application, case mapping |
-| `vtext.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical lines and columns |
-| `vtext.raster` | FreeType's rendering side | Hinted box-and-fill, color, synth/LCD, stroker behind the same contract |
-| `vtext.inspect` | fontTools' reading side | Reports on tables, features, scripts, coverage, variable axes and instances |
-| `vtext.subset` | fontTools' subsetter | Glyf closure and rebuild; CFF rebuild landed, CFF2 refused with its reason |
+| `harfara.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`; case mapping included |
+| `harfara.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1, cmap, metrics, variation-store reading |
+| `harfara.shape` | HarfBuzz core | Normalization, bidi, joining, GSUB/GPOS application, case mapping |
+| `harfara.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical lines and columns |
+| `harfara.raster` | FreeType's rendering side | Hinted box-and-fill, color, synth/LCD, stroker behind the same contract |
+| `harfara.inspect` | fontTools' reading side | Reports on tables, features, scripts, coverage, variable axes and instances |
+| `harfara.subset` | fontTools' subsetter | Glyf closure and rebuild; CFF rebuild landed, CFF2 refused with its reason |
 | generic helpers (`raster/pack`, `raster/quantize`, `layout/iterator`, `providers/discovery`) | fontstash + stb_truetype | Atlas packing, coverage quantize/gamma/blur, visual-order quads, search order — caller-owned atlas, no FONS types |
-| `vtext.capi` | — (the C face of all of the above) | Opaque handles over every part; `vtext.h` is the single header |
+| `harfara.capi` | — (the C face of all of the above) | Opaque handles over every part; `harfara.h` is the single header |
 | providers | fontconfig / Core Text / DirectWrite | All three landed; none elsewhere |
 
 Dependencies run one way — `layout` → `shape` → `font` → `ucd`,
@@ -67,7 +71,7 @@ The pipeline is the one UAX #9 and the OpenType specification describe, in order
 | Order glyphs for drawing | UAX #9 | `layout/layout.v` |
 | Rasterize | | `font/stbtt.c.v` |
 
-Character data is generated from the UCD into `ucd/ucd_*.v` (module `vtext.ucd`),
+Character data is generated from the UCD into `ucd/ucd_*.v` (module `harfara.ucd`),
 so there are no runtime tables to load and no network access is needed to build.
 
 ## Supported
@@ -95,7 +99,7 @@ so there are no runtime tables to load and no network access is needed to build.
 - Hyphenation by Liang's algorithm over generated US-English patterns,
   through any `BreakPolicy` — UAX #14 alone by default.
 - A variable font's axes and named instances, read off fvar and the name table.
-- A glyph's box and its coverage bitmap, and a C API over all of it (`vtext.h`).
+- A glyph's box and its coverage bitmap, and a C API over all of it (`harfara.h`).
 
 ### Emoji and variation sequences
 
@@ -148,7 +152,7 @@ Named here so that a caller is not surprised by them.
 - **WOFF2.** It needs a brotli decoder and none lives in this tree; the magic is refused with the reason.
 - **AAT `morx` and Graphite.** No corpus font carries either; the day one does, it gets a slice.
 - **HarfBuzz bindings, or a port of anything.** Every part is written from the specifications.
-- **Font authoring.** vtext reads fonts, subsets them, and reports on them; it does not build them.
+- **Font authoring.** HarfAra reads fonts, subsets them, and reports on them; it does not build them.
 - **GPU atlases and hidden caches.** `Font.rasterize` is pure in (font, gid,
   size, subpixel offset); the caller rasterizes into its own buffer and keeps
   its own cache. `shape.Cache` is that memo with the only honest key already in
@@ -205,7 +209,7 @@ beside it over seventeen cases, from `سلام` to mixed bidi with digits. Every
 found is recorded in `tools/difftest/baseline.tsv` — currently one hundred and fifty-one entries, each
 with its reason in `ROADMAP.md` — and CI fails on any new difference or any fixed one
 left unrecorded, in both directions. The Pango leg compares wrap widths at a fixed
-width and a full-line Cairo render against a vtext-composed image, pixel by pixel;
+width and a full-line Cairo render against a HarfAra-composed image, pixel by pixel;
 it runs where libpango exists and elsewhere skips aloud, in which case its
 baseline entries are reported as unverifiable rather than stale.
 
@@ -292,7 +296,7 @@ saying which substitution replaced it, which is otherwise only answerable by pri
 counting them by hand.
 
 `tools/rival_bench.v` with `tools/rival_bench.py` is the rival A/B harness: the same workload timed
-on vtext and on the stack it replaces, on the same box, in one table. The V half times line layout
+on HarfAra and on the stack it replaces, on the same box, in one table. The V half times line layout
 and wrapping at 16 px for 1024-character paragraphs in every script the corpus covers, plus three
 char-type paragraphs (marks-heavy, digits, mixed bidi), Amiri 'A' rasterized at 32 px cold
 (sustained miss over A–T) and through the caller-owned cache, one fontconfig family match, and
@@ -307,9 +311,9 @@ v -prod -cc gcc run tools/rival_bench.v
 The measured table lives in [PERF.md](PERF.md) — method, boxes, flags, both rivals, and the
 history — re-measured per release. The `perf` CI job runs the harness on every commit and gates
 the ratios with `tools/perf_check.py` (3x headroom over the recorded baselines; getting faster
-never fails). What each side does differs and the table says so: vtext lays the line out (bidi,
+never fails). What each side does differs and the table says so: HarfAra lays the line out (bidi,
 joining, GSUB/GPOS, measurement) where HarfBuzz only shapes, and Pillow renders with its own
-bundled FreeType at default flags where vtext fills unhinted. Throughput is the comparison;
+bundled FreeType at default flags where HarfAra fills unhinted. Throughput is the comparison;
 correctness is proven elsewhere, per part.
 
 ### Features
@@ -506,7 +510,7 @@ Full upper, lower and title mappings from the UCD, including the 1-to-N rows
 make a hand table wrong.
 
 ```v
-import vtext.shape
+import harfara.shape
 
 upper := shape.to_upper('ß'.runes(), '')          // SS
 lower := shape.to_lower('İ'.runes(), '')          // i + dot
@@ -635,17 +639,17 @@ are public because a library that cannot be inspected from outside cannot be dia
 
 ### C API
 
-`vtext.h` is this library for a C caller: opaque handles over the same objects, plain C types, errors in a caller-owned buffer. `capi.v` implements it; `vtext.def` lists the entry points for import-library generation.
+`harfara.h` is this library for a C caller: opaque handles over the same objects, plain C types, errors in a caller-owned buffer. `capi.v` implements it; `harfara.def` lists the entry points for import-library generation.
 
 ```sh
-v -shared -gc none -cc tcc -o vtext.dll .
+v -shared -gc none -cc tcc -o harfara.dll .
 ```
 
 ```c
-vtext_context_t *ctx = vtext_context_new();
-vtext_fontset_t *fs = vtext_fontset_new();
-vtext_font_t *font = vtext_fontset_add_file(fs, "Amiri-Regular.ttf", err, sizeof(err));
-vtext_line_t *line = vtext_layout(ctx, text, len, VTEXT_AUTO, fs, 32.0, err, sizeof(err));
+harfara_context_t *ctx = harfara_context_new();
+harfara_fontset_t *fs = harfara_fontset_new();
+harfara_font_t *font = harfara_fontset_add_file(fs, "Amiri-Regular.ttf", err, sizeof(err));
+harfara_line_t *line = harfara_layout(ctx, text, len, HARFARA_AUTO, fs, 32.0, err, sizeof(err));
 ```
 
 `USAGE.md` is the guide: building on each platform, the stack a caller thread needs, the full reference with ownership rules, and the smoke test that exercises it end to end. `examples/c-api/smoke.c` is the shape of a C program using it.
@@ -667,9 +671,9 @@ v run tools/fmt_check.v        # formatting
 compiler's own temporary build directory is shared with every other V build on the machine, so
 parallel builds collide in it. Heavy runs set `VJOBS` explicitly (4 here) and never overlap.
 
-The tests read fonts in this order: `$VTEXT_TEST_FONTS`, then the committed corpus under
+The tests read fonts in this order: `$HARFARA_TEST_FONTS`, then the committed corpus under
 `testdata/fonts`, then `C:\Windows\Fonts` last and only on Windows. The examples resolve
-theirs the same way through `examples/corpus`: `$VTEXT_EXAMPLE_FONTS`, then the corpus,
+theirs the same way through `examples/corpus`: `$HARFARA_EXAMPLE_FONTS`, then the corpus,
 then the platform directory. On Linux and macOS the corpus is what answers. A font no
 directory carries is a skip that says which font and where it looked, never a silent pass.
 
@@ -694,7 +698,7 @@ v run tools/viewpng.v examples/mark_stack/mark_stack.png
 ```
 
 There is no window *inside* an example, and that is a toolchain limit rather than a choice. A
-program importing both `gg` and `vtext` does not build: each includes `stb_truetype.h` with
+program importing both `gg` and `harfara` does not build: each includes `stb_truetype.h` with
 `STB_TRUETYPE_IMPLEMENTATION` into V's single generated C translation unit, and C forbids two
 definitions of one identifier in one unit regardless of linkage. The viewer is therefore a
 separate program that knows nothing about text.
@@ -796,7 +800,7 @@ layout/linebreak.v UAX #14, wrapping, and measuring a paragraph's two widths
 
 trace_api.v     the pipeline's stages, reached one at a time for shapetrace
 
-ucd/            module vtext.ucd: tables.v (decode once into Properties),
+ucd/            module harfara.ucd: tables.v (decode once into Properties),
                 properties.v (hand-written enums and lookups), and the
                 ucd_*.v files generated from the UCD by the tools in tools/,
                 committed so a build needs no fetch
@@ -807,7 +811,7 @@ The tools are in `tools/`, the examples in `examples/`, and `ucd/` holds the Uni
 files that are redistributed here. See `LICENSE` for which licence covers what.
 
 `capi.v` is the C face of the library: opaque handles, plain C types, errors in a
-caller-owned buffer. `vtext.h` is the single header, `vtext.def` lists the entry
+caller-owned buffer. `harfara.h` is the single header, `harfara.def` lists the entry
 points, and `tools/capicheck.v` proves the three agree in both directions. `providers/`
 holds the per-OS font lookup (fontconfig on Linux); nothing links it by default.
 

@@ -68,7 +68,7 @@ item says which one and why, in its commit message.
 - Full suite green, `v fmt` clean, difftest 0/0 — every slice, no
   exceptions.
 - `modularity_test.v` owns the import rule: new shape code may use
-  `vtext/font` and `vtext/ucd`; nothing new imports `layout` or
+  `harfara/font` and `harfara/ucd`; nothing new imports `layout` or
   `tools/`. A deliberate violation fails; the commit's break-fix
   proves it discriminates.
 - A hot-path touch carries same-harness before/after numbers

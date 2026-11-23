@@ -1,11 +1,11 @@
 # Usage
 
-Using vtext from V and from C: the five-minute path, the build recipes, and
+Using HarfAra from V and from C: the five-minute path, the build recipes, and
 the full API with its ownership rules.
 
 ## V in five minutes
 
-vtext is a V module. The module lives in this tree; point `VMODULES` at its
+HarfAra is a V module. The module lives in this tree; point `VMODULES` at its
 parent and import it:
 
 ```sh
@@ -16,8 +16,8 @@ export VMODULES=$HOME/Projects
 ```
 
 ```v
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 fn main() {
 	ctx := shape.new_context()
@@ -90,20 +90,20 @@ and every inspection API in full. This file does not repeat it.
 
 ## Parts
 
-The library is split into one module per job — `vtext.ucd` first, then `vtext.font`,
-`vtext.shape` and `vtext.layout` in dependency order (`layout` → `shape` → `font` → `ucd`) —
+The library is split into one module per job — `harfara.ucd` first, then `harfara.font`,
+`harfara.shape` and `harfara.layout` in dependency order (`layout` → `shape` → `font` → `ucd`) —
 so a caller that only needs tables does not pull in shaping, and a caller
 that only shapes does not pull in rasterization. `ROADMAP.md` Phase 6 tracks
 the order; `GOAL.md` says what each part replaces.
 
-The shape of every split is the one `vtext.ucd` set. The part owns its
+The shape of every split is the one `harfara.ucd` set. The part owns its
 sources and its generated data, root code reaches it qualified, and the
 split is verified the same way: full suite green, fmt gate green, every
 consumer green:
 
 ```v
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // The decoded tables live one per text system, next to the shaper that uses
 // them, which is why they are built with the context rather than read off a
@@ -129,34 +129,34 @@ build never needs the fetch.)
 
 ## C in five minutes
 
-The C API is `vtext.h` at the repo root, implemented by `capi.v`. Handles are
+The C API is `harfara.h` at the repo root, implemented by `capi.v`. Handles are
 opaque; every function takes plain C types; errors come back in a caller-owned
 buffer, so there is no hidden state and no per-thread anything.
 
 ```c
 #include <stdio.h>
-#include "vtext.h"
+#include "harfara.h"
 
 int main(void) {
 	char err[512] = {0};
-	vtext_context_t *ctx = vtext_context_new();
-	vtext_fontset_t *fs = vtext_fontset_new();
-	vtext_font_t *font = vtext_fontset_add_file(fs, "Amiri-Regular.ttf", err, sizeof(err));
+	harfara_context_t *ctx = harfara_context_new();
+	harfara_fontset_t *fs = harfara_fontset_new();
+	harfara_font_t *font = harfara_fontset_add_file(fs, "Amiri-Regular.ttf", err, sizeof(err));
 
 	const char *text = "Hello \xd8\xb3\xd9\x84\xd8\xa7\xd9\x85"; /* Hello سلام */
-	vtext_line_t *line = vtext_layout(ctx, text, 11, VTEXT_AUTO, fs, 32.0, err, sizeof(err));
-	for (int i = 0; i < vtext_line_glyph_count(line); i++) {
-		vtext_glyph_t g;
-		vtext_line_glyph(line, i, &g);
-		vtext_font_t *gf = vtext_line_glyph_font(line, i);
-		vtext_bitmap_t *bm = vtext_rasterize(gf, g.gid, 32.0, 0, 0, err, sizeof(err));
-		/* g.x, g.y place it; vtext_bitmap_left/top place the ink box */
-		vtext_bitmap_free(bm);
+	harfara_line_t *line = harfara_layout(ctx, text, 11, HARFARA_AUTO, fs, 32.0, err, sizeof(err));
+	for (int i = 0; i < harfara_line_glyph_count(line); i++) {
+		harfara_glyph_t g;
+		harfara_line_glyph(line, i, &g);
+		harfara_font_t *gf = harfara_line_glyph_font(line, i);
+		harfara_bitmap_t *bm = harfara_rasterize(gf, g.gid, 32.0, 0, 0, err, sizeof(err));
+		/* g.x, g.y place it; harfara_bitmap_left/top place the ink box */
+		harfara_bitmap_free(bm);
 	}
-	vtext_line_free(line);
-	vtext_fontset_free(fs);
-	vtext_font_free(font);
-	vtext_context_free(ctx);
+	harfara_line_free(line);
+	harfara_fontset_free(fs);
+	harfara_font_free(font);
+	harfara_context_free(ctx);
 	return 0;
 }
 ```
@@ -172,13 +172,13 @@ with the Boehm collector the library would free objects the C caller still
 holds, and the caller has no handle the collector can see.
 
 ```sh
-v -shared -gc none -cc tcc -o vtext.dll .
+v -shared -gc none -cc tcc -o harfara.dll .
 ```
 
-On Linux/macOS the same pattern produces `libvtext.so` / `libvtext.dylib`:
+On Linux/macOS the same pattern produces `libharfara.so` / `libharfara.dylib`:
 
 ```sh
-v -shared -gc none -cc gcc -o libvtext.so .
+v -shared -gc none -cc gcc -o libharfara.so .
 ```
 
 That command is the documented pattern but is not verified here — the DLL
@@ -197,13 +197,13 @@ Linking a caller:
 
 ```sh
 # tcc, straight against the DLL:
-tcc smoke.c ./vtext.dll -o smoke.exe
+tcc smoke.c ./harfara.dll -o smoke.exe
 # gcc, via an import library generated from the curated export list:
-dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
-gcc smoke.c -L. -lvtext -o smoke.exe
+dlltool -d harfara.def --dllname harfara.dll -l libharfara.dll.a
+gcc smoke.c -L. -lHarfAra -o smoke.exe
 ```
 
-`vtext.def` names exactly the `vtext_*` entry points, so the gcc route links
+`harfara.def` names exactly the `harfara_*` entry points, so the gcc route links
 a clean import library rather than every runtime symbol the tcc flag exports.
 
 ### The stack the library needs
@@ -231,12 +231,12 @@ compiles against exactly those headers.
 ## Releases
 
 Tag the tree `c-api-vX.Y.Z` and push the tag; `release-c.yml` builds the
-library on all three platforms and attaches `vtext.h`, `vtext.def` and the
+library on all three platforms and attaches `harfara.h`, `harfara.def` and the
 binaries (plus a MinGW import library on Windows) to the GitHub release.
 
-The tag, `v.mod` and `vtext_version` must be one number: the release job
+The tag, `v.mod` and `harfara_version` must be one number: the release job
 refuses a tag that disagrees with either. So bumping the version is two edits
-— the version in `v.mod` and the `c'...'` string `vtext_version` returns —
+— the version in `v.mod` and the `c'...'` string `harfara_version` returns —
 and then the tag. The smoke test asserts nothing about the version string, on
 purpose: a test that reads the value it is checking from the code under test
 passes whatever the code says.
@@ -247,7 +247,7 @@ Conventions first, because they hold for every function below:
 
 - `text` is UTF-8 bytes with an explicit `len`; it is copied, so the caller
   owns its buffer throughout.
-- `dir` is `VTEXT_LTR` (0), `VTEXT_RTL` (1), or `VTEXT_AUTO` (2).
+- `dir` is `HARFARA_LTR` (0), `HARFARA_RTL` (1), or `HARFARA_AUTO` (2).
 - `err`/`errcap` is a caller-owned buffer for the failure sentence. A null
   buffer or no room drops the sentence rather than writing past the end.
   Fallible functions return null/0 on failure with the reason in `err`.
@@ -260,47 +260,47 @@ Conventions first, because they hold for every function below:
 Lifetime:
 
 ```c
-vtext_context_t *ctx = vtext_context_new();
-vtext_fontset_t *fs = vtext_fontset_new();
-vtext_font_t *font = vtext_fontset_add_file(fs, path, err, sizeof(err));
+harfara_context_t *ctx = harfara_context_new();
+harfara_fontset_t *fs = harfara_fontset_new();
+harfara_font_t *font = harfara_fontset_add_file(fs, path, err, sizeof(err));
 /* ... shape, draw ... */
-vtext_fontset_free(fs);   /* the chain, not the fonts */
-vtext_font_free(font);
-vtext_context_free(ctx);
+harfara_fontset_free(fs);   /* the chain, not the fonts */
+harfara_font_free(font);
+harfara_context_free(ctx);
 ```
 
 Context: one per text system, shared between threads and between faces. It
 costs a few hundred microseconds to build (the tables are decoded once), so
 it is not a per-call object.
 
-Fonts: `vtext_font_load_file` / `vtext_font_load_bytes` (bytes are copied).
-`vtext_fontset_add` borrows; `vtext_fontset_add_file` loads, appends, and
-returns the font for the caller to free. `vtext_fontset_new_script(primary,
+Fonts: `harfara_font_load_file` / `harfara_font_load_bytes` (bytes are copied).
+`harfara_fontset_add` borrows; `harfara_fontset_add_file` loads, appends, and
+returns the font for the caller to free. `harfara_fontset_new_script(primary,
 general)` prefers a font per script, which is what a flat fallback order
 cannot express when both fonts cover both scripts. Metrics
-(`vtext_font_units_per_em/ascent/descent/line_height/is_monospace`) and
-coverage (`vtext_font_glyph_index`, `vtext_font_has_glyph`) read the font;
+(`harfara_font_units_per_em/ascent/descent/line_height/is_monospace`) and
+coverage (`harfara_font_glyph_index`, `harfara_font_has_glyph`) read the font;
 zero from `glyph_index` is `.notdef`, which for an uncovered codepoint is the
 correct answer rather than a miss.
 
-Layout: `vtext_layout` / `vtext_layout_with` (options struct below) return an
-owned line. `vtext_line_glyph_count` counts drawable glyphs — a mark and its
-base are both present and share a position. `vtext_line_glyph` writes glyph
-`i` into the caller's struct (1) or refuses (0). `vtext_line_glyph_font`
+Layout: `harfara_layout` / `harfara_layout_with` (options struct below) return an
+owned line. `harfara_line_glyph_count` counts drawable glyphs — a mark and its
+base are both present and share a position. `harfara_line_glyph` writes glyph
+`i` into the caller's struct (1) or refuses (0). `harfara_line_glyph_font`
 is the font that glyph was found in, borrowed from the set; it is what
-`vtext_rasterize` needs, because a glyph without its font is not drawable.
-`vtext_line_width/ascent/descent/line_height` read the line; ascent and
+`harfara_rasterize` needs, because a glyph without its font is not drawable.
+`harfara_line_width/ascent/descent/line_height` read the line; ascent and
 descent are the ink's extent, larger than the font's own metrics whenever a
-mark reaches above or below them. `vtext_line_column_height` is the same
+mark reaches above or below them. `harfara_line_column_height` is the same
 number for a vertical line laid out with `vertical` in the options (the
 column's length); on a horizontal line it equals the line height.
-`vtext_line_free` releases the line and its
+`harfara_line_free` releases the line and its
 glyphs, not the fonts.
 
 Options:
 
 ```c
-vtext_options_t opts = { "-calt", 28.0, 0.5, 2.0, 1, NULL, NULL, 3, 400.0 };
+harfara_options_t opts = { "-calt", 28.0, 0.5, 2.0, 1, NULL, NULL, 3, 400.0 };
 /* features, line_height (0 takes the font's own), letter_spacing, word_spacing, vertical,
    script, language, align (0 left, 1 center, 2 right, 3 justify), align_width (0 is the
    line's own; wrapped lines use the wrap width instead).
@@ -317,49 +317,49 @@ forces every run's feature resolution under one OpenType script tag, and
 `language` names the tagged language system inside it — the same override the
 V `LayoutOptions` carries, empty for the default.
 
-Wrap: `vtext_wrap` / `vtext_wrap_with` return an owned wrap; lines are
-borrowed (`vtext_wrap_line`, valid until `vtext_wrap_free`) with their
-half-open input range from `vtext_wrap_line_from/to` and their count from
-`vtext_wrap_line_count`. A word wider than the
+Wrap: `harfara_wrap` / `harfara_wrap_with` return an owned wrap; lines are
+borrowed (`harfara_wrap_line`, valid until `harfara_wrap_free`) with their
+half-open input range from `harfara_wrap_line_from/to` and their count from
+`harfara_wrap_line_count`. A word wider than the
 width goes on a line of its own rather than being split, and a text with no
 break in it returns one line however narrow the width. In vertical mode the
 same call cuts columns instead of lines; each column's length is the
-`vtext_line_column_height` above.
+`harfara_line_column_height` above.
 
-Measure: `vtext_measure` / `vtext_measure_with` fill the caller's
-`vtext_metrics_t` (both widths from one shaping) and return 1, or 0 with the
+Measure: `harfara_measure` / `harfara_measure_with` fill the caller's
+`harfara_metrics_t` (both widths from one shaping) and return 1, or 0 with the
 reason in `err`. `min_content_width` excludes trailing spaces; see `README.md`
 for why deriving it from a wrapped line over-reports by one space per word.
 
-Breaks: `vtext_breaks` returns an owned `vtext_breaks_t` — two parallel
+Breaks: `harfara_breaks` returns an owned `harfara_breaks_t` — two parallel
 arrays of `len` ints, starts and whether each is mandatory — freed with
-`vtext_breaks_free`. `mandatory_first` decides whether the flags are carried;
+`harfara_breaks_free`. `mandatory_first` decides whether the flags are carried;
 the positions are the same either way.
 
-Rasterize: `vtext_rasterize` renders one glyph at `em_px` with quarter-pixel
+Rasterize: `harfara_rasterize` renders one glyph at `em_px` with quarter-pixel
 `sub_x`/`sub_y` (four is one whole pixel) and returns an owned bitmap.
-`vtext_bitmap_width/height/left/top` place it — the bitmap's own (0, 0)
+`harfara_bitmap_width/height/left/top` place it — the bitmap's own (0, 0)
 belongs at (pen − left, baseline − top), top positive upwards — and
-`vtext_bitmap_data` is the row-major 8-bit coverage, borrowed, width×height
-bytes, null for an empty glyph. `vtext_bitmap_free` releases the bitmap and
+`harfara_bitmap_data` is the row-major 8-bit coverage, borrowed, width×height
+bytes, null for an empty glyph. `harfara_bitmap_free` releases the bitmap and
 its coverage together.
 
-Subset: `vtext_subset` rebuilds a font around seed glyph ids (get them from
-`vtext_font_glyph_index` over the text, the way `tools/subset.v` does) and
+Subset: `harfara_subset` rebuilds a font around seed glyph ids (get them from
+`harfara_font_glyph_index` over the text, the way `tools/subset.v` does) and
 returns malloc'd bytes with their count, or -1 with the reason in `err`;
 `.notdef` is always kept and the bytes reload with
-`vtext_font_load_bytes`. `vtext_subset_free` releases them. CFF rebuilds
+`harfara_font_load_bytes`. `harfara_subset_free` releases them. CFF rebuilds
 landed (verbatim keep); CFF2 and CID-keyed faces are refused with the
 reason in `err`.
 
 ## Keeping the C surface in step
 
 `capi.v` is the source of truth: every `@[export]` there appears in
-`vtext.h` and `vtext.def` under the same name, and `v run tools/capicheck.v`
+`harfara.h` and `harfara.def` under the same name, and `v run tools/capicheck.v`
 proves it in both directions before the library builds. The header's structs mirror the
-V structs field for field (`CGlyph` ↔ `vtext_glyph_t`, `CMetrics` ↔
-`vtext_metrics_t`, `CBreaks` ↔ `vtext_breaks_t`, `COptions` ↔
-`vtext_options_t`); a field added on one side must be added on the other.
+V structs field for field (`CGlyph` ↔ `harfara_glyph_t`, `CMetrics` ↔
+`harfara_metrics_t`, `CBreaks` ↔ `harfara_breaks_t`, `COptions` ↔
+`harfara_options_t`); a field added on one side must be added on the other.
 
 The one thing that does not convert is width: V `int` is 64-bit in this
 toolchain, so every integer that crosses the boundary in a struct is an

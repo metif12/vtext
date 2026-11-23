@@ -1,7 +1,7 @@
 # Performance record
 
 Throughput measured better — or the claim is not made (GOAL.md). This file
-is the canonical A/B record: the same workload timed on vtext and on the
+is the canonical A/B record: the same workload timed on HarfAra and on the
 stack it replaces, on the same box, in one table.
 
 ## Method
@@ -17,12 +17,12 @@ fontTools load of the same inputs, built by the same repeat rule. Best of
 five batches of twenty on both sides, because a loaded box lies about
 absolutes and the ratio is the finding.
 
-What each side does differs and the table says so: vtext lays the line out
+What each side does differs and the table says so: HarfAra lays the line out
 (bidi, joining, substitution, positioning and measurement) where HarfBuzz
-only shapes; Pango lays out and wraps where vtext wraps; fc-match spawns a
+only shapes; Pango lays out and wraps where HarfAra wraps; fc-match spawns a
 process where the provider calls the library; fontTools parses into Python
-objects where vtext parses into its own tables; Pillow renders with its own
-bundled FreeType at default flags where vtext fills hinted. Throughput is
+objects where HarfAra parses into its own tables; Pillow renders with its own
+bundled FreeType at default flags where HarfAra fills hinted. Throughput is
 the comparison; correctness is proven elsewhere, per part.
 
 The optimizing C compiler matters: a tcc build measures the compiler's
@@ -32,7 +32,7 @@ stays as the pre-clean baseline.
 ## Current numbers
 
 <!-- perf-baseline:prod:start -->
-| op | what | vtext | rival | vtext/rival |
+| op | what | HarfAra | rival | HarfAra/rival |
 | --- | --- | --- | --- | --- |
 | shape latin-1024 | layout+shape vs hb shape | 536.4 us/paragraph | 19.0 us/paragraph | 28.18x |
 | shape arabic-1024 | layout+shape vs hb shape | 915.7 us/paragraph | 175.9 us/paragraph | 5.21x |
@@ -92,7 +92,7 @@ cache.
 Pre-clean baseline, measured 2026-11-16 on the same box with `v -cc gcc`
 (no optimization), same rivals:
 
-| op | what | vtext | rival | vtext/rival |
+| op | what | harfara | rival | harfara/rival |
 | --- | --- | --- | --- | --- |
 | shape latin-1024 | layout+shape vs hb shape | 44.8 ms/paragraph | 26.8 us/paragraph | 1672x |
 | shape arabic-1024 | layout+shape vs hb shape | 141.4 ms/paragraph | 256.4 us/paragraph | 552x |
