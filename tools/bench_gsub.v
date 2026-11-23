@@ -2,7 +2,7 @@
 module main
 
 import time
-import vtext.shape
+import harfara.shape
 
 const iters = 300
 

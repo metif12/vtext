@@ -1,7 +1,7 @@
 module shape
 
-import vtext.font
-import vtext.ucd
+import harfara.font
+import harfara.ucd
 
 // Arabic joining, the shaping pass that gives each letter the shape it takes in its
 // surroundings.

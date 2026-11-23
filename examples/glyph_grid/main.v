@@ -22,10 +22,10 @@
 // many are reachable from ordinary text, and the counts are printed because they are the measurement.
 module main
 
-import vtext
+import harfara
 import corpus
 import paint
-import vtext.shape
+import harfara.shape
 
 // The codepoint range scanned. Everything above this is not scanned.
 const scan_first = 0

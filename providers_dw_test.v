@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
 import os
-import vtext.providers
+import harfara.providers
 
 // The Windows DirectWrite provider: family in, file path out. Windows-only:
 // the lookup walks COM, so everywhere else the provider answers none and the
@@ -17,7 +17,7 @@ import vtext.providers
 // wanted; tools/run_tests.v counts them file by file.
 fn dw_skip(name string) {
 	line := 'SKIP provider DirectWrite test needs ${name}'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

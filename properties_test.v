@@ -1,6 +1,6 @@
-module vtext
+module harfara
 
-import vtext.ucd
+import harfara.ucd
 import os
 
 // The tables come straight from the UCD, so the tests check the lookup against

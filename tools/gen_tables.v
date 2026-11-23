@@ -14,8 +14,8 @@ module main
 // so a mismatch shows up in the diff.
 
 import os
-import vtext.font
-import vtext.shape
+import harfara.font
+import harfara.shape
 
 const ucd_dir = 'ucd'
 const out_dir = 'ucd'
@@ -23,7 +23,7 @@ const out_dir = 'ucd'
 // unicode_version is written into every generated file.
 const unicode_version = '18.0.0'
 
-// CodeRange mirrors vtext.ucd.CodeRange. It is redeclared here because a tool that
+// CodeRange mirrors harfara.ucd.CodeRange. It is redeclared here because a tool that
 // generates a module's own data cannot import that module.
 struct CodeRange {
 mut:

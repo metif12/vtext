@@ -2,7 +2,7 @@ module providers
 
 // coretext is the macOS provider: family in, file path out, through CoreText,
 // the way vlib gg.canvas drives CoreText (frameworks linked only here, so a
-// caller that never imports providers never links CoreText through vtext).
+// caller that never imports providers never links CoreText through harfara).
 //
 // Everywhere else there is no provider, and a caller asking here gets none
 // rather than a build break. Nothing in this file imports vlib.

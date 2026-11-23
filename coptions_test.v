@@ -1,11 +1,11 @@
-module vtext
+module harfara
 
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Tests for the C spelling of the 8.4 fields: wrap_mode and tab_stops on
-// COptions, resolved by c_options the way vtext_line_with, vtext_wrap_with
-// and vtext_measure_with consume them.
+// COptions, resolved by c_options the way harfara_line_with, harfara_wrap_with
+// and harfara_measure_with consume them.
 //
 // The contract is append-only: the two fields sit after align_width, so the
 // offsets of every older field never move and a caller built against the

@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tests for the F1 profiler (Phase 11): the opt-in per-stage shaping
 // costs on the Thai/Khmer/Myanmar bench rows. The inputs mirror the
@@ -15,7 +15,7 @@ import vtext.layout
 // The faces ship in testdata/fonts with their OFL texts, so they load on
 // every platform with no skips: no host font, no platform directory.
 fn profiler_font(name string) ?&shape.Font {
-	for dir in ['testdata/fonts', os.getenv('VTEXT_TEST_FONTS')] {
+	for dir in ['testdata/fonts', os.getenv('HARFARA_TEST_FONTS')] {
 		if dir == '' {
 			continue
 		}

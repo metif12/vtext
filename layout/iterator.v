@@ -2,7 +2,7 @@ module layout
 
 // Standalone glyph iteration over a laid-out line.
 //
-// vtext never owns an atlas and never draws; the caller does. This is the
+// harfara never owns an atlas and never draws; the caller does. This is the
 // generic iterator any backend can use: visual-order quads from advances
 // plus the line ink box, with an explicit origin. No FONS types, no gg or
 // canvas types, no hidden state.

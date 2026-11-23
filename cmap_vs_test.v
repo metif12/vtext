@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
-import vtext.layout
-import vtext.shape
-import vtext.font
+import harfara.layout
+import harfara.shape
+import harfara.font
 // cmap variation sequences: formats 13 and 14.
 //
 // A format 14 subtable does not answer "which glyph is this codepoint". It answers "which glyph is this
@@ -26,10 +26,10 @@ import os
 //
 // That is the honest shape for this file, and the runner reports it: every test in it skips on a machine
 // without those fonts, and a file of which every test skipped is printed as such rather than as a pass.
-// VTEXT_TEST_FONTS overrides both.
+// HARFARA_TEST_FONTS overrides both.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -55,7 +55,7 @@ $if windows {
 
 // skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
 // pass, so every one of them names the font it wanted and where it looked, and it is written to the file
-// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+// tools/run_tests.v names in HARFARA_SKIP_LOG rather than to stdout.
 //
 // The file rather than stdout, because V's test runner does not print a passing test's output: measured on
 // Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
@@ -63,7 +63,7 @@ $if windows {
 // failed, on every platform, and the runner says how many there were.
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

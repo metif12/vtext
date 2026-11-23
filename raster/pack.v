@@ -2,7 +2,7 @@ module raster
 
 // Standalone rect packing for caller-owned atlases.
 //
-// vtext never owns an atlas (Phase 1); the caller does. This is the generic
+// harfara never owns an atlas (Phase 1); the caller does. This is the generic
 // skyline packer any caller can use to place glyph boxes into its own
 // texture: bottom-left heuristic over skyline nodes, no hidden allocation
 // beyond the node list, no dependency on fontstash, stb or freetype.

@@ -1,5 +1,5 @@
 """Rival half of the 7.11-B A/B harness: shapes, lays out, looks up and loads
-the same workload tools/rival_bench.v times on the vtext side, and prints one
+the same workload tools/rival_bench.v times on the harfara side, and prints one
 machine-parseable line per operation.
 
 Only the CI reference stack is imported (uharfbuzz, Pillow, fontTools, the

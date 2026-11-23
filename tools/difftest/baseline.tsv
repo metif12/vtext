@@ -1,60 +1,60 @@
-arabic-hello	cluster	char 1 U+0644: vtext 691.00 vs hb 245.00
-arabic-hello	cluster	char 2 U+0627: vtext 0.00 vs hb 446.00
-arabic-two-words	cluster	char 1 U+0644: vtext 691.00 vs hb 245.00
-arabic-two-words	cluster	char 2 U+0627: vtext 0.00 vs hb 446.00
-arabic-two-words	cluster	char 6 U+0646: vtext 190.00 vs hb 274.00
-arabic-two-words	cluster	char 7 U+06CC: vtext 244.00 vs hb 168.00
-arabic-two-words	ink	U+062F: box vtext 12x14 vs pillow 10x13
-arabic-marks	cluster	char 0 U+0628: vtext 190.00 vs hb 219.00
-arabic-marks	cluster	char 2 U+0633: vtext 568.00 vs hb 291.00
-arabic-marks	cluster	char 4 U+0645: vtext 522.00 vs hb 565.00
-arabic-marks	cluster	char 8 U+0644: vtext 175.00 vs hb 158.00
-arabic-marks	cluster	char 9 U+0644: vtext 197.00 vs hb 172.00
-arabic-marks	cluster	char 11 U+0647: vtext 379.00 vs hb 404.00
-arabic-marks	cluster	char 14 U+0644: vtext 175.00 vs hb 216.00
-arabic-marks	cluster	char 15 U+0631: vtext 343.00 vs hb 292.00
-arabic-marks	cluster	char 17 U+062D: vtext 655.00 vs hb 514.00
-arabic-marks	cluster	char 19 U+0645: vtext 463.00 vs hb 216.00
-arabic-marks	cluster	char 24 U+0644: vtext 175.00 vs hb 216.00
-arabic-marks	cluster	char 25 U+0631: vtext 343.00 vs hb 292.00
-arabic-marks	cluster	char 29 U+064A: vtext 244.00 vs hb 337.00
-arabic-marks	cluster	char 30 U+0645: vtext 522.00 vs hb 223.00
-arabic-marks	width	total: vtext 7748.00 vs hb 6912.00
-arabic-marks	mark	mark gid 128 cluster 20: vtext (2.0,0.0) vs hb (-95.0,0.0)
-arabic-marks	mark	mark gid 98 cluster 18: vtext (116.0,0.0) vs hb (68.0,0.0)
-arabic-marks	ink	U+0627: box vtext 5x25 vs pillow 4x23
-arabic-allah	cluster	char 1 U+0644: vtext 175.00 vs hb 155.00
-arabic-allah	cluster	char 2 U+0644: vtext 197.00 vs hb 230.00
-arabic-allah	cluster	char 3 U+0647: vtext 379.00 vs hb 352.00
-arabic-allah	width	total: vtext 968.00 vs hb 954.00
-arabic-allah	ink	U+0627: box vtext 5x25 vs pillow 4x23
-arabic-zwnj	cluster	char 1 U+06CC: vtext 244.00 vs hb 337.00
-arabic-zwnj	cluster	char 7 U+0644: vtext 197.00 vs hb 187.00
-arabic-zwnj	cluster	char 8 U+0647: vtext 379.00 vs hb 404.00
-mixed-arabic-latin	cluster	char 3 U+0644: vtext 691.00 vs hb 245.00
-mixed-arabic-latin	cluster	char 4 U+0627: vtext 0.00 vs hb 446.00
-mixed-arabic-latin	ink	U+0069: box vtext 8x22 vs pillow 8x20
-mixed-arabic-latin	ink	U+0627: box vtext 5x25 vs pillow 4x23
-persian-digits	cluster	char 7 U+0633: vtext 568.00 vs hb 344.00
-persian-digits	cluster	char 8 U+06CC: vtext 585.00 vs hb 730.00
-persian-digits	width	total: vtext 7781.00 vs hb 7702.00
-persian-digits	ink	U+06F1: box vtext 7x23 vs pillow 6x21
-nastaliq-hello	cluster	char 5 U+062F: vtext 300.00 vs hb 330.00
-naskh-joining	cluster	char 1 U+0644: vtext 610.00 vs hb 310.00
-naskh-joining	cluster	char 2 U+0627: vtext 0.00 vs hb 300.00
-arabic-two-words	width	total: vtext 3116.00 vs hb 3124.00
-mixed-bidi-number	cluster	char 5 U+0644: vtext 691.00 vs hb 245.00
-mixed-bidi-number	cluster	char 6 U+0627: vtext 0.00 vs hb 446.00
-arabic-marks	mark	mark gid 96 cluster 31: vtext (81.0,0.0) vs hb (8.0,-259.0)
-arabic-marks	mark	mark gid 97 cluster 26: vtext (-110.0,0.0) vs hb (-134.0,0.0)
-arabic-marks	mark	mark gid 97 cluster 16: vtext (-110.0,0.0) vs hb (-134.0,0.0)
-arabic-marks	mark	mark gid 94 cluster 10: vtext (-208.0,0.0) vs hb (-185.0,0.0)
-arabic-marks	mark	mark gid 96 cluster 5: vtext (81.0,0.0) vs hb (76.0,0.0)
-arabic-marks	mark	mark gid 98 cluster 3: vtext (62.0,0.0) vs hb (-175.0,0.0)
-arabic-marks	mark	mark gid 96 cluster 1: vtext (-178.0,0.0) vs hb (-133.0,0.0)
-arabic-zwnj	cluster	char 2 U+0645: vtext 522.00 vs hb 223.00
-arabic-zwnj	width	total: vtext 2754.00 vs hb 2563.00
-nastaliq-hello	width	total: vtext 2932.00 vs hb 2961.00
+arabic-hello	cluster	char 1 U+0644: harfara 691.00 vs hb 245.00
+arabic-hello	cluster	char 2 U+0627: harfara 0.00 vs hb 446.00
+arabic-two-words	cluster	char 1 U+0644: harfara 691.00 vs hb 245.00
+arabic-two-words	cluster	char 2 U+0627: harfara 0.00 vs hb 446.00
+arabic-two-words	cluster	char 6 U+0646: harfara 190.00 vs hb 274.00
+arabic-two-words	cluster	char 7 U+06CC: harfara 244.00 vs hb 168.00
+arabic-two-words	ink	U+062F: box harfara 12x14 vs pillow 10x13
+arabic-marks	cluster	char 0 U+0628: harfara 190.00 vs hb 219.00
+arabic-marks	cluster	char 2 U+0633: harfara 568.00 vs hb 291.00
+arabic-marks	cluster	char 4 U+0645: harfara 522.00 vs hb 565.00
+arabic-marks	cluster	char 8 U+0644: harfara 175.00 vs hb 158.00
+arabic-marks	cluster	char 9 U+0644: harfara 197.00 vs hb 172.00
+arabic-marks	cluster	char 11 U+0647: harfara 379.00 vs hb 404.00
+arabic-marks	cluster	char 14 U+0644: harfara 175.00 vs hb 216.00
+arabic-marks	cluster	char 15 U+0631: harfara 343.00 vs hb 292.00
+arabic-marks	cluster	char 17 U+062D: harfara 655.00 vs hb 514.00
+arabic-marks	cluster	char 19 U+0645: harfara 463.00 vs hb 216.00
+arabic-marks	cluster	char 24 U+0644: harfara 175.00 vs hb 216.00
+arabic-marks	cluster	char 25 U+0631: harfara 343.00 vs hb 292.00
+arabic-marks	cluster	char 29 U+064A: harfara 244.00 vs hb 337.00
+arabic-marks	cluster	char 30 U+0645: harfara 522.00 vs hb 223.00
+arabic-marks	width	total: harfara 7748.00 vs hb 6912.00
+arabic-marks	mark	mark gid 128 cluster 20: harfara (2.0,0.0) vs hb (-95.0,0.0)
+arabic-marks	mark	mark gid 98 cluster 18: harfara (116.0,0.0) vs hb (68.0,0.0)
+arabic-marks	ink	U+0627: box harfara 5x25 vs pillow 4x23
+arabic-allah	cluster	char 1 U+0644: harfara 175.00 vs hb 155.00
+arabic-allah	cluster	char 2 U+0644: harfara 197.00 vs hb 230.00
+arabic-allah	cluster	char 3 U+0647: harfara 379.00 vs hb 352.00
+arabic-allah	width	total: harfara 968.00 vs hb 954.00
+arabic-allah	ink	U+0627: box harfara 5x25 vs pillow 4x23
+arabic-zwnj	cluster	char 1 U+06CC: harfara 244.00 vs hb 337.00
+arabic-zwnj	cluster	char 7 U+0644: harfara 197.00 vs hb 187.00
+arabic-zwnj	cluster	char 8 U+0647: harfara 379.00 vs hb 404.00
+mixed-arabic-latin	cluster	char 3 U+0644: harfara 691.00 vs hb 245.00
+mixed-arabic-latin	cluster	char 4 U+0627: harfara 0.00 vs hb 446.00
+mixed-arabic-latin	ink	U+0069: box harfara 8x22 vs pillow 8x20
+mixed-arabic-latin	ink	U+0627: box harfara 5x25 vs pillow 4x23
+persian-digits	cluster	char 7 U+0633: harfara 568.00 vs hb 344.00
+persian-digits	cluster	char 8 U+06CC: harfara 585.00 vs hb 730.00
+persian-digits	width	total: harfara 7781.00 vs hb 7702.00
+persian-digits	ink	U+06F1: box harfara 7x23 vs pillow 6x21
+nastaliq-hello	cluster	char 5 U+062F: harfara 300.00 vs hb 330.00
+naskh-joining	cluster	char 1 U+0644: harfara 610.00 vs hb 310.00
+naskh-joining	cluster	char 2 U+0627: harfara 0.00 vs hb 300.00
+arabic-two-words	width	total: harfara 3116.00 vs hb 3124.00
+mixed-bidi-number	cluster	char 5 U+0644: harfara 691.00 vs hb 245.00
+mixed-bidi-number	cluster	char 6 U+0627: harfara 0.00 vs hb 446.00
+arabic-marks	mark	mark gid 96 cluster 31: harfara (81.0,0.0) vs hb (8.0,-259.0)
+arabic-marks	mark	mark gid 97 cluster 26: harfara (-110.0,0.0) vs hb (-134.0,0.0)
+arabic-marks	mark	mark gid 97 cluster 16: harfara (-110.0,0.0) vs hb (-134.0,0.0)
+arabic-marks	mark	mark gid 94 cluster 10: harfara (-208.0,0.0) vs hb (-185.0,0.0)
+arabic-marks	mark	mark gid 96 cluster 5: harfara (81.0,0.0) vs hb (76.0,0.0)
+arabic-marks	mark	mark gid 98 cluster 3: harfara (62.0,0.0) vs hb (-175.0,0.0)
+arabic-marks	mark	mark gid 96 cluster 1: harfara (-178.0,0.0) vs hb (-133.0,0.0)
+arabic-zwnj	cluster	char 2 U+0645: harfara 522.00 vs hb 223.00
+arabic-zwnj	width	total: harfara 2754.00 vs hb 2563.00
+nastaliq-hello	width	total: harfara 2932.00 vs hb 2961.00
 arabic-hello	ink	U+0645 px: maxdiff 74 meandiff 2.8 over16 17/308 12x28vs11x28
 arabic-two-words	ink	U+0645 px: maxdiff 74 meandiff 2.8 over16 17/308 12x28vs11x28
 arabic-marks	ink	U+0650 px: maxdiff 210 meandiff 62.4 over16 29/56 9x7vs8x7
@@ -102,19 +102,19 @@ naskh-joining	ink	U+062F px: maxdiff 67 meandiff 6.9 over16 25/143 11x13vs11x13
 naskh-joining	ink	U+0645 px: maxdiff 255 meandiff 43.3 over16 111/286 13x22vs13x21
 arabic-hello	pango	pixel arabic-hello: maxdiff 243 meandiff 16.1 over16 306/2028
 arabic-two-words	pango	pixel arabic-two-words: maxdiff 255 meandiff 15.2 over16 551/4018
-arabic-marks	pango	line 0: vtext 245.3px vs pango 220.0px
+arabic-marks	pango	line 0: harfara 245.3px vs pango 220.0px
 arabic-marks	pango	pixel arabic-marks: maxdiff 255 meandiff 30.1 over16 2797/15252
 arabic-allah	pango	pixel arabic-allah: maxdiff 255 meandiff 80.6 over16 468/980
-arabic-zwnj	pango	line 0: vtext 88.1px vs pango 81.0px
+arabic-zwnj	pango	line 0: harfara 88.1px vs pango 81.0px
 arabic-zwnj	pango	pixel arabic-zwnj: maxdiff 255 meandiff 26.9 over16 741/3825
 latin-liga	pango	pixel latin-liga: maxdiff 226 meandiff 11.1 over16 1114/8976
 mixed-arabic-latin	pango	pixel mixed-arabic-latin: maxdiff 254 meandiff 11.5 over16 744/6160
 mixed-bidi-number	pango	pixel mixed-bidi-number: maxdiff 255 meandiff 23.0 over16 1450/8640
 persian-digits	pango	pixel persian-digits: maxdiff 255 meandiff 21.9 over16 1427/8610
 naskh-joining	pango	pixel naskh-joining: maxdiff 255 meandiff 13.4 over16 387/3296
-latin-marks	mark	2 vtext marks vs 0 hb marks in run order
-latin-marks	advance	gid 6273: vtext 370.00 vs hmtx 374.00
-latin-marks	advance	gid 6277: vtext 448.00 vs hmtx 461.00
+latin-marks	mark	2 harfara marks vs 0 hb marks in run order
+latin-marks	advance	gid 6273: harfara 370.00 vs hmtx 374.00
+latin-marks	advance	gid 6277: harfara 448.00 vs hmtx 461.00
 latin-marks	ink	U+0063 px: maxdiff 191 meandiff 23.4 over16 57/180 12x15vs11x14
 latin-marks	ink	U+0072 px: maxdiff 255 meandiff 61.1 over16 76/180 12x15vs12x15
 latin-marks	ink	U+0065 px: maxdiff 127 meandiff 19.6 over16 54/180 12x15vs12x14
@@ -127,14 +127,14 @@ latin-marks	ink	U+006C px: maxdiff 255 meandiff 38.4 over16 62/184 8x23vs8x23
 latin-marks	ink	U+0301 px: maxdiff 126 meandiff 32.1 over16 16/30 6x6vs5x6
 latin-marks	ink	U+006E px: maxdiff 255 meandiff 64.2 over16 117/255 17x15vs17x15
 latin-marks	ink	U+0061 px: maxdiff 160 meandiff 26.7 over16 73/195 13x15vs13x14
-latin-marks	ink	U+0069: box vtext 8x22 vs pillow 8x20
+latin-marks	ink	U+0069: box harfara 8x22 vs pillow 8x20
 latin-marks	ink	U+0308 px: maxdiff 237 meandiff 63.9 over16 22/40 10x4vs9x3
 latin-marks	ink	U+0076 px: maxdiff 243 meandiff 43.6 over16 94/240 16x15vs16x15
-latin-kern	advance	gid 6227: vtext 550.00 vs hmtx 612.00
-latin-kern	advance	gid 6248: vtext 561.00 vs hmtx 623.00
-latin-kern	advance	gid 6249: vtext 826.00 vs hmtx 878.00
-latin-kern	advance	gid 6251: vtext 495.00 vs hmtx 583.00
-latin-kern	advance	gid 6246: vtext 527.00 vs hmtx 611.00
+latin-kern	advance	gid 6227: harfara 550.00 vs hmtx 612.00
+latin-kern	advance	gid 6248: harfara 561.00 vs hmtx 623.00
+latin-kern	advance	gid 6249: harfara 826.00 vs hmtx 878.00
+latin-kern	advance	gid 6251: harfara 495.00 vs hmtx 583.00
+latin-kern	advance	gid 6246: harfara 527.00 vs hmtx 611.00
 latin-kern	ink	U+0041 px: maxdiff 130 meandiff 13.4 over16 100/484 21x22vs22x22
 latin-kern	ink	U+0056 px: maxdiff 139 meandiff 12.1 over16 99/484 22x22vs22x21
 latin-kern	ink	U+0057 px: maxdiff 209 meandiff 18.9 over16 186/660 30x22vs30x22

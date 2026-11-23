@@ -29,11 +29,11 @@
 // the paragraph it is.
 module main
 
-import vtext
+import harfara
 import corpus
 import paint
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 const latin_text = 'The quick brown fox jumps over the lazy dog and keeps on running until it is tired.'
 

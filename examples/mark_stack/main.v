@@ -31,11 +31,11 @@
 //     and places nothing, which is the correct answer to a font that has said nothing.
 module main
 
-import vtext
+import harfara
 import corpus
 import paint
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Row is one line of the picture: some text and what it is there to show.
 struct Row {

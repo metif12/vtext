@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Differential shaping suite: vtext against HarfBuzz, FreeType, fontTools and Pango.
+"""Differential shaping suite: harfara against HarfBuzz, FreeType, fontTools and Pango.
 
 Every number here is measured, every diff explained. The file this converges
 to is tools/difftest/baseline.tsv: the list of diffs this suite knows about
@@ -10,7 +10,7 @@ entries cannot reproduce where libpango does not exist, so on such a host
 they are reported as unverifiable rather than stale, and the full ratchet
 holds on CI where the library does.
 
-Comparison is cluster-aligned, never glyph-identity: vtext shapes Arabic
+Comparison is cluster-aligned, never glyph-identity: harfara shapes Arabic
 through presentation forms where HarfBuzz shapes base letters through GSUB,
 so سلام is 3 glyphs on one side and 4 on the other, and requiring the same
 gids would fail every Arabic line for a difference the roadmap documents as
@@ -21,16 +21,16 @@ Checks, per case:
   width    total line advance, both engines, design units
   cluster  per-input-character advance on each side
   mark     per-mark (x_off, y_off) matched by cluster then order
-  advance  fontTools hmtx advance of every emitted gid vs vtext's advance
-  ink      Pillow-rendered ink box vs vtext's rasterized box, only where
-           vtext's gid equals the cmap gid (a substitution would compare two
+  advance  fontTools hmtx advance of every emitted gid vs harfara's advance
+  ink      Pillow-rendered ink box vs harfara's rasterized box, only where
+           harfara's gid equals the cmap gid (a substitution would compare two
            different outlines, which proves nothing about either rasterizer).
            The per-glyph coverage bytes travel in a covhex column so the same
            subset is also compared pixel by pixel (rasterizer against
            rasterizer: stb_truetype unhinted vs FreeType hinted).
   pango    Pango's wrap widths at a fixed width (layout policy), and a
            full-line pixel comparison of the Pango/Cairo render against a
-           vtext-composed image (shaping plus rasterization plus placement,
+           harfara-composed image (shaping plus rasterization plus placement,
            end to end). Both sides are cropped to ink before comparing, so
            no pen origin or baseline has to be agreed between engines.
 
@@ -94,7 +94,7 @@ def v_exe():
     return v
 
 
-def run_vtext(font_path, cps, size, direction):
+def run_harfara(font_path, cps, size, direction):
     v = v_exe()
     cmd = [v, '-gc', 'none', 'run', os.path.join(REPO, 'tools', 'shapedump.v'),
            font_path, '--cps'] + cps + ['--size', str(size), '--dir', direction]
@@ -212,7 +212,7 @@ def per_cluster_adv(glyphs, nchars):
     return acc
 
 
-def vtext_mark_rel(vg):
+def harfara_mark_rel(vg):
     """Base-relative mark positions: (x, y_up, gid, cluster) per mark.
 
     The dump carries pen-relative offsets, so absolute pen positions are
@@ -292,8 +292,8 @@ def pixel_diff(a, b):
     return mx, tot / n, over, n
 
 
-def compose_vtext(glyphs, size, upem):
-    """Compose one unwrapped vtext line into cropped (w, h, bytes).
+def compose_harfara(glyphs, size, upem):
+    """Compose one unwrapped harfara line into cropped (w, h, bytes).
 
     Integer placement with subpixel-0 bitmaps: origin_x = round(pen + xoff)
     - left, origin_y = baseline - top + round(y). Marks composite with max(),
@@ -326,7 +326,7 @@ def check_case(cid, font_name, cps, direction, size):
     """Returns (diffs, meta). diffs is a list of (check, detail)."""
     diffs = []
     font_path = os.path.join(FONTS, font_name)
-    meta, vg, _ = parse_dump(run_vtext(font_path, cps, size, direction))
+    meta, vg, _ = parse_dump(run_harfara(font_path, cps, size, direction))
     upem = int(float(meta.get('upem', '1000')))
     nchars = len(cps)
     # Glyph names for the mark filter below; the hmtx leg reuses the table.
@@ -341,14 +341,14 @@ def check_case(cid, font_name, cps, direction, size):
     va, ha = per_cluster_adv(vg, nchars), per_cluster_adv(hg, nchars)
     for i in range(nchars):
         if abs(va[i] - ha[i]) > TOL['width_per_cluster']:
-            diffs.append(('cluster', f'char {i} U+{cps[i]}: vtext {va[i]:.2f} vs hb {ha[i]:.2f}'))
+            diffs.append(('cluster', f'char {i} U+{cps[i]}: harfara {va[i]:.2f} vs hb {ha[i]:.2f}'))
     if abs(sum(va.values()) - sum(ha.values())) > TOL['width_total']:
-        diffs.append(('width', f'total: vtext {sum(va.values()):.2f} vs hb {sum(ha.values()):.2f}'))
+        diffs.append(('width', f'total: harfara {sum(va.values()):.2f} vs hb {sum(ha.values()):.2f}'))
 
     # marks, matched by order within the run, not by cluster. The two engines
     # legitimately disagree on mark cluster attribution — HarfBuzz merges a
     # mark into its base's cluster (fatha at index 1 reports cluster 0) while
-    # vtext reports the mark's own index — the same convention split as the
+    # harfara reports the mark's own index — the same convention split as the
     # lam-alef ligature, and comparing cluster numbers would fail every
     # marked line for bookkeeping rather than ink. Both sides emit glyphs in
     # visual order, so the i-th mark on each side is the same mark, and what
@@ -358,7 +358,7 @@ def check_case(cid, font_name, cps, direction, size):
     # mark offset relative to its base glyph's origin; the dump's xoff is
     # relative to the running pen, a different quantity. Comparing those
     # directly failed every mark in the corpus for bookkeeping a second time
-    # (damma on meem: 56 against 76, neither side wrong). vtext_mark_rel
+    # (damma on meem: 56 against 76, neither side wrong). harfara_mark_rel
     # re-bases each mark onto its base glyph first, so both numbers are
     # base-relative.
     # is_mark_glyph names the comparable marks: glyphs whose name is a Unicode
@@ -381,17 +381,17 @@ def check_case(cid, font_name, cps, direction, size):
                 return False
         return False
 
-    vm = [(x, y, gid, cl) for x, y, gid, cl in vtext_mark_rel(vg)
+    vm = [(x, y, gid, cl) for x, y, gid, cl in harfara_mark_rel(vg)
           if is_mark_glyph(gid)]
     hm = [(g['xoff'], g['yoff']) for g in hg
           if abs(g['adv']) < 0.001 and is_mark_glyph(g['gid'])]
     if len(vm) != len(hm):
-        diffs.append(('mark', f'{len(vm)} vtext marks vs {len(hm)} hb marks in run order'))
+        diffs.append(('mark', f'{len(vm)} harfara marks vs {len(hm)} hb marks in run order'))
     else:
         for (rx, ry, gid, cl), (hx, hy) in zip(vm, hm):
             if abs(rx - hx) > TOL['mark_off'] or abs(ry - hy) > TOL['mark_off']:
-                diffs.append(('mark', f'mark gid {gid} cluster {cl}: vtext ({rx:.1f},{ry:.1f}) vs hb ({hx:.1f},{hy:.1f})'))
-    # fontTools: hmtx advance of every emitted gid vs vtext's advance
+                diffs.append(('mark', f'mark gid {gid} cluster {cl}: harfara ({rx:.1f},{ry:.1f}) vs hb ({hx:.1f},{hy:.1f})'))
+    # fontTools: hmtx advance of every emitted gid vs harfara's advance
     from fontTools.ttLib import TTFont
     tt = TTFont(font_path, fontNumber=0, lazy=True)
     try:
@@ -409,7 +409,7 @@ def check_case(cid, font_name, cps, direction, size):
                 continue
             w = hmtx.metrics[name][0] * scale
             if abs(g['adv'] - w) > TOL['advance_hmtx']:
-                diffs.append(('advance', f'gid {g["gid"]}: vtext {g["adv"]:.2f} vs hmtx {w:.2f}'))
+                diffs.append(('advance', f'gid {g["gid"]}: harfara {g["adv"]:.2f} vs hmtx {w:.2f}'))
     finally:
         tt.close()
 
@@ -452,17 +452,17 @@ def check_case(cid, font_name, cps, direction, size):
             ys = [y for x in range(W) for y in range(160) if px[y * W + x]]
             if not xs:
                 if g['width'] or g['height']:
-                    diffs.append(('ink', f'U+{cps[ch_idx]}: pillow empty but vtext {g["width"]}x{g["height"]}'))
+                    diffs.append(('ink', f'U+{cps[ch_idx]}: pillow empty but harfara {g["width"]}x{g["height"]}'))
                 continue
             if g['width'] == 0 and g['height'] == 0:
-                diffs.append(('ink', f'U+{cps[ch_idx]}: vtext empty but pillow draws'))
+                diffs.append(('ink', f'U+{cps[ch_idx]}: harfara empty but pillow draws'))
                 continue
             pw, ph = max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
             if abs(pw - g['width']) > TOL['ink_px'] or abs(ph - g['height']) > TOL['ink_px']:
-                diffs.append(('ink', f'U+{cps[ch_idx]}: box vtext {g["width"]}x{g["height"]} vs pillow {pw}x{ph}'))
+                diffs.append(('ink', f'U+{cps[ch_idx]}: box harfara {g["width"]}x{g["height"]} vs pillow {pw}x{ph}'))
             pinc = sum(px)
             if pinc and g['ink'] and abs(pinc - g['ink']) / max(pinc, g['ink']) > TOL['ink_sum_rel']:
-                diffs.append(('ink', f'U+{cps[ch_idx]}: coverage vtext {g["ink"]} vs pillow {pinc}'))
+                diffs.append(('ink', f'U+{cps[ch_idx]}: coverage harfara {g["ink"]} vs pillow {pinc}'))
             box_ok = abs(pw - g['width']) <= TOL['ink_px'] and abs(ph - g['height']) <= TOL['ink_px']
             if box_ok and g['gid'] not in seen_px:
                 # One check per outline: rasterization is a pure function of
@@ -486,7 +486,7 @@ def check_case(cid, font_name, cps, direction, size):
         diffs.append(('ink', f'pillow leg failed: {type(e).__name__}: {e}'))
 
     # Pango leg: wrap widths at a fixed width. Both sides auto-detect the
-    # base direction per UAX#9, so vtext is re-dumped with --dir auto here
+    # base direction per UAX#9, so harfara is re-dumped with --dir auto here
     # even when the shaping leg used an explicit direction: same rule in,
     # comparable lines out. A base-direction disagreement between the two
     # auto-detectors would itself be a finding, reported as a line-count
@@ -500,24 +500,24 @@ def check_case(cid, font_name, cps, direction, size):
             raise SkipLeg(f'family name unreadable: {e}')
         text = ''.join(chr(int(c, 16)) for c in cps)
         pwidths, pn = pango_leg.layout_lines(family, text, size, TOL['pango_wrap_px'])
-        wmeta, wg, vwidths = parse_dump(run_vtext_wrap(font_path, cps, size))
+        wmeta, wg, vwidths = parse_dump(run_harfara_wrap(font_path, cps, size))
         _ = (wmeta, wg)  # glyph rows unused here; the widths are the engine's own
         if pn != len(vwidths):
-            diffs.append(('pango', f'lines: vtext {len(vwidths)} vs pango {pn}'))
+            diffs.append(('pango', f'lines: harfara {len(vwidths)} vs pango {pn}'))
         else:
             for i, (a, b) in enumerate(zip(vwidths, pwidths)):
                 if abs(a - b) > TOL['pango_line_px']:
-                    diffs.append(('pango', f'line {i}: vtext {a:.1f}px vs pango {b:.1f}px'))
+                    diffs.append(('pango', f'line {i}: harfara {a:.1f}px vs pango {b:.1f}px'))
         meta['pango_lines'] = f'{len(vwidths)}/{pn}'
     except SkipLeg as e:
         meta['pango_lines'] = f'skipped: {e}'
     except Exception as e:
         diffs.append(('pango', f'pango leg failed: {type(e).__name__}: {e}'))
 
-    # Pixel end-to-end: the Cairo render against a vtext-composed image.
+    # Pixel end-to-end: the Cairo render against a harfara-composed image.
     # Both sides are cropped to ink before comparing, so no pen origin or
     # baseline has to be agreed between engines; what remains is shaping
-    # plus rasterization plus placement, compared as pixels. The vtext side
+    # plus rasterization plus placement, compared as pixels. The harfara side
     # is re-dumped with --dir auto like the widths leg, for the same reason:
     # same rule in, comparable image out.
     try:
@@ -533,10 +533,10 @@ def check_case(cid, font_name, cps, direction, size):
         for yy in range(fh):
             fpx += fargb[yy * fstride:yy * fstride + fw * 4][3::4]
         fw2, fh2, fpix = crop_ink(fw, fh, bytes(fpx))
-        _, av_glyphs, _ = parse_dump(run_vtext(font_path, cps, size, 'auto'))
-        vw2, vh2, vimg = compose_vtext(av_glyphs, size, upem)
+        _, av_glyphs, _ = parse_dump(run_harfara(font_path, cps, size, 'auto'))
+        vw2, vh2, vimg = compose_harfara(av_glyphs, size, upem)
         if nchars and (not any(vimg) or not any(fpix)):
-            diffs.append(('pango', f'pixel {cid}: empty image vtext={not any(vimg)} pango={not any(fpix)}'))
+            diffs.append(('pango', f'pixel {cid}: empty image harfara={not any(vimg)} pango={not any(fpix)}'))
         else:
             mx, mean, over, n = pixel_diff((vw2, vh2, vimg), (fw2, fh2, fpix))
             meta['pango_px'] = f'maxdiff {mx} meandiff {mean:.1f} over16 {over}/{n}'
@@ -574,7 +574,7 @@ def font_family_name(font_path):
         tt.close()
 
 
-def run_vtext_wrap(font_path, cps, size):
+def run_harfara_wrap(font_path, cps, size):
     import shutil
     import subprocess
     v = v_exe()

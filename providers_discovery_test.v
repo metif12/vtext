@@ -1,6 +1,6 @@
 module main
 
-import vtext.providers
+import harfara.providers
 
 fn test_discovery_order_env_first() {
 	got := providers.discovery_order(providers.DiscoveryInput{

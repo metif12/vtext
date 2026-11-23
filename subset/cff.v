@@ -1,7 +1,7 @@
 module subset
 
-import vtext.font
-import vtext.shape
+import harfara.font
+import harfara.shape
 
 // CFF subsetting, standalone: a read is not a rebuild.
 //

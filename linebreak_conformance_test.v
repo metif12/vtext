@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 // Conformance against the Unicode line breaking test, and a floor under the score.
 //
 // UAX #14 is specified by example as much as by rule: `ucd/LineBreakTest.txt` is the list of cases the

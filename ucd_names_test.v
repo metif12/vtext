@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // Tests for the generated codepoint name table and for the trace-facing wrappers in trace_api.v.
 //

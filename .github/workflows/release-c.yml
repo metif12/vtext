@@ -2,9 +2,9 @@
 #
 # Tag the tree as c-api-vX.Y.Z and push the tag; this workflow builds the
 # shared library on all three platforms, checks the tag matches the version
-# the code carries, and uploads vtext.h, vtext.def and the binaries. The
+# the code carries, and uploads harfara.h, harfara.def and the binaries. The
 # version lives in exactly two places — v.mod and the string capi.v returns
-# from vtext_version — and the gate below refuses a tag that disagrees with
+# from harfara_version — and the gate below refuses a tag that disagrees with
 # either, so a release can never ship headers stamped differently from the
 # code that answers for them.
 #
@@ -32,15 +32,15 @@ jobs:
         include:
           - os: ubuntu-latest
             cc: gcc
-            lib: libvtext.so
+            lib: libharfara.so
             asset_suffix: linux.so
           - os: macos-latest
             cc: clang
-            lib: libvtext.dylib
+            lib: libharfara.dylib
             asset_suffix: macos.dylib
           - os: windows-latest
             cc: gcc
-            lib: vtext.dll
+            lib: harfara.dll
             asset_suffix: windows.dll
     defaults:
       run:
@@ -59,7 +59,7 @@ jobs:
           mod="$(sed -n "s/^[[:space:]]*version:[[:space:]]*'\([^']*\)'.*/\1/p" v.mod)"
           reported="$(grep -o "c'[0-9][0-9.]*'" capi.v | tr -d "c'")"
           test "$want" = "$mod" || { echo "tag $want but v.mod says $mod"; exit 1; }
-          test "$want" = "$reported" || { echo "tag $want but vtext_version says $reported"; exit 1; }
+          test "$want" = "$reported" || { echo "tag $want but harfara_version says $reported"; exit 1; }
           echo "releasing C API $want"
 
       - name: Install V (Linux and macOS)
@@ -97,7 +97,7 @@ jobs:
 
       - name: MinGW import library (Windows)
         if: runner.os == 'Windows'
-        run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
+        run: dlltool -d harfara.def --dllname harfara.dll -l libharfara.dll.a
 
       # Asset names carry the tag because one release holds all three
       # platforms and GitHub needs every filename in it distinct.
@@ -106,10 +106,10 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           mkdir -p dist
-          cp vtext.h "dist/vtext-${tag}.h"
-          cp vtext.def "dist/vtext-${tag}.def"
-          cp "${{ matrix.lib }}" "dist/vtext-${tag}-${{ matrix.asset_suffix }}"
-          if [ -f libvtext.dll.a ]; then cp libvtext.dll.a "dist/libvtext-${tag}-windows.a"; fi
+          cp harfara.h "dist/harfara-${tag}.h"
+          cp harfara.def "dist/harfara-${tag}.def"
+          cp "${{ matrix.lib }}" "dist/harfara-${tag}-${{ matrix.asset_suffix }}"
+          if [ -f libharfara.dll.a ]; then cp libharfara.dll.a "dist/libharfara-${tag}-windows.a"; fi
 
       # Rerunnable: creating an existing release fails, uploading the same
       # assets twice does not with --clobber, so a re-run heals a half-done
@@ -122,6 +122,6 @@ jobs:
           tag="${GITHUB_REF_NAME}"
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" --title "C API $tag" \
-              --notes "vtext as a C library: vtext.h, the export list, and the shared library per platform. See USAGE.md for the build, the ownership rules, and the default 1 MB caller stack."
+              --notes "harfara as a C library: harfara.h, the export list, and the shared library per platform. See USAGE.md for the build, the ownership rules, and the default 1 MB caller stack."
           fi
           gh release upload "$tag" dist/* --clobber

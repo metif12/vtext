@@ -1,6 +1,6 @@
-module vtext
+module harfara
 
-import vtext.font
+import harfara.font
 
 // Tests for the font.Device table reader: the size-dependent pixel adjustment a GPOS value may carry.
 //

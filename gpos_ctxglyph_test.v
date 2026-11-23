@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 // Chaining-context positioning through glyph ids (format 1).
 //
 // Formats 2 and 3 match through classes and coverages; format 1 matches the
@@ -16,10 +16,10 @@ import os
 //
 // The corpus is first because a test that runs only because one machine ships a font is a test about that
 // machine, and everything asserted here is a structural property of a parsed table rather than a number
-// out of one file. VTEXT_TEST_FONTS overrides both.
+// out of one file. HARFARA_TEST_FONTS overrides both.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -45,10 +45,10 @@ $if windows {
 
 // skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
 // pass, so every one of them names the font it wanted and where it looked, and it is written to the file
-// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+// tools/run_tests.v names in HARFARA_SKIP_LOG rather than to stdout.
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }
@@ -203,7 +203,7 @@ fn test_gpos_chain_glyph_parsed_from_a_real_font() {
 		// carries no format-1 chaining, so there is nothing to check the
 		// reader against. Skipped with the reason, like a missing font.
 		line := 'SKIP LeelawUI.ttf on this host carries no format-1 chaining rule to read'
-		path := os.getenv('VTEXT_SKIP_LOG')
+		path := os.getenv('HARFARA_SKIP_LOG')
 		if path != '' {
 			mut w := os.open_append(path) or { return }
 			w.writeln(line) or { return }

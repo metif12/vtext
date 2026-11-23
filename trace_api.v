@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // Exposing the pipeline's stages, one at a time, for tools/shapetrace.
 //

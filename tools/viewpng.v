@@ -4,7 +4,7 @@ module main
 //
 // This started as a window inside the examples themselves, which is what the roadmap asks for and
 // what a text engine's examples want. It cannot be that, and the reason is worth recording because
-// it is not a question of effort: **a program that imports both `gg` and `vtext` does not build.**
+// it is not a question of effort: **a program that imports both `gg` and `harfara` does not build.**
 // The two each include `stb_truetype.h` with `STB_TRUETYPE_IMPLEMENTATION` into V's single generated
 // C translation unit, and C forbids two definitions of the same identifier in one unit whatever their
 // linkage — 453 errors, `redefinition of 'stbtt__buf_get8'` and its neighbours. `stbtt.c.v` says
@@ -23,7 +23,7 @@ module main
 
 import gg
 import os
-import vtext.shape
+import harfara.shape
 
 fn main() {
 	if os.args.len < 2 {

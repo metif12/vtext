@@ -1,8 +1,8 @@
 module main
 
 import os
-import vtext
-import vtext.shape
+import harfara
+import harfara.shape
 
 // Rasterization at quarter-pixel offsets.
 //

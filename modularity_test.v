@@ -1,4 +1,4 @@
-module vtext
+module harfara
 
 import os
 
@@ -8,22 +8,22 @@ import os
 // font, and no library file imports tools. A new edge fails here first,
 // which is the point: the edge lands with a reason, not by accident.
 //
-// The table pins the exact vtext-internal set each module may use today;
-// anything else starting with `vtext` is a violation. Imports outside
-// vtext are the standard library and stay free. Test files are not
+// The table pins the exact harfara-internal set each module may use today;
+// anything else starting with `harfara` is a violation. Imports outside
+// harfara are the standard library and stay free. Test files are not
 // modules and are not scanned; tools/ and examples/ are programs that
 // depend on the library and are scanned nowhere.
 fn test_modular_import_directions() {
 	allowed := {
-		'shape':     ['vtext.font', 'vtext.ucd', 'vtext.raster']
-		'layout':    ['vtext.shape', 'vtext.font', 'vtext.ucd']
-		'font':      ['vtext.ucd', 'vtext.raster']
+		'shape':     ['harfara.font', 'harfara.ucd', 'harfara.raster']
+		'layout':    ['harfara.shape', 'harfara.font', 'harfara.ucd']
+		'font':      ['harfara.ucd', 'harfara.raster']
 		'ucd':       []
 		'raster':    []
-		'subset':    ['vtext.font', 'vtext.shape']
+		'subset':    ['harfara.font', 'harfara.shape']
 		'providers': []
-		'root':      ['vtext.layout', 'vtext.shape', 'vtext.font', 'vtext.subset', 'vtext.ucd',
-			'vtext.raster', 'vtext.providers']
+		'root':      ['harfara.layout', 'harfara.shape', 'harfara.font', 'harfara.subset', 'harfara.ucd',
+			'harfara.raster', 'harfara.providers']
 	}
 	mut violations := []string{}
 	mut checked := 0
@@ -64,7 +64,7 @@ fn test_modular_import_directions() {
 					violations << '${file} imports ${imp}: nothing in the library imports tools'
 					continue
 				}
-				if imp.starts_with('vtext') && imp !in allowed[module] {
+				if imp.starts_with('harfara') && imp !in allowed[module] {
 					violations << '${file} imports ${imp}: ${module} may use ${allowed[module]}'
 				}
 			}

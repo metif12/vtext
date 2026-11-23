@@ -1,7 +1,7 @@
 module shape
 
 import math
-import vtext.raster
+import harfara.raster
 
 // The reference glyph cache: the only honest key, written once so no caller
 // hand-rolls it twice. The boundary holds — the engine never caches and the

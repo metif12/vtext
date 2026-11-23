@@ -1,10 +1,10 @@
 module shape
 
-import vtext.font
-import vtext.ucd
-import vtext.raster
+import harfara.font
+import harfara.ucd
+import harfara.raster
 
-// vtext is a text shaping and rendering engine written in V.
+// harfara is a text shaping and rendering engine written in V.
 //
 // The pipeline is: normalization -> Unicode itemisation -> bidirectional
 // reordering -> OpenType shaping -> font fallback -> line layout -> rasterize ->

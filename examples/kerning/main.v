@@ -23,11 +23,11 @@
 module main
 
 import math
-import vtext
+import harfara
 import corpus
 import paint
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Two sets that both cover Latin, Cyrillic and Arabic, and differ in how hard they kern.
 //

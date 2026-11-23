@@ -23,11 +23,11 @@
 module main
 
 import math
-import vtext
+import harfara
 import corpus
 import paint
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Row is one rendering of the line and the options that produced it.
 struct Row {

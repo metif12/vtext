@@ -1,9 +1,9 @@
-module vtext
+module harfara
 
 import os
-import vtext.font
-import vtext.shape
-import vtext.subset
+import harfara.font
+import harfara.shape
+import harfara.subset
 
 // Tests for the MATH slice: the MATH table behind an opt-in pass,
 // pinned against HarfBuzz (uharfbuzz 0.56.2) and fontTools (4.66.1) on the
@@ -22,7 +22,7 @@ import vtext.subset
 // siblings, so a helper in another test file is one this file cannot see.
 fn math_face_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

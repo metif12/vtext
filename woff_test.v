@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 import compress.zlib
 import os
 
@@ -14,7 +14,7 @@ import os
 // the platform's own font directory second, and none when neither has it.
 fn woff_corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', woff_windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', woff_windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -47,7 +47,7 @@ $if windows {
 // is a failure pretending to be a pass.
 fn woff_skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

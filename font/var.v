@@ -43,7 +43,7 @@
 module font
 
 import math
-import vtext.raster
+import harfara.raster
 
 // InstancedOutline is one glyph outline at one point in the design space.
 pub struct InstancedOutline {

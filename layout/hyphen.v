@@ -1,6 +1,6 @@
 module layout
 
-import vtext.ucd
+import harfara.ucd
 
 // Hyphenation points inside a word, by Liang's algorithm.
 //

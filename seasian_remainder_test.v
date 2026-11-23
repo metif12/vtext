@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tests for the 9.2-engine remainder: Khmer pres-group defaults in
 // HarfBuzz order, Myanmar blwf caller-asked, GPOS marks beyond anchors,
@@ -41,7 +41,7 @@ import vtext.layout
 
 fn rem_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

@@ -14,11 +14,11 @@
 module main
 
 import os
-import vtext
+import harfara
 import corpus
 import paint
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Three fonts in two sets. The Latin line and the Arabic line share one per-script set because neither
 // of its fonts covers the other's script; the Urdu line gets its own set with Nastaliq as the primary,

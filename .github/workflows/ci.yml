@@ -116,12 +116,12 @@ jobs:
 
       # The real suite: every _test.v file in the module, one at a time, with the counts printed.
       #
-      # VTEXT_CC names the C compiler for the platform: macOS ships a clang behind the name gcc, so the
+      # HARFARA_CC names the C compiler for the platform: macOS ships a clang behind the name gcc, so the
       # runner asks for it by its own name and a failure in the C toolchain says which one it was.
       - name: v run tools/run_tests.v
         run: v run tools/run_tests.v
         env:
-          VTEXT_CC: ${{ matrix.cc }}
+          HARFARA_CC: ${{ matrix.cc }}
 
   difftest:
     name: differential shaping (ubuntu 24.04)
@@ -294,7 +294,7 @@ jobs:
   clib:
     # The C ABI: the shared library builds, its headers ship, and the smoke
     # test that exercises it end to end passes on every platform. The DLL, .so
-    # and .dylib are uploaded with vtext.h and vtext.def, so the headers have
+    # and .dylib are uploaded with harfara.h and harfara.def, so the headers have
     # exactly one source of truth and every run proves they match it.
     name: C library (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -311,13 +311,13 @@ jobs:
         include:
           - os: ubuntu-latest
             cc: gcc
-            lib: libvtext.so
+            lib: libharfara.so
           - os: macos-latest
             cc: clang
-            lib: libvtext.dylib
+            lib: libharfara.dylib
           - os: windows-latest
             cc: gcc
-            lib: vtext.dll
+            lib: harfara.dll
     steps:
       - uses: actions/checkout@v4
 
@@ -340,8 +340,8 @@ jobs:
           call makev.bat
           echo %RUNNER_TEMP%\vsrc>>"%GITHUB_PATH%"
 
-      # The header mirror first: capi.v is the source of truth and vtext.h plus
-      # vtext.def must name exactly its exports. A missing symbol fails the C
+      # The header mirror first: capi.v is the source of truth and harfara.h plus
+      # harfara.def must name exactly its exports. A missing symbol fails the C
       # link below, but a stale declaration does not fail anything, so the
       # check reads all three files as text in both directions.
       - name: v run tools/capicheck.v
@@ -357,7 +357,7 @@ jobs:
           VJOBS: '1'
 
       # The install name the dylib records for itself is `out` — V links with
-      # its internal object name and the rename to libvtext.dylib does not
+      # its internal object name and the rename to libharfara.dylib does not
       # rewrite it — so dyld looks for `out` at runtime and the smoke binary
       # dies before main (seen as `tried: 'out' (no such file)` on CI). The id
       # must be rewritten before the smoke test links, because the load path
@@ -371,8 +371,8 @@ jobs:
           install_name_tool -id @rpath/${{ matrix.lib }} ${{ matrix.lib }}
           otool -D ${{ matrix.lib }}
 
-      # The import library first: `-lvtext` must resolve to this, with the
-      # curated `--dllname vtext.dll`, and not auto-import from vtext.dll
+      # The import library first: `-lharfara` must resolve to this, with the
+      # curated `--dllname harfara.dll`, and not auto-import from harfara.dll
       # itself. V links the DLL with the internal object name `out` (the same
       # root cause as the macOS install name above), and a direct link records
       # that name — the smoke binary ended up importing `out.exe`, which loads
@@ -382,7 +382,7 @@ jobs:
       - name: MinGW import library (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: dlltool -d vtext.def --dllname vtext.dll -l libvtext.dll.a
+        run: dlltool -d harfara.def --dllname harfara.dll -l libharfara.dll.a
 
       # The smoke binary links a default stack. That is the point: the name
       # tables once materialised as 2 MB of stack literals in _vinit and the
@@ -395,8 +395,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -L. -lvtext -static-libgcc -o examples/c-api/smoke.exe
-          cp vtext.dll examples/c-api/
+          gcc examples/c-api/smoke.c -L. -lharfara -static-libgcc -o examples/c-api/smoke.exe
+          cp harfara.dll examples/c-api/
           # The MinGW runtime this gcc links against dynamically lives in its
           # own directory, not beside the exe, so the loader dies as
           # STATUS_DLL_NOT_FOUND with no output. Copying whatever of its three
@@ -408,21 +408,21 @@ jobs:
           done
           # The import tables, so any remaining loader failure names its DLL.
           objdump -p examples/c-api/smoke.exe | grep 'DLL Name' || true
-          objdump -p vtext.dll | grep 'DLL Name' || true
+          objdump -p harfara.dll | grep 'DLL Name' || true
 
       - name: Build and place the smoke test (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -L. -lvtext -Wl,-rpath,'$ORIGIN' -o examples/c-api/smoke
-          cp libvtext.so examples/c-api/
+          gcc examples/c-api/smoke.c -L. -lharfara -Wl,-rpath,'$ORIGIN' -o examples/c-api/smoke
+          cp libharfara.so examples/c-api/
 
       - name: Build and place the smoke test (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -L. -lvtext -Wl,-rpath,@loader_path -o examples/c-api/smoke
-          cp libvtext.dylib examples/c-api/
+          gcc examples/c-api/smoke.c -L. -lharfara -Wl,-rpath,@loader_path -o examples/c-api/smoke
+          cp libharfara.dylib examples/c-api/
 
       # ls first: a missing binary or a missing library beside it is otherwise
       # a bare 127 with no failing command to read. The exit code is printed
@@ -456,8 +456,8 @@ jobs:
         with:
           name: c-lib-${{ matrix.os }}
           path: |
-            vtext.h
-            vtext.def
+            harfara.h
+            harfara.def
             ${{ matrix.lib }}
 
       - name: Upload the MinGW import library (Windows)
@@ -465,4 +465,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: c-lib-windows-import
-          path: libvtext.dll.a
+          path: libharfara.dll.a

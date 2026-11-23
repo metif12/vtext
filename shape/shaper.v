@@ -1,6 +1,6 @@
 module shape
 
-import vtext.font
+import harfara.font
 
 // ScriptShaper is the E1 extension seam: per-script shaping behaviour
 // behind one interface, resolved through the registry below. Feature

@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // Verifies that one shape.Context serves the whole pipeline, and that the tables it holds
 // are shared rather than rebuilt per call. Normalization and bidi lookups are the two

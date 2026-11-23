@@ -1,9 +1,9 @@
 module main
 
-// Rival A/B harness, the 7.11 second half: the same workload timed on vtext
+// Rival A/B harness, the 7.11 second half: the same workload timed on harfara
 // and on the stack it replaces, on the same box, in one table.
 //
-// The V half times vtext (line layout and wrapping at 16 px for
+// The V half times harfara (line layout and wrapping at 16 px for
 // 1024-character paragraphs in every script the corpus covers plus
 // marks/digits/bidi char types, Amiri 'A' rasterized at 32 px cold and
 // through the caller-owned cache, one fontconfig family match, one font
@@ -13,17 +13,17 @@ module main
 // Best of five batches of twenty on both sides, because a loaded box lies
 // about absolutes and the ratio is the finding.
 //
-// What each side does differs and the table says so: vtext lays the line
+// What each side does differs and the table says so: harfara lays the line
 // out (bidi, joining, GSUB/GPOS, measurement) where HarfBuzz only shapes;
-// Pango lays out and wraps where vtext wraps; fc-match spawns a process
+// Pango lays out and wraps where harfara wraps; fc-match spawns a process
 // where the provider calls the library; fontTools parses into Python
-// objects where vtext parses into its own tables; Pillow renders with its
-// own bundled FreeType at default flags where vtext fills hinted.
+// objects where harfara parses into its own tables; Pillow renders with its
+// own bundled FreeType at default flags where harfara fills hinted.
 // Throughput is the comparison; correctness is proven elsewhere, per part,
 // and a part with no baseline makes no claim.
 //
 // The harness degrades the platform-ratchet way: no interpreter or no
-// rival import prints the vtext half with the reason instead of a table
+// rival import prints the harfara half with the reason instead of a table
 // with holes. The PERF.md numbers come from a run of this tool and are
 // re-measured per release; the method is the pin, the absolutes are the
 // box's. The CI gate reads its baselines out of PERF.md, so a table edit
@@ -39,9 +39,9 @@ module main
 
 import os
 import time
-import vtext.shape
-import vtext.layout
-import vtext.providers
+import harfara.shape
+import harfara.layout
+import harfara.providers
 
 const latin_text = 'The quick brown fox jumps over the lazy dog near the river bank at dusk'
 const arabic_text = 'سلام دنیا بر شما ای دوست قدیمی من'
@@ -425,8 +425,8 @@ fn main() {
 	assert latin.len == 1024 && arabic.len == 1024, 'the repeat rule builds the rival workload'
 	ltook, lglyphs := best_of_shape(ctx, latin, .ltr, latin_fs)
 	atook, aglyphs := best_of_shape(ctx, arabic, .rtl, arabic_fs)
-	println('vtext shape+layout latin-1024: ${f64(ltook) / f64(lglyphs):.1f} ns/glyph (${lglyphs} glyphs)')
-	println('vtext shape+layout arabic-1024: ${f64(atook) / f64(aglyphs):.1f} ns/glyph (${aglyphs} glyphs)')
+	println('harfara shape+layout latin-1024: ${f64(ltook) / f64(lglyphs):.1f} ns/glyph (${lglyphs} glyphs)')
+	println('harfara shape+layout arabic-1024: ${f64(atook) / f64(aglyphs):.1f} ns/glyph (${aglyphs} glyphs)')
 	mut case_took := []i64{}
 	mut case_wrap := []i64{}
 	for pc in perf_cases() {
@@ -436,15 +436,15 @@ fn main() {
 		text := repeat_to_runes(pc.cps, 1024)
 		assert text.len == 1024, 'the repeat rule builds the rival workload'
 		took, glyphs := best_of_shape(ctx, text, pc.dir, fs)
-		println('vtext shape ${pc.id}-1024: ${f64(took) / f64(glyphs):.1f} ns/glyph (${glyphs} glyphs)')
+		println('harfara shape ${pc.id}-1024: ${f64(took) / f64(glyphs):.1f} ns/glyph (${glyphs} glyphs)')
 		case_took << took
 		wtook, wlines := best_of_wrap(ctx, text, pc.dir, fs)
-		println('vtext layout ${pc.id}-wrap-1024: ${f64(wtook):.1f} ns/paragraph (${wlines} lines)')
+		println('harfara layout ${pc.id}-wrap-1024: ${f64(wtook):.1f} ns/paragraph (${wlines} lines)')
 		case_wrap << wtook
 	}
 	gid := amiri.glyph_index(`A`)
 	miss := best_of_raster_miss(mut amiri)
-	println('vtext raster amiri-A-T-32 miss: ${f64(miss):.1f} ns/op (n=20)')
+	println('harfara raster amiri-A-T-32 miss: ${f64(miss):.1f} ns/op (n=20)')
 	mut cache := shape.new_cache()
 	_ = cache.get_or_rasterize(0, amiri, gid, 32.0, 0, 0)
 	mut best_hit := i64(1 << 60)
@@ -459,24 +459,24 @@ fn main() {
 		}
 	}
 	hit := best_hit / 20
-	println('vtext raster amiri-A-32 hit: ${f64(hit):.1f} ns/op (n=20)')
-	println('vtext cache: ${cache.hits} hits, ${cache.misses} misses')
+	println('harfara raster amiri-A-32 hit: ${f64(hit):.1f} ns/op (n=20)')
+	println('harfara cache: ${cache.hits} hits, ${cache.misses} misses')
 	if hit >= miss {
 		eprintln('rival-bench REFUSED: a cache hit (${hit}ns) must beat a sustained miss (${miss}ns)')
 		exit(1)
 	}
 	lwrap, llines := best_of_wrap(ctx, latin, .ltr, latin_fs)
 	awrap, alines := best_of_wrap(ctx, arabic, .rtl, arabic_fs)
-	println('vtext layout latin-wrap-1024: ${f64(lwrap):.1f} ns/paragraph (${llines} lines)')
-	println('vtext layout arabic-wrap-1024: ${f64(awrap):.1f} ns/paragraph (${alines} lines)')
+	println('harfara layout latin-wrap-1024: ${f64(lwrap):.1f} ns/paragraph (${llines} lines)')
+	println('harfara layout arabic-wrap-1024: ${f64(awrap):.1f} ns/paragraph (${alines} lines)')
 	ins := best_of_inspect('testdata/fonts/Amiri-Regular.ttf')
-	println('vtext inspect Amiri-load: ${f64(ins):.1f} ns/op (n=20)')
+	println('harfara inspect Amiri-load: ${f64(ins):.1f} ns/op (n=20)')
 	mut disc := i64(-1)
 	if d := best_of_discovery('Amiri') {
 		disc = d
-		println('vtext discovery fontconfig-match: ${f64(disc):.1f} ns/op (n=20)')
+		println('harfara discovery fontconfig-match: ${f64(disc):.1f} ns/op (n=20)')
 	} else {
-		println('vtext discovery fontconfig-match: SKIPPED (Amiri not resolvable here; CI installs the corpus)')
+		println('harfara discovery fontconfig-match: SKIPPED (Amiri not resolvable here; CI installs the corpus)')
 	}
 	// The rival half runs in its own process; the first interpreter that
 	// answers runs it, and none answering is a loud skip, not a hole.
@@ -489,13 +489,13 @@ fn main() {
 		}
 		if r.exit_code == 2 {
 			println(r.output.trim_space())
-			println('A/B table needs the rival half; the vtext half above stands alone.')
+			println('A/B table needs the rival half; the harfara half above stands alone.')
 			return
 		}
 	}
 	if rival_out == '' {
 		println('rival SKIPPED: no python interpreter answered')
-		println('A/B table needs the rival half; the vtext half above stands alone.')
+		println('A/B table needs the rival half; the harfara half above stands alone.')
 		return
 	}
 	mut rivals := map[string]RivalRow{}
@@ -503,12 +503,12 @@ fn main() {
 		row := parse_rival_line(line.trim_space()) or { continue }
 		rivals[row.op] = row
 	}
-	// Per-op rows pair one vtext timing with its rival by workload name.
+	// Per-op rows pair one harfara timing with its rival by workload name.
 	// Shape pairs per 1024-character paragraph — the repeat rule builds the
 	// same paragraph on both sides, so no glyph-count normalization is owed
 	// to either engine's clustering.
 	println('')
-	println('op                      | vtext        | rival        | vtext/rival')
+	println('op                      | harfara        | rival        | harfara/rival')
 	println('------------------------+--------------+--------------+------------')
 	print_ab('shape latin-1024', f64(ltook), rivals['shape latin-1024'] or {
 		RivalRow{ ns: -1 }
@@ -546,7 +546,7 @@ fn main() {
 			RivalRow{ ns: -1 }
 		}, 'ns/op')
 	} else {
-		println('discovery fontconfig-match | (no vtext measurement) |  | n/a')
+		println('discovery fontconfig-match | (no harfara measurement) |  | n/a')
 	}
 }
 

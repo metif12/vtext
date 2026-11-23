@@ -35,9 +35,9 @@ module main
 // summary says everything is present.
 
 import os
-import vtext
-import vtext.font
-import vtext.shape
+import harfara
+import harfara.font
+import harfara.shape
 
 // font.Lookup kinds this engine reads. Everything else in a table is carried by the parser and never applied,
 // which is a fact about the engine and not about the font.

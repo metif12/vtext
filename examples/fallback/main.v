@@ -24,12 +24,12 @@
 //     something was lost.
 module main
 
-import vtext
+import harfara
 import corpus
 import paint
-import vtext.font
-import vtext.layout
-import vtext.shape
+import harfara.font
+import harfara.layout
+import harfara.shape
 
 // A font that covers Latin, Greek and Cyrillic and no Arabic, and a font that covers Arabic.
 

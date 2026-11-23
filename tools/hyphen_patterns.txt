@@ -1,11 +1,11 @@
-# US-English hyphenation patterns for vtext (hand-authored subset).
+# US-English hyphenation patterns for harfara (hand-authored subset).
 #
 # Source: hand-derived from US-English dictionary hyphenations for the words
 #   pinned in hyphen_test.v (hyphenation, computer, example, algorithm,
 #   university, presentation, typesetting, hyphen). No external text is
-#   reproduced: each row below was written for vtext to encode the break
+#   reproduced: each row below was written for harfara to encode the break
 #   the dictionary shows for those words.
-# Licence: MIT (same as the vtext repository), authored for vtext.
+# Licence: MIT (same as the harfara repository), authored for harfara.
 #
 # TeX ushyph evaluated and NOT used:
 #   CTAN package ushyph (language/hyphenation/ushyph, "US hyphenation

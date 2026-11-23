@@ -1,7 +1,7 @@
 module layout
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // Line breaking, per UAX #14.
 //

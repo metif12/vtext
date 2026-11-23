@@ -1,6 +1,6 @@
 module shape
 
-import vtext.ucd
+import harfara.ucd
 
 // Case mapping, the full upper, lower and title mappings of UAX #44 chapter 3.
 //

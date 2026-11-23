@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.layout
-import vtext.font
+import harfara.shape
+import harfara.layout
+import harfara.font
 // Tests for Arabic joining applied through the font's own GSUB features.
 //
 // The four joining features are `isol`, `init`, `medi` and `fina`, and until 2026-10-04 this engine

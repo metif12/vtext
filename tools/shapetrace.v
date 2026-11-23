@@ -32,16 +32,16 @@ module main
 // naskh font can be told apart and the seam between them is visible.
 
 import os
-import vtext
-import vtext.layout
-import vtext.shape
-import vtext.font
+import harfara
+import harfara.layout
+import harfara.shape
+import harfara.font
 
 // name_of_cp is a codepoint as a name when the UCD has one and as a hex value when it does not. The
 // fallback matters: a trace full of U+FB50 says less than a trace that says LAM WITH ALEF, and the
 // codepoints this prints are presentation forms, most of which no reader has in their head.
 fn name_of_cp(cp rune) string {
-	return vtext.codepoint_name(cp)
+	return harfara.codepoint_name(cp)
 }
 
 fn show_codepoints(label string, cps []rune) {
@@ -99,7 +99,7 @@ fn main() {
 	// a wrong shape at the end, so this stage exists to be checked first.
 	println('1. input')
 	for cp in cps {
-		joining := vtext.joining_type_name(ctx, cp)
+		joining := harfara.joining_type_name(ctx, cp)
 		script := ctx.properties.script_tag_of(cp)
 		bidi := ctx.properties.bidi_class_name(cp)
 		println('  U+${u32(cp):04X} ${name_of_cp(cp)}  script=${script} joining=${joining} bidi=${bidi}')
@@ -127,7 +127,7 @@ fn main() {
 	// 3. Bidi, which decides the order the line is drawn in and therefore what "to the left of" means
 	// for every stage after it.
 	println('3. bidi (UAX#9)')
-	bidi := vtext.resolve_bidi(ctx, normalized, .auto)
+	bidi := harfara.resolve_bidi(ctx, normalized, .auto)
 	println('  paragraph level ${bidi.paragraph_level}, ${bidi.sequences.len} run sequence(s)')
 	mut levels := []string{cap: normalized.len}
 	for c in bidi.levels {

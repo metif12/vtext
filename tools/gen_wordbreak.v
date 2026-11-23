@@ -30,7 +30,7 @@ const out_dir = 'ucd'
 // unicode_version is written into every generated file.
 const unicode_version = '18.0.0'
 
-// CodeRange mirrors vtext.ucd.CodeRange. It is redeclared here because a tool
+// CodeRange mirrors harfara.ucd.CodeRange. It is redeclared here because a tool
 // that generates a module's own data cannot import that module.
 struct CodeRange {
 mut:

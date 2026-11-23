@@ -7,10 +7,10 @@ module main
 
 import os
 import strings
-import vtext
-import vtext.font
-import vtext.shape
-import vtext.raster
+import harfara
+import harfara.font
+import harfara.shape
+import harfara.raster
 
 const ramps = [' ', '.', ':', '-', '=', '+', '*', '#', '%', '@']
 

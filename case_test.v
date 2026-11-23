@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 import os
 
 // Conformance against ucd/SpecialCasing.txt, the UCD's full case mapping

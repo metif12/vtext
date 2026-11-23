@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 // Tests for reading a font's cursive anchors: where a letter's stroke enters and leaves.
 //
 // A cursive rule is one record per covered glyph naming two points, and the two are separately optional

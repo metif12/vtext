@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 import os
 
 // Variable instancing: applying fvar/gvar at caller-chosen coordinates.
@@ -19,10 +19,10 @@ import os
 // corpus_font_path is where a named font is: the committed corpus first,
 // this platform font directory second, and none when neither has it. The
 // corpus is first because the FreeType pins below are about these exact
-// files, and VTEXT_TEST_FONTS overrides both.
+// files, and HARFARA_TEST_FONTS overrides both.
 fn varinstance_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', varinstance_windows_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', varinstance_windows_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -49,10 +49,10 @@ $if windows {
 // varinstance_skip records why a test cannot run. A skip that prints nothing
 // is a failure pretending to be a pass, so the missing font and where it was
 // looked for are written to the file tools/run_tests.v names in
-// VTEXT_SKIP_LOG rather than to stdout.
+// HARFARA_SKIP_LOG rather than to stdout.
 fn varinstance_skip(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

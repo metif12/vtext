@@ -1,6 +1,6 @@
 module shape
 
-import vtext.font
+import harfara.font
 
 // The font layer: turning a shaped codepoint into something drawable.
 //

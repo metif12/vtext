@@ -1,6 +1,6 @@
 module layout
 
-import vtext.ucd
+import harfara.ucd
 
 // Word and sentence boundary engines for UAX #29.
 //

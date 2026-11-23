@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.layout
-import vtext.ucd
+import harfara.shape
+import harfara.layout
+import harfara.ucd
 import os
 
 // layout.Line breaking, per UAX #14.
@@ -509,7 +509,7 @@ fn test_a_quoted_run_with_spaces_inside_it_stays_whole() {
 // uses. Nothing here asserts a width in pixels — every threshold is `plain.width / 2.0` or a
 // trivially wide or narrow bracket — so the font being a different one does not move a limit.
 //
-// The same resolution order the rest of the suite uses, and the same `VTEXT_TEST_FONTS` override. A
+// The same resolution order the rest of the suite uses, and the same `HARFARA_TEST_FONTS` override. A
 // host with neither the corpus nor a platform font directory prints a skip rather than panicking,
 // because a file that panics is a file that proves nothing on three quarters of the machines this
 // is supposed to run on.
@@ -999,7 +999,7 @@ fn test_line_break_a_mark_on_a_space_or_a_hard_break_is_unresolved() {
 
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -1033,7 +1033,7 @@ $if windows {
 // them file by file.
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

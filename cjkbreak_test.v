@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 import os
 
 // Phase 9.1: CJK line breaking (UAX #14 ID/CJ/NS/OP/CL).
@@ -59,11 +59,11 @@ fn cjk_approx(got f64, want f64, tol f64) bool {
 	return d > -tol && d < tol
 }
 
-// cjk_font_path is where a committed face is: the VTEXT_TEST_FONTS override
+// cjk_font_path is where a committed face is: the HARFARA_TEST_FONTS override
 // first, then the corpus. NotoSansSC ships with the repo, so a miss is a
 // failure rather than a skip.
 fn cjk_font_path(name string) string {
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d == '' {
 			continue
 		}

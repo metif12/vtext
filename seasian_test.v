@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tests for the third corpus wave: Southeast Asian faces (Thai, Lao, Khmer,
 // Myanmar). Every gid, advance and cluster below was read off HarfBuzz
@@ -38,7 +38,7 @@ import vtext.layout
 
 fn seasian_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.providers
+import harfara.shape
+import harfara.providers
 
 // Tests for slice 8.8: fontconfig sort-by-match with charset and language
 // coverage queries, and the fvar named instances on the inspect API.
@@ -25,7 +25,7 @@ import vtext.providers
 // a different font.
 fn match_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -44,7 +44,7 @@ fn match_font_path(name string) ?string {
 // reads it rather than to stdout, which a passing test's output discards.
 fn match_skip(name string) {
 	line := 'SKIP ${name}'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }
@@ -56,7 +56,7 @@ fn match_skip(name string) {
 
 fn match_font(name string) ?&shape.Font {
 	p := match_font_path(name) or {
-		match_skip('${name} is in neither $VTEXT_TEST_FONTS nor testdata/fonts')
+		match_skip('${name} is in neither $HARFARA_TEST_FONTS nor testdata/fonts')
 		return none
 	}
 	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }

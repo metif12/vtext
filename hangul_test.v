@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tests for 9.1, first half: Hangul conjoining-Jamo composition, plus the
 // vertical CJK punctuation that rides the same face.
@@ -37,7 +37,7 @@ import vtext.layout
 
 fn hangul_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

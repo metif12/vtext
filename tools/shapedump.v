@@ -36,11 +36,11 @@ module main
 // appending cannot move what came before it.
 
 import os
-import vtext
-import vtext.font
-import vtext.shape
-import vtext.layout
-import vtext.raster
+import harfara
+import harfara.font
+import harfara.shape
+import harfara.layout
+import harfara.raster
 
 fn main() {
 	mut font_path := ''
@@ -143,7 +143,7 @@ fn dump_glyphs(glyphs []shape.Glyph, size f64, upem f64, line_idx int) {
 		x_off := (g.x - pen) / size * upem
 		pen += g.advance
 		x_adv := g.advance / size * upem
-		// HarfBuzz sign for y: positive up. vtext stores y positive down from the baseline,
+		// HarfBuzz sign for y: positive up. harfara stores y positive down from the baseline,
 		// so the sign flips here rather than in the comparator.
 		y_off := -g.y / size * upem
 		mark := if g.is_mark { 1 } else { 0 }

@@ -1,7 +1,7 @@
 module main
 
-import vtext.shape
-import vtext.raster
+import harfara.shape
+import harfara.raster
 
 // Flattened stroker over the FiraCode A outline.
 //

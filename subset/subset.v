@@ -35,8 +35,8 @@ module subset
 // unwritten, so a CFF font has no outlines this can rebuild and build_font
 // errors on a table set with no glyf.
 
-import vtext.font
-import vtext.shape
+import harfara.font
+import harfara.shape
 
 // ---------------------------------------------------------------- bytes
 

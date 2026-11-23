@@ -1,6 +1,6 @@
 module shape
 
-import vtext.ucd
+import harfara.ucd
 
 // Direction is the resolved direction of a paragraph.
 pub enum Direction {

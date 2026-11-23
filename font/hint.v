@@ -1,6 +1,6 @@
 module font
 
-import vtext.raster
+import harfara.raster
 
 // Grid-fit autohinter with a refused bytecode interpreter.
 //

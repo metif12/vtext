@@ -1,6 +1,6 @@
 module shape
 
-import vtext.font
+import harfara.font
 
 // MATH shaping, the opt-in pass that lays out mathematical text.
 //

@@ -20,11 +20,11 @@
 module main
 
 import math
-import vtext
+import harfara
 import paint
 import corpus
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Two Arabic-capable fonts that cover Persian as well, so one shape.FontSet serves every row.
 

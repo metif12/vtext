@@ -21,10 +21,10 @@ module main
 // the finding, and it is invisible from any one of them.
 
 import os
-import vtext
-import vtext.layout
-import vtext.shape
-import vtext.font
+import harfara
+import harfara.layout
+import harfara.shape
+import harfara.font
 
 fn arg(i int, fallback string) string {
 	if i < os.args.len {

@@ -7,7 +7,7 @@
 //
 // The order is the whole of the decision:
 //
-//	$VTEXT_EXAMPLE_FONTS   a directory the caller names, for trying a font the corpus lacks
+//	$HARFARA_EXAMPLE_FONTS   a directory the caller names, for trying a font the corpus lacks
 //	examples/../../testdata/fonts   the committed corpus, which is here on every platform
 //	C:/Windows/Fonts      the platform's own, Windows only, kept as a last fallback for
 //	                       caller-named families the corpus lacks; the in-tree examples no
@@ -32,7 +32,7 @@ pub fn font(families ...string) string {
 		return ''
 	}
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_EXAMPLE_FONTS'), corpus_dir(), platform_dir()] {
+	for d in [os.getenv('HARFARA_EXAMPLE_FONTS'), corpus_dir(), platform_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

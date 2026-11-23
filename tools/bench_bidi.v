@@ -5,8 +5,8 @@
 module main
 
 import time
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 const iters = 1500
 

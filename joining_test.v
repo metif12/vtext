@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // The joining algorithm, checked against the cases UAX#53 spells out and against the
 // Persian and Arabic text this engine exists to render.

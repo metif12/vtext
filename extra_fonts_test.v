@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tests for the second corpus wave: programming faces, Hebrew, CJK and a
 // Nerd-patched face. Every number below was read off HarfBuzz and fontTools
@@ -13,7 +13,7 @@ import vtext.layout
 
 fn extra_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Tests for the UAX #29 grapheme cluster engine in layout/graphemes.v.
 // The committee's own GraphemeBreakTest.txt runs as a floor the way the

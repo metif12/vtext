@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tibetan stacking pins against HarfBuzz 0.56.2 on the committed OFL face
 // NotoSerifTibetan-Variable.ttf (upem 1000). Every number below was measured
@@ -11,7 +11,7 @@ import vtext.layout
 // units by 0.016; y is flipped relative to HarfBuzz's y_off convention.
 
 fn tibetan_path() ?string {
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d == '' {
 			continue
 		}
@@ -61,7 +61,7 @@ fn test_tibetan_shaper_registration() {
 
 fn test_tibetan_bka() {
 	path := tibetan_path() or {
-		println('SKIP NotoSerifTibetan-Variable.ttf is in neither testdata/fonts nor VTEXT_TEST_FONTS')
+		println('SKIP NotoSerifTibetan-Variable.ttf is in neither testdata/fonts nor HARFARA_TEST_FONTS')
 		return
 	}
 	ctx := shape.new_context()

@@ -1,9 +1,9 @@
-module vtext
+module harfara
 
 import os
 import math
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Tests for slice 7.4: alignment and justification, with kashida where the
 // font carries it and spaces elsewhere.
@@ -21,7 +21,7 @@ fn align_approx(got f64, want f64, tol f64) bool {
 
 fn align_skip(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }
@@ -33,7 +33,7 @@ fn align_skip(name string) {
 
 fn align_font(name string) ?&shape.Font {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

@@ -67,7 +67,7 @@ for _s in SCRIPT_IDS:
 
 
 def parse_bench_full(path):
-    """Read {op: (vtext_cell, rival_cell, ratio_str)} out of the bench table."""
+    """Read {op: (harfara_cell, rival_cell, ratio_str)} out of the bench table."""
     text = read_text(path)
     out = {}
     for line in text.splitlines():
@@ -75,7 +75,7 @@ def parse_bench_full(path):
             continue
         cells = [c.strip() for c in line.split('|')]
         cells = [c for c in cells if c != '']
-        # Bench table rows have four data cells (op, vtext, rival, ratio);
+        # Bench table rows have four data cells (op, harfara, rival, ratio);
         # anything else (headers, separators, skip notes) is not a row.
         if len(cells) != 4:
             continue
@@ -135,16 +135,16 @@ def main():
     rows = []
     for op in ORDER:
         key = norm(op)
-        vtext_cell, rival_cell, ratio = bench[key]
-        vu = units_of(vtext_cell)
+        harfara_cell, rival_cell, ratio = bench[key]
+        vu = units_of(harfara_cell)
         ru = units_of(rival_cell)
         if vu is None or ru is None:
-            print(f'perf-record REFUSED: unparseable bench cells for {op!r}: {vtext_cell!r} / {rival_cell!r}')
+            print(f'perf-record REFUSED: unparseable bench cells for {op!r}: {harfara_cell!r} / {rival_cell!r}')
             return 1
         what = WHAT.get(op, op)
         rows.append(
             f'| {op} | {what} | {fmt_cell(*vu)} | {fmt_cell(*ru)} | {ratio}x |')
-    header = ['| op | what | vtext | rival | vtext/rival |',
+    header = ['| op | what | harfara | rival | harfara/rival |',
               '| --- | --- | --- | --- | --- |']
     segment = '\n'.join(header + rows)
     doc = read_text(perf_path)

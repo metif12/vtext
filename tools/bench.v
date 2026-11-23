@@ -15,9 +15,9 @@ module main
 
 import os
 import time
-import vtext
-import vtext.shape
-import vtext.layout
+import harfara
+import harfara.shape
+import harfara.layout
 
 fn load_font(paths []string) &shape.Font {
 	for r in paths {

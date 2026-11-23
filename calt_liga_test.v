@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Code ligatures: calt, liga and clig are on by default, the way HarfBuzz and
 // every code editor leave them, and a `-tag` entry turns one back off. This
@@ -18,7 +18,7 @@ import vtext.layout
 // see.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -49,7 +49,7 @@ $if windows {
 
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

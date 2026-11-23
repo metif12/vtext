@@ -39,7 +39,7 @@ module main
 // a file timestamp.
 
 import os
-import vtext.shape
+import harfara.shape
 
 const ucd_file = 'ucd/UnicodeData.txt'
 const out_file = 'ucd/ucd_names.v'

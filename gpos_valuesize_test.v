@@ -1,6 +1,6 @@
-module vtext
+module harfara
 
-import vtext.font
+import harfara.font
 
 // Tests for the width of a GPOS value record, which is what the reader uses to step from one record to the
 // next.

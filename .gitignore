@@ -13,7 +13,7 @@
 # Running the differential suite compiles its helpers.
 tools/difftest/__pycache__/
 .vtmp/
-vtext_build.*
+harfara_build.*
 
 # What an example writes when it runs. The pictures are output, not source, and committing one would
 # make a change to the engine look like a change to the example.

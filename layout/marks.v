@@ -1,8 +1,8 @@
 module layout
 
-import vtext.shape
-import vtext.font
-import vtext.ucd
+import harfara.shape
+import harfara.font
+import harfara.ucd
 
 // mark_indices_by_cluster lists the line's marks, from the first cluster onwards,
 // which is the order a stack is built in.

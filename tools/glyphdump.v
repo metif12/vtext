@@ -26,11 +26,11 @@ module main
 
 import os
 import math
-import vtext
+import harfara
 import paint
-import vtext.layout
-import vtext.shape
-import vtext.font
+import harfara.layout
+import harfara.shape
+import harfara.font
 
 // The sheet's shape. Sixteen across is a width that fits a screen and still gives each cell room for a
 // letter at the sizes a specimen is looked at; the cell is the em plus a gap, so nothing is cropped when

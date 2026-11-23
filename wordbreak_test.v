@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.layout
-import vtext.ucd
+import harfara.layout
+import harfara.ucd
 
 // Conformance against the Unicode word and sentence breaking tests, and a
 // floor under both scores.

@@ -33,9 +33,9 @@ module main
 // does nothing and you need to know whether the font gave it zero lookups or the engine skipped it.
 
 import os
-import vtext
-import vtext.shape
-import vtext.font
+import harfara
+import harfara.shape
+import harfara.font
 
 // The feature tags the engine's shaping path can act on. A feature that is not in here is either used for
 // something else or simply not implemented, and printing the whole list against this one is what makes

@@ -1,9 +1,9 @@
-module vtext
+module harfara
 
 import os
-import vtext.font
-import vtext.shape
-import vtext.layout
+import harfara.font
+import harfara.shape
+import harfara.layout
 
 // Vertical metrics, slice 1: vhea/vmtx/VORG are read, not placed. Placement is
 // a layout question for the slice that lays a vertical line out.
@@ -14,7 +14,7 @@ import vtext.layout
 // another test file is one this file cannot see.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -48,7 +48,7 @@ $if windows {
 // them file by file.
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

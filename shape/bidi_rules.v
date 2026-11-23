@@ -1,6 +1,6 @@
 module shape
 
-import vtext.ucd
+import harfara.ucd
 
 // The weak, neutral and implicit resolution rules of UAX#9 (W1 to N2 and I1, I2),
 // applied to one isolating run sequence at a time.

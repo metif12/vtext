@@ -25,8 +25,8 @@ import os
 // Written to the temporary directory rather than beside the source: a build log next to the code it builds
 // becomes a file that is accidentally committed, and the next build makes it stale in a way that reads as
 // current.
-const build_log_name = 'vtext_build.log'
-const run_log_name = 'vtext_run.log'
+const build_log_name = 'harfara_build.log'
+const run_log_name = 'harfara_run.log'
 
 struct Args {
 mut:
@@ -42,7 +42,7 @@ fn main() {
 	os.setenv('VMODULES', 'C:\\Users\\MR\\Projects', true)
 	vexe := 'C:\\Users\\MR\\v\\v.exe'
 
-	exe := os.join_path_single(os.temp_dir(), 'vtext_build.exe')
+	exe := os.join_path_single(os.temp_dir(), 'harfara_build.exe')
 	build_log := os.join_path_single(os.temp_dir(), build_log_name)
 	os.rm(exe) or {}
 	os.rm(build_log) or {}

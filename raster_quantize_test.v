@@ -1,6 +1,6 @@
 module main
 
-import vtext.raster
+import harfara.raster
 
 fn solid(w int, h int, v u8) raster.GlyphBitmap {
 	return raster.GlyphBitmap{

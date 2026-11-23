@@ -44,7 +44,7 @@ module main
 // The filter is a substring of the file name, so `inspect` runs inspect_test.v and `gpos` runs the four
 // gpos tests.
 //
-// VTEXT_CC overrides the C compiler, for the platforms where `gcc` is not the right name for the one that
+// HARFARA_CC overrides the C compiler, for the platforms where `gcc` is not the right name for the one that
 // is installed.
 
 import os
@@ -105,7 +105,7 @@ fn main() {
 		eprintln('cannot start the skip log: ${err.msg()}')
 		exit(1)
 	}
-	os.setenv('VTEXT_SKIP_LOG', skip_log_path(), true)
+	os.setenv('HARFARA_SKIP_LOG', skip_log_path(), true)
 	mut seen_skips := 0
 	mut files := test_files(filter)
 	if files.len == 0 {
@@ -264,7 +264,7 @@ fn test_count(name string) int {
 // every test skipped would print exactly what a suite in which every test ran prints. Written to a file this
 // runner reads, a skip is counted whether its test passed or failed, and the count is printed.
 fn skip_log_path() string {
-	return os.join_path(os.getenv('TMPDIR'), 'vtext-skips.log')
+	return os.join_path(os.getenv('TMPDIR'), 'harfara-skips.log')
 }
 
 // new_skips is what has been appended since the count last read, so one file's skips are attributed to it.
@@ -441,7 +441,7 @@ fn private_tmpdir() {
 		eprintln('no user profile, so there is nowhere private to build')
 		exit(1)
 	}
-	dir := os.join_path(profile, '.cache', 'vtext-test-build')
+	dir := os.join_path(profile, '.cache', 'harfara-test-build')
 	os.mkdir_all(dir) or {
 		eprintln('cannot create a private build directory at ${dir}: ${err.msg()}')
 		exit(1)
@@ -484,7 +484,7 @@ fn run_with_retries(name string) Outcome {
 // line rather than to a part of it so a real message that merely contains the word survives.
 // vexe is the compiler to run, and c_compiler is the C toolchain to build with.
 //
-// VTEXT_CC exists because the three platforms do not agree on what the C compiler is called: Windows and
+// HARFARA_CC exists because the three platforms do not agree on what the C compiler is called: Windows and
 // the Linux runners ship gcc, and on macOS `gcc` is a shim for clang, which works but which names itself
 // in its output. Setting it per platform in the workflow keeps the same command working everywhere.
 fn vexe() string {
@@ -496,7 +496,7 @@ fn vexe() string {
 }
 
 fn c_compiler() string {
-	cc := os.getenv('VTEXT_CC')
+	cc := os.getenv('HARFARA_CC')
 	if cc == '' {
 		return 'gcc'
 	}
@@ -511,7 +511,7 @@ fn run_one(name string, attempt int) Outcome {
 	args := [vexe(), '-cc', c_compiler(), 'test', name]
 	// The child inherits this process's environment, which is how the skip log reaches the test: V passes
 	// no per-call environment, so the variable is set here and inherited.
-	os.setenv('VTEXT_SKIP_LOG', skip_log_path(), true)
+	os.setenv('HARFARA_SKIP_LOG', skip_log_path(), true)
 	// os.exec_opt returns an error carrying the child's output when the child fails, so the failure path and
 	// the non-zero path carry the same text and a caller reads one message either way. `err.msg()` is a
 	// call: on this V an error's message is a method, and writing `err.msg` assigns the method itself,

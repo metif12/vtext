@@ -1,9 +1,9 @@
-module vtext
+module harfara
 
 import os
-import vtext.font
-import vtext.shape
-import vtext.subset
+import harfara.font
+import harfara.shape
+import harfara.subset
 
 // Tests for the CFF subsetter (subset/cff.v) against a real CFF font.
 //
@@ -33,7 +33,7 @@ fn cff_subset_font_bytes() ?[]u8 {
 
 fn cff_subset_skip() bool {
 	line := 'SKIP SourceSans3-Regular.otf is not in testdata/fonts'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return true }
 		f.writeln(line) or { return true }

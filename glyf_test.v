@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 
 // TrueType outline reading: points, curve flags, contour ends and boxes.
 //

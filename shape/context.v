@@ -1,6 +1,6 @@
 module shape
 
-import vtext.ucd
+import harfara.ucd
 
 // Context holds the decoded Unicode tables the pipeline needs, and is built once per
 // text system. The tables are immutable, so a single Context can be shared between

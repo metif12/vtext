@@ -15,13 +15,13 @@ import os
 import math
 import hash.crc32
 import compress.zlib
-import vtext
-import vtext.layout
-import vtext.shape
+import harfara
+import harfara.layout
+import harfara.shape
 
 // How many subpixel units make one pixel.
 //
-// vtext's rasteriser counts a pixel in quarters, so a glyph's fractional x has to be scaled by this
+// harfara's rasteriser counts a pixel in quarters, so a glyph's fractional x has to be scaled by this
 // rather than by sixty-four. Sixty-fourths read as quarters is sixteen times too far, and every glyph
 // lands up to sixteen pixels from where the layout put it.
 pub const subpixel_units = 4.0

@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tests for slice 7.2, second half: the script and language override.
 //
@@ -10,7 +10,7 @@ import vtext.layout
 // engine always has, and every number below was read off the committed fonts
 // with HarfBuzz and fontTools before it was written here. HarfBuzz shaped
 // each string with the same override (`buf.language`, default features plus
-// locl) and the gids below are its answer; vtext agreeing with another
+// locl) and the gids below are its answer; harfara agreeing with another
 // reader is the evidence, one reader agreeing with itself is not.
 //
 // The override names the OpenType language system: the script tag the font
@@ -24,7 +24,7 @@ import vtext.layout
 // a different font.
 fn lang_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -42,7 +42,7 @@ fn lang_font_path(name string) ?string {
 // failure pretending to be a pass.
 fn lang_skip(name string) {
 	line := 'SKIP ${name}'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }
@@ -54,7 +54,7 @@ fn lang_skip(name string) {
 
 fn lang_font(name string) ?&shape.Font {
 	p := lang_font_path(name) or {
-		lang_skip('${name} is in neither $VTEXT_TEST_FONTS nor testdata/fonts')
+		lang_skip('${name} is in neither $HARFARA_TEST_FONTS nor testdata/fonts')
 		return none
 	}
 	return shape.load_font_file(p) or { panic('${p} is not a readable font: ${err}') }

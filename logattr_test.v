@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Tests for the PangoLogAttr surface in layout/logattr.v: one attribute set
 // per boundary, decided by the same engines the conformance floors pin.

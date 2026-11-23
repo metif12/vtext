@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
 import os
-import vtext.font
+import harfara.font
 
 // CFF2 reader pins against fontTools 4.66.1 on the committed OFL face
 // SourceSans3VF-Upright.otf. Every number below was read off fontTools
@@ -9,7 +9,7 @@ import vtext.font
 // to match it would prove nothing.
 
 fn cff2_path() ?string {
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d == '' {
 			continue
 		}
@@ -23,7 +23,7 @@ fn cff2_path() ?string {
 
 fn cff2_table() ?[]u8 {
 	p := cff2_path() or {
-		println('SKIP SourceSans3VF-Upright.otf is in neither testdata/fonts nor VTEXT_TEST_FONTS')
+		println('SKIP SourceSans3VF-Upright.otf is in neither testdata/fonts nor HARFARA_TEST_FONTS')
 		return none
 	}
 	data := os.read_bytes(p) or { panic('${p} is not readable: ${err}') }

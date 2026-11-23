@@ -1,6 +1,6 @@
 module shape
 
-import vtext.ucd
+import harfara.ucd
 
 // Rule N0 needs the bracket pairs, which the generator emits next to the bidi
 // class table in ucd_bidi.v.

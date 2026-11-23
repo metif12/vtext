@@ -40,11 +40,11 @@ module main
 // nothing this can rewrite.
 
 import os
-import vtext
-import vtext.subset
-import vtext.layout
-import vtext.shape
-import vtext.raster
+import harfara
+import harfara.subset
+import harfara.layout
+import harfara.shape
+import harfara.raster
 
 // ---------------------------------------------------------------- arguments
 

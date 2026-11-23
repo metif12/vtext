@@ -1,7 +1,7 @@
 module layout
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // Log attributes over a laid-out line: the PangoLogAttr surface editors
 // need. Cursor movement, word runs and deletion spans all read these rather

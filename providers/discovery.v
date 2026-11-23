@@ -2,7 +2,7 @@ module providers
 
 // Standalone font discovery helpers.
 //
-// vtext never reads the host: no VUI_FONT reads, no config-dir walks, no
+// harfara never reads the host: no VUI_FONT reads, no config-dir walks, no
 // fc-match exec, no Android XML parses in this library. The caller owns
 // that; this module answers the pure decisions any caller reuses: search
 // order and filename-variant heuristics. CoreText / DirectWrite remain

@@ -1,6 +1,6 @@
 module shape
 
-import vtext.ucd
+import harfara.ucd
 
 // Unicode normalization, in the canonical forms UAX#15 defines: NFD and NFC.
 //

@@ -26,11 +26,11 @@
 module main
 
 import math
-import vtext
-import vtext.shape
+import harfara
+import harfara.shape
 import corpus
 import paint
-import vtext.layout
+import harfara.layout
 
 const paragraphs = [
 	'The word سلام means peace: Привет Γειά.',

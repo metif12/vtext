@@ -1,7 +1,7 @@
 module layout
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 
 // apply_spacing adds the caller's letter and word spacing to the run's advances.
 //
@@ -695,7 +695,7 @@ struct MeasuredBox {
 // spaced for the tallest face in it rather than the first.
 // A `mut` value receiver, not `mut line &Line`. V 0.5.2 computes the argument for a
 // pointer parameter as `&&Line` at a call site written `measure_line(mut line, ...)`, and
-// refuses the pair outright: "cannot use `vtext.Line` as `&&vtext.Line`". A value
+// refuses the pair outright: "cannot use `harfara.Line` as `&&harfara.Line`". A value
 // receiver is what the rest of this file already uses (`fn (mut lx Lexer) next`) and it
 // does propagate the mutation to the caller's `mut` local.
 pub fn measure_line(mut line Line, em_px f64, options &LayoutOptions) {

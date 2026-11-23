@@ -13,7 +13,7 @@ module main
 //	          (SetHandleInformation): The handle is invalid" before any test runs, so tests use the
 //	          stable checkout. Both compile the module identically; only the test runner differs.
 //	CC        MinGW-w64 gcc from scoop. The build needs a real C compiler because the rasteriser is C.
-//	VMODULES  the directory holding this module, so `import vtext` resolves from a tool run elsewhere.
+//	VMODULES  the directory holding this module, so `import harfara` resolves from a tool run elsewhere.
 //
 // Usage:
 //	v run tools/env.v            print what is set

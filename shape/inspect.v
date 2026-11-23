@@ -1,6 +1,6 @@
 module shape
 
-import vtext.font
+import harfara.font
 
 // Reading what a font contains, for the programs that want to know rather than to draw.
 //

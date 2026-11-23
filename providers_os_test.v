@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
 import os
-import vtext.providers
+import harfara.providers
 
 // The per-OS providers: CoreText on macOS, DirectWrite on Windows. Each is
 // pinned on its own OS and answers none everywhere else, the fontconfig
@@ -18,7 +18,7 @@ import vtext.providers
 // output discards.
 fn provider_os_skip(name string) {
 	line := 'SKIP ${name}'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

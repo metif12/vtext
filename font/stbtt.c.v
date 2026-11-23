@@ -1,6 +1,6 @@
 module font
 
-import vtext.raster
+import harfara.raster
 
 // stb_truetype is the rasteriser. It is the same public-domain header that
 // vlib/fontstash already compiles, vendored in V's own thirdparty directory,

@@ -1,7 +1,7 @@
 module layout
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 
 // ShapedGlyphMemoEntry caches one FontSet.shaped_glyphs answer for a common
 // single-codepoint, selector-free shaped glyph. shaped_glyphs is a pure lookup

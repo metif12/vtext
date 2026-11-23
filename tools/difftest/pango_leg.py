@@ -5,7 +5,7 @@ HarfBuzz, rasterizes with FreeType, and decides line breaks and run
 placement itself. The HarfBuzz leg already checks shaping glyph by glyph
 and the Pillow leg checks rasterization box by box, so what Pango adds
 is its own decisions — how many lines a paragraph takes at a width, and
-how wide each line is. Comparing those against vtext's wrap_paragraph is
+how wide each line is. Comparing those against harfara's wrap_paragraph is
 the one comparison shaping alone cannot make.
 
 It is a separate module with its own skip path because libpango is not

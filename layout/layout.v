@@ -1,7 +1,7 @@
 module layout
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 
 // Line layout: shaped codepoints in, positioned glyphs out.
 //

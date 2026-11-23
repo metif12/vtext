@@ -1,9 +1,9 @@
-module vtext
+module harfara
 
 import os
-import vtext.layout
-import vtext.shape
-import vtext.subset
+import harfara.layout
+import harfara.shape
+import harfara.subset
 
 // test_font_path is where a named font is on this machine: the committed corpus first, the platform's own
 // font directory second, and none when neither has it. This copy lives here because
@@ -11,7 +11,7 @@ import vtext.subset
 // another test file is one this file cannot see; see the Phase 4 entry on the copies.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -45,7 +45,7 @@ $if windows {
 // them file by file.
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

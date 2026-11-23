@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 // The box query and the rasterizer must agree about where a glyph's ink is.
 //
 // font.Face.box_only exists because measure_line used to rasterize every glyph of every paragraph to read two
@@ -30,10 +30,10 @@ import os
 // The corpus is first because a test that runs only because one machine ships a font is a test about that
 // machine, and the whole sweep below is about the two box queries agreeing rather than about any one
 // font's outlines. The platform directory is still asked second, so a Windows checkout keeps reading Segoe
-// UI and Tahoma. VTEXT_TEST_FONTS overrides both.
+// UI and Tahoma. HARFARA_TEST_FONTS overrides both.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -59,7 +59,7 @@ $if windows {
 
 // skip_missing records why a test cannot run. A skip that prints nothing is a failure pretending to be a
 // pass, so every one of them names the font it wanted and where it looked, and it is written to the file
-// tools/run_tests.v names in VTEXT_SKIP_LOG rather than to stdout.
+// tools/run_tests.v names in HARFARA_SKIP_LOG rather than to stdout.
 //
 // The file rather than stdout, because V's test runner does not print a passing test's output: measured on
 // Linux, every println line a passing file writes is discarded, so a suite of skips would look exactly
@@ -67,7 +67,7 @@ $if windows {
 // failed, on every platform, and the runner says how many there were.
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

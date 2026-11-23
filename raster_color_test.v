@@ -1,9 +1,9 @@
 module main
 
 import os
-import vtext.font
-import vtext.raster
-import vtext.shape
+import harfara.font
+import harfara.raster
+import harfara.shape
 
 // Color engines (7.7): COLR/CPAL layers, CBDT/EBDT bitmap strikes and sbix
 // strikes behind the box_only/render_into contract, with SVG refusing.

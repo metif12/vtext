@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
 import os
-import vtext.providers
+import harfara.providers
 
 // The Linux fontconfig provider: family in, file path out. Linux-only: the
 // lookup needs libfontconfig, so everywhere else the provider answers none and
@@ -13,7 +13,7 @@ import vtext.providers
 // what it wanted; tools/run_tests.v counts them file by file.
 fn provider_skip(name string) {
 	line := 'SKIP provider test needs ${name}'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

@@ -1,7 +1,7 @@
 module main
 
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 fn test_advance_quads_empty_line() {
 	line := layout.Line{}

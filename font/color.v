@@ -1,6 +1,6 @@
 module font
 
-import vtext.raster
+import harfara.raster
 
 // Color glyph tables: COLR/CPAL (layered outline color), CBLC/CBDT and
 // EBLC/EBDT (embedded bitmap strikes), sbix (Apple bitmap strikes).

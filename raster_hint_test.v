@@ -1,9 +1,9 @@
 module main
 
 import os
-import vtext.shape
-import vtext.font
-import vtext.raster
+import harfara.shape
+import harfara.font
+import harfara.raster
 
 // Grid-fit autohinting: the dal pin, the box/ink contract, the refusal.
 //
@@ -23,7 +23,7 @@ import vtext.raster
 // is one this file cannot see.
 fn corpus_font_path(name string) string {
 	mut dirs := []string{}
-	e := os.getenv('VTEXT_TEST_FONTS')
+	e := os.getenv('HARFARA_TEST_FONTS')
 	if e != '' {
 		dirs << e
 	}
@@ -40,7 +40,7 @@ fn corpus_font_path(name string) string {
 
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

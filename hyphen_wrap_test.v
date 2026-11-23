@@ -1,8 +1,8 @@
-module vtext
+module harfara
 
 import os
-import vtext.shape
-import vtext.layout
+import harfara.shape
+import harfara.layout
 
 // Tests for the 7.5 wiring: BreakPolicy plumbing and hyphen-aware wrapping.
 // The algorithm and tables are pinned in hyphen_test.v; what is pinned here

@@ -1,4 +1,4 @@
-// hello is the smallest program that proves the whole vtext pipeline: text in, positioned glyphs in a
+// hello is the smallest program that proves the whole harfara pipeline: text in, positioned glyphs in a
 // picture, quit.
 //
 // There is no window here on purpose. A window needs a graphics binding, and a binding is a dependency
@@ -11,10 +11,10 @@
 // this example makes.
 module main
 
-import vtext
+import harfara
 import paint
 import corpus
-import vtext.shape
+import harfara.shape
 
 // The two corpus fonts, by role. FiraCode-Variable covers Latin, Cyrillic and Greek and no
 // Arabic at all; Amiri-Regular covers Arabic including the Persian additions (peh, cheh, gaf,

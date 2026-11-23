@@ -1,6 +1,6 @@
-module vtext
+module harfara
 
-import vtext.shape
+import harfara.shape
 
 // Feature order as data (Phase 11 E2): one plan per script carries the
 // before-ccmp slot beside the defaults, so the pipeline fetches data

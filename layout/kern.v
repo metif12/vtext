@@ -1,7 +1,7 @@
 module layout
 
-import vtext.shape
-import vtext.font
+import harfara.shape
+import harfara.font
 
 // substitute_in_fonts hands each stretch of the run that came from one font to that font.
 //

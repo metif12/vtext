@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.shape
-import vtext.ucd
+import harfara.shape
+import harfara.ucd
 import os
 
 // The UAX#9 conformance test. BidiCharacterTest.txt is the normative test data:

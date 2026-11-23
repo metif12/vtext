@@ -1,7 +1,7 @@
-module vtext
+module harfara
 
-import vtext.layout
-import vtext.shape
+import harfara.layout
+import harfara.shape
 
 // Tests for the second Indic script: Bengali proves the syllable machine in
 // shape/indic.v is script-agnostic. No new tables were needed — the same

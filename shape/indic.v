@@ -1,6 +1,6 @@
 module shape
 
-import vtext.ucd
+import harfara.ucd
 
 // The Indic syllable machine: segmentation, matra reordering and conjunct
 // hooks for Devanagari and its relatives.

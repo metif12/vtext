@@ -1,8 +1,8 @@
 module main
 
 import os
-import vtext.shape
-import vtext.raster
+import harfara.shape
+import harfara.raster
 
 // Synthetic styles and LCD: box growth, pixel parity, triple-width shape.
 //
@@ -28,7 +28,7 @@ const em_px = 32.0
 // committed corpus second, the platform directory last.
 fn corpus_font_path(name string) string {
 	mut dirs := []string{}
-	e := os.getenv('VTEXT_TEST_FONTS')
+	e := os.getenv('HARFARA_TEST_FONTS')
 	if e != '' {
 		dirs << e
 	}

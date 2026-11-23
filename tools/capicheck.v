@@ -1,9 +1,9 @@
 module main
 
-// capicheck proves vtext.h and vtext.def match capi.v, in both directions.
+// capicheck proves harfara.h and harfara.def match capi.v, in both directions.
 //
-// capi.v is the source of truth: every @[export] there appears in vtext.h and
-// vtext.def, and nothing appears in either file that capi.v does not export. A
+// capi.v is the source of truth: every @[export] there appears in harfara.h and
+// harfara.def, and nothing appears in either file that capi.v does not export. A
 // missing symbol fails the C link, which CI would catch, but a drifted struct
 // field or a stale declaration does not fail anything — so this check reads
 // all three files as text and compares the names. It runs in CI before the
@@ -16,12 +16,12 @@ fn main() {
 		eprintln('cannot read capi.v: ${err.msg()}')
 		exit(1)
 	}
-	header := os.read_file('vtext.h') or {
-		eprintln('cannot read vtext.h: ${err.msg()}')
+	header := os.read_file('harfara.h') or {
+		eprintln('cannot read harfara.h: ${err.msg()}')
 		exit(1)
 	}
-	def := os.read_file('vtext.def') or {
-		eprintln('cannot read vtext.def: ${err.msg()}')
+	def := os.read_file('harfara.def') or {
+		eprintln('cannot read harfara.def: ${err.msg()}')
 		exit(1)
 	}
 	exports := exported_names(capi)
@@ -31,30 +31,30 @@ fn main() {
 	mut failed := false
 	for name in exports {
 		if name !in h_names {
-			eprintln('missing from vtext.h: ${name}')
+			eprintln('missing from harfara.h: ${name}')
 			failed = true
 		}
 		if name !in d_names {
-			eprintln('missing from vtext.def: ${name}')
+			eprintln('missing from harfara.def: ${name}')
 			failed = true
 		}
 	}
 	for name in h_names {
 		if name !in exports {
-			eprintln('stale in vtext.h: ${name}')
+			eprintln('stale in harfara.h: ${name}')
 			failed = true
 		}
 	}
 	for name in d_names {
 		if name !in exports {
-			eprintln('stale in vtext.def: ${name}')
+			eprintln('stale in harfara.def: ${name}')
 			failed = true
 		}
 	}
 	if failed {
 		exit(1)
 	}
-	println('capi mirror ok: ${exports.len} exports in capi.v, vtext.h and vtext.def')
+	println('capi mirror ok: ${exports.len} exports in capi.v, harfara.h and harfara.def')
 }
 
 // exported_names lists every @[export] in capi.v: the quoted name when the
@@ -108,7 +108,7 @@ fn next_fn_name(lines []string, from int) string {
 	return ''
 }
 
-// header_names lists the vtext_ functions vtext.h declares: a vtext_ word
+// header_names lists the harfara_ functions harfara.h declares: a harfara_ word
 // immediately followed by an open paren. Types carry no paren, so the structs
 // and the opaque handles never match.
 fn header_names(src string) []string {
@@ -116,7 +116,7 @@ fn header_names(src string) []string {
 	for line in src.split_into_lines() {
 		mut rest := line
 		for {
-			at := rest.index('vtext_') or { break }
+			at := rest.index('harfara_') or { break }
 			after := rest[at..]
 			mut end := 6
 			for end < after.len && (after[end].is_letter() || after[end].is_digit() || after[end] == `_`) {
@@ -134,7 +134,7 @@ fn header_names(src string) []string {
 	return out
 }
 
-// def_names lists the exports vtext.def names: every non-empty trimmed line
+// def_names lists the exports harfara.def names: every non-empty trimmed line
 // after the EXPORTS header. The LIBRARY line names the binary, not a symbol.
 fn def_names(src string) []string {
 	mut out := []string{}

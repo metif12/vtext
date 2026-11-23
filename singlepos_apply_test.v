@@ -1,9 +1,9 @@
-module vtext
+module harfara
 
 import os
-import vtext.font
-import vtext.shape
-import vtext.layout
+import harfara.font
+import harfara.shape
+import harfara.layout
 
 // Single positioning (GPOS type 1): the reader is pinned against bytes in
 // gpos_singlepos2_test.v and gpos_valuesize_test.v, and this file pins the
@@ -16,7 +16,7 @@ import vtext.layout
 // is one this file cannot see.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -47,7 +47,7 @@ $if windows {
 
 fn skip_missing(name string) {
 	line := 'SKIP ${name} is in neither testdata/fonts nor the platform font directory'
-	path := os.getenv('VTEXT_SKIP_LOG')
+	path := os.getenv('HARFARA_SKIP_LOG')
 	if path != '' {
 		mut f := os.open_append(path) or { return }
 		f.writeln(line) or { return }

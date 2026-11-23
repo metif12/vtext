@@ -1,6 +1,6 @@
-module vtext
+module harfara
 
-import vtext.shape
+import harfara.shape
 // Tests for mapping a glyph back to the character the font draws it for.
 //
 // The forward direction is a table and this one is a search, so the cases that matter are the ones where
@@ -8,7 +8,7 @@ import vtext.shape
 // past the end of the glyph range, and a glyph several codepoints share.
 
 import os
-import vtext.font
+import harfara.font
 
 fn corpus_font(name string) &shape.Font {
 	return shape.load_font_file(os.join_path('testdata', 'fonts', name)) or { panic(err) }
@@ -18,7 +18,7 @@ fn corpus_font(name string) &shape.Font {
 // checkout can still be asked about a font the corpus does not carry.
 fn corpus_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts', windows_font_dir()] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}
@@ -172,7 +172,7 @@ fn test_codepoint_for_works_on_a_variable_font() {
 //
 // It asked Segoe UI, which is a Windows font the corpus does not carry, so the question is now asked of
 // Amiri: a corpus face with Latin, so the property holds everywhere rather than on one machine. A Windows
-// checkout still has Segoe UI, and VTEXT_TEST_FONTS points at any other directory.
+// checkout still has Segoe UI, and HARFARA_TEST_FONTS points at any other directory.
 fn test_codepoint_for_works_on_a_windows_font() {
 	f := corpus_font('Amiri-Regular.ttf')
 	gid := f.glyph_index(`A`)

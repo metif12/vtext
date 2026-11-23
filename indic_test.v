@@ -1,9 +1,9 @@
-module vtext
+module harfara
 
 import os
-import vtext.layout
-import vtext.shape
-import vtext.ucd
+import harfara.layout
+import harfara.shape
+import harfara.ucd
 
 // Tests for the first Indic cut: a committed Devanagari face, the syllable
 // machine beside HarfBuzz, and one conjunct fusion through the existing
@@ -44,7 +44,7 @@ import vtext.ucd
 
 fn indic_font_path(name string) ?string {
 	mut dirs := []string{}
-	for d in [os.getenv('VTEXT_TEST_FONTS'), 'testdata/fonts'] {
+	for d in [os.getenv('HARFARA_TEST_FONTS'), 'testdata/fonts'] {
 		if d != '' && d !in dirs {
 			dirs << d
 		}

@@ -1,6 +1,6 @@
 module main
 
-import vtext.raster
+import harfara.raster
 
 fn test_pack_two_boxes_fit_side_by_side() {
 	mut a := raster.new_pack_atlas(64, 64)

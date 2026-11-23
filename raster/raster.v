@@ -1,6 +1,6 @@
 module raster
 
-// vtext.raster is FreeType's rendering side: box-for-gid plus fill-this-buffer.
+// harfara.raster is FreeType's rendering side: box-for-gid plus fill-this-buffer.
 //
 // The contract is two calls and one struct. `box_only` reports a glyph's ink
 // box without rendering it, which is everything a caller measuring an extent
