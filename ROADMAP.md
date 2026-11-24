@@ -43,7 +43,7 @@ alongside; CJK line breaking is conformance-pinned.
 | Part | State | Evidence |
 | --- | --- | --- |
 | sfnt/TTC containers, table directory, cmap (incl. 13, 14) | landed | `font_test`, CFF/CFF2 detection |
-| WOFF1 (WOFF2 refused: no brotli decoder) | landed 7.9/8.1 | `woff_test` |
+| WOFF1 + WOFF2 read (vendored pure-V brotli decoder; write refused, no encoder) | landed 7.9/8.1/14.0 | `woff_test`, `woff2_test` |
 | Metrics, boxes, unhinted raster | landed | `stbtt_test`, Pillow legs |
 | Normalization (UAX #15) | landed | `normalize_test` + `NormalizationTest.txt` |
 | Bidi (UAX #9) | landed | bidi suite, NFD-drift fix |
@@ -453,7 +453,7 @@ plain sfnt (per-table inflate, rebuilt directory, recomputed checksums and
 head adjustment); `load_font_bytes` takes it transparently. Pinned against
 fontTools on in-tree-converted Amiri: 15 tables, 6710 glyphs, bytes
 identical except checkSumAdjustment and `modified`, whole file summing to
-0xB1B0AFBA. WOFF2 refused with its reason.
+0xB1B0AFBA. WOFF2 refused with its reason (until 14.0 below).
 
 **8.2 Words, sentences, graphemes, log attrs — landed 2026-11-15/16.**
 UAX #29 tables as generated data (`tools/gen_wordbreak.v` →
@@ -1664,7 +1664,7 @@ fontTools/AFDKO-pinned behavior, break-fix control, full suite plus difftest
 0/0.
 
 **14.0 WOFF2 read — landed 2026-11-24.** The trigger was the decoder: a
-brotli decode-only subset vendored under `font/brotli/` (MIT licence kept),
+brotli decode-only subset vendored under `brotli/` (MIT licence kept),
 wired as `font/woff2.v`. The header, table directory and transforms parse
 with the same length-guard discipline as the WOFF1 reader; glyf/loca rebuild
 with 4-byte padding and recomputed checksums plus head adjustment; the

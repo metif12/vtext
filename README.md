@@ -52,7 +52,8 @@ fn main() {
 | Part | Replaces | Status |
 | --- | --- | --- |
 | `harfara.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`; case mapping included |
-| `harfara.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1, cmap, metrics, variation-store reading |
+| `harfara.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1 and WOFF2 read, cmap, metrics, variation-store reading |
+| `harfara.brotli` | brotli's decoder | Decoder-only pure-V subset vendored in-tree (no encoder); WOFF2 inflates through it |
 | `harfara.shape` | HarfBuzz core | Normalization, bidi, joining, GSUB/GPOS application, case mapping |
 | `harfara.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical lines and columns |
 | `harfara.raster` | FreeType's rendering side | Hinted box-and-fill, color, synth/LCD, stroker behind the same contract |
@@ -148,7 +149,7 @@ Each item names the slice that owns it in `ROADMAP.md`.
   wrap modes/ellipsize/tabs, the Phase 9 scripts, the CFF2 reader, raster
   backend, instancing and subset rebuild, and Tibetan stacking. What remains
   besides cursive is the triggered set in `ROADMAP.md` (AAT `morx`, Graphite,
-  WOFF2/brotli, the full TrueType bytecode interpreter), which lands when a
+  the full TrueType bytecode interpreter), which lands when a
   font needs it.
 
 ## Refused by design
@@ -157,7 +158,8 @@ Named here so that a caller is not surprised by them.
 
 - **The legacy `kern` table.** Kerning is read from GPOS only, which is where every font worth using
   puts it. A font that has only a `kern` table is drawn unkerned.
-- **WOFF2.** It needs a brotli decoder and none lives in this tree; the magic is refused with the reason.
+- **WOFF2 write.** Reading is landed (14.0, pure-V vendored brotli decoder); writing needs an
+encoder and none lives in this tree, so the write path is refused with the reason.
 - **AAT `morx` and Graphite.** No corpus font carries either; the day one does, it gets a slice.
 - **HarfBuzz bindings, or a port of anything.** Every part is written from the specifications.
 - **Font authoring.** HarfAra reads fonts, subsets them, and reports on them; it does not build them.
@@ -181,7 +183,9 @@ Font License (an LPPL instance); the licence text sits beside each font.
 | Font | Why it is here |
 | --- | --- |
 | `Amiri-Regular.ttf` | A naskh face with a real cursive attachment, plus the joining, mark and kern reference. |
-| `Amiri-Regular.woff` | The same face as WOFF1: the container pin (WOFF2 stays a refused spike). |
+| `Amiri-Regular.woff` | The same face as WOFF1: the WOFF1 container pin. |
+| `Amiri-Regular.woff2` | The same face as WOFF2: the brotli inflate + transform-rebuild pin. |
+| `NotoSansNKo-Regular.woff2` | A small WOFF2 with hint programs in the transform: the instructions-path pin. |
 | `FiraCode-Variable.ttf` | Programming ligatures and a variable weight axis: the `calt`/`liga` pin. |
 | `NotoNaskhArabic-Regular.ttf` | Joins with substitutions alone, so it has **no** cursive rule. It is the negative control: a reader that accepted every type 3 subtable would fail here. |
 | `NotoNaskhArabic-Variable.ttf` | A variable naskh face: the fvar axes and named-instances pin. |
@@ -775,6 +779,9 @@ shape/cache.v     caller-owned glyph cache behind the only honest key
 font/reader.v     bounds-checked big-endian byte reading
 font/sfnt.v       the font file: tables, collections, offsets
 font/woff.v       WOFF1 containers, unwrapped to sfnt before parsing
+font/woff2.v      WOFF2 containers (brotli inflate + transform rebuild), unwrapped to sfnt
+brotli/           module harfara.brotli: pure-V decoder-only subset vendored in-tree,
+                  no encoder; WOFF2 inflates through it
 font/cmap.v       codepoint to glyph
 font/face.v       loads GDEF, GSUB and GPOS for a font
 font/gsub.v       OpenType substitution engine; single, ligature and contextual

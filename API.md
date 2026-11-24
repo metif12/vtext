@@ -23,7 +23,8 @@ reference leads with the calls a caller reaches for and notes the deeper layer.
 | Import | Owns | Replaces |
 | --- | --- | --- |
 | `harfara.ucd` | Generated Unicode tables, decoded once into `Properties` | — (shared data) |
-| `harfara.font` | Font data: sfnt/TTC/WOFF1, cmap, metrics, GSUB/GPOS, variation stores, the raster backend | FreeType load side, fontTools read side |
+| `harfara.font` | Font data: sfnt/TTC/WOFF1/WOFF2 read (WOFF2 write refused, no encoder), cmap, metrics, GSUB/GPOS, variation stores, the raster backend | FreeType load side, fontTools read side |
+| `harfara.brotli` | Pure-V decoder-only brotli subset vendored in-tree; WOFF2 inflates through it | brotli's decoder |
 | `harfara.shape` | `Context`, `Font`/`FontSet`/`Glyph`, normalization, bidi, joining, case mapping, inspection, cache | HarfBuzz core |
 | `harfara.layout` | Line breaking, wrapping, measuring, alignment, vertical columns, log attrs, iterators | Pango layout math |
 | `harfara.raster` | `GlyphBitmap` and the box-and-fill contract; color, LCD, synth, stroke, grid-fit, packing, quantize | FreeType render side, fontstash/stb coverage |
@@ -62,8 +63,8 @@ font := shape.load_font_bytes(data) or { panic(err) }                // !&Font
 ```
 
 `Context` holds the decoded UCD `Properties` and the normalizer; create one and
-reuse it across lines. `load_font_file`/`load_font_bytes` accept sfnt, TTC and
-WOFF1; WOFF2 is refused with the reason.
+reuse it across lines. `load_font_file`/`load_font_bytes` accept sfnt, TTC, WOFF1,
+and WOFF2 (read; WOFF2 write is refused, no encoder lives in this tree).
 
 ### FontSet — the fallback chain
 
