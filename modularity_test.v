@@ -5,8 +5,9 @@ import os
 // Import-direction ratchet (Phase 11 M1): the module graph from GOAL.md,
 // checked rather than trusted. Dependencies run one way — layout uses
 // shape and font, shape never uses layout, raster stays a leaf below
-// font, and no library file imports tools. A new edge fails here first,
-// which is the point: the edge lands with a reason, not by accident.
+// font, font alone uses the brotli decoder, and no library file imports
+// tools. A new edge fails here first, which is the point: the edge lands
+// with a reason, not by accident.
 //
 // The table pins the exact harfara-internal set each module may use today;
 // anything else starting with `harfara` is a violation. Imports outside
@@ -17,11 +18,12 @@ fn test_modular_import_directions() {
 	allowed := {
 		'shape':     ['harfara.font', 'harfara.ucd', 'harfara.raster']
 		'layout':    ['harfara.shape', 'harfara.font', 'harfara.ucd']
-		'font':      ['harfara.ucd', 'harfara.raster']
+		'font':      ['harfara.ucd', 'harfara.raster', 'harfara.brotli']
 		'ucd':       []
 		'raster':    []
 		'subset':    ['harfara.font', 'harfara.shape']
 		'providers': []
+		'brotli':    []
 		'root':      ['harfara.layout', 'harfara.shape', 'harfara.font', 'harfara.subset', 'harfara.ucd',
 			'harfara.raster', 'harfara.providers']
 	}

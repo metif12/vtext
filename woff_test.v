@@ -244,9 +244,10 @@ fn test_woff_refuses_corrupt_payload() {
 	}
 }
 
-// WOFF2 is a clean refusal with the reason in the message: brotli, and no
-// decoder for it lives in this tree.
-fn test_woff2_refused_with_reason() {
+// WOFF2 is recognised by magic and routed to the WOFF2 unwrapper, which
+// owns its own refusals (see woff2_test.v): a bare magic header fails in the
+// WOFF2 directory parse, not in WOFF1, and never with the old brotli excuse.
+fn test_woff2_takes_woff2_path() {
 	mut fake := []u8{len: 44}
 	fake[0] = `w`
 	fake[1] = `O`
@@ -255,12 +256,12 @@ fn test_woff2_refused_with_reason() {
 	assert font.is_woff2(fake), 'wOF2 magic not recognised'
 	assert !font.is_woff(fake), 'wOF2 misread as WOFF1'
 	if _ := font.woff_to_sfnt(fake) {
-		assert false, 'WOFF2 parsed without error'
+		assert false, 'truncated WOFF2 parsed without error'
 	} else {
-		assert err.msg().contains('brotli'), 'WOFF2 refusal names no reason: ${err}'
+		assert !err.msg().contains('no brotli decoder'), 'WOFF2 still refused for missing brotli: ${err}'
 	}
 	if _ := font.maybe_woff_to_sfnt(fake) {
-		assert false, 'WOFF2 passed the load path without error'
+		assert false, 'truncated WOFF2 passed the load path without error'
 	}
 }
 

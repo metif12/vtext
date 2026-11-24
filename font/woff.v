@@ -12,8 +12,10 @@ import compress.zlib
 // WOFF metadata and private blocks are skipped: they carry author and licence
 // descriptions, not shaping data, and nothing in the engine reads them.
 //
-// WOFF2 ('wOF2') is refused, not read: it compresses tables with brotli and
-// no brotli decoder lives in this tree.
+// WOFF2 ('wOF2', 0x774F4632) is unwrapped by font/woff2.v: one brotli stream
+// holding every table, with glyf/loca/hmtx transforms undone on the way out.
+// The brotli decoder is pure V (`harfara.brotli`); WOFF2 write is refused,
+// no encoder lives in this tree.
 pub const woff_signature = u32(0x774F4646)
 pub const woff2_signature = u32(0x774F4632)
 
@@ -39,8 +41,7 @@ pub fn is_woff(data []u8) bool {
 	return data.len >= 4 && u32_be(data, 0) == woff_signature
 }
 
-// is_woff2 reports whether data starts with the WOFF2 magic. It is a refusal
-// predicate: when it is true, woff_to_sfnt errors with the reason.
+// is_woff2 reports whether data starts with the WOFF2 magic.
 pub fn is_woff2(data []u8) bool {
 	return data.len >= 4 && u32_be(data, 0) == woff2_signature
 }
@@ -63,7 +64,7 @@ pub fn maybe_woff_to_sfnt(data []u8) ![]u8 {
 // of the wrong bytes.
 pub fn woff_to_sfnt(data []u8) ![]u8 {
 	if is_woff2(data) {
-		return error('woff: WOFF2 (wOF2) is not supported: it compresses tables with brotli and no brotli decoder lives in this tree')
+		return woff2_to_sfnt(data)
 	}
 	if !is_woff(data) {
 		return error('woff: not a WOFF container')
@@ -159,7 +160,11 @@ pub fn woff_to_sfnt(data []u8) ![]u8 {
 		for k in 0 .. 4 {
 			out << t.raw[k]
 		}
-		woff_append_u32(mut out, woff_checksum(t.data))
+		if t.tag == 'head' {
+			woff_append_u32(mut out, woff_head_dir_checksum(t.data))
+		} else {
+			woff_append_u32(mut out, woff_checksum(t.data))
+		}
 		woff_append_u32(mut out, u32(offsets[i]))
 		woff_append_u32(mut out, u32(t.data.len))
 	}
@@ -175,6 +180,22 @@ pub fn woff_to_sfnt(data []u8) ![]u8 {
 
 // woff_head_adjustment_magic is the sfnt spec constant the whole file must sum to.
 const woff_head_adjustment_magic = u32(0xB1B0AFBA)
+
+// woff_head_dir_checksum is the head table's directory checksum: the spec
+// computes it with checkSumAdjustment zeroed, so the recorded value stays
+// valid after the adjustment is stamped into the table bytes. Computing it
+// over the live bytes records a value no strict reader reproduces.
+fn woff_head_dir_checksum(data []u8) u32 {
+	if data.len < 12 {
+		return woff_checksum(data)
+	}
+	mut zeroed := data.clone()
+	zeroed[8] = 0
+	zeroed[9] = 0
+	zeroed[10] = 0
+	zeroed[11] = 0
+	return woff_checksum(zeroed)
+}
 
 // woff_fix_head_adjustment rewrites the head table's checkSumAdjustment for the
 // rebuilt file. The adjustment binds every byte of the file — it is
