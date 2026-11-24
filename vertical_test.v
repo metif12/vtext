@@ -258,53 +258,6 @@ fn test_vertical_line_places_downward() {
 	assert hline.height == 0, 'height is the vertical mode field'
 }
 
-// c_options carries the vertical flag across the C boundary: nonzero in, true
-// out, zero or null stays horizontal. This is the in-process half of the
-// proof; the smoke test is the C half, which additionally proves the V and C
-// struct layouts agree — a drifted field would arrive as horizontal.
-fn test_c_options_carries_vertical() {
-	on := COptions{
-		features:  unsafe { nil }
-		vertical:  1
-		script:    unsafe { nil }
-		language:  unsafe { nil }
-		tab_stops: unsafe { nil }
-	}
-	assert c_options(&on).vertical, 'nonzero vertical arrives'
-	mut off := COptions{
-		features:  unsafe { nil }
-		script:    unsafe { nil }
-		language:  unsafe { nil }
-		tab_stops: unsafe { nil }
-	}
-	assert !c_options(&off).vertical, 'zero vertical stays horizontal'
-	assert !c_options(&COptions(unsafe { nil })).vertical, 'null options stay horizontal'
-}
-
-// c_options carries the script and language override across the C boundary:
-// the same spellings the V options take, empty for the default.
-fn test_c_options_carries_script_and_language() {
-	script := c'arab'
-	language := c'URD'
-	opts := COptions{
-		features:  unsafe { nil }
-		script:    script
-		language:  language
-		tab_stops: unsafe { nil }
-	}
-	got := c_options(&opts)
-	assert got.script == 'arab', 'the script override arrives, got ${got.script}'
-	assert got.language == 'URD', 'the language override arrives, got ${got.language}'
-	nulls := c_options(&COptions{
-		features:  unsafe { nil }
-		script:    unsafe { nil }
-		language:  unsafe { nil }
-		tab_stops: unsafe { nil }
-	})
-	assert nulls.script == '', 'a null script stays the default'
-	assert nulls.language == '', 'a null language stays the default'
-}
-
 // wrap_paragraph_with in vertical mode cuts columns instead of lines: the width
 // budget binds the column height, each column rebases y to its own top, and
 // the ranges cover the text in order. Gids and steps are the HarfBuzz-pinned

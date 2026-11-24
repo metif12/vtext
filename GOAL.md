@@ -25,11 +25,11 @@ is a part with no claim.
 | `harfara.raster` | FreeType's rendering side, fontstash/stb_truetype coverage | `GlyphBitmap` behind the box-and-fill contract `box_only`/`render_into` define; hinted engine, color, synth/LCD and stroking landed (7.7/8.5/8.6). Packing, quantize/gamma/blur and quads live in `raster/pack.v`, `raster/quantize.v`, `layout/iterator.v` as caller-owned generics with no FONS types. The box and fill calls stay methods on `font.Face` because methods live in the type's own module, so `font` imports the leaf `raster` for the data they trade in. |
 | `harfara.inspect` | fontTools introspection (read side) | The inspection API on `shape.Font` in `shape/inspect.v`, not a separate part: eighteen `Font` methods, and a thin `inspect/` of free functions would cycle `shape` → `inspect` → `shape` through the return type. |
 | `harfara.subset` | fontTools subsetter | `subset/` behind `subset_font(font, seed)` with `tools/subset.v` as the CLI; glyf and CFF rebuilds landed (verbatim keep, CFF2/CID refused with the reason). The separate CFF2 reader (`font/cff2.v`) reads outlines but cannot be subset yet. `Font.data()` returns the parsed bytes; the closure rebuilds and the tool verifies by reloading. |
-| `harfara.capi` | — (the C face of all of the above) | Opaque handles over every part; `harfara.h` stays the single header. The header mirror is proven, not claimed: `tools/capicheck.v` reads `capi.v`, `harfara.h` and `harfara.def` as text and fails either direction (50 exports). |
 | providers | fontconfig / Core Text / DirectWrite | Per-OS font lookup, optional, never linked by default. Linux (fontconfig) resolves a family and reports the matched family beside the path, plus ranked sort with charset/language coverage (8.8); Core Text and DirectWrite are Phase 7.8, each pinned on its own OS and answering none elsewhere. |
 
-Dependencies run one way: `layout` → `shape` → `font` → `ucd`, with `raster` a leaf below `font`; `capi` → all;
-nothing depends upward. A part never imports a tool, and no tool is imported.
+Dependencies run one way: `layout` → `shape` → `font` → `ucd`, with `raster` a
+leaf below `font`; nothing depends upward. A part never imports a tool, and no
+tool is imported.
 
 The seams that keep the parts combinable, each an explicit interface rather
 than an argument about taste, are `FontSource` (where fonts come from),

@@ -1,9 +1,8 @@
 # HarfAra API reference
 
-The caller-facing API of HarfAra, in two faces: the V modules (`import harfara.*`)
-and the C ABI (`harfara.h`). The module and the C symbols are lowercase `harfara`;
-the brand is HarfAra. This file is the reference; `README.md` is the tour and
-`USAGE.md` is the C build-and-ownership guide.
+The caller-facing API of HarfAra: the V modules (`import harfara.*`). The
+module is lowercase `harfara`; the brand is HarfAra. This file is the
+reference; `README.md` is the tour and `USAGE.md` is the build-and-use guide.
 
 Every signature here is taken from the tree, not invented. Where a part has a
 conformance baseline, `ROADMAP.md` names it. Lower-level parsers and lookup
@@ -18,7 +17,6 @@ reference leads with the calls a caller reaches for and notes the deeper layer.
 - [V API — layout](#v-api--layout)
 - [V API — raster](#v-api--raster)
 - [V API — font, providers, subset, ucd](#v-api--font-providers-subset-ucd)
-- [C API](#c-api)
 
 ## Module map
 
@@ -31,11 +29,11 @@ reference leads with the calls a caller reaches for and notes the deeper layer.
 | `harfara.raster` | `GlyphBitmap` and the box-and-fill contract; color, LCD, synth, stroke, grid-fit, packing, quantize | FreeType render side, fontstash/stb coverage |
 | `harfara.providers` | Per-OS font lookup (fontconfig / Core Text / DirectWrite) + generic discovery | fontconfig |
 | `harfara.subset` | Glyph closure and font rebuild (glyf + CFF) | fontTools subsetter |
-| `harfara` (root) | `capi.v` (the C face) and `trace_api.v` (stage-by-stage tracing) | — |
+| `harfara` (root) | `trace_api.v` (stage-by-stage tracing) | — |
 
 Dependencies run one way: `layout` → `shape` → `font` → `ucd`, with `raster` a
-leaf below `font`; the root `capi` imports all. No part imports a tool. The
-import-direction ratchet (`modularity_test.v`) enforces this on every run.
+leaf below `font`. No part imports a tool. The import-direction ratchet
+(`modularity_test.v`) enforces this on every run.
 
 ## Conventions
 
@@ -47,9 +45,7 @@ import-direction ratchet (`modularity_test.v`) enforces this on every run.
   `single_adjustment` and the MATH/variable helpers return **design units**: divide
   by `units_per_em()` and multiply by the pixel size to place them.
 - **Ownership.** V values are reference-counted by the language; a `Font` loaded
-  from a file owns its bytes. In the C ABI, anything returned as a pointer is owned
-  by the caller and freed with the matching `*_free`, except where the comment says
-  *borrowed*. See [C API](#c-api).
+  from a file owns its bytes.
 - **The engine ends at a positioned glyph with a coverage bitmap.** Boxes, the
   cascade, painting and the glyph cache belong to the caller.
 
@@ -377,185 +373,9 @@ props.is_mark(cp) bool
 
 No other part reads the UCD directly; they go through `Properties`.
 
-## C API
-
-`harfara.h` is the single header; `capi.v` implements it; `harfara.def` lists the
-50 entry points for import-library generation. `tools/capicheck.v` proves the three
-agree in both directions on every CI run.
-
-### Build and link
-
-```sh
-v -shared -gc none -cc gcc -o libharfara.so .     # Linux
-v -shared -gc none -cc clang -o libharfara.dylib . # macOS
-v -shared -gc none -cc gcc -o harfara.dll .        # Windows
-```
-
-`-gc none` is load-bearing: with the Boehm collector the library would free objects
-the C caller still holds. On Windows, build an import library from the def file:
-`dlltool -d harfara.def --dllname harfara.dll -l libharfara.dll.a`. See `USAGE.md`
-for the per-platform details and the caller-thread stack requirement.
-
-### Conventions
-
-- **Direction macros:** `HARFARA_LTR` (0), `HARFARA_RTL` (1), `HARFARA_AUTO` (2).
-- **Error buffer:** fallible functions take `char *err, int errcap` and write a
-  sentence on failure; a null buffer or no room drops the sentence rather than
-  writing past the end. They return null / 0 / -1 on failure.
-- **Ownership:** anything returned as a pointer is owned by the caller and freed
-  with the matching `*_free`, except where noted *borrowed*. Anything taken as a
-  pointer is borrowed and must outlive the call.
-
-### Types
-
-Opaque handles: `harfara_context_t`, `harfara_fontset_t`, `harfara_font_t`,
-`harfara_line_t`, `harfara_wrap_t`, `harfara_bitmap_t`.
-
-Plain structs:
-
-```c
-harfara_options_t   // mirrors LayoutOptions; fields append-only, offsets never move
-harfara_glyph_t     // uint16_t gid; double advance, x, y; int cluster, is_mark
-harfara_metrics_t   // double min_content_width, max_content_width, ascent, descent, line_height
-harfara_breaks_t    // int *starts; int *mandatory; int len
-```
-
-`harfara_options_t` fields: `features` (comma-separated, NULL ok), `line_height`,
-`letter_spacing`, `word_spacing`, `vertical`, `script`, `language`, `align`
-(0 left / 1 center / 2 right / 3 justify), `align_width`, `wrap_mode` (0 word /
-1 char / 2 word_char), `tab_stops`, `num_tab_stops`.
-
-### Function reference (50 exports)
-
-**Version / context**
-```c
-const char *harfara_version(void);
-harfara_context_t *harfara_context_new(void);
-void harfara_context_free(harfara_context_t *ctx);
-```
-
-**Font load / free**
-```c
-harfara_font_t *harfara_font_load_file(const char *path, char *err, int errcap);
-harfara_font_t *harfara_font_load_bytes(const unsigned char *data, int len, char *err, int errcap);
-void harfara_font_free(harfara_font_t *font);
-```
-
-**Font set** (the set borrows the fonts)
-```c
-harfara_fontset_t *harfara_fontset_new(void);
-harfara_fontset_t *harfara_fontset_new_script(harfara_font_t *primary, harfara_font_t *general, char *err, int errcap);
-void harfara_fontset_free(harfara_fontset_t *fs);
-int harfara_fontset_add(harfara_fontset_t *fs, harfara_font_t *font, char *err, int errcap);   // 1 ok / 0 err
-harfara_font_t *harfara_fontset_add_file(harfara_fontset_t *fs, const char *path, char *err, int errcap);
-```
-
-**Font metrics / lookup**
-```c
-int harfara_font_units_per_em(harfara_font_t *font);
-double harfara_font_ascent(harfara_font_t *font, double em_px);
-double harfara_font_descent(harfara_font_t *font, double em_px);
-double harfara_font_line_height(harfara_font_t *font, double em_px);
-int harfara_font_is_monospace(harfara_font_t *font);
-uint16_t harfara_font_glyph_index(harfara_font_t *font, uint32_t cp);
-int harfara_font_has_glyph(harfara_font_t *font, uint32_t cp);
-int harfara_font_set_var_coords(harfara_font_t *font, const double *coords, int ncoords,
-    char *err, int errcap);   // design units, one per fvar axis; 1 ok / 0 err
-```
-
-**Layout**
-```c
-harfara_line_t *harfara_layout(harfara_context_t *ctx, const char *text, int len, int dir,
-    harfara_fontset_t *fs, double em_px, char *err, int errcap);
-harfara_line_t *harfara_layout_with(..., const harfara_options_t *opts, char *err, int errcap);
-void harfara_line_free(harfara_line_t *line);
-int harfara_line_glyph_count(harfara_line_t *line);
-int harfara_line_glyph(harfara_line_t *line, int i, harfara_glyph_t *out);   // 1 fills / 0 out of range
-harfara_font_t *harfara_line_glyph_font(harfara_line_t *line, int i);        // borrowed from the set
-double harfara_line_width(harfara_line_t *line);
-double harfara_line_ascent(harfara_line_t *line);
-double harfara_line_descent(harfara_line_t *line);
-double harfara_line_height(harfara_line_t *line);
-double harfara_line_column_height(harfara_line_t *line);
-```
-
-**Wrap**
-```c
-harfara_wrap_t *harfara_wrap(harfara_context_t *ctx, const char *text, int len, int dir,
-    harfara_fontset_t *fs, double em_px, double max_width, char *err, int errcap);
-harfara_wrap_t *harfara_wrap_with(..., const harfara_options_t *opts, char *err, int errcap);
-void harfara_wrap_free(harfara_wrap_t *w);
-int harfara_wrap_line_count(harfara_wrap_t *w);
-harfara_line_t *harfara_wrap_line(harfara_wrap_t *w, int i);   // borrowed until wrap_free
-int harfara_wrap_line_from(harfara_wrap_t *w, int i);
-int harfara_wrap_line_to(harfara_wrap_t *w, int i);
-```
-
-**Measure**
-```c
-int harfara_measure(harfara_context_t *ctx, const char *text, int len, int dir,
-    harfara_fontset_t *fs, double em_px, harfara_metrics_t *out, char *err, int errcap);
-int harfara_measure_with(..., const harfara_options_t *opts, harfara_metrics_t *out, char *err, int errcap);
-```
-
-**Break opportunities**
-```c
-harfara_breaks_t *harfara_breaks(harfara_context_t *ctx, const char *text, int len,
-    int mandatory_first, char *err, int errcap);
-void harfara_breaks_free(harfara_breaks_t *b);
-```
-
-**Rasterize**
-```c
-harfara_bitmap_t *harfara_rasterize(harfara_font_t *font, uint16_t gid, double em_px,
-    int sub_x, int sub_y, char *err, int errcap);
-void harfara_bitmap_free(harfara_bitmap_t *bm);
-int harfara_bitmap_width(harfara_bitmap_t *bm);
-int harfara_bitmap_height(harfara_bitmap_t *bm);
-int harfara_bitmap_left(harfara_bitmap_t *bm);
-int harfara_bitmap_top(harfara_bitmap_t *bm);
-const unsigned char *harfara_bitmap_data(harfara_bitmap_t *bm);   // borrowed, width*height bytes
-```
-
-**Subset**
-```c
-int harfara_subset(harfara_font_t *font, const unsigned short *seed, int nseed,
-    unsigned char **out, char *err, int errcap);   // malloc'd bytes + count, -1 on error
-void harfara_subset_free(unsigned char *bytes);
-```
-
-The subset bytes load with `harfara_font_load_bytes`; `.notdef` is always kept.
-
-### Minimal C program
-
-```c
-#include "harfara.h"
-char err[512];
-harfara_context_t *ctx = harfara_context_new();
-harfara_fontset_t *fs = harfara_fontset_new();
-harfara_fontset_add_file(fs, "Amiri-Regular.ttf", err, sizeof(err));
-harfara_line_t *line = harfara_layout(ctx, text, len, HARFARA_AUTO, fs, 32.0, err, sizeof(err));
-for (int i = 0; i < harfara_line_glyph_count(line); i++) {
-    harfara_glyph_t g;
-    harfara_line_glyph(line, i, &g);
-    harfara_font_t *f = harfara_line_glyph_font(line, i);
-    harfara_bitmap_t *bm = harfara_rasterize(f, g.gid, 32.0, 0, 0, err, sizeof(err));
-    /* draw bm at g.x, g.y ... */
-    harfara_bitmap_free(bm);
-}
-harfara_line_free(line);
-harfara_fontset_free(fs);
-harfara_context_free(ctx);
-```
-
-`examples/c-api/smoke.c` exercises the whole surface end to end and is the shape of
-a real C program using the library; CI builds and runs it on all three platforms.
-
 ## Stability
 
-- `harfara_options_t` / `LayoutOptions` fields are **append-only**: new fields go at
-  the end so existing offsets never move.
-- The C ABI version is the string `harfara_version()` returns; a release tag must
-  match it and `v.mod` (the `release-c` workflow gates this).
-- The rebrand from `vtext` (2026-11-23) moved import paths and C symbol names; the
+- `LayoutOptions` fields are **append-only**: new fields go at the end so
+  existing offsets never move.
+- The rebrand from `vtext` (2026-11-23) moved import paths and symbol names; the
   published v0.1.0 release keeps the old `vtext` names.

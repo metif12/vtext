@@ -576,7 +576,8 @@ fn strip_notices(output string) string {
 // A compile error is dozens of lines and the summary is what gets read, so this shows the head rather than
 // the tail: the first error is the one that explains the rest. Compiler diagnostics are skipped — warnings,
 // notices and the numbered source-context lines around them — because four pages of them above the one assert
-// line is how a real failure hid itself on CI twice: first behind `warning: ... in capi.v`, then behind
+// line is how a real failure hid itself on CI twice: first behind a warning in
+// a library file, then behind
 // `notice:` context that the error path never filtered.
 fn print_evidence(output string, limit int) {
 	mut shown := 0

@@ -31,7 +31,7 @@ fn test_modular_import_directions() {
 		// tools/ and examples/ are programs that depend on the library;
 		// testdata/ holds fonts, not code. None of them is the module
 		// graph, so the walk stays out of all three. The root module is
-		// capi.v and trace_api.v, flat beside the part directories.
+		// trace_api.v, flat beside the part directories.
 		mut files := []string{}
 		if module == 'root' {
 			for entry in os.ls('.')! {

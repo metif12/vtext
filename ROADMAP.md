@@ -4,10 +4,10 @@ Where this library is, what is left in the engine, and what comes after it.
 Status first, evidence with every claim, history only where it binds future
 work. Dated entries use the landing date; anything undated is open.
 
-**Renamed 2026-11-23: vtext → HarfAra.** The brand is HarfAra; the V module,
-imports and C ABI are lowercase `harfara` / `harfara_*` (header `harfara.h`).
-Entries dated before the rename were measured under the old name. The
-published v0.1.0 release predates the rename and keeps the `vtext` names.
+**Renamed 2026-11-23: vtext → HarfAra.** The brand is HarfAra; the V module
+and imports are lowercase `harfara`. Entries dated before the rename were
+measured under the old name. The published v0.1.0 release predates the
+rename and keeps the `vtext` names.
 
 ## How to read this
 
@@ -63,9 +63,9 @@ alongside; CJK line breaking is conformance-pinned.
 | Reference cache helper (caller-owned) | landed 7.11-1H | `cache_test` |
 | fontconfig match/sort/coverage | landed 8.8 | `match_test` (CI-owned leg) |
 | Subsetter (glyf, CFF and CFF2 rebuilds; CID refused) | landed | `subset_test` |
-| C API + usage guide | landed (50 exports incl. variable instancing) | `capi.v`, `harfara.h`, `USAGE.md`, smoke test |
+| C ABI, C usage guide, generated C bundles | removed 2026-11-24 | pure-V module decision, below; `capi.v`, `harfara.h`, `generated/` deleted |
 | Inspection API (on `shape.Font`) | landed | `inspect_test`, `fontdump`/`fontcheck`/`shapetrace` |
-| Examples (13, multilingual, corpus-only, incl. the interactive gallery) | landed | `examples/` |
+| Examples (12, multilingual, corpus-only, incl. the interactive gallery) | landed | `examples/` |
 | Indic machine, SE-Asian engine, color/hinting, stroking, synth/LCD, CoreText/DW providers, rival A/B | landed | Phase 7–9 below |
 
 Suite: 84 test files, all passing (2026-11-23). Differential baseline:
@@ -446,7 +446,7 @@ are done; the rest name their trigger or their assignee.
 | Raqm | bidi+shaping glue | yes, own pipeline | — |
 | DirectWrite/CoreText | OS shape+layout+raster | providers → 7.8 | engine runs on their fonts ✓ |
 | AAT morx, Graphite | Apple/SIL shaping | no corpus font | triggered |
-| WOFF2/brotli | web fonts | no | triggered (no decoder in tree) |
+| WOFF2/brotli | web fonts | read 14.0 ✓ (vendored decoder) | write refused (no encoder) |
 
 **8.1 WOFF1 — landed 2026-11-15.** `font/woff.v` unwraps one container to
 plain sfnt (per-table inflate, rebuilt directory, recomputed checksums and
@@ -1388,6 +1388,19 @@ owns the queue.
 | 13.9 | C API variable instancing | landed (`harfara_font_set_var_coords`; smoke proves the ink change; 50 exports) |
 | 13.10 | CFF2 fill: flat edge array | landed (2.7–3.0x debug / 1.13–1.23x `-prod`; byte-identical over 2478 glyphs at 16/32/64) |
 | 13.11 | GSUB per-edit hit-set maintenance | landed (incremental marks, superset-safe; up to ~28% on calt-dense, neutral elsewhere; index-adjust follow-up rejected at ~1.0x) |
+| 14.0 | WOFF2 read (vendored brotli decoder) | landed 2026-11-24 (brotli dec/ vendored, MIT licence kept; glyf/loca reconstruction; fontTools byte-equality pins; corrupt-transform refusal; write refused — no encoder) |
+| 14.1 | Text roundtrip (TTX-like dump/load) | open (prerequisite for all editing; byte-symmetry over the corpus) |
+| 14.2 | In-memory font builder | open (new fonts, table writers, checksum recalc) |
+| 14.3 | Feature compiler (FEA subset → GSUB/GPOS) | open (feaLib semantics pinned; starts from single/ligature/contextual) |
+| 14.4a | Variable builder, static instance | open (fvar/gvar writer, interpolation; varLib-pinned) |
+| 14.4b | Full instancer (partial + avar2) | open (fonttools-instancer-pinned) |
+| 14.5 | Outline/format conversion (glyf↔CFF/CFF2) | open |
+| 14.6 | Merge + subset++ (CID, IFT) | open |
+| 14.7 | Color building (COLR v1 first) | open (nanoemoji-equivalent) |
+| 14.8 | Internal autohinter | open (decided 2026-11-24: own hinter, not just a ttfautohint interface; 13.3 hintref is the reference leg) |
+| 14.9 | Sources I/O (UFO, designspace) | open (Glyphs format stays out: closed spec) |
+| 14.10 | Validation/QA (fontbakery-equivalent) | open (extends fontcheck) |
+| 14.11 | Glyph editor surface in the gallery | open (decided 2026-11-24: the one interactive exception; text editors stay out) |
 
 **Still open: triggered, not scheduled.** A slice lands when its trigger
 arrives, not before; each trigger below names exactly what would unblock
@@ -1418,9 +1431,6 @@ owns the queue.
   with FDEF/CALL, geometry instructions, raster wiring — of roughly
   3,000–4,900 lines; a toy opcode subset would not execute the committed
   faces' 140-function `fpgm` library, so none is claimed.
-- WOFF2/brotli: blocked on a decoder. No brotli decoder lives in this
-  tree and porting one is its own project, so the magic is refused with
-  the reason. Unblocks on a committable decoder.
 
 **Phase 13 CFF2 — reader landed 2026-11-22.** The gate was the missing
 carrier face, now committed: `SourceSans3VF-Upright.otf` (OFL, 2478
@@ -1636,18 +1646,55 @@ density. Rejected; the rebuild it would replace is not probe-bound. The
 break-fix in both directions is the old binary: same outputs, measurably
 slower without the increment, measurably identical with the adjust.
 
+## Phase 14: authoring (write), not just read — decided 2026-11-24
+
+HarfAra stops being read-only: the engine gains font building and editing,
+in dependency order R1→R4 (roundtrip → builder → feature compiler →
+variable), with WOFF2 read first (14.0) because the web corpus needs it
+now. Three decisions are recorded so they do not reopen: (1) a glyph editor
+surface inside the gallery is the one interactive exception — text editors
+stay out; (2) hinting gets an internal autohinter, not just a ttfautohint
+interface (13.3's hintref is the pinned reference leg); (3) order is
+base-up (R1→R4) except WOFF2-first. Semantics follow fontTools
+(feaLib/varLib/instancer behavior is the pin), API design follows
+write-fonts (owned builders separate from zero-copy readers), and the
+pipeline follows fontmake/AFDKO. Glyphs-format I/O stays out (closed spec);
+UFO/designspace are the source formats. Every slice keeps the house gate:
+fontTools/AFDKO-pinned behavior, break-fix control, full suite plus difftest
+0/0.
+
+**14.0 WOFF2 read — landed 2026-11-24.** The trigger was the decoder: a
+brotli decode-only subset vendored under `font/brotli/` (MIT licence kept),
+wired as `font/woff2.v`. The header, table directory and transforms parse
+with the same length-guard discipline as the WOFF1 reader; glyf/loca rebuild
+with 4-byte padding and recomputed checksums plus head adjustment; the
+rebuilt sfnt loads identically to the TTF (table-by-table pins against
+fontTools). Corrupt transforms and truncated streams refuse with the
+reason; WOFF2 *write* is refused — no encoder lives in this tree.
+
 ## Explicitly not planned
 
 Worth writing down so these do not come back as questions.
 
-- A text editor, or any interactive application. The library is a library.
+- A text editor, or any interactive application beyond one surface: the
+  gallery's glyph editor (14.11) is the single exception. The library is a
+  library.
 - A layout engine for boxes, flex, or CSS beyond the text layer. Line
   breaking, wrapping, alignment, hyphenation, wrap modes, ellipsize and tabs
   are in; boxes, the cascade and painting stay the caller's.
 - HarfBuzz bindings, or a port of anything. The engine is written from the
   specifications.
-- Font authoring. HarfAra reads fonts, subsets them, and reports on them; it
-  does not build them.
+- Font authoring without the Phase 14 order. HarfAra builds fonts now, but
+  through the queue: roundtrip (14.1) before the builder (14.2) before the
+  feature compiler (14.3) before variable (14.4). A writer that cannot
+  roundtrip is a fixture-matches-reader failure.
+- A C ABI, a C usage guide, or generated C bundles. Removed 2026-11-24:
+  HarfAra is a pure V module (`import harfara.*`), and the C face
+  (`capi.v`, `harfara.h`, `harfara.def`, `examples/c-api`, `generated/`,
+  the `clib`/`c-generated`/`release-c` CI jobs) paid a second API surface,
+  a second test surface and a second distributable for no engine gain. A
+  C caller that needs one writes its own thin `@[export]` wrappers over
+  the V API; nothing in the engine stands in the way.
 
 The last boundary has a caller: a from-scratch HTML/CSS engine (`../vweb`)
 uses this library as its only text layer. Boxes, the cascade and painting

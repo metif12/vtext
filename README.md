@@ -24,9 +24,9 @@ with no claim, and every remaining difference is recorded with its reason.
 See `GOAL.md` for the one paragraph that decides scope arguments, and
 `ROADMAP.md` for where each part stands.
 
-> HarfAra was named **vtext** until 2026-11-23. The module and C symbols are
-> lowercase `harfara` / `harfara_*`; the v0.1.0 release predates the rename and
-> keeps the old names. See `API.md` for the full V and C reference.
+> HarfAra was named **vtext** until 2026-11-23. The module is lowercase
+> `harfara`; the v0.1.0 release predates the rename and keeps the old names.
+> See `API.md` for the full V reference.
 
 ```v
 import harfara.layout
@@ -59,11 +59,10 @@ fn main() {
 | `harfara.inspect` | fontTools' reading side | Reports on tables, features, scripts, coverage, variable axes and instances |
 | `harfara.subset` | fontTools' subsetter | Glyf closure and rebuild; CFF rebuild landed, CFF2 refused with its reason |
 | generic helpers (`raster/pack`, `raster/quantize`, `layout/iterator`, `providers/discovery`) | fontstash + stb_truetype | Atlas packing, coverage quantize/gamma/blur, visual-order quads, search order — caller-owned atlas, no FONS types |
-| `harfara.capi` | — (the C face of all of the above) | Opaque handles over every part; `harfara.h` is the single header |
 | providers | fontconfig / Core Text / DirectWrite | All three landed; none elsewhere |
 
-Dependencies run one way — `layout` → `shape` → `font` → `ucd`,
-`capi` → all — and no part imports a tool.
+Dependencies run one way — `layout` → `shape` → `font` → `ucd` — and no part
+imports a tool.
 
 ## What it does
 
@@ -108,7 +107,7 @@ so there are no runtime tables to load and no network access is needed to build.
 - Hyphenation by Liang's algorithm over generated US-English patterns,
   through any `BreakPolicy` — UAX #14 alone by default.
 - A variable font's axes and named instances, read off fvar and the name table.
-- A glyph's box and its coverage bitmap, and a C API over all of it (`harfara.h`).
+- A glyph's box and its coverage bitmap.
 
 ### Emoji and variation sequences
 
@@ -647,23 +646,6 @@ the glyph count either way.
 These are what `tools/fontdump`, `tools/fontcheck` and `tools/shapetrace` are written against, and they
 are public because a library that cannot be inspected from outside cannot be diagnosed from outside.
 
-### C API
-
-`harfara.h` is this library for a C caller: opaque handles over the same objects, plain C types, errors in a caller-owned buffer. `capi.v` implements it; `harfara.def` lists the entry points for import-library generation.
-
-```sh
-v -shared -gc none -cc tcc -o harfara.dll .
-```
-
-```c
-harfara_context_t *ctx = harfara_context_new();
-harfara_fontset_t *fs = harfara_fontset_new();
-harfara_font_t *font = harfara_fontset_add_file(fs, "Amiri-Regular.ttf", err, sizeof(err));
-harfara_line_t *line = harfara_layout(ctx, text, len, HARFARA_AUTO, fs, 32.0, err, sizeof(err));
-```
-
-`USAGE.md` is the guide: building on each platform, the stack a caller thread needs, the full reference with ownership rules, and the smoke test that exercises it end to end. `examples/c-api/smoke.c` is the shape of a C program using it.
-
 ## Building and testing
 
 The build needs V. The scripts are V programs rather than PowerShell ones: the same language means
@@ -820,10 +802,8 @@ ucd/ucd_names.v codepoint names, front coded: the suffixes and the shared prefix
 The tools are in `tools/`, the examples in `examples/`, and `ucd/` holds the Unicode Character Database
 files that are redistributed here. See `LICENSE` for which licence covers what.
 
-`capi.v` is the C face of the library: opaque handles, plain C types, errors in a
-caller-owned buffer. `harfara.h` is the single header, `harfara.def` lists the entry
-points, and `tools/capicheck.v` proves the three agree in both directions. `providers/`
-holds the per-OS font lookup (fontconfig on Linux); nothing links it by default.
+`providers/` holds the per-OS font lookup (fontconfig on Linux); nothing links
+it by default.
 
 ## Licence
 
