@@ -123,51 +123,66 @@ jobs:
           if [ -n "${{ matrix.runtime_c }}" ]; then args+=(--runtime-c "${{ matrix.runtime_c }}"); fi
           python3 tools/c_bundle.py "${args[@]}"
 
-      # From here on V is not consulted: the platform compiler builds the
-      # committed layout exactly as generated/README.md documents it. A
-      # passing step means a C user with no V toolchain gets a library.
+      # From here on V is not consulted: the platform compiler builds a copy
+      # of the committed layout exactly as generated/README.md documents it.
+      # The copy lives under RUNNER_TEMP, not inside generated/: the proof
+      # binaries must never sit beside the sources, or `git add generated`
+      # in the assemble job would commit them. A passing step means a C user
+      # with no V toolchain gets a library.
       # -lm on Linux is what V's own builder adds; a raw cc line does not.
       - name: Build the library from the bundle (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
-          cd generated/linux
+          proof="$RUNNER_TEMP/bundle-proof/linux"
+          mkdir -p "$proof"
+          cp -r generated/linux/. "$proof/"
+          cd "$proof"
           gcc -shared -fPIC -o libharfara.so harfara.linux.c thirdparty/vlib/builtin/segfault_handler_nix.c -I. -lm
+          echo "PROOF_LINUX=$proof" >> "$GITHUB_ENV"
 
       - name: Build the library from the bundle (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           set -euo pipefail
-          cd generated/macos
+          proof="$RUNNER_TEMP/bundle-proof/macos"
+          mkdir -p "$proof"
+          cp -r generated/macos/. "$proof/"
+          cd "$proof"
           clang -dynamiclib -o libharfara.dylib harfara.macos.c thirdparty/vlib/builtin/segfault_handler_nix.c -I.
           otool -D libharfara.dylib || true
           install_name_tool -id @rpath/libharfara.dylib libharfara.dylib
           otool -D libharfara.dylib
+          echo "PROOF_MACOS=$proof" >> "$GITHUB_ENV"
 
       - name: Build the library from the bundle (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
           set -euo pipefail
-          cd generated/windows
+          proof="$RUNNER_TEMP/bundle-proof/windows"
+          mkdir -p "$proof"
+          cp -r generated/windows/. "$proof/"
+          cd "$proof"
           gcc -shared -o harfara.dll harfara.windows.c thirdparty/vlib/builtin/core_windows.c -I. -static-libgcc
+          echo "PROOF_WINDOWS=$proof" >> "$GITHUB_ENV"
 
       # The smoke test compiles against the repo headers and links the
-      # bundled library, the way a downstream user would: headers from the
-      # tree, binary from generated/.
+      # bundled library from the proof copy, the way a downstream user would:
+      # headers from the tree, binary built from generated/.
       - name: MinGW import library (Windows)
         if: runner.os == 'Windows'
         shell: bash
-        run: dlltool -d harfara.def --dllname harfara.dll -l generated/windows/libharfara.dll.a
+        run: dlltool -d harfara.def --dllname harfara.dll -l "$PROOF_WINDOWS/libharfara.dll.a"
 
       - name: Build the smoke test (Windows)
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -Lgenerated/windows -lharfara -static-libgcc -o examples/c-api/smoke.exe
-          cp generated/windows/harfara.dll examples/c-api/
+          gcc examples/c-api/smoke.c -L"$PROOF_WINDOWS" -lharfara -static-libgcc -o examples/c-api/smoke.exe
+          cp "$PROOF_WINDOWS/harfara.dll" examples/c-api/
           for d in libgcc_s_seh-1.dll libwinpthread-1.dll libstdc++-6.dll; do
             f=$(gcc -print-file-name=$d)
             if [ -f "$f" ]; then cp "$f" examples/c-api/; fi
@@ -178,15 +193,15 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -Lgenerated/linux -lharfara -Wl,-rpath,'$ORIGIN' -o examples/c-api/smoke
-          cp generated/linux/libharfara.so examples/c-api/
+          gcc examples/c-api/smoke.c -L"$PROOF_LINUX" -lharfara -Wl,-rpath,'$ORIGIN' -o examples/c-api/smoke
+          cp "$PROOF_LINUX/libharfara.so" examples/c-api/
 
       - name: Build the smoke test (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          gcc examples/c-api/smoke.c -Lgenerated/macos -lharfara -Wl,-rpath,@loader_path -o examples/c-api/smoke
-          cp generated/macos/libharfara.dylib examples/c-api/
+          gcc examples/c-api/smoke.c -L"$PROOF_MACOS" -lharfara -Wl,-rpath,@loader_path -o examples/c-api/smoke
+          cp "$PROOF_MACOS/libharfara.dylib" examples/c-api/
 
       # Two font arguments: the second exercises variable instancing through
       # the bundled library, which is the one C API the raw translation
