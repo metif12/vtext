@@ -19,7 +19,7 @@ is a part with no claim.
 | Part | Replaces | Objective |
 | --- | --- | --- |
 | `harfara.ucd` | — (shared data) | Generated UCD tables, decoded once into `Properties`. No other part reads the UCD directly. Case mapping (8.3) and word/sentence tables (8.2) landed the same way, each with its committee conformance floor. |
-| `harfara.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1 and WOFF2 read (WOFF2 write refused: no encoder in tree), cmap, metrics, variation-store reading. The `Font`/`FontSet`/`Glyph` wrappers and layout live in `shape/` and `layout/`; `font/` owns data, parsers, and every method on font types. |
+| `harfara.font` | FreeType's loading side, fontTools' reading side | sfnt/TTC containers, WOFF1 and WOFF2 read (WOFF2 write refused: no encoder in tree), cmap, metrics, variation-store reading, text round-trip (14.1a: containers as canonical text, byte-identical back). The `Font`/`FontSet`/`Glyph` wrappers and layout live in `shape/` and `layout/`; `font/` owns data, parsers, and every method on font types. |
 | `harfara.brotli` | brotli's decoder | Decoder-only pure-V subset vendored in-tree; WOFF2 inflates through it, nothing else imports it. |
 | `harfara.shape` | HarfBuzz core | Normalization, bidi, joining, `Context`, `Font`/`FontSet`/`Glyph`, `inspect.v`, case mapping. GSUB/GPOS application runs on font types in `font/`; orchestration taking font types as arguments lives here. |
 | `harfara.layout` | Pango's layout math | Line breaking, wrapping, measuring, vertical columns. Align/justify landed opt-in in 7.4 (kashida tatweels for uniform Arabic, spaces elsewhere); hyphenation (7.5), wrap modes/ellipsize/tabs (8.4) and log attrs (8.2) landed. |

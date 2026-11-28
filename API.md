@@ -23,7 +23,7 @@ reference leads with the calls a caller reaches for and notes the deeper layer.
 | Import | Owns | Replaces |
 | --- | --- | --- |
 | `harfara.ucd` | Generated Unicode tables, decoded once into `Properties` | — (shared data) |
-| `harfara.font` | Font data: sfnt/TTC/WOFF1/WOFF2 read (WOFF2 write refused, no encoder), cmap, metrics, GSUB/GPOS, variation stores, the raster backend | FreeType load side, fontTools read side |
+| `harfara.font` | Font data: sfnt/TTC/WOFF1/WOFF2 read (WOFF2 write refused, no encoder), cmap, metrics, GSUB/GPOS, variation stores, the raster backend, text round-trip | FreeType load side, fontTools read side |
 | `harfara.brotli` | Pure-V decoder-only brotli subset vendored in-tree; WOFF2 inflates through it | brotli's decoder |
 | `harfara.shape` | `Context`, `Font`/`FontSet`/`Glyph`, normalization, bidi, joining, case mapping, inspection, cache | HarfBuzz core |
 | `harfara.layout` | Line breaking, wrapping, measuring, alignment, vertical columns, log attrs, iterators | Pango layout math |
@@ -327,8 +327,15 @@ Caller-owned generics (no FONS types, no hidden atlas):
 (bounds-checked big-endian reads), the GSUB/GPOS engines (`new_gsub`, `Gpos`
 methods), variable instancing (`var_instance_glyph`, `var_blend_coords`), and the
 stb_truetype backend (`Face.box_only`, `Face.render_into`, `Face.rasterize_glyph`).
-CFF2 has a separate inspection reader (`font/cff2.v`): default-instance outlines
-only; no raster backend or subset rebuild yet.
+CFF2 has a full pipeline now (inspection reader in `font/cff2.v`, raster backend
+in `font/cff2raster.v`, non-default instancing over the shared VarStore reader,
+subset rebuild in `subset/cff2.v`). Text round-trip
+(`font/textfont.v`): `textfont_dump(data) !string` renders the sfnt container
+as canonical text (version, size, search fields, then one `table` line per
+table with file offset and raw hex), and `textfont_load(text) ![]u8` rebuilds
+byte-identical bytes — directory order, offsets, zero padding, recomputed
+checksums and head adjustment. TTC and WOFF containers are refused with the
+reason (unwrap first); parsed table overlays arrive in later 14.1 slices.
 
 ### providers (optional, never linked by default)
 
