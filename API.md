@@ -335,7 +335,13 @@ as canonical text (version, size, search fields, then one `table` line per
 table with file offset and raw hex), and `textfont_load(text) ![]u8` rebuilds
 byte-identical bytes — directory order, offsets, zero padding, recomputed
 checksums and head adjustment. TTC and WOFF containers are refused with the
-reason (unwrap first); parsed table overlays arrive in later 14.1 slices.
+reason (unwrap first). Parsed overlays (`font/textfont_parsed.v`, 14.1b wave
+1): head, hhea, maxp, hmtx, OS/2, post, name and cmap additionally travel as
+`begin TAG ... end TAG` blocks grouped after the table lines, in directory
+order — kebab-case decimal fields, 16.16 Fixed as exact decimals, codepoints
+as `0x` hex, byte runs as lowercase hex. Load rebuilds each block and refuses
+any disagreement with the raw line; unknown blocks error, missing blocks fall
+back to raw. Glyf, CFF, GSUB, GPOS and the rest stay raw.
 
 ### providers (optional, never linked by default)
 
