@@ -783,7 +783,7 @@ font/woff2.v      WOFF2 containers (brotli inflate + transform rebuild), unwrapp
 font/textfont.v   text round-trip: sfnt container as canonical text and back, byte-identical
 font/textfont_parsed.v   14.1b wave 1 parsed overlays: head/hhea/maxp/hmtx/OS/2/post/name/cmap as begin/end blocks
 font/builder.v      14.2a in-memory builder core: set(tag, bytes) per table, build() lays out tag-sorted, 4-aligned, checksummed sfnt with the head adjustment patch
-font/build_tables.v   14.2b fixed-size writers: build_head/build_maxp(_05)/build_hhea emit spec-layout bytes for Builder.set; 14.2c metrics + empty outlines: build_hmtx (long records + short tail bearings) and build_empty_glyf_loca (empty glyf, all-zero loca)
+font/build_tables.v   14.2b fixed-size writers: build_head/build_maxp(_05)/build_hhea emit spec-layout bytes for Builder.set; 14.2c metrics + empty outlines: build_hmtx (long records + short tail bearings) and build_empty_glyf_loca (empty glyf, all-zero loca); 14.2d coverage + identity: build_cmap4 (sorted BMP segments, idDelta/glyphIdArray, shared (3,1)/(0,3) records) and build_name_minimal (four Windows Unicode name records, UTF-16BE) — together a font built from scratch loads, maps and names itself
 brotli/           module harfara.brotli: pure-V decoder-only subset vendored in-tree,
                   no encoder; WOFF2 inflates through it
 font/cmap.v       codepoint to glyph
