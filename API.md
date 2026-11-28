@@ -346,8 +346,11 @@ back to raw. Glyf, CFF, GSUB, GPOS and the rest stay raw. In-memory builder
 per table, `build()` emitting a tag-sorted sfnt with recomputed search
 fields, 4-aligned bodies, recomputed checksums and the head adjustment
 patch — the subset assembly precedent, not the textfont stored layout. A
-missing or short `head` is an error. Table writers (head/maxp/hhea/hmtx/cmap)
-arrive in 14.2b–d; the builder takes caller bytes until then.
+missing or short `head` is an error. Fixed-size table writers
+(`font/build_tables.v`, 14.2b): `build_head(upem, bbox, loca_is_long)` (54
+bytes, adjustment zeroed for the builder), `build_maxp(n)` (32-byte 1.0) and
+`build_maxp_05(n)` (6-byte CFF form), `build_hhea(asc, desc, gap, metrics)`
+(36 bytes); hmtx/cmap/name writers arrive in 14.2c–d.
 
 ### providers (optional, never linked by default)
 
