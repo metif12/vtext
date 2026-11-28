@@ -30,6 +30,11 @@ module font
 // bytes; every corpus font is self-consistent, so every corpus font is
 // byte-symmetric.
 //
+// Parsed overlays (14.1b wave 1) follow the table lines: `begin TAG ... end
+// TAG` blocks for head, hhea, maxp, hmtx, OS/2, post, name and cmap, in
+// directory order, each rebuilding to its raw bytes or refusing the load.
+// See font/textfont_parsed.v for the block syntax and the fail-closed rules.
+//
 // Refused with the reason: TTC collections (dumping the first member would
 // silently drop the rest), WOFF1/WOFF2 (unwrap with woff_to_sfnt first),
 // unknown sfnt versions, truncated directories, tables outside the file,
@@ -46,9 +51,10 @@ const textfont_max_bytes = 64 << 20
 // peaks at 23; a directory claiming hundreds of tables is corrupt.
 const textfont_max_tables = 256
 
-// textfont_dump renders the sfnt container in data as textfont text. Only
-// the container is rendered: every table travels as raw bytes, parsed
-// overlays arrive in later 14.1 slices.
+// textfont_dump renders the sfnt container in data as textfont text. Every
+// table travels as raw bytes, and wave 1 tables (head, hhea, maxp, hmtx,
+// OS/2, post, name, cmap) additionally travel as parsed `begin`/`end` blocks
+// grouped after all table lines, in directory order.
 pub fn textfont_dump(data []u8) !string {
 	if data.len > textfont_max_bytes {
 		return error('textfont: file is ${data.len} bytes, over the ${textfont_max_bytes} limit')
@@ -136,13 +142,29 @@ pub fn textfont_dump(data []u8) !string {
 	for i in 0 .. num_tables {
 		lines << 'table ${tags[i]} ${offs[i]} ${data[offs[i]..offs[i] + lens[i]].hex()}'
 	}
+	// Parsed overlays group after all table lines, in directory order. A table
+	// the encoder does not represent keeps its raw line only, which the loader
+	// reads back without a block.
+	mut ctx := map[string][]u8{}
+	for i in 0 .. num_tables {
+		ctx[tags[i]] = data[offs[i]..offs[i] + lens[i]]
+	}
+	for i in 0 .. num_tables {
+		if block := textfont_encode_parsed(tags[i], ctx[tags[i]], ctx) {
+			lines << 'begin ${tags[i]}'
+			lines << block
+			lines << 'end ${tags[i]}'
+		}
+	}
 	return lines.join('\n') + '\n'
 }
 
 // textfont_load rebuilds the sfnt file a textfont dump describes. The layout
 // is the stored layout: directory in dump order, tables at stored offsets,
 // everything else zero. Checksums and head.checkSumAdjustment are recomputed,
-// the way subset/build_font and the WOFF writers do it.
+// the way subset/build_font and the WOFF writers do it. Parsed `begin` blocks
+// after the table lines rebuild to bytes that must equal their raw line, or
+// the load is refused; a table with no block loads from its raw line alone.
 pub fn textfont_load(text string) ![]u8 {
 	lines := text.split_into_lines()
 	if lines.len < 3 {
@@ -187,9 +209,18 @@ pub fn textfont_load(text string) ![]u8 {
 	table_lines := lines[3..]
 	// A trailing newline leaves a last empty line, which is the dump's own
 	// ending rather than a table.
-	mut n_tables := table_lines.len
-	if n_tables > 0 && table_lines[n_tables - 1] == '' {
-		n_tables--
+	mut total := table_lines.len
+	if total > 0 && table_lines[total - 1] == '' {
+		total--
+	}
+	// Parsed blocks group after all table lines: the table region ends at the
+	// first begin line, or at the end when an old dump has no blocks.
+	mut n_tables := total
+	for li in 0 .. total {
+		if table_lines[li].starts_with('begin ') {
+			n_tables = li
+			break
+		}
 	}
 	if n_tables <= 0 || n_tables > textfont_max_tables {
 		return error('textfont: implausible table count ${n_tables}')
@@ -245,6 +276,68 @@ pub fn textfont_load(text string) ![]u8 {
 		if offs[cur] < offs[prev] + datas[prev].len {
 			return error('textfont: table ${tags[cur]} overlaps its neighbour')
 		}
+	}
+	// Parsed blocks rebuild to bytes that must equal their raw line: a block
+	// that disagrees was hand-edited on one side only, and the load refuses
+	// rather than guessing which side is right. A table with no block keeps
+	// its raw bytes.
+	mut parsed_done := []string{}
+	mut parsed_field_map := map[string][]string{}
+	mut li := n_tables
+	for li < total {
+		line := table_lines[li]
+		if !line.starts_with('begin ') {
+			return error('textfont: bad line after the table lines')
+		}
+		tag := line[6..]
+		if tag !in textfont_parsed_tags {
+			return error('textfont: unknown parsed table ${tag}')
+		}
+		if tag in parsed_done {
+			return error('textfont: duplicate parsed block ${tag}')
+		}
+		li++
+		mut fields := []string{}
+		mut closed := false
+		for li < total {
+			l2 := table_lines[li]
+			li++
+			if l2 == 'end ${tag}' {
+				closed = true
+				break
+			}
+			if l2.starts_with('begin ') || l2.starts_with('end ') {
+				return error('textfont: mismatched end in ${tag} block')
+			}
+			if l2.starts_with('table ') {
+				return error('textfont: table line after the parsed blocks begin')
+			}
+			fields << l2
+		}
+		if !closed {
+			return error('textfont: unclosed begin ${tag}')
+		}
+		parsed_done << tag
+		parsed_field_map[tag] = fields
+	}
+	for tag in parsed_done {
+		mut idx := -1
+		for i in 0 .. n_tables {
+			if tags[i] == tag {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return error('textfont: parsed block ${tag} has no table line')
+		}
+		rebuilt := textfont_decode_parsed(tag, parsed_field_map[tag]) or {
+			return error('textfont: bad ${tag} block: ${err}')
+		}
+		if rebuilt != datas[idx] {
+			return error('textfont: parsed ${tag} disagrees with its table line')
+		}
+		datas[idx] = rebuilt
 	}
 	mut out := []u8{len: size}
 	out[0] = u8((version >> 24) & 0xff)

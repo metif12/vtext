@@ -1391,6 +1391,7 @@ owns the queue.
 | 14.0 | WOFF2 read (vendored brotli decoder) | landed 2026-11-24 (brotli dec/ vendored, MIT licence kept; glyf/loca reconstruction; fontTools byte-equality pins; corrupt-transform refusal; write refused — no encoder) |
 | 14.1 | Text roundtrip (TTX-like dump/load) | open (prerequisite for all editing; byte-symmetry over the corpus; 14.1a container+raw landed below, parsed overlays to come) |
 | 14.1a | Container round-trip (raw tables) | landed 2026-11-25 (own canonical text format; directory order + offsets + search fields stored; checksums and head adjustment recomputed; 30-font corpus byte-symmetric and idempotent; TTC/WOFF refused; flip/drop break-fix control) |
+| 14.1b wave 1 | Parsed overlays: head, hhea, maxp, hmtx, OS/2, post, name, cmap | landed 2026-11-28 (fenced blocks in directory order; kebab-case decimal fields, Fixed as exact decimals, codepoints as `0x`, byte runs as lowercase hex; cmap segment/group-level with shared-subtable ids and per-selector format 14 tables; fail-closed on any rebuild/raw disagreement; unknown blocks error, missing blocks fall back to raw; 30-font corpus byte-symmetric with all 8 blocks; per-table flip/corrupt pins) |
 | 14.2 | In-memory font builder | open (new fonts, table writers, checksum recalc) |
 | 14.3 | Feature compiler (FEA subset → GSUB/GPOS) | open (feaLib semantics pinned; starts from single/ligature/contextual) |
 | 14.4a | Variable builder, static instance | open (fvar/gvar writer, interpolation; varLib-pinned) |
