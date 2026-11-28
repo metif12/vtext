@@ -350,7 +350,10 @@ missing or short `head` is an error. Fixed-size table writers
 (`font/build_tables.v`, 14.2b): `build_head(upem, bbox, loca_is_long)` (54
 bytes, adjustment zeroed for the builder), `build_maxp(n)` (32-byte 1.0) and
 `build_maxp_05(n)` (6-byte CFF form), `build_hhea(asc, desc, gap, metrics)`
-(36 bytes); hmtx/cmap/name writers arrive in 14.2c–d.
+(36 bytes); 14.2c adds `build_hmtx(advances, lsbs, metrics)` (long records
+plus short tail bearings, tail advances replay the last long one) and
+`build_empty_glyf_loca(n, long)` (empty glyf, all-zero loca); cmap/name
+writers arrive in 14.2d.
 
 ### providers (optional, never linked by default)
 
