@@ -341,7 +341,13 @@ reason (unwrap first). Parsed overlays (`font/textfont_parsed.v`, 14.1b wave
 order — kebab-case decimal fields, 16.16 Fixed as exact decimals, codepoints
 as `0x` hex, byte runs as lowercase hex. Load rebuilds each block and refuses
 any disagreement with the raw line; unknown blocks error, missing blocks fall
-back to raw. Glyf, CFF, GSUB, GPOS and the rest stay raw.
+back to raw. Glyf, CFF, GSUB, GPOS and the rest stay raw. In-memory builder
+(`font/builder.v`, 14.2a core): `new_builder(version)` plus `set(tag, bytes)`
+per table, `build()` emitting a tag-sorted sfnt with recomputed search
+fields, 4-aligned bodies, recomputed checksums and the head adjustment
+patch — the subset assembly precedent, not the textfont stored layout. A
+missing or short `head` is an error. Table writers (head/maxp/hhea/hmtx/cmap)
+arrive in 14.2b–d; the builder takes caller bytes until then.
 
 ### providers (optional, never linked by default)
 
