@@ -1389,7 +1389,8 @@ owns the queue.
 | 13.10 | CFF2 fill: flat edge array | landed (2.7–3.0x debug / 1.13–1.23x `-prod`; byte-identical over 2478 glyphs at 16/32/64) |
 | 13.11 | GSUB per-edit hit-set maintenance | landed (incremental marks, superset-safe; up to ~28% on calt-dense, neutral elsewhere; index-adjust follow-up rejected at ~1.0x) |
 | 14.0 | WOFF2 read (vendored brotli decoder) | landed 2026-11-24 (brotli dec/ vendored, MIT licence kept; glyf/loca reconstruction; fontTools byte-equality pins; corrupt-transform refusal; write refused — no encoder) |
-| 14.1 | Text roundtrip (TTX-like dump/load) | open (prerequisite for all editing; byte-symmetry over the corpus) |
+| 14.1 | Text roundtrip (TTX-like dump/load) | open (prerequisite for all editing; byte-symmetry over the corpus; 14.1a container+raw landed below, parsed overlays to come) |
+| 14.1a | Container round-trip (raw tables) | landed 2026-11-25 (own canonical text format; directory order + offsets + search fields stored; checksums and head adjustment recomputed; 30-font corpus byte-symmetric and idempotent; TTC/WOFF refused; flip/drop break-fix control) |
 | 14.2 | In-memory font builder | open (new fonts, table writers, checksum recalc) |
 | 14.3 | Feature compiler (FEA subset → GSUB/GPOS) | open (feaLib semantics pinned; starts from single/ligature/contextual) |
 | 14.4a | Variable builder, static instance | open (fvar/gvar writer, interpolation; varLib-pinned) |
