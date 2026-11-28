@@ -782,6 +782,7 @@ font/woff.v       WOFF1 containers, unwrapped to sfnt before parsing
 font/woff2.v      WOFF2 containers (brotli inflate + transform rebuild), unwrapped to sfnt
 font/textfont.v   text round-trip: sfnt container as canonical text and back, byte-identical
 font/textfont_parsed.v   14.1b wave 1 parsed overlays: head/hhea/maxp/hmtx/OS/2/post/name/cmap as begin/end blocks
+font/builder.v      14.2a in-memory builder core: set(tag, bytes) per table, build() lays out tag-sorted, 4-aligned, checksummed sfnt with the head adjustment patch
 brotli/           module harfara.brotli: pure-V decoder-only subset vendored in-tree,
                   no encoder; WOFF2 inflates through it
 font/cmap.v       codepoint to glyph
