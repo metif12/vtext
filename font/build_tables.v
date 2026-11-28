@@ -28,9 +28,11 @@ module font
 // thirteen zero maxima, the TrueType-requirement maxima the builder leaves
 // for a real font to fill. A writer never invents metrics: advanceWidthMax,
 // the side bearings, xMaxExtent and the caret slope stay 0 in hhea output.
-// cmap and name need per-glyph and per-string data and arrive in 14.2d;
+// cmap and name take per-codepoint and per-string data;
 // hmtx takes the per-glyph arrays and the empty glyf/loca pair takes the
-// glyph count, so both land here in 14.2c.
+// glyph count, so both land here in 14.2c. 14.2d adds the first tables with
+// variable-size payloads: cmap format 4 from a sorted codepoint-to-glyph list,
+// and a minimal Windows-Unicode name table from a family and a style.
 
 // head_magic is the sfnt-specified magic number at head+12. The builder
 // writes it; Face.read_head refuses a head without it.
@@ -191,6 +193,240 @@ pub fn build_empty_glyf_loca(num_glyphs int, long bool) !([]u8, []u8) {
 	stride := if long { 4 } else { 2 }
 	loca := []u8{len: (num_glyphs + 1) * stride}
 	return []u8{}, loca
+}
+
+// CmapMapping is one codepoint-to-glyph mapping for build_cmap4. cp must be a
+// BMP codepoint below 0xFFFF (0xFFFF is reserved for the terminating segment),
+// and gid is the glyph index the codepoint answers.
+pub struct CmapMapping {
+pub:
+	cp  u32
+	gid u16
+}
+
+// CmapSegment4 is one working segment before it is serialised: gid_at is the
+// index of the segment's first glyph in the glyph array, or -1 when the segment
+// uses the compact idDelta form and needs no array entries.
+struct CmapSegment4 {
+	start  u16
+	end    u16
+	delta  i16
+	gid_at int
+}
+
+// build_cmap4 writes one 'cmap' table with a format 4 subtable for the given
+// BMP mappings. Input must be strictly increasing by codepoint; an unsorted
+// list, a duplicate codepoint, 0xFFFF or a codepoint past the BMP is refused.
+// Refusing rather than sorting keeps the caller's order meaningful and makes a
+// doubled mapping an error instead of a silently overwritten one.
+//
+// Segments are minimal: consecutive codepoints are merged into one segment,
+// using the idDelta form when gid - cp is constant over the whole run and the
+// glyphIdArray form otherwise (with idDelta 0 and the gids stored verbatim).
+// A run that is not delta-mappable still takes one segment, which is never
+// worse than splitting it. A trailing 0xFFFF..0xFFFF segment with idDelta 1
+// terminates the arrays the way the format requires.
+//
+// Two encoding records, (3,1) Windows BMP and (0,3) Unicode BMP, point at the
+// same subtable. The duplicate follows the specification's recommended pairing
+// and the corpus convention (textfont_parsed sees the same sharing), and costs
+// eight bytes. The engine ranks (3,1) above (0,3), so the choice does not change
+// which subtable answers a lookup.
+pub fn build_cmap4(mappings []CmapMapping) ![]u8 {
+	for i, m in mappings {
+		if m.cp > 0xffff {
+			return error('cmap4: codepoint ${m.cp} is outside the BMP')
+		}
+		if m.cp == 0xffff {
+			return error('cmap4: codepoint 0xFFFF is reserved for the terminator')
+		}
+		if i > 0 && mappings[i - 1].cp >= m.cp {
+			return error('cmap4: mappings are not strictly increasing at index ${i}')
+		}
+	}
+	mut segments := []CmapSegment4{}
+	mut glyph_ids := []u16{}
+	mut i := 0
+	for i < mappings.len {
+		first := i
+		delta := i16(u16(mappings[i].gid) - u16(mappings[i].cp))
+		i++
+		for i < mappings.len && mappings[i].cp == mappings[i - 1].cp + 1 {
+			i++
+		}
+		mut delta_ok := true
+		for k in first + 1 .. i {
+			if mappings[k].gid != u16(u32(mappings[k].cp) + u32(u16(delta))) {
+				delta_ok = false
+				break
+			}
+		}
+		seg := CmapSegment4{
+			start:  u16(mappings[first].cp)
+			end:    u16(mappings[i - 1].cp)
+			delta:  if delta_ok { delta } else { i16(0) }
+			gid_at: if delta_ok { -1 } else { glyph_ids.len }
+		}
+		if !delta_ok {
+			for k in first .. i {
+				glyph_ids << mappings[k].gid
+			}
+		}
+		segments << seg
+	}
+	segments << CmapSegment4{
+		start:  0xffff
+		end:    0xffff
+		delta:  1 // (0xFFFF + 1) mod 2^16 = 0: .notdef
+		gid_at: -1
+	}
+	seg_count := segments.len
+	if seg_count > 0x8000 {
+		return error('cmap4: ${seg_count} segments overflow segCountX2')
+	}
+	sub_len := 16 + 8 * seg_count + glyph_ids.len * 2
+	if sub_len > 0xffff {
+		return error('cmap4: subtable length ${sub_len} does not fit a u16')
+	}
+	sub_at := 4 + 8 * 2
+	mut out := []u8{len: sub_at + sub_len}
+	build_w16(mut out, 0, 0) // version
+	build_w16(mut out, 2, 2) // numTables
+	build_w16(mut out, 4, 3) // platformID: Windows
+	build_w16(mut out, 6, 1) // encodingID: Unicode BMP
+	build_w32(mut out, 8, u32(sub_at))
+	build_w16(mut out, 12, 0) // platformID: Unicode
+	build_w16(mut out, 14, 3) // encodingID: Unicode BMP
+	build_w32(mut out, 16, u32(sub_at))
+	// The arrays follow the 14-byte subtable header: endCode, reservedPad,
+	// startCode, idDelta, idRangeOffset, then glyphIdArray.
+	base := sub_at
+	build_w16(mut out, base, 4)
+	build_w16(mut out, base + 2, u16(sub_len))
+	build_w16(mut out, base + 4, 0) // language
+	build_w16(mut out, base + 6, u16(seg_count * 2))
+	mut power := 1
+	mut selector := 0
+	for power * 2 <= seg_count {
+		power *= 2
+		selector++
+	}
+	build_w16(mut out, base + 8, u16(power * 2))
+	build_w16(mut out, base + 10, u16(selector))
+	build_w16(mut out, base + 12, u16(seg_count * 2 - power * 2))
+	mut p := base + 14
+	for seg in segments {
+		build_w16(mut out, p, seg.end)
+		p += 2
+	}
+	build_w16(mut out, p, 0) // reservedPad
+	p += 2
+	for seg in segments {
+		build_w16(mut out, p, seg.start)
+		p += 2
+	}
+	for seg in segments {
+		build_wi16(mut out, p, seg.delta)
+		p += 2
+	}
+	// Each idRangeOffset is a byte offset from its own slot, so a segment's
+	// first glyph sits (segCount - index) glyphs past that slot.
+	for s, seg in segments {
+		mut range_off := u32(0)
+		if seg.gid_at >= 0 {
+			range_off = u32((seg_count - s + seg.gid_at) * 2)
+			if range_off > 0xffff {
+				return error('cmap4: glyphIdArray offset ${range_off} does not fit a u16')
+			}
+		}
+		build_w16(mut out, p, u16(range_off))
+		p += 2
+	}
+	for gid in glyph_ids {
+		build_w16(mut out, p, gid)
+		p += 2
+	}
+	return out
+}
+
+// build_utf16be encodes a string as UTF-16BE for a name table. Surrogates and
+// codepoints past U+10FFFF are refused rather than emitted as a wrong glyph;
+// supplementary characters use a surrogate pair.
+fn build_utf16be(s string) ![]u8 {
+	mut out := []u8{cap: s.len * 2}
+	for r in s.runes() {
+		if r < 0 || (r >= 0xd800 && r <= 0xdfff) || r > 0x10ffff {
+			return error('name: codepoint ${r} is not encodable in UTF-16BE')
+		}
+		if r <= 0xffff {
+			out << u8((u32(r) >> 8) & 0xff)
+			out << u8(u32(r) & 0xff)
+		} else {
+			v := u32(r) - 0x10000
+			hi := u16(0xd800 + (v >> 10))
+			lo := u16(0xdc00 + (v & 0x3ff))
+			out << u8((hi >> 8) & 0xff)
+			out << u8(hi & 0xff)
+			out << u8((lo >> 8) & 0xff)
+			out << u8(lo & 0xff)
+		}
+	}
+	return out
+}
+
+// build_name_minimal writes a format 0 'name' table with four Windows Unicode
+// (platform 3, encoding 1, language 0x0409) records: family (1), style (2),
+// full name (4) and PostScript name (6). The full name is family plus style,
+// and the PostScript name is family and style with spaces removed, joined by a
+// hyphen; an empty style leaves the family alone. Records are already sorted
+// by (platform, encoding, language, name ID) because the ID rises while the
+// other keys stay fixed. Strings are packed contiguously from stringOffset in
+// record order, so there are no gaps for a textfont dump/load to disagree on.
+pub fn build_name_minimal(family string, style string) ![]u8 {
+	if family.len == 0 {
+		return error('name: family is empty')
+	}
+	full := if style.len == 0 { family } else { '${family} ${style}' }
+	ps_family := family.replace(' ', '')
+	ps_style := style.replace(' ', '')
+	postscript := if ps_style.len == 0 { ps_family } else { '${ps_family}-${ps_style}' }
+	names := [family, style, full, postscript]
+	ids := [u16(1), 2, 4, 6]
+	mut storage := []u8{}
+	mut offsets := []u16{cap: names.len}
+	mut lengths := []u16{cap: names.len}
+	for s in names {
+		encoded := build_utf16be(s) or { return err }
+		if storage.len > 0xffff || encoded.len > 0xffff {
+			return error('name: string storage offsets do not fit a u16')
+		}
+		offsets << u16(storage.len)
+		lengths << u16(encoded.len)
+		for b in encoded {
+			storage << b
+		}
+	}
+	string_off := 6 + 12 * names.len
+	if string_off + storage.len > 0xffff {
+		return error('name: table length ${string_off + storage.len} does not fit a u16 stringOffset')
+	}
+	mut out := []u8{len: string_off + storage.len}
+	build_w16(mut out, 0, 0) // format
+	build_w16(mut out, 2, u16(names.len))
+	build_w16(mut out, 4, u16(string_off))
+	for i, id in ids {
+		rec := 6 + i * 12
+		build_w16(mut out, rec, 3) // platformID: Windows
+		build_w16(mut out, rec + 2, 1) // encodingID: BMP
+		build_w16(mut out, rec + 4, 0x0409) // languageID: English (US)
+		build_w16(mut out, rec + 6, id)
+		build_w16(mut out, rec + 8, lengths[i])
+		build_w16(mut out, rec + 10, offsets[i])
+	}
+	for i, b in storage {
+		out[string_off + i] = b
+	}
+	return out
 }
 
 // build_w16 stores v big-endian at off. The bounds are the caller's: every
