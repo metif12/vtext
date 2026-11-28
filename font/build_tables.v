@@ -1,10 +1,12 @@
 module font
 
-// Fixed-size table writers: the 14.2b half of the in-memory builder. Where
-// 14.2a (`font/builder.v`) assembles a font from caller-supplied table
-// bytes, these functions build the three tables whose content is scalar
-// parameters in, spec-layout bytes out: head, maxp and hhea. The caller
-// feeds the result to `Builder.set` and `Builder.build` patches the
+// Fixed-size table writers: the 14.2b half of the in-memory builder, plus
+// the 14.2c metrics and empty-outline writers. Where 14.2a
+// (`font/builder.v`) assembles a font from caller-supplied table bytes,
+// these functions build the tables whose content is caller parameters in,
+// spec-layout bytes out: head, maxp and hhea from scalars, hmtx from the two
+// per-glyph arrays, and the empty glyf/loca pair from the glyph count. The
+// caller feeds the result to `Builder.set` and `Builder.build` patches the
 // checkSumAdjustment, so every writer below leaves that field zeroed.
 //
 // Every offset below is pinned twice: against the engine's own readers
@@ -26,7 +28,9 @@ module font
 // thirteen zero maxima, the TrueType-requirement maxima the builder leaves
 // for a real font to fill. A writer never invents metrics: advanceWidthMax,
 // the side bearings, xMaxExtent and the caret slope stay 0 in hhea output.
-// cmap, hmtx and name need per-glyph data and arrive in 14.2c-d.
+// cmap and name need per-glyph and per-string data and arrive in 14.2d;
+// hmtx takes the per-glyph arrays and the empty glyf/loca pair takes the
+// glyph count, so both land here in 14.2c.
 
 // head_magic is the sfnt-specified magic number at head+12. The builder
 // writes it; Face.read_head refuses a head without it.
@@ -127,6 +131,66 @@ pub fn build_hhea(ascender int, descender int, line_gap int, num_h_metrics int) 
 	// 22: caretOffset 0; 24..30: reserved 0; 32: metricDataFormat 0.
 	build_w16(mut out, 34, u16(num_h_metrics))
 	return out
+}
+
+// build_hmtx writes the horizontal metrics for num_glyphs glyphs:
+// num_h_metrics long records (advance plus side bearing) followed by one
+// short tail bearing per remaining glyph. advances and lsbs each hold one
+// entry per glyph, so their lengths are the glyph count; num_h_metrics is
+// the hhea count and must name a split inside the glyphs. The tail shares
+// the last long advance the way `Face.read_hmtx` replays it: the format has
+// no room for tail advances, so advances past the split are accepted and
+// not stored, and the reader answers them with the last long advance.
+//
+// The reader's truncation rules are why the writer always emits the full
+// table: read_hmtx stops at the first long record that is not fully present
+// (leaving that glyph and every later one zero) and answers a missing tail
+// bearing as 0, so a short hmtx is a corrupt file, not a short form. A
+// zero metric count is refused for the same read-back reason: the reader
+// treats 0 as "every glyph is long", which would misread the tail this
+// writer emits.
+pub fn build_hmtx(advances []u16, lsbs []i16, num_h_metrics int) ![]u8 {
+	if advances.len != lsbs.len {
+		return error('hmtx: ${advances.len} advances but ${lsbs.len} side bearings, want one bearing per glyph')
+	}
+	num := advances.len
+	if num > 0xffff {
+		return error('hmtx: ${num} glyphs do not fit the u16 glyph count')
+	}
+	if num == 0 {
+		if num_h_metrics != 0 {
+			return error('hmtx: numOfLongHorMetrics ${num_h_metrics} with no glyphs, want 0')
+		}
+		return []u8{}
+	}
+	if num_h_metrics < 1 || num_h_metrics > num {
+		return error('hmtx: numOfLongHorMetrics ${num_h_metrics} is outside 1..${num}')
+	}
+	mut out := []u8{len: num_h_metrics * 4 + (num - num_h_metrics) * 2}
+	for i in 0 .. num_h_metrics {
+		build_w16(mut out, i * 4, advances[i])
+		build_wi16(mut out, i * 4 + 2, lsbs[i])
+	}
+	for i in num_h_metrics .. num {
+		build_wi16(mut out, num_h_metrics * 4 + (i - num_h_metrics) * 2, lsbs[i])
+	}
+	return out
+}
+
+// build_empty_glyf_loca writes an empty glyf table and its loca: every
+// glyph's range is zero-length, so every outline reads back empty. That is
+// the same convention `subset.v:rebuild_outlines` uses for dropped glyphs
+// (a zero-length loca span is what an empty glyph in the original font is
+// too), which keeps every gid the font declares addressable. A short loca
+// stores each offset halved, so only even offsets are representable; all
+// zeros are evenly at 0, and the empty glyf has no offsets to pad.
+pub fn build_empty_glyf_loca(num_glyphs int, long bool) !([]u8, []u8) {
+	if num_glyphs < 0 || num_glyphs > 0xffff {
+		return error('glyf/loca: numGlyphs ${num_glyphs} is outside 0..65535')
+	}
+	stride := if long { 4 } else { 2 }
+	loca := []u8{len: (num_glyphs + 1) * stride}
+	return []u8{}, loca
 }
 
 // build_w16 stores v big-endian at off. The bounds are the caller's: every
